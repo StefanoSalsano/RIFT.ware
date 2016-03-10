@@ -21,6 +21,7 @@ This is a one time change
 
 <pre>
 yum install libdb-devel
+sed -i "s/eng.riftio.com/riftio.com/g" /usr/rift/bin/pip3-install
 /usr/rift/bin/pip3-install jujuclient
 </pre>
 
