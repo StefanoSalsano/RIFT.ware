@@ -1,32 +1,37 @@
 RIFT.ware 
 =========
-### RIFT.ware version 4.1.1.0 release notes
+
+
+### RIFT.ware version 4.1.1 release notes
 Updated March 29, 2016
 
+RIFT.ware version 4.1.1 is available as RPMs and as source code.  See https://open.riftio.com for the latest updates, files, and documentation. 
 
-### RIFT.ware version 4.1.0.1 release notes
-Updated February 29, 2016
+Build and install instructions are available at https://open.riftio.com/webdocs/RIFTware/Authoring/Installation/InstallRiftwareFromSource.htm
 
-RIFT.ware version 4.1.0.1  is the first public release of RIFT.ware 4.1. It is available as RPMs and as source.  See https://open.riftio.com for the latest updates, files, and documentation.
+Visit https://support.riftio.com to post questions or raise issues. 
 
-## Build and install instructions 
-Please refer https://open.riftio.com/webdocs/RIFTware/Authoring/Installation/InstallRiftwareFromSource.htm
 
 ## Known Issues
 
-* MANO:
-RIFT-11934, RIFT-11916 -- Launchpad will be slow and may fail with a heartbeat error if the VM in which it runs is under-resourced. 
-
-* Opensource: 
-The Build VM is missing some packages. 
-After instantiating the BUILD VM (qcow image downloadable at https://open.riftio.com/download/),  before running your first build, you must install some packages.
-This is a one time change
-
-<pre>
-yum install libdb-devel
-sed -i "s/eng.riftio.com/riftio.com/g" /usr/rift/bin/pip3-install
-/usr/rift/bin/pip3-install jujuclient
-</pre>
-
-### For questions or issues
-Visit https://support.riftio.com
+* RIFT-11508
+Onboarding a malformed ping_vnfd package (with incorrect checksum.txt value) succeeds when it should fail with error. 
+* RIFT-11508
+Onboarding a malformed ping_vnfd package (with incorrect checksum.txt value) succeeds when it should fail with error. 
+* RIFT-11507
+Onboarding a malformed ping_vnfd package (with incorrect checksum.txt content) succeeds when it should fail with error. 
+* RIFT-11489  
+The RIFT.ware Launchpad fails to detect that a virtual link between ping_vnfd and pong_vnfd has been deleted.
+* RIFT-11488  
+After starting the network service and terminating the ping VM from the OpenStack dashboard, the system fails to report that the ping VM has been terminated.
+* RIFT-11416  
+The RIFT.ware Launchpad Composer page is missing links for About, Debug, and Log.
+* RIFT-11305  
+Adding an unknown attribute to the ping-pong VNF descriptors and network descriptor (ping_vnfd.xml, ping_pong_nsd.xml) causes an onboard failure.
+* RIFT-11300  
+After element <vnfd:internal-connection-point-ref> is removed from an, otherwise, valid descriptor (ping_vnfd.xml), the onboarding step incorrectly succeeds. This element is an internal reference for the VNFD. The omission is discovered during network service instantiation only. 
+* RIFT-11095  
+An image exported from the RIFT.ware UI does not include the type of NFV object in its name, such as VNFD or NSD.
+* RIFT-10949 
+After starting a new RW.CLI session, you can safely ignore the message, "Error: failed to add cli mode: node”, as long as the rift-shell prompt ("rift#") is also received.
+* In 4.1.1, if the operator tries to use the Logs feature, LogAnalyzer is unable to access ‘/var/log/rift/rift.log’ because permissions on ‘/var/log/rift’ are set to 600.  To resolve permissions issues, run: ‘chmod 755 /var/log/rift’.
