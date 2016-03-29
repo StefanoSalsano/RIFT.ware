@@ -7,7 +7,11 @@
 let alt = require('../../core/alt');
 
 export default alt.generateActions(
+	'openTopologyApiSocketLoading',
+	'openTopologyApiSocketSuccess',
+	'openTopologyApiSocketError',
 	'getTopologyApiLoading',
    	'getTopologyApiSuccess',
-   	'getTopologyApiError'
+   	'getTopologyApiError',
+   	'nodeClicked'
 );

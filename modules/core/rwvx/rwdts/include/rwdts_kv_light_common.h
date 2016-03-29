@@ -13,7 +13,9 @@
 #include <stdint.h> //uint types
 #include <rw_sklist.h>
 
-typedef struct rwdts_kv_handle_t {
+typedef struct rwdts_kv_handle_s rwdts_kv_handle_t;
+
+struct rwdts_kv_handle_s {
   uint32_t db_type;
   void *kv_conn_instance;
   char file_name[255];
@@ -29,7 +31,7 @@ typedef struct rwdts_kv_handle_t {
   char del_pend_commit_sha[41];
   char del_pend_abort_sha[41];
   int  get_index;
-} rwdts_kv_handle_t;
+};
 
 typedef struct rwdts_kv_table_scan_t {
   uint32_t scan_list[250];

@@ -106,6 +106,7 @@ static void rwlog_destination_setup(rwlog_ctx_t *ctx)
     tls_key = rwlog_ctx_tls.tls_key;
   }
   RW_ASSERT(tls_key);
+  if (!tls_key) { return; }
 
   if(tls_key->rwlog_file_fd > 0) {
     /* FD is already created. Return */
@@ -113,7 +114,9 @@ static void rwlog_destination_setup(rwlog_ctx_t *ctx)
   }
 
   RW_ASSERT(ctx->rwlog_filename);
+  if (!ctx->rwlog_filename) { return; }
   RW_ASSERT(ctx->rwlog_filename[0]); /* There IS a bug here; I saw an empty one once! */
+  if (!ctx->rwlog_filename[0]) { return; }
   rwlog_filename = ctx->rwlog_filename;
   if(ctx->filter_memory) {
     rwlog_ctx_tls.tls_key->rotation_serial = ((filter_memory_header *)ctx->filter_memory)->rotation_serial;
@@ -180,6 +183,9 @@ void rwlog_init_bootstrap_filters(char *shm_file_name)
                       RWLOG_FILTER_SHM_PATH,
                       rwlog_get_systemId());
     RW_ASSERT(r);
+    if (!r) {
+      return;
+    }
   }
   else {
     rwlog_shm = RW_STRDUP(shm_file_name);
@@ -191,7 +197,7 @@ void rwlog_init_bootstrap_filters(char *shm_file_name)
   if (filter_shm_fd < 0)
   {
     RWLOG_FILTER_DEBUG_PRINT ("Error Open %s for  SHM:%s\n", strerror(errno), rwlog_shm);
-    RWLOG_ASSERT(0);
+    RW_CRASH_MESSAGE("Error Open %s for  SHM:%s\n", strerror(errno), rwlog_shm);
     return;
   }
   ftruncate(filter_shm_fd, RWLOG_FILTER_SHM_SIZE);
@@ -200,7 +206,7 @@ void rwlog_init_bootstrap_filters(char *shm_file_name)
   if (MAP_FAILED == rwlogd_shm_ctrl)
   {
     RWLOG_FILTER_DEBUG_PRINT ("Error Open %s for MAP_FAILED SHM:%s\n", strerror(errno), rwlog_shm);
-    RWLOG_ASSERT(0);
+    RW_CRASH_MESSAGE("Error Open %s for MAP_FAILED SHM:%s\n", strerror(errno), rwlog_shm);
     return;
   }
 
@@ -244,6 +250,9 @@ void rwlog_shm_set_dup_events(char *shm_file_name, bool flag)
                       RWLOG_FILTER_SHM_PATH,
                       rwlog_get_systemId());
     RW_ASSERT(r);
+    if (!r) {
+      return;
+    }
   }
   else {
     rwlog_shm = RW_STRDUP(shm_file_name);
@@ -253,7 +262,7 @@ void rwlog_shm_set_dup_events(char *shm_file_name, bool flag)
   if (filter_shm_fd < 0)
   {
     RWLOG_FILTER_DEBUG_PRINT ("Error Open %s for  SHM:%s\n", strerror(errno), rwlog_shm);
-    RWLOG_ASSERT(0);
+    RW_CRASH_MESSAGE("Error Open %s for  SHM:%s\n", strerror(errno), rwlog_shm);
     return;
   }
   rwlogd_shm_ctrl =
@@ -261,7 +270,7 @@ void rwlog_shm_set_dup_events(char *shm_file_name, bool flag)
   if (MAP_FAILED == rwlogd_shm_ctrl)
   {
     RWLOG_FILTER_DEBUG_PRINT ("Error Open %s for MAP_FAILED SHM:%s\n", strerror(errno), rwlog_shm);
-    RWLOG_ASSERT(0);
+    RW_CRASH_MESSAGE("Error Open %s for MAP_FAILED SHM:%s\n", strerror(errno), rwlog_shm);
     return;
   }
 
@@ -279,6 +288,9 @@ rwlog_ctx_t *rwlog_init_internal(const char *taskname, char *rwlog_filename,char
 
   ctx = RW_MALLOC0(sizeof(rwlog_ctx_t));
   RW_ASSERT(ctx);
+  if (!ctx) {
+    return NULL;
+  }
 
   RWLOG_DEBUG_PRINT("Rwlog instance name is %s\n",taskname);
 
@@ -342,12 +354,17 @@ rwlog_ctx_t *rwlog_init(const char *taskname)
                     rwlog_get_systemId());
 
   RW_ASSERT(r);
+  if (!r) { return NULL; }
 
   r = asprintf (&rwlog_shm_name,
                     "%s-%d",
                     RWLOG_FILTER_SHM_PATH,
                     rwlog_get_systemId());
   RW_ASSERT(r);
+  if (!r) { 
+    free(rwlog_filename);
+    return NULL; 
+  }
 
   ctx = rwlog_init_internal(taskname,rwlog_filename,rwlog_shm_name,NULL);
   free(rwlog_filename);
@@ -369,12 +386,17 @@ rwlog_ctx_t *rwlog_init_with_vnf(const char *taskname, uuid_t vnf_id)
                     rwlog_get_systemId());
 
   RW_ASSERT(r);
+  if (!r) { return NULL; }
 
   r = asprintf (&rwlog_shm_name,
                     "%s-%d",
                     RWLOG_FILTER_SHM_PATH,
                     rwlog_get_systemId());
   RW_ASSERT(r);
+  if (!r) { 
+    free(rwlog_filename);
+    return NULL; 
+  }
 
   ctx = rwlog_init_internal(taskname,rwlog_filename,rwlog_shm_name,vnf_id);
   free(rwlog_filename);
@@ -440,6 +462,7 @@ void rwlog_ctxt_dump(rwlog_ctx_t *ctxt)
 void rwlog_update_appname(rwlog_ctx_t *ctx, const char *taskname)
 {
   RW_ASSERT(ctx);
+  if (!ctx) { return;}
   strncpy(ctx->appname, taskname, MAX_TASKNAME_SZ-1);
   ctx->appname[MAX_TASKNAME_SZ-1] = '\0';
 }
@@ -513,6 +536,9 @@ rw_status_t rw_pb_get_field_value_str (char *value_str,
   
   RW_ASSERT(location);
   RW_ASSERT(fd);
+  if (!fd || !location) {
+    return RW_STATUS_FAILURE;
+  }
   
   protobuf_c_boolean okay = protobuf_c_field_get_text_value (NULL,fd, value_str, value_str_len, location);
   return okay ? RW_STATUS_SUCCESS : RW_STATUS_FAILURE;
@@ -563,6 +589,9 @@ rw_status_t rw_pb_get_field_value_uint64 (const ProtobufCMessage *pbcm,
   
   RW_ASSERT(location);
   RW_ASSERT(fd);
+  if (!fd || !location) {
+    return RW_STATUS_FAILURE;
+  }
   
   switch (fd->type) {
   case PROTOBUF_C_TYPE_INT32:
@@ -651,6 +680,9 @@ static bool rwlog_l2_exact_string_match(rwlog_ctx_t *ctxt, char *cat_str, uint32
                      cat_str);
 
   RW_ASSERT(r);
+  if (!r) {
+    return FALSE;
+  }
   hash_index = BLOOM_IS_SET(ctxt->category_filter[cat].bitmap,field_value_combo, pass);
   filter_array_hdr *fv_entry = &((rwlogd_shm_ctrl_t *)mem_hdr)->fieldvalue_entries[hash_index%RWLOG_FILTER_HASH_SIZE];
   if(fv_entry->table_offset)
@@ -689,6 +721,9 @@ bool rwlog_l2_exact_uint64_match(rwlog_ctx_t *ctxt, uint32_t cat, char *name, ui
                     "%s:%lu",
                     name,value);
    RW_ASSERT(r);
+   if (!r) {
+    return FALSE;
+   }
 
   UNUSED(pass);
   hash_index = BLOOM_IS_SET(ctxt->category_filter[cat].bitmap,field_value_combo, pass);
@@ -864,7 +899,6 @@ int rwlog_proto_filter_l2(rwlog_ctx_t *ctxt,
       return 0;
     }
   }
-  //RW_ASSERT(cat < mem_hdr->num_categories);
 
   
   /* Awkwardness: the EvTemplate type cannot be relied upon to result
@@ -1324,6 +1358,9 @@ void rwlog_proto_send_filtered_logs_to_file(rwlog_ctx_t *ctx, const char *cat_st
   proto_size = protobuf_c_message_pack_to_buffer(proto, &sb.base);
   RW_ASSERT(sb.data);
   RW_ASSERT(proto_size == (sb.len-sizeof(rwlog_hdr_t)));
+  if (!sb.data || (proto_size != (sb.len-sizeof(rwlog_hdr_t)))) {
+    return;
+  }
 
   /* As part of pack, sb.data might have changed. So reset hdr again */
   hdr = (rwlog_hdr_t*)sb.data;
@@ -1382,6 +1419,7 @@ rw_status_t rwlog_proto_buffer_unfiltered(rwlog_ctx_t *ctx, const char *cat_str,
 
   size = protobuf_c_message_get_packed_size(NULL, proto);
   RW_ASSERT(size);
+  if (!size) { return RW_STATUS_FAILURE;}
   tot_len = sizeof(rwlog_hdr_t) + size;
 
   call_log_entry = rwlog_get_call_log_entry_for_callid(&rwlog_ctx_tls.tls_key->l_buf,callid->callid);
@@ -1412,6 +1450,9 @@ rw_status_t rwlog_proto_buffer_unfiltered(rwlog_ctx_t *ctx, const char *cat_str,
 
   proto_size = protobuf_c_message_pack(NULL, proto, (call_log_entry->log_buffer+call_log_entry->current_buffer_size+sizeof(rwlog_hdr_t)));
   RW_ASSERT(proto_size == size);
+  if (proto_size != size) {
+    return RW_STATUS_FAILURE;
+  }
 
   rwlog_hdr_t *hdr = (rwlog_hdr_t *)((uint8_t *)call_log_entry->log_buffer+call_log_entry->current_buffer_size);
   rwlog_proto_fill_log_hdr(ctx,hdr,cat_str,proto,callid,FALSE,proto_size,cp->severity,fd->offset,cp, FALSE);

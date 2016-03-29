@@ -29,3 +29,14 @@ set(subdirs
    )
 
 rift_add_subdirs(SUBDIR_LIST ${subdirs})
+
+##
+# Install the oper user aaa restrictions
+##
+install(FILES
+    oper_user_restrictions.xml
+  DESTINATION
+    usr/data/security
+  COMPONENT
+    ${PKG_LONG_NAME}
+  )

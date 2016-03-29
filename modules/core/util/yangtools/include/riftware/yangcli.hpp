@@ -678,6 +678,45 @@ struct ParseNodeSetSort
   bool operator() (const ParseNode* a, const ParseNode* b);
 };
 
+/**
+ * Class that holds the parse completion information.
+ */
+class ParseCompletionEntry
+{
+public:
+  /**
+   * Constructs the Parse completion entry
+   */
+  ParseCompletionEntry(
+      /// [in] Node that was parse completed
+      ParseNode* node, 
+      
+      /// [in] Completion requires Yang model prefix
+      bool prefix_required
+  )
+    : node_(node),
+      prefix_required_(prefix_required)
+  {
+  }
+
+  ParseCompletionEntry(
+      /// [in] Node that was parse completed
+      ParseNode* node
+  )
+    : ParseCompletionEntry(node, false)
+  {
+  }
+
+public:
+
+  /// Parse Node that is part of the completion
+  ParseNode*  node_ = nullptr;
+
+  /// Indicates that Yand Model prefix is required. This will be set to True if
+  /// there was a conflict of token names among the list of current completions
+  bool        prefix_required_ = false;
+};
+
 
 /**
  * Parser Node.  A parser node exists to assist the CLI parser in
@@ -722,7 +761,7 @@ class ParseNode
  public:
   typedef std::unique_ptr<ParseNode> ptr_t;
 
-  typedef std::vector<ParseNode*> completions_t;
+  typedef std::vector<ParseCompletionEntry> completions_t;
   typedef completions_t::iterator compl_iter_t;
   typedef completions_t::size_type compl_size_t;
 
@@ -942,8 +981,18 @@ class ParseNode
 
   /**
    * Determine if the value is a match to the token text.
+   *
+   * In case check_prefix is set to true, the value will be checked against the
+   * Yang model prefix too. This is required in case there is conflict among the
+   * completion tokens.
    */
-  virtual bool value_is_match(const std::string& value) const;
+  virtual bool value_is_match(
+                  /// [in] value to be checked for a token match
+                  const std::string& value,
+
+                  /// [in] indicates that model prefix to be checked
+                  bool check_prefix
+               ) const;
 
   /**
    * Try to complete a word based on the current parse node.  Assumes
@@ -1230,7 +1279,12 @@ class ParseNodeYang
    * @see ParseNode::get_prompt_string
    */
   const char *get_prompt_string() override;
-  bool value_is_match(const std::string& value) const;
+
+  /**
+   * ParseNodeYang override.
+   * @see ParseNode::value_is_match
+   */
+  bool value_is_match(const std::string& value, bool check_prefix) const;
 
   /**
    * Rebuild the list of visible children from the list of child key
@@ -1323,7 +1377,11 @@ class ParseNodeValue
    */
   rw_yang_leaf_type_t get_leaf_type() const;
 
-  bool value_is_match(const std::string& value) const;
+  /**
+   * ParseNodeValue override.
+   * @see ParseNode::value_is_match
+   */
+  bool value_is_match(const std::string& value, bool check_prefix) const;
   const std::string& value_complete(const std::string& value);
 
   void next(ParseLineResult* plr) override;
@@ -1661,7 +1719,11 @@ class ParseNodeValueInternal
   const char* help_short_get() const;
   const char* help_full_get() const;
 
-  bool value_is_match(const std::string& value) const;
+  /**
+   * ParseNodeValueInternal override.
+   * @see ParseNode::value_is_match
+   */
+  bool value_is_match(const std::string& value, bool check_prefix) const;
   const std::string& value_complete(const std::string& value);
 
   void next(ParseLineResult* plr) override;
@@ -2072,7 +2134,6 @@ class BaseCli
     LAST = STATE_end - 1,
   };
 
-
   static const unsigned MAX_MODE_STACK_DEPTH = 64;
   static const size_t MAX_PROMPT_LENGTH = 128;
   static bool is_state_good (state_t v) {return (int) v > (int) FIRST && (int) v <= (int) LAST;}
@@ -2131,6 +2192,15 @@ class BaseCli
   virtual std::vector<ParseMatch> generate_matches(const std::string& line_buffer);
 
   virtual std::string tab_complete(const std::string& line_buffer);
+  /**
+   * Does some preprocessing on the given command in the line buffer before
+   * calling 'parse_line_buffer'.
+   * The preprocessing takes caring of
+   * 1. Putting/wrapping a command word with quotes '"' whenever require.
+   * 2. Escaping special characters or unprintable/unicaode characters.
+   * The processed command is then fed to 'parse_line_buffer' function.
+   */
+  virtual parse_result_t process_line_buffer(int argc, const char* const* argv, bool interactive);
   // ATTN: This return value is lame.
   virtual parse_result_t parse_line_buffer(const std::string& line_buffer, bool interactive);
   virtual unsigned parse_argv(const std::vector<std::string>& argv);
@@ -2191,6 +2261,15 @@ class BaseCli
     AppDataCallback* callback = nullptr
   );
 
+  /**
+   * For the given parse completion entry, returns the token with prefix if
+   * prefix_required is set on the entry
+   */
+  std::string get_token_with_prefix(
+    /// [in] Completion entry that matched the last word 
+    const ParseCompletionEntry& entry
+  );
+
  public:
   /// The schema model, which defines the (majority of the) CLI grammar.
   YangModel& model_;
@@ -2235,6 +2314,9 @@ class BaseCli
 
   //// config node - One step to a mode, and thats it
   ParseNode::ptr_t config_node_;
+
+  /// Support for 'commit' and 'rollback'
+  bool has_candidate_store_ = false;
 
   /// "commit" node
   ParseNode::ptr_t commit_node_;

@@ -8,6 +8,10 @@ import enum
 import uuid
 import time
 
+import gi
+gi.require_version('RwVlrYang', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
 from gi.repository import (
     RwVlrYang,
     VldYang,
@@ -47,7 +51,7 @@ class VirtualLinkRecord(object):
     """
         Virtual Link Record object
     """
-    def __init__(self, dts, log, loop, vnsm, vlr_msg):
+    def __init__(self, dts, log, loop, vnsm, vlr_msg, req_id=None):
         self._dts = dts
         self._log = log
         self._loop = loop
@@ -57,7 +61,10 @@ class VirtualLinkRecord(object):
         self._network_id = None
         self._network_pool = None
         self._create_time = int(time.time())
-        self._request_id = str(uuid.uuid4())
+        if req_id == None:
+            self._request_id = str(uuid.uuid4())
+        else:
+            self._request_id = req_id
 
         self._state = VirtualLinkRecordState.INIT
 
@@ -124,6 +131,7 @@ class VirtualLinkRecord(object):
             msg.network_pool = self._network_pool
 
         msg.operational_status = self.operational_status
+        msg.res_id = self._request_id
 
         return msg
 
@@ -147,9 +155,15 @@ class VirtualLinkRecord(object):
 
     @asyncio.coroutine
     def delete_network(self, xact):
-        """ Create network for this VL """
+        """ Delete network for this VL """
         self._log.debug("Deleting network - req-id: %s", self._request_id)
         return (yield from self.request_network(xact, "delete"))
+
+    @asyncio.coroutine
+    def read_network(self, xact):
+        """ Read network for this VL """
+        self._log.debug("Reading network - req-id: %s", self._request_id)
+        return (yield from self.request_network(xact, "read"))
 
     @asyncio.coroutine
     def request_network(self, xact, action):
@@ -165,14 +179,17 @@ class VirtualLinkRecord(object):
             self._log.debug("Deleting network path:%s", self.resmgr_path)
             if self.resmgr_msg.request_info.name != "multisite":
                 block.add_query_delete(self.resmgr_path)
+        elif action == "read":
+            self._log.debug("Reading network path:%s", self.resmgr_path)
+            block.add_query_read(self.resmgr_path)
         else:
             raise VlRecordError("Invalid action %s received" % action)
 
-        res_iter = yield from block.execute(flags=0, now=True)
+        res_iter = yield from block.execute(flags=rwdts.Flag.TRACE, now=True)
 
         resp = None
 
-        if action == "create":
+        if action == "create" or action == "read":
             for i in res_iter:
                 r = yield from i
                 resp = r.result
@@ -187,7 +204,7 @@ class VirtualLinkRecord(object):
         return resp
 
     @asyncio.coroutine
-    def instantiate(self, xact):
+    def instantiate(self, xact, restart=0):
         """ Instantiate this VL """
         self._state = VirtualLinkRecordState.INSTANTIATING
 
@@ -196,7 +213,12 @@ class VirtualLinkRecord(object):
         try:
             self._state = VirtualLinkRecordState.RESOURCE_ALLOC_PENDING
 
-            network_resp = yield from self.create_network(xact)
+            if restart == 0:
+              network_resp = yield from self.create_network(xact)
+            else:
+              network_resp = yield from self.read_network(xact)
+              if network_resp == None:
+                network_resp = yield from self.create_network(xact)
 
             # Note network_resp.virtual_link_id is CAL assigned network_id.
 
@@ -278,6 +300,29 @@ class VlrDtsHandler(object):
             return rwdts.MemberRspCode.ACTION_OK
 
         @asyncio.coroutine
+        def on_event(dts, g_reg, xact, xact_event, scratch_data):
+            @asyncio.coroutine
+            def instantiate_realloc_vlr(vlr):
+                """Re-populate the virtual link information after restart
+
+                Arguments:
+                    vlink 
+
+                """
+  
+                with self._dts.transaction(flags=0) as xact:
+                  yield from vlr.instantiate(xact, 1)
+
+            if (xact_event == rwdts.MemberEvent.INSTALL):
+              curr_cfg = self.regh.elements
+              for cfg in curr_cfg:
+                vlr = self._vnsm.create_vlr(cfg)
+                self._loop.create_task(instantiate_realloc_vlr(vlr))
+
+            self._log.debug("Got on_event")
+            return rwdts.MemberRspCode.ACTION_OK
+
+        @asyncio.coroutine
         def on_prepare(xact_info, action, ks_path, msg):
             """ prepare for VLR registration"""
             self._log.debug(
@@ -312,11 +357,12 @@ class VlrDtsHandler(object):
             on_commit=on_commit,
             on_prepare=on_prepare,
             )
-        with self._dts.group_create() as group:
+        handlers = rift.tasklets.Group.Handler(on_event=on_event,)
+        with self._dts.group_create(handler=handlers) as group:
             self._regh = group.register(
                 xpath=VlrDtsHandler.XPATH,
                 handler=reg_handle,
-                flags=rwdts.Flag.PUBLISHER | rwdts.Flag.NO_PREP_READ,
+                flags=rwdts.Flag.PUBLISHER | rwdts.Flag.NO_PREP_READ| rwdts.Flag.FILE_DATASTORE,
                 )
 
     @asyncio.coroutine

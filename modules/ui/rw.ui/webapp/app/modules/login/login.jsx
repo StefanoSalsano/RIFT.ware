@@ -5,13 +5,14 @@
  */
 import React from 'react/addons';
 import Utils from '../utils/utils.js';
+import Button from '../components/button/rw.button.js';
 import './login.scss'
 class LoginScreen extends React.Component{
   constructor(props) {
     super(props);
     var API_SERVER =  rw.getSearchParams(window.location).api_server;
     if (!API_SERVER) {
-      window.location.href = "//" + window.location.host + '/index.html?api_server=http://localhost';
+      window.location.href = "//" + window.location.host + '/index.html?api_server=' + window.location.protocol + '//localhost';
     }
     this.state = {
       username: '',
@@ -24,7 +25,8 @@ class LoginScreen extends React.Component{
     state[e.target.name] = e.target.value;
     this.setState(state);
   }
-  validate = () => {
+  validate = (e) => {
+    e.preventDefault();
     let state = this.state;
     console.log(this.state)
     if (state.username == '' || state.password == '') {
@@ -44,19 +46,19 @@ class LoginScreen extends React.Component{
   render() {
     let html;
     html = (
-      <div className="login-cntnr">
+      <form className="login-cntnr" autocomplete="on">
         <div className="logo"> </div>
-        <h1 className="riftio">RIFT.IO</h1>
+        <h1 className="riftio">Launchpad Login</h1>
         <p>
-            <input type="text" placeholder="Username" name="username" value={this.state.username} onChange={this.updateValue} ></input>
+            <input type="text" placeholder="Username" name="username" value={this.state.username} onChange={this.updateValue} autocomplete="username"></input>
         </p>
         <p>
-            <input type="password" placeholder="Password" name="password" onChange={this.updateValue} value={this.state.password}></input>
+            <input type="password" placeholder="Password" name="password" onChange={this.updateValue} value={this.state.password} autocomplete="password"></input>
         </p>
         <p>
-           <a className="sign-in" onClick={this.validate} style={{cursor: 'pointer'}} type="button">Sign In</a>
+           <Button className="sign-in" onClick={this.validate} style={{cursor: 'pointer'}} type="submit" label="Sign In"/>
         </p>
-      </div>
+      </form>
     )
     return html;
   }

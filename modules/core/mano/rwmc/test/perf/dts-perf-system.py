@@ -92,7 +92,8 @@ def main(argv=sys.argv[1:]):
                               port_groups=port_groups)
 
     # Create the prepared system from the demo
-    system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args)
+    system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args, 
+              northbound_listing="cli_rwfpath_schema_listing.txt")
 
     # Start the prepared system
     system.start()

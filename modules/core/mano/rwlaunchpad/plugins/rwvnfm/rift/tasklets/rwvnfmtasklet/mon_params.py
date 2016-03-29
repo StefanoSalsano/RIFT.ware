@@ -13,6 +13,8 @@ import tornado.escape
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
+import gi
+gi.require_version('RwDts', '1.0')
 import rift.tasklets
 from gi.repository import (
     RwDts as rwdts,

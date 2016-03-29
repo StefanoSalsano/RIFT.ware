@@ -16,7 +16,7 @@ export default class GraphConnectionPointNumber {
 	}
 
 	addContainers(containers) {
-		this.containers = containers.filter(d => DescriptorModelFactory.isConnectionPoint(d));
+		this.containers = containers.filter(d => DescriptorModelFactory.isConnectionPoint(d) && DescriptorModelFactory.isNetworkService(d.getRoot()));
 	}
 
 	render() {

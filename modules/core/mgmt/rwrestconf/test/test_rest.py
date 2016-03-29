@@ -14,6 +14,7 @@ import os
 import sys
 import unittest
 import xmlrunner
+import gi
 
 from rift.restconf import (
     ConfdRestTranslator,
@@ -26,6 +27,16 @@ from rift.restconf import (
     load_schema_root,
     load_multiple_schema_root,
 )
+
+gi.require_version('VehicleAYang', '1.0')
+gi.require_version('RwYang', '1.0')
+
+from gi.repository import (
+    RwYang,
+    VehicleAYang,
+)
+
+logger = logging.getLogger(__name__)
 
 def _collapse_string(string):
     return ''.join([line.strip() for line in string.splitlines()])
@@ -577,7 +588,7 @@ class TestRest(unittest.TestCase):
 
         schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
 
-        converter = XmlToJsonTranslator(schema)
+        converter = XmlToJsonTranslator(schema, logger)
 
         xpath = create_xpath_from_url(url, schema)
         
@@ -614,144 +625,11 @@ class TestRest(unittest.TestCase):
 
         schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
 
-        converter = XmlToJsonTranslator(schema)
+        converter = XmlToJsonTranslator(schema, logger)
 
         xpath = create_xpath_from_url(url, schema)
         
         actual_json = converter.convert(True, url, xpath, xml)
-
-        actual = _ordered(json.loads(actual_json))
-        expected = _ordered(json.loads(expected_json))
-
-        self.assertEquals(actual, expected)
-
-    def test_conversion_XML_to_JSON_3(self):
-        self.maxDiff = None
-        url = "/api/operational/cloud/account/"
-        xml = _collapse_string('''
-<data>
-<cloud xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">
-  <account>
-    <openstack>
-      <key>pluto</key>
-      <secret>mypasswd</secret>
-      <auth_url>http://10.66.4.18:5000/v3/</auth_url>
-      <tenant>demo</tenant>      
-      <mgmt-network>private</mgmt-network>      
-    </openstack>
-  </account>
-</cloud>
-</data>
-        ''')
-
-        expected_json = _collapse_string('''
-{"rw-mc:account":[{"openstack":{"auth_url" : "http://10.66.4.18:5000/v3/","tenant" : "demo","key" : "pluto","mgmt-network" : "private","secret" : "mypasswd"}}]}
-        ''')
-
-        schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a", "rw-mc"])
-
-        converter = XmlToJsonTranslator(schema)
-
-        xpath = create_xpath_from_url(url, schema)
-        
-        actual_json = converter.convert(False, url, xpath, xml)
-
-        actual = _ordered(json.loads(actual_json))
-        expected = _ordered(json.loads(expected_json))
-
-        self.assertEquals(actual, expected)
-
-    def test_conversion_JSON_to_xml_xy(self):
-        self.maxDiff = None
-        url = "/api/running/cloud/account/OS"
-        body = _collapse_string('''
-{
-  "rw-mc:account": {
-	"name": "OS",
-	"account-type": "openstack",
-    "openstack": {
-      "key": "demo",
-      "secret": "mypasdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddswd",
-      "auth_url": "http://10.66.4.2:5000/v3/",
-      "tenant":"demo",
-      "mgmt_network": "private"
-    }
-  }
-}
-        ''')
-
-        expected_xml = _collapse_string('''
-<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><cloud xmlns="http://riftio.com/ns/riftware-1.0/rw-mc"><account xmlns="http://riftio.com/ns/riftware-1.0/rw-mc"><name xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">OS</name><account-type xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">openstack</account-type><openstack xmlns="http://riftio.com/ns/riftware-1.0/rw-mc"><key xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">demo</key><secret xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">mypasdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddswd</secret><auth_url xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">http://10.66.4.2:5000/v3/</auth_url><tenant xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">demo</tenant></openstack></account></cloud></config>
-        ''')
-
-        schema = load_multiple_schema_root(["rw-mc"])
-        converter = ConfdRestTranslator(schema)
-
-        actual_xml = converter.convert("PUT", url, (body,"json"))
-
-        self.assertEquals(actual_xml, expected_xml)
-
-    def test_conversion_XML_to_JSON_5(self):
-        self.maxDiff = None
-        url = "/api/operational/cloud/account/OS"
-        xml = _collapse_string('''
-<data>
-<cloud xmlns="http://riftio.com/ns/riftware-1.0/rw-mc" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0">
-  <account>
-    <name>OS</name>
-    <account-type>openstack</account-type>
-    <openstack>
-      <key>pluto</key>
-      <secret>mypasswd</secret>
-      <auth_url>http://10.66.4.18:5000/v3/</auth_url>
-      <tenant>demo</tenant>
-      <mgmt-network>private</mgmt-network>
-    </openstack>
-  </account>
-</cloud>
-</data>
-
-        ''')
-
-        expected_json = _collapse_string('''
-{"rw-mc:account" :{"openstack":{"tenant" : "demo","secret" : "mypasswd","auth_url" : "http://10.66.4.18:5000/v3/","mgmt-network" : "private","key" : "pluto"},"name" : "OS","account-type" : "openstack"}}
-        ''')
-
-        schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a", "rw-mc"])
-
-        converter = XmlToJsonTranslator(schema)
-
-        xpath = create_xpath_from_url(url, schema)
-
-        actual_json = converter.convert(False, url, xpath, xml)
-
-        actual = _ordered(json.loads(actual_json))
-        expected = _ordered(json.loads(expected_json))
-
-        self.assertEquals(actual, expected)
-
-    def test_conversion_XML_to_JSON_6(self):
-        self.maxDiff = None
-        url = "/api/running/logging/syslog-viewer"
-        xml = _collapse_string('''
-<data>
-<logging xmlns="http://riftio.com/ns/riftware-1.0/rwlog-mgmt" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0">
-    <syslog-viewer>http://10.0.119.5/loganalyzer</syslog-viewer>
-</logging>
-</data>
-        ''')
-
-        expected_json = _collapse_string('''
-{"rwlog-mgmt:syslog-viewer" : "http://10.0.119.5/loganalyzer"}
-        ''')
-
-        schema = load_multiple_schema_root(["rwlog-mgmt"])
-
-        converter = XmlToJsonTranslator(schema)
-
-        xpath = create_xpath_from_url(url, schema)
-
-        actual_json = converter.convert(False, url, xpath, xml)
 
         actual = _ordered(json.loads(actual_json))
         expected = _ordered(json.loads(expected_json))
@@ -799,7 +677,7 @@ class TestRest(unittest.TestCase):
 
         schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
 
-        converter = XmlToJsonTranslator(schema)
+        converter = XmlToJsonTranslator(schema, logger)
 
         xpath = create_xpath_from_url(url, schema)
         
@@ -810,6 +688,72 @@ class TestRest(unittest.TestCase):
 
         self.assertEquals(actual, expected)
 
+    def test_conversion_POST_JSON_to_XML_rpc_with_list_input(self):
+        self.maxDiff = None
+
+        url = '/api/operations/in-list-no-out'
+        json = _collapse_string('''
+{
+  "input" : 
+    {
+        "in" :
+          [
+        {"k" : "asdf"},
+        {"k" : "fdsa"}
+          ]
+    }
+}
+        ''')
+
+        expected_xml = _collapse_string('''
+<vehicle-a:in-list-no-out xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><in xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><k xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">asdf</k></in><in xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><k xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">fdsa</k></in></vehicle-a:in-list-no-out>
+
+       ''')
+
+        root = load_schema_root("vehicle-a")
+
+        converter = ConfdRestTranslator(root)
+
+        actual_xml = converter.convert("POST", url, (json,"application/data+json"))
+
+        self.assertEqual(actual_xml, expected_xml)
+
+    def test_conversion_XML_to_JSON_notification(self):
+        yang_model = RwYang.Model.create_libncx()
+        yang_model.load_module("vehicle-a")
+        schema = yang_model.get_root_node()
+
+        converter = XmlToJsonTranslator(schema, logger)
+
+        expected_json = """
+{"notification" : {"eventTime" : "2016-03-02T01:50:15.774039-05:00","vehicle-a:notif" : {"cont":{"cont-leaf" : "true","dict" : [{"value" : "bar","name" : "foo"},{"value" : "bar1","name" : "foo1"}]},"top-leaf" : 12}}}
+"""
+        notif_pb = VehicleAYang.YangNotif_VehicleA().create_notif()
+        cont_pb = notif_pb.create_cont()
+        dict_pb = cont_pb.create_dict()
+        dict_pb.name = "foo"
+        dict_pb.value = "bar"
+        cont_pb.dict.append(dict_pb)
+        dict_pb = cont_pb.create_dict()
+        dict_pb.name = "foo1"
+        dict_pb.value = "bar1"
+        cont_pb.dict.append(dict_pb)
+        cont_pb.cont_leaf = True
+        notif_pb.cont = cont_pb
+        notif_pb.top_leaf = 12
+
+        content_xml = notif_pb.to_xml_v2(yang_model)
+        notif_xml = """<notification xmlns="urn:ietf:params:xml:ns:netconf:notification:1.0"><eventTime>2016-03-02T01:50:15.774039-05:00</eventTime>"""
+        notif_xml += content_xml
+        notif_xml += "</notification>"
+
+        json_str = converter.convert_notification(notif_xml)
+        print(json_str)
+
+        actual = _ordered(json.loads(json_str))
+        expected = _ordered(json.loads(expected_json))
+        self.assertEqual(actual, expected)
+        
 
     def test_conversion_POST_JSON_to_XML_asdf(self):
         self.maxDiff = None

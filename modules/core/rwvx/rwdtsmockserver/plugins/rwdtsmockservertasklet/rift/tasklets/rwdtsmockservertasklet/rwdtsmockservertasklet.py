@@ -15,9 +15,11 @@ import logging
 import os
 import sys
 
+import gi
+gi.require_version('RwDts', '1.0')
+
 from gi.repository import (
     RwDts as rwdts,
-    RwCompositeYang,
 )
 
 import rift.tasklets
@@ -276,7 +278,7 @@ class RwDtsMockServerTasklet(rift.tasklets.Tasklet):
 
         self._dts = rift.tasklets.DTS(
                 self.tasklet_info,
-                RwCompositeYang.get_schema(),
+                RwDtsYang.get_schema(),
                 self._loop,
                 self.on_dts_state_change,
                 )

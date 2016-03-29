@@ -1236,7 +1236,7 @@ static void kni_lb_setup(struct net_device *dev)
       | NETIF_F_VLAN_CHALLENGED
       | NETIF_F_LOOPBACK;
 #else
-  dev->mtu = 1500;
+  dev->mtu = 0;
   dev->hard_header_len = 0;
   dev->header_ops = NULL;
   dev->addr_len = 0;
@@ -1244,7 +1244,6 @@ static void kni_lb_setup(struct net_device *dev)
   dev->tx_queue_len = 256;
   dev->flags |= (IFF_NOARP | IFF_LOOPBACK);
 #endif
-  dev->flags |= (IFF_NOARP | IFF_LOOPBACK);
 }
 
 void

@@ -40,6 +40,7 @@ import textwrap
 import time
 import socket
 from datetime import datetime
+from junit_xml import TestSuite, TestCase
 
 from rw_testconfig import TestConfiguration
 from rw_testcase import TestCaseManager
@@ -229,9 +230,10 @@ class RA_TestSuite(object):
             self.set_status('Q')
             return False
         else:
-            logger.debug("resource selection complete")
+            logger.debug("resource selection complete. hosts are %s" % ",".join(self.suts.values() ) )
 
-        self.testbed.reserve(self.suts.values())
+        if self.test_config.vms:
+            self.testbed.reserve(self.suts.values())
         logger.info( "Running test suite %s (%s)..." % ( self.test_name, self.test_config.configfile ))
         try:
             self.create_sut_file()
@@ -282,7 +284,13 @@ class RA_TestSuite(object):
 
     @property
     def status_string(self):
-        return test_case_manager.get_status(self.status)
+        if self.status == 'C':
+            if self.return_code == 0:
+                return "PASSED"
+            else:
+                return "FAILED"
+        else:
+            return test_case_manager.get_status(self.status)
 
     @property
     def test_name(self):
@@ -319,14 +327,18 @@ class RA_TestSuite(object):
                     self.last_signal = signal.SIGTERM
             return None
         # DONE
-        et = datetime.now() - self.start_time
+        self.elapsed_time = datetime.now() - self.start_time
         if self.last_signal == None:
             self.return_code = self.pid.returncode
             logger.debug("returncode from %s was %d" % ( self.test_name, self.return_code ))
         else:
             self.return_code = TestCaseManager.get_code('ABORTED')
             logger.debug("%s was %d" % ( self.test_name, self.return_code ))
-        logger.info("task %s complete elapsed time %s, return code is %d" % ( self.test_name, str(et), self.return_code))
+        logger.info("task %s complete elapsed time %d seconds, return code is %d" % ( 
+                            self.test_name, 
+                            self.elapsed_time.total_seconds(), 
+                            self.return_code
+                      ))
         if self.logfile_handle:
             self.logfile_handle.close()
 
@@ -450,11 +462,11 @@ class RA_Harness(object):
         return_code tracks the work result seen in a run and provides the overall return code
 
         workspaces tracks which workspaces are in use at the moment
-        we can manage resources in two ways:
 
-        either we grab all of the resources already reserved and we dole them out to the tests
-        OR
-        we ask for resources from the testbed system one test at a time
+        we can manage resources in two ways:
+            either we grab all of the resources already reserved and we dole them out to the tests
+            OR
+            we ask for resources from the testbed system one test at a time
         '''
 
         self.load_testbed()
@@ -465,6 +477,29 @@ class RA_Harness(object):
             self.run_queue()
         else:
             self.walk_tree()
+
+
+    def create_junit_xml(self, workspace):
+        tests = [ test for test in self.queue if test.rift_root == workspace and test.status == 'C' ]
+        d = os.path.join(workspace, '.artifacts/systemtest')
+        if not os.path.exists(d):
+            os.mkdir(d)
+        fn = os.path.join(d, 'harness.xml')
+        if tests:
+            logger.debug("writing %s with %d tests" % (fn, len(tests)) )
+            test_cases = []
+            for test in tests:
+                test_case = TestCase( test.test_config.test_name, 'Harness', test.elapsed_time.total_seconds())
+                if test.return_code:
+                    test_case.add_failure_info('return code from driver %d' % test.return_code)
+                    logger.debug("recording test failure for %s" % test.test_config.test_name )
+                test_cases.append(test_case)
+            ts = TestSuite("Test Harness", test_cases)
+            with open(fn, "w") as f:
+                TestSuite.to_file(f,[ts], prettyprint=False)
+            logger.debug(TestSuite.to_xml_string([ts]))
+        else:
+            logger.info("no test cases from workspace %s found" % workspace)
 
     def load_testbed(self):
         self.testbed = None
@@ -502,6 +537,7 @@ class RA_Harness(object):
         logger.debug('added job %s' % job['id'] )
 
     def clean_queue(self):
+        logger.debug("cleaning run queue....")
         remove = set()
         for test in self.queue:
             if test.status in ['C', 'A']:
@@ -575,29 +611,37 @@ class RA_Harness(object):
         '''
         return self.cmdargs.mode == 'auto'
 
-    def print_queue(self):
+    def print_queue(self, log=False):
         ''' Show the task queue
 
             @TYPE test: RA_TestSuite
         '''
+        if len(self.queue) == 0 and log:
+            return
         if len(self.queue):
-            print("%s %26s %s" % ( "=" * 21, datetime.now(), "=" * 21 ))
+            if not log: 
+                print("%s %26s %s" % ( "=" * 21, datetime.now(), "=" * 21 ))
             for test in self.queue:
                 if test.status == 'C':
-                    message = test.result
+                    message = "rc %d ET %d seconds" % ( test.result, test.elapsed_time.total_seconds() )
                 elif test.status == 'R':
-                    message = "ET %s" % (datetime.now() - test.start_time) 
+                    et = datetime.now() - test.start_time
+                    message = "ET %d seconds (time limit %d seconds)" % ( et.total_seconds(), test.test_config.timeout * self.cmdargs.timeout )
                 else:
                     message = "priority %d" % ( test.priority )
-                print("== %7s %s %s" % ( test.status_string, test.test_name, message ))
-            if len(self.queue) > 1:
+                if log:
+                    logger.info("== %7s %s %s" % ( test.status_string, test.test_name, message ))
+                else:
+                    print("== %7s %s %s" % ( test.status_string, test.test_name, message ))
+            if len(self.queue) > 1 and not log:
                 print("=" * 70)
         else:
             print("== %s: Test Queue is EMPTY" % datetime.now())
-        if RA_TestSuite.die_now:
-            print("== harness is in SHUTDOWN MODE")
-        if self.cmdargs.until_fail:
-            print("== until-fail is ACTIVE")
+        if not log:
+            if RA_TestSuite.die_now:
+                print("== harness is in SHUTDOWN MODE. No new tests will be started")
+            if self.cmdargs.until_fail:
+                print("== until-fail is ACTIVE")
 
     def run_queue(self):
         ''' run jobs. This routine might seem a little long, but I wanted the
@@ -677,13 +721,17 @@ class RA_Harness(object):
                             sleep_time = 0
                             display = True
                             self.free_workspace(test.rift_root)
+                            try:
+                                self.create_junit_xml(test.rift_root)
+                            except Exception as e:
+                                logger.info("Error creating workspace junit file: %s" % e )
 
             ''' console logging
                 show the queue when something interesting happens or every 60 seconds
             '''
             if sys.stdout.isatty():
                 et = datetime.now() - last_display
-                if et.total_seconds() > 60:
+                if et.total_seconds() >= self.cmdargs.display_interval:
                     display = True
                 if display:
                     self.print_queue()
@@ -777,7 +825,11 @@ class RA_Harness(object):
         test_list = []
 
         if self.cmdargs.test_name:
-            test_name_re = re.compile(self.cmdargs.test_name)
+            try:
+                test_name_re = re.compile(self.cmdargs.test_name)
+            except:
+                print("INVALID REGULAR EXPRESSION: \"%s\"" % self.cmdargs.test_name )
+                sys.exit(1)
         else:
             test_name_re = None
             if self.cmdargs.test_list:
@@ -834,9 +886,7 @@ class RA_Harness(object):
             logger.info("found %d job(s), starting execution" % len(self.queue))
             self.run_queue()
             logger.info("DONE")
-            for test in self.queue:
-                logger.info("job %s status %s result %s" % ( test.test_name, test.status_string, test.result ))
-
+            self.print_queue(log=True)
 
 
 def main():
@@ -893,6 +943,8 @@ def main():
     # List of specific tests to be run
     # Should only be used in 'run' mode
     parser.add_argument('--tests', nargs='+', dest='test_list', help="List of specific tests (racfg file name(s) w/o extension) to be run")
+
+    parser.add_argument('--update', dest='display_interval', type=int, default=60)
 
     cmdargs = parser.parse_args()
     cmdargs.logdir = os.path.abspath(cmdargs.logdir)

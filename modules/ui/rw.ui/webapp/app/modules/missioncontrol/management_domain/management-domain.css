@@ -113,7 +113,7 @@
     margin-top: 36px;
     text-align: center;
 }
-.form-actions a {
+.form-actions a, .form-actions button {
     color: #000000;
     display: inline-block;
     font-size: 12px;
@@ -121,8 +121,9 @@
     text-decoration: none;
     text-transform: uppercase;
     box-shadow: 2px 2px rgba(0, 0, 0, 0.15);
+    cursor:pointer;
 }
-.form-actions a.save {
+.form-actions button.save {
     background-color: #ffffff;
     border: 1px solid #cccccc;
     border-top: 0;

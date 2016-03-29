@@ -778,6 +778,9 @@ rwlog_mgmt_handle_colony_request_dts (const rwdts_xact_info_t* xact_info,
 
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   RWPB_T_MSG(RwlogMgmt_data_Logging) *Config;
   rwdts_member_rsp_code_t status = RWDTS_ACTION_OK;
   RWPB_T_MSG(RwBase_ReturnStatus) ret_status;
@@ -829,7 +832,7 @@ rwlog_mgmt_handle_colony_request_dts (const rwdts_xact_info_t* xact_info,
 //      rwlog_handle_show_request_dts(xact,queryh,evt,key,instance,Config);
       break;
     default:
-      RW_ASSERT(0);
+      return RWDTS_ACTION_NOT_OK;
   }
   return status;
 }
@@ -856,6 +859,9 @@ rwlog_mgmt_handle_log_request_dts (const rwdts_xact_info_t* xact_info,
                                    void *getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_member_rsp_code_t status = RWDTS_ACTION_OK;
   RWPB_T_MSG(RwlogMgmt_input_LogEvent) *log_action;
   RWPB_T_MSG(RwBase_ReturnStatus) ret_status;
@@ -866,6 +872,9 @@ rwlog_mgmt_handle_log_request_dts (const rwdts_xact_info_t* xact_info,
   }
   int r  = asprintf (&name, "%s", "RW.CLI"); /* Only single CLI sink supported for now */
   RW_ASSERT(r);
+  if (!r) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   log_action = (RWPB_T_MSG(RwlogMgmt_input_LogEvent) *) msg;
 
@@ -1076,6 +1085,9 @@ rw_status_t rwlog_mgmt_fetch_logs(rwlogd_instance_ptr_t instance,
 
   log->logs = malloc( sizeof(RWPB_T_MSG(RwLog_output_ShowLogsInternal_Logs) *) * logs_count);
   RW_ASSERT(log->logs);
+  if (!log->logs) {
+    return RW_STATUS_FAILURE;
+  }
   for (i=0; i < CIRCULAR_BUFFER_FACTOR * CLI_MAX_LOG_LINES && log->n_logs < logs_count && position != -1; i++, position+=(log_input->has_tail)?-1:1) {
     log_msgs = (RWPB_T_MSG(RwLog_output_ShowLogsInternal_Logs) *)RW_MALLOC(sizeof(RWPB_T_MSG(RwLog_output_ShowLogsInternal_Logs)));
     RWPB_F_MSG_INIT(RwLog_output_ShowLogsInternal_Logs,log_msgs);
@@ -1240,13 +1252,22 @@ static rwdts_member_rsp_code_t rwlog_mgmt_handle_log_query_debug(const rwdts_xac
     uint32_t cat;
     log->severity_output = RW_MALLOC(log->n_severity_output*sizeof(void *));
     RW_ASSERT(log->severity_output); 
+    if (!log->severity_output) {
+      return RWDTS_ACTION_NOT_OK;
+    }
     for (cat = 0; cat < log->n_severity_output; cat++) {
       log->severity_output[cat]=RW_MALLOC(sizeof(RWPB_T_MSG(RwlogMgmt_output_ShowLogs_SeverityOutput)));
       RW_ASSERT(log->severity_output[cat]);
+      if (!log->severity_output[cat]) {
+        return RWDTS_ACTION_NOT_OK;
+      }
       RWPB_F_MSG_INIT(RwlogMgmt_output_ShowLogs_SeverityOutput,log->severity_output[cat]);
       severity = rwlogd_sink_get_severity(instance, cat);
       asprintf(&log->severity_output[cat]->severity_info, "%s:%s", cat_list[cat],seve[severity]);
       RW_ASSERT(log->severity_output[cat]->severity_info);
+      if (!log->severity_output[cat]->severity_info) {
+        return RWDTS_ACTION_NOT_OK;
+      }
     }
   }
 
@@ -1271,7 +1292,8 @@ static rwdts_member_rsp_code_t rwlog_mgmt_handle_log_query_debug(const rwdts_xac
     RW_FREE(log->severity_output);
   }
   RW_FREE(log);
-  return RWDTS_ACTION_OK;
+ 
+  return ((rs_status==RW_STATUS_SUCCESS)?RWDTS_ACTION_OK:RWDTS_ACTION_NOT_OK);
 }
 
 static rwdts_member_rsp_code_t
@@ -1283,7 +1305,13 @@ rwlog_mgmt_handle_log_query_dts (const rwdts_xact_info_t* xact_info,
                                  void *getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   RW_ASSERT(msg);  
+  if (!msg) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   RWPB_T_MSG(RwlogMgmt_input_ShowLogs) *log_input = (RWPB_T_MSG(RwlogMgmt_input_ShowLogs) *)msg;
 
@@ -1313,7 +1341,13 @@ rwlog_mgmt_handle_log_query_dts_internal (const rwdts_xact_info_t* xact_info,
                                  void *getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   RW_ASSERT(msg); 
+  if (!msg) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   rwdts_member_rsp_code_t status = RWDTS_ACTION_OK;
   ProtobufCMessage *msgs[1];
@@ -1366,11 +1400,6 @@ rwlog_mgmt_handle_log_query_dts_internal (const rwdts_xact_info_t* xact_info,
       if (log->logs[i]->pdu_detail) {
         RW_FREE(log->logs[i]->pdu_detail);
       }
-#if 0 //FIXME SHAJI
-      if (log->logs[i]->msg_id) {
-        RW_FREE(log->logs[i]->msg_id);
-      }
-#endif
       if (log->logs[i]->msg) {
         RW_FREE(log->logs[i]->msg);
       }
@@ -1388,6 +1417,9 @@ rwlog_mgmt_handle_log_query_dts_internal (const rwdts_xact_info_t* xact_info,
     RW_FREE(log->log_summary);
   }
   RW_FREE(log);
+  if (rs_status != RW_STATUS_SUCCESS) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   return status;
 }
 
@@ -1429,20 +1461,21 @@ rwlog_mgmt_lead_update_internal(rwdts_xact_t*           xact,
   //int i = 0;
 
   RW_ASSERT(instance);
+  if (!instance) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   if (dtsreq){
     RW_ASSERT(dtsreq->base.descriptor ==
               RWPB_G_MSG_PBCMD(RwLog_data_RwlogdInstance_TaskId));
+    if (dtsreq->base.descriptor !=
+              RWPB_G_MSG_PBCMD(RwLog_data_RwlogdInstance_TaskId)) {
+      return RWDTS_ACTION_NOT_OK;
+    }
   }
   
   switch (action) {
     case RWDTS_QUERY_CREATE:
     case RWDTS_QUERY_UPDATE:
-
-#if 0
-      for(i=0;i<dtsreq->n_task_id;i++) {
-        rwlogd_add_node_to_list(instance,dtsreq->task_id[i]->id);
-      }
-#endif
       rwlogd_add_node_to_list(instance,dtsreq->id);
       break;
     case RWDTS_QUERY_DELETE:
@@ -1450,7 +1483,7 @@ rwlog_mgmt_lead_update_internal(rwdts_xact_t*           xact,
     case RWDTS_QUERY_READ:
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
   }
   return RWDTS_ACTION_OK;
 }
@@ -1464,6 +1497,9 @@ rwlog_mgmt_lead_update(const rwdts_xact_info_t*      xact_info,
                           uint32_t credits,
                           void *getnext_ptr)
 {
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   RW_ASSERT(xact_info);
   return rwlog_mgmt_lead_update_internal(xact_info->xact, action,
                                             xact_info->event, 
@@ -1483,7 +1519,7 @@ rwlog_mgmt_lead_cache_update(rwdts_member_reg_handle_t regh,
                                             ks, msg, ctx);
   RW_ASSERT(code == RWDTS_ACTION_OK);
   if (code != RWDTS_ACTION_OK){
-    RW_ASSERT(0);
+    RW_CRASH();
   }
   return;
 }
@@ -1542,10 +1578,7 @@ rwlog_mgmt_lead_registration_complete(rwdts_member_reg_handle_t regh,
 static void rwlog_dynamic_schema_registration_cb(
       void * app_instance,
       const int batch_size,
-      char ** module_names,
-      char ** fxs_filenames,
-      char ** so_filenames,
-      char ** yang_filenames)
+      rwdynschema_module_t * modules)
 {
   rwlogd_instance_ptr_t instance = (rwlogd_instance_ptr_t) app_instance;
 
@@ -1554,10 +1587,7 @@ static void rwlog_dynamic_schema_registration_cb(
   
   rw_status_t status = rwlogd_handle_dynamic_schema_update(instance,
                                                            batch_size,
-                                                           module_names,
-                                                           fxs_filenames,
-                                                           so_filenames,
-                                                           yang_filenames);
+                                                           modules);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
 
   instance->dynschema_app_state = RW_MGMT_SCHEMA_APPLICATION_STATE_READY;
@@ -1630,8 +1660,11 @@ rwlog_dynamic_schema_registration(rwlogd_instance_ptr_t instance)
 
   /* Register for Dynamic schema updates */
   instance->dynschema_reg_handle = rwdynschema_instance_register(instance->dts_h,
-                                                                 rwlog_dynamic_schema_registration_cb,instance->instance_name,
-                                                                 instance,NULL);
+                                                                 rwlog_dynamic_schema_registration_cb,
+                                                                 instance->instance_name,
+                                                                 RWDYNSCHEMA_APP_TYPE_OTHER,
+                                                                 instance,
+                                                                 NULL);
 
   return RW_STATUS_SUCCESS;
 }

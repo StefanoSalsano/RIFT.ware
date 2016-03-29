@@ -9,6 +9,12 @@ import time
 import uuid
 from enum import Enum
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
 
 from gi.repository import (
     RwDts as rwdts,
@@ -46,12 +52,7 @@ class ResourceMgrConfig(object):
 
         def on_delete_cloud_account_apply(account_name):
             self._log.debug("Received on_delete_cloud_account_apply: %s", account_name)
-            try:
-                self._parent.delete_cloud_account_config(account_name)
-            except Exception as e:
-                print(e)
-                import traceback
-                traceback.print_exc()
+            self._parent.delete_cloud_account_config(account_name)
 
         @asyncio.coroutine
         def on_delete_cloud_account_prepare(account_name):

@@ -18,6 +18,10 @@ import io
 import sys
 import unittest
 import gi
+
+import gi
+gi.require_version('RwTrace', '1.0')
+
 from gi.repository import RwTrace
 import xmlrunner
 

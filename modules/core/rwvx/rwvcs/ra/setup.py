@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # 
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved

@@ -25,6 +25,9 @@ export default {
 	isList(property = {}) {
 		return /list|leaf-list/.test(property.type);
 	},
+	isLeafList(property = {}) {
+		return property.type === 'leaf-list';
+	},
 	isArray(property = {}) {
 		// give '1' or '0..N' or '0..1' or '0..5' determine if represents an array
 		// '0..1' is not an array
@@ -47,6 +50,10 @@ export default {
 	},
 	isSimpleList(property = {}) {
 		return _.contains(DescriptorModelFields.simpleList, property.name);
+	},
+	isPrimativeDataType(property = {}) {
+		const Property = this;
+		return /string|int/.test(property['data-type']) || Property.isEnumeration(property) || Property.isGuid(property);
 	},
 	defaultValue(property = {}) {
 		if (property.defaultValue) {
@@ -80,21 +87,27 @@ export default {
 		}
 		return Object.keys(enumeration).map(enumName => {
 			let enumValue = enumName;
-			const enumObj = enumeration[enumName];
-			if (enumObj) {
-				enumValue = enumObj.value || enumName;
-			}
+			// warn we only support named enums and systematically ignore enum values
+			//const enumObj = enumeration[enumName];
+			//if (enumObj) {
+			//	enumValue = enumObj.value || enumName;
+			//}
 			return {name: enumName, value: enumValue, isSelected: String(enumValue) === String(value)};
 		});
+	},
+	isGuid(property = {}) {
+		const type = property['data-type'];
+		if (typeof type === 'object' && type.leafref && type.leafref.path) {
+			return /\bid$/.test(type.leafref.path);
+		}
+		return /uuid/.test(property['data-type']);
 	},
 	createModelInstance(property) {
 		const Property = this;
 		const defaultValue = Property.defaultValue.bind(this);
 		function createModel(uiState, parentMeta) {
 			const model = {};
-			if (Property.isList(uiState)) {
-				return [];
-			} else if (uiState.type === 'leaf') {
+			if (Property.isLeaf(uiState)) {
 				if (uiState.name === 'name') {
 					return changeCase.param(parentMeta.name) + '-' + InstanceCounter.count(parentMeta[':qualified-type']);
 				}
@@ -111,6 +124,8 @@ export default {
 					}
 				}
 				return defaultValue(uiState);
+			} else if (Property.isList(uiState)) {
+				return [];
 			} else {
 				uiState.properties.forEach(p => {
 					model[p.name] = createModel(p, uiState);
@@ -119,15 +134,18 @@ export default {
 			return model;
 		}
 		if (property) {
+			if (Property.isPrimativeDataType(property)) {
+				return defaultValue(property);
+			}
 			if (property.type === 'leaf') {
 				return defaultValue(property);
 			}
-			if (property.type === 'list') {
+			if (/list/.test(property.type)) {
 				property.type = 'container';
 			}
 			const modelInstance = createModel(property, property);
 			modelInstance.uiState = {type: property.name};
-			const modelFragment = DescriptorTemplateFactory.createModelForType(property.name) || {};
+			const modelFragment = DescriptorTemplateFactory.createModelForType(property[':qualified-type'] || property.name) || {};
 			Object.assign(modelInstance, modelFragment);
 			return modelInstance;
 		}

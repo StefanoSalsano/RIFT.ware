@@ -94,8 +94,10 @@ export default class DescriptorModel {
 	}
 
 	get title() {
-		return this.model['short-name'] || this.model.name;
+		return this.model['short-name'] || this.model.name || this.key;
 	}
+
+	// title is read only by design
 
 	get name() {
 		return this.model.name;
@@ -250,9 +252,14 @@ export default class DescriptorModel {
 
 	get displayData() {
 		return {
-			name: this.model.name,
-			type: this.model.type
+			title: this.title,
+			type: this.model.type,
+			cpNumber: this.cpNumber
 		};
+	}
+
+	valueOf() {
+		return this.model;
 	}
 
 	updateModelList(modelFieldName, modelFieldValue, descriptorClass = DescriptorModel, newItemAddedSuccessCallback = () => {}) {
@@ -263,7 +270,7 @@ export default class DescriptorModel {
 		}
 		const size = this.model[modelFieldName].length;
 		if (modelFieldValue instanceof descriptorClass) {
-			this.model[modelFieldName].push(modelFieldValue.model);
+			this.model[modelFieldName].push(modelFieldValue.valueOf());
 			newItemAddedSuccessCallback(modelFieldValue);
 		} else if (typeof modelFieldValue === 'object') {
 			this.model[modelFieldName].push(modelFieldValue);

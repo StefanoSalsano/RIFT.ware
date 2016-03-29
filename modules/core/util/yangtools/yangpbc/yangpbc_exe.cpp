@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
       RW_ASSERT_NOT_REACHED();
   }
 
-  pc = pbmodel.output_doc_user_file(out_basename);
+  pc = pbmodel.output_doc_user_file(doc_file_t::TEXT, out_basename);
   switch (pc) {
     case parser_control_t::DO_NEXT:
       break;
@@ -145,7 +145,33 @@ int main(int argc, char *argv[])
       RW_ASSERT_NOT_REACHED();
   }
 
-  pc = pbmodel.output_doc_api_file(out_basename);
+  pc = pbmodel.output_doc_api_file(doc_file_t::TEXT, out_basename);
+  switch (pc) {
+    case parser_control_t::DO_NEXT:
+      break;
+    case parser_control_t::DO_SKIP_TO_SIBLING:
+    case parser_control_t::DO_REDO:
+      std::cout << "Failed to generate API documentation file" << std::endl;
+      ret_status = 3;
+      break;
+    default:
+      RW_ASSERT_NOT_REACHED();
+  }
+
+  pc = pbmodel.output_doc_user_file(doc_file_t::HTML, out_basename);
+  switch (pc) {
+    case parser_control_t::DO_NEXT:
+      break;
+    case parser_control_t::DO_SKIP_TO_SIBLING:
+    case parser_control_t::DO_REDO:
+      std::cout << "Failed to generate user documentation file" << std::endl;
+      ret_status = 3;
+      break;
+    default:
+      RW_ASSERT_NOT_REACHED();
+  }
+
+  pc = pbmodel.output_doc_api_file(doc_file_t::HTML, out_basename);
   switch (pc) {
     case parser_control_t::DO_NEXT:
       break;

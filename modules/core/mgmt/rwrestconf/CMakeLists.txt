@@ -23,11 +23,15 @@ rift_python_install_tree(
     rift/restconf/util/util.py
     rift/restconf/util/web.py
     rift/restconf/util/xml.py
+    rift/restconf/util/watchdog_status.py
     rift/restconf/webserver/__init__.py
     rift/restconf/webserver/configuration.py
     rift/restconf/webserver/http_handler.py
+    rift/restconf/webserver/logout_handler.py
     rift/restconf/webserver/netconf_wrapper.py    
     rift/restconf/webserver/statistics.py
+    rift/restconf/webserver/event_source.py
+    rift/restconf/webserver/state_provider.py
     rift/tasklets/restconf/__init__.py
     rift/tasklets/restconf/restconf.py
     rift/tasklets/restportforward/__init__.py

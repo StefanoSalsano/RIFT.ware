@@ -59,6 +59,7 @@
 #include <rwdts_redis.h>
 #include <sys/prctl.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include <rwdts_appconf_api.h>
 
 using ::testing::HasSubstr;
@@ -317,7 +318,7 @@ protected:
         ASSERT_NE(ti->dts, (void*)NULL);
         break;
       case TASKLET_BROKER:
-        rwmsg_broker_main(0, 1, 0, tenv.rwsched, ti->tasklet, NULL, TRUE/*mainq*/, &ti->bro);
+        rwmsg_broker_main(0, 1, 0, tenv.rwsched, ti->tasklet, NULL, TRUE/*mainq*/, NULL, &ti->bro);
         ASSERT_NE(ti->bro, (void*)NULL);
         break;
       case TASKLET_NONMEMBER:
@@ -349,7 +350,7 @@ protected:
             WIFSIGNALED(status)?'Y':'N',  WIFSIGNALED(status) ?WTERMSIG(status):0);
 
     if (!tenv.child_killed && signal==SIGCHLD) {
-      RW_ASSERT(0);
+      RW_CRASH();
     }
   }
 
@@ -819,7 +820,7 @@ memberapi_test_prepare(const rwdts_xact_info_t* xact_info,
     return RWDTS_ACTION_OK;
 
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }

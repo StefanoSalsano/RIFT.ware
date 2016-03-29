@@ -84,13 +84,17 @@ export default class ForwardingGraph extends DescriptorModel {
 
 	remove() {
 		if (this.parent) {
-			// nothing for vnffgd to do so let the parent remove this instance
 			return this.parent.removeVnffgd(this);
 		}
 	}
 
 	getColor() {
 
+	}
+
+	createClassifierForRecordServicePath(rsp) {
+		const classifier = this.createClassifier();
+		classifier.model['rsp-id-ref'] = rsp.id;
 	}
 
 	removeVnfdConnectionPointRefForVnfdIndex(vnfdIndex) {

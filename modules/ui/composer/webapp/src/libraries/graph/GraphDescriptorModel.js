@@ -6,10 +6,11 @@
 import d3 from 'd3'
 import ColorGroups from '../ColorGroups'
 import PathBuilder from '../graph/PathBuilder'
-import SelectionManager from '../SelectionManager.js'
 import DescriptorModelFactory from '../model/DescriptorModelFactory'
 import DescriptorGraphSelection from './DescriptorGraphSelection'
 import CatalogItemsActions from '../../actions/CatalogItemsActions'
+import HighlightRecordServicePaths from './HighlightRecordServicePaths'
+import ComposerAppActions from '../../actions/ComposerAppActions'
 
 import '../../styles/GraphDescriptorModel.scss'
 
@@ -77,18 +78,27 @@ export default class GraphDescriptorModel {
 				}
 
 				if (success) {
-					CatalogItemsActions.catalogItemDescriptorChanged.defer(container.getRoot());
+					CatalogItemsActions.catalogItemDescriptorChanged(container.getRoot());
 				} else {
 					d3.event.preventDefault();
 				}
 
 				d3.event.stopPropagation();
 
+			}).call(this.dragHandler);
+
+		box.append('path')
+			.attr({
+				class: d => d.type + '-descriptor-model-background-layer background-layer',
+				d: descriptorPath,
+				fill: ColorGroups.common.background,
+				stroke: ColorGroups.common.background,
+				'stroke-width': '2px'
 			});
 
 		box.append('path')
 			.attr({
-				class: d => d.type + '-descriptor-model-background',
+				class: d => d.type + '-descriptor-model-background background',
 				d: descriptorPath,
 				fill: d => `url(#${d.type}-descriptor-model-badge-fill)`,
 				stroke: 'transparent',
@@ -97,7 +107,7 @@ export default class GraphDescriptorModel {
 
 		box.append('path')
 			.attr({
-				class: d => d.type + '-descriptor-model-border',
+				class: d => d.type + '-descriptor-model-border border',
 				d: descriptorPath,
 				fill: 'transparent',
 				stroke: d => ColorGroups.getColorPairForType(d.type).secondary,
@@ -133,7 +143,7 @@ export default class GraphDescriptorModel {
 				'text-anchor': 'middle',
 				x: (d) => {
 					const left = 0;
-					const widthOffset = d.position.width / 2;
+					const widthOffset = (d.position.width / 2) + 20;
 					return left + widthOffset;
 				},
 				y: (d) => {
@@ -145,6 +155,40 @@ export default class GraphDescriptorModel {
 				}
 			});
 
+		box.each(function (d) {
+			if (DescriptorModelFactory.isForwardingGraph(d)) {
+				const box = d3.select(this);
+
+				d.rsp.forEach((rsp, i) => {
+					const colorLegend = box.append('g').attr({
+						class:d => d.type + '-rsp-color-legend color-legend',
+						transform: d => {
+							const widthOffset = d.position.width - 20 - (i * 26);
+							const heightOffset = d.position.height - 10;
+							return `translate(${widthOffset}, ${heightOffset})`;
+						}
+					});
+					colorLegend.append('ellipse').classed('colors', true).attr({
+						rx: 12,
+						ry: 7.5,
+						fill: d => d.colors && d.colors.primary,
+						stroke: d => d.colors && d.colors.secondary
+					}).on('mouseenter', function (d) {
+						HighlightRecordServicePaths.highlightPaths(rsp);
+					}).on('mouseout', function () {
+						HighlightRecordServicePaths.removeHighlighting();
+					}).on('mouseleave', function () {
+						HighlightRecordServicePaths.removeHighlighting();
+					}).on('click', function () {
+						d3.event.preventDefault();
+						ComposerAppActions.selectModel(rsp);
+					});
+				});
+
+			}
+		});
+
+
 		// ENTER & UPDATE
 		descriptor.attr({
 			transform: d => {
@@ -152,7 +196,7 @@ export default class GraphDescriptorModel {
 				const y = d.position.top;
 				return 'translate(' + x + ', ' + y + ')';
 			}
-		}).call(this.dragHandler);
+		});
 
 		descriptor.select('text.title')
 			.text(d => {

@@ -87,3 +87,12 @@ curl -D /dev/stdout \
      -X GET http://${restconfIp}:${restconfPort}/api/operational/tasklet?deep
 echo ""
 echo ""
+
+echo "-- GET /api/schema/rw-base:vcs"
+echo ""
+curl -D /dev/stdout \
+  -H "Content-Type: application/json" \
+  -H "Accept-Type: application/json" \
+  -X GET http://${restconfIp}:${restconfPort}/api/schema/rw-base:vcs
+echo ""
+echo ""

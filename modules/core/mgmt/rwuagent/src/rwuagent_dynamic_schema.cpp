@@ -24,32 +24,21 @@ rwdynschema_dynamic_schema_registration_t *AgentDynSchemaHelper::dyn_schema_reg_
 std::mutex AgentDynSchemaHelper::schema_lck_;
 
 
-Module::Module(std::string module_name_,
-               std::string fxs_filename_,
-               std::string so_filename_,
-               std::string yang_filename_,
-               std::string revision_)
+Module::Module(const std::string& module_name_,
+               const std::string& fxs_filename_,
+               const std::string& so_filename_,
+               const std::string& yang_filename_,
+               const std::string& metainfo_filename_,
+               const std::string& revision_,
+               bool exported_)
     : module_name(module_name_),
       fxs_filename(fxs_filename_),
       so_filename(so_filename_),
       yang_filename(yang_filename_),
-      revision(revision_)
+      metainfo_filename(metainfo_filename_),
+      revision(revision_),
+      exported(exported_)
 {
-  // empty
-}
-
-Module::Module(char * module_name_,
-               char * fxs_filename_,
-               char * so_filename_,
-               char * yang_filename_,
-               char * revision_)
-    : module_name(module_name_),
-      fxs_filename(fxs_filename_),
-      so_filename(so_filename_),
-      yang_filename(yang_filename_),
-      revision(revision_)
-{
-  // empty
 }
 
 DynamicSchemaDriver::DynamicSchemaDriver(Instance * agent_instance, rwdts_api_t * dts_handle)
@@ -160,7 +149,9 @@ rwdts_member_rsp_code_t DynamicSchemaDriver::config_state_change(const rwdts_xac
         std::string(module->module->fxs_filename),
         std::string(module->module->so_filename),
         std::string(module->module->yang_filename),
-        std::string(module->revision));
+        std::string(module->module->metainfo_filename),
+        std::string(module->revision),
+        module->module->exported);
 
   }
 
@@ -281,9 +272,12 @@ void PendingLoad::update_batch_state(RwMgmtSchema__YangEnum__ModuleState__E new_
     dynamic_module.state = new_state;
     dynamic_module.has_state = 1;
     
-    dynamic_module_contents.fxs_filename = RW_STRDUP(module.fxs_filename.c_str());
-    dynamic_module_contents.so_filename = RW_STRDUP(module.so_filename.c_str());
-    dynamic_module_contents.yang_filename = RW_STRDUP(module.yang_filename.c_str());
+    dynamic_module_contents.fxs_filename      = RW_STRDUP(module.fxs_filename.c_str());
+    dynamic_module_contents.so_filename       = RW_STRDUP(module.so_filename.c_str());
+    dynamic_module_contents.yang_filename     = RW_STRDUP(module.yang_filename.c_str());
+    dynamic_module_contents.metainfo_filename =  RW_STRDUP(module.metainfo_filename.c_str());
+    dynamic_module_contents.exported = module.exported;
+    dynamic_module_contents.has_exported = true;
 
     std::string xpath = "D,/rw-mgmt-schema:rw-mgmt-schema-state/rw-mgmt-schema:dynamic-modules[name='"
                         + module.module_name
@@ -419,10 +413,12 @@ void PendingLoad::initiate_load(rwdts_xact_t * xact,
       dynamic_module.state = RW_MGMT_SCHEMA_MODULE_STATE_LOADING_APPS;
       dynamic_module.has_state = 1;
       
-      dynamic_module_contents.fxs_filename = RW_STRDUP(module.fxs_filename.c_str());
-      dynamic_module_contents.so_filename = RW_STRDUP(module.so_filename.c_str());
-      dynamic_module_contents.yang_filename = RW_STRDUP(module.yang_filename.c_str());
-
+      dynamic_module_contents.fxs_filename      = RW_STRDUP(module.fxs_filename.c_str());
+      dynamic_module_contents.so_filename       = RW_STRDUP(module.so_filename.c_str());
+      dynamic_module_contents.yang_filename     = RW_STRDUP(module.yang_filename.c_str());
+      dynamic_module_contents.metainfo_filename = RW_STRDUP(module.metainfo_filename.c_str());
+      dynamic_module_contents.exported = module.exported;
+      dynamic_module_contents.has_exported = true;
 
       RWPB_T_PATHENTRY(RwMgmtSchema_data_RwMgmtSchemaState_DynamicModules) ks =
           *(RWPB_G_PATHENTRY_VALUE(RwMgmtSchema_data_RwMgmtSchemaState_DynamicModules));
@@ -554,6 +550,7 @@ AgentDynSchemaHelper::register_schema_updates(Instance* agent_inst)
   dyn_schema_reg_h_ = rwdynschema_instance_register(agent_inst->dts_api(),
                                                     AgentDynSchemaHelper::dynamic_schema_reg_cb,
                                                     agent_inst->instance_name_.c_str(),
+                                                    RWDYNSCHEMA_APP_TYPE_AGENT,
                                                     agent_inst,
                                                     nullptr);
   if (dyn_schema_reg_h_ == nullptr) {
@@ -658,19 +655,15 @@ void
 AgentDynSchemaHelper::dynamic_schema_reg_cb(
     void * app_instance,
     int numel,
-    char ** module_names,
-    char ** /*fxs_filenames*/,
-    char ** so_filenames,
-    char ** /*yang_filenames*/)
+    rwdynschema_module_t * modules)
 {
-  RW_ASSERT(module_names && so_filenames);
+  RW_ASSERT(modules);
 
   std::lock_guard<std::mutex> _(schema_lck_);
   auto *agent_inst = reinterpret_cast<Instance*>(app_instance);
 
   agent_inst->handle_dynamic_schema_update(numel,
-                                           module_names,
-                                           so_filenames);
+                                           modules);
 
   return;
 }

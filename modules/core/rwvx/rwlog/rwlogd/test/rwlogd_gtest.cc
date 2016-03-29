@@ -110,7 +110,7 @@ rwlogd_instance_ptr_t rwlogd_gtest_allocate_instance_internal(int instance_id, b
                             inst->rwtasklet_info->rwtrace_instance, NULL);
   //ASSERT_TRUE(inst->rwtasklet_info->rwmsg_endpoint != NULL);
 
-  rwlogd_start_tasklet(inst, dts_required,rwlog_filename,filter_shm_name,"rw-composite");
+  rwlogd_start_tasklet(inst, dts_required,rwlog_filename,filter_shm_name,"rw-logtest");
 
   RWLOG_DEBUG_PRINT ("**starting test case %p \n", inst->rwlogd_info);
 
@@ -3904,6 +3904,8 @@ TEST(RwLogdGroup10, LogCheckPoint)
   TEST_DESCRIPTION("10.1 This test verifies Log Checkpoint");
   rwlogd_instance_ptr_t inst = rwlogd_gtest_allocate_instance(1, false);
   int i = 0;
+  uint32_t log_count = 0;
+  uint32_t inactive_log_count = 0;
   #define LOG_SIZE 430
 
   inst->rwlogd_info->log_buffer_size = LOG_SIZE * 3;
@@ -3940,9 +3942,15 @@ TEST(RwLogdGroup10, LogCheckPoint)
   log_input->has_count = TRUE; log_input->count = 1000;
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
-  EXPECT_EQ(log_output->n_logs, 3); EXPECT_EQ(stats.cur_size,log_output->n_logs);
+  log_count = stats.cur_size;
+
+  EXPECT_LOG_TRUE(log_output->n_logs == 2 || log_output->n_logs == 3); 
+  EXPECT_EQ(stats.cur_size,log_output->n_logs);
   for (uint32_t i = 0; i < log_output->n_logs; i++) {
     EXPECT_LOG_TRUE(rwlog_validate_log_header(log_output->logs[i]->msg));
+    if (verbose) {
+      printf("%s\n", log_output->logs[i]->msg);
+    }
   }
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -3965,6 +3973,8 @@ TEST(RwLogdGroup10, LogCheckPoint)
   /* Checkpoint the 3 logs Fetch inactive and expect to get 3 logs  */
 
   EXPECT_LOG_TRUE(RW_STATUS_SUCCESS == rwlogd_chkpt_logs(inst));
+  inactive_log_count = log_count;
+  log_count = 0;
   EXPECT_EQ(inst->rwlogd_info->stats.chkpt_stats,1);
   log_input =
       (RWPB_T_MSG(RwlogMgmt_input_ShowLogs) *) RW_MALLOC0(sizeof(RWPB_T_MSG(RwlogMgmt_input_ShowLogs)));
@@ -3976,7 +3986,7 @@ TEST(RwLogdGroup10, LogCheckPoint)
   log_input->has_inactive = 1;
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
-  EXPECT_EQ(log_output->n_logs, 3);
+  EXPECT_EQ(log_output->n_logs, inactive_log_count);
   protobuf_free(log_output);
   protobuf_free(log_input);
   
@@ -3991,7 +4001,7 @@ TEST(RwLogdGroup10, LogCheckPoint)
   log_input->has_count = TRUE; log_input->count = 1000;
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
-  EXPECT_EQ(log_output->n_logs, 3);
+  EXPECT_EQ(log_output->n_logs, inactive_log_count);
   protobuf_free(log_output);
   protobuf_free(log_input);
 
@@ -4011,6 +4021,7 @@ TEST(RwLogdGroup10, LogCheckPoint)
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs, 0);
+  inactive_log_count = 0;
   protobuf_free(log_output);
   protobuf_free(log_input);
  
@@ -4032,7 +4043,9 @@ TEST(RwLogdGroup10, LogCheckPoint)
 /* Generate 5 logs and overwrite the current circular buffer
   show log should still show the 3 latest logs */
   
-  for (i = 0; i < 5; i++) {EXPECT_LOG_TRUE(rwlogtest_event(ctxt, 2));}
+  for (i = 0; i < 5; i++) {
+    EXPECT_LOG_TRUE(rwlogtest_event(ctxt, 2));
+  }
   rwsched_dispatch_main_until(inst->rwtasklet_info->rwsched_tasklet_info, 0.2, NULL);
 
   log_input =
@@ -4044,7 +4057,13 @@ TEST(RwLogdGroup10, LogCheckPoint)
   log_input->has_count = TRUE; log_input->count = 1000;
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
-  EXPECT_EQ(log_output->n_logs, 3);
+  EXPECT_LOG_TRUE(log_output->n_logs == 2 || log_output->n_logs == 3);
+  log_count = log_output->n_logs;
+  for(uint32_t i=0;i<log_output->n_logs;i++) {
+    if (verbose) {
+      printf("%s\n", log_output->logs[i]->msg);
+    }
+  }
   protobuf_free(log_output);
   protobuf_free(log_input);
 
@@ -4052,7 +4071,11 @@ TEST(RwLogdGroup10, LogCheckPoint)
      and show log inactive should show 3 */
 
   EXPECT_LOG_TRUE(RW_STATUS_SUCCESS == rwlogd_chkpt_logs(inst));
-  for (i = 0; i < 5; i++) {EXPECT_LOG_TRUE(rwlogtest_event(ctxt, 1));}
+  inactive_log_count = log_count;
+  log_count = 0;
+  for (i = 0; i < 5; i++) {
+    EXPECT_LOG_TRUE(rwlogtest_event(ctxt, 1));
+  }
   rwsched_dispatch_main_until(inst->rwtasklet_info->rwsched_tasklet_info, 0.2, NULL);
 
   log_input =
@@ -4063,7 +4086,9 @@ TEST(RwLogdGroup10, LogCheckPoint)
   RWPB_F_MSG_INIT(RwLog_output_ShowLogsInternal, log_output);
   log_input->has_count = TRUE; log_input->count = 1000;
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
-  EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS); EXPECT_EQ(log_output->n_logs, 6);
+  EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS); 
+  EXPECT_LOG_TRUE(log_output->n_logs == 6 || log_output->n_logs == 5 || log_output->n_logs == 4);
+  log_count = log_output->n_logs;
   for (uint32_t i = 0; i < log_output->n_logs; i++) {
     EXPECT_LOG_TRUE(rwlog_validate_log_header(log_output->logs[i]->msg));
   }
@@ -4079,7 +4104,7 @@ TEST(RwLogdGroup10, LogCheckPoint)
   log_input->has_count = TRUE; log_input->count = 1000;
   log_input->has_inactive = 1;
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
-  EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS); EXPECT_EQ(log_output->n_logs, 3);
+  EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS); EXPECT_EQ(log_output->n_logs, inactive_log_count);
   for (uint32_t i = 0; i < log_output->n_logs; i++) {
     EXPECT_LOG_TRUE(rwlog_validate_log_header(log_output->logs[i]->msg));
   }
@@ -4089,7 +4114,9 @@ TEST(RwLogdGroup10, LogCheckPoint)
   /* Generate another 5 logs , show-logs should give 6 logs and show logs inactive 
      should still say 3 logs
    */
-  for (i = 0; i < 5; i++) {EXPECT_LOG_TRUE(rwlogtest_event(ctxt, 2));}
+  for (i = 0; i < 5; i++) {
+    EXPECT_LOG_TRUE(rwlogtest_event(ctxt, 2));
+  }
   rwsched_dispatch_main_until(inst->rwtasklet_info->rwsched_tasklet_info, 0.2, NULL);
   log_input =
       (RWPB_T_MSG(RwlogMgmt_input_ShowLogs) *) RW_MALLOC0(sizeof(RWPB_T_MSG(RwlogMgmt_input_ShowLogs)));
@@ -4099,7 +4126,9 @@ TEST(RwLogdGroup10, LogCheckPoint)
   RWPB_F_MSG_INIT(RwLog_output_ShowLogsInternal, log_output);
   log_input->has_count = TRUE; log_input->count = 1000;
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
-  EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS); EXPECT_EQ(log_output->n_logs, 6);
+  EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS); 
+  EXPECT_LOG_TRUE(log_output->n_logs == 6 || log_output->n_logs == 5 || log_output->n_logs == 4);
+  log_count = log_output->n_logs;
   for (uint32_t i = 0; i < log_output->n_logs; i++) {
     EXPECT_LOG_TRUE(rwlog_validate_log_header(log_output->logs[i]->msg));
   }
@@ -4115,7 +4144,8 @@ TEST(RwLogdGroup10, LogCheckPoint)
   log_input->has_count = TRUE; log_input->count = 1000;
   log_input->has_inactive = 1;
   status = rwlog_mgmt_fetch_logs (inst, log_input, log_output);
-  EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS); EXPECT_EQ(log_output->n_logs, 3);
+  EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS); 
+  EXPECT_EQ(log_output->n_logs,inactive_log_count);
   for (uint32_t i = 0; i < log_output->n_logs; i++) {
     EXPECT_LOG_TRUE(rwlog_validate_log_header(log_output->logs[i]->msg));
   }
@@ -5054,18 +5084,16 @@ TEST(RwLogdGroup13, DynSchemaTest)
     }
   }
 
-  char * module_name[1];
-  module_name[0] = (char *)"rwdynschema-logtest";
-  char * so_filename[1];
-  so_filename[0] = (char *)"libdynschema_log_test_yang_gen.so";
-
+  rwdynschema_module_t module = {(char *)"rwdynschema-logtest",
+                                 NULL,
+                                 (char *)"libdynschema_log_test_yang_gen.so",
+                                 NULL,
+                                 (char *)"rwdynschema-logtest_meta_info.txt",
+                                 1};
   printf("load dynamic schema\n");
   rwlogd_handle_dynamic_schema_update(inst,
                                       1,
-                                      module_name,
-                                      NULL,
-                                      so_filename,
-                                      NULL);
+                                      &module);
 
   EXPECT_TRUE(inst->rwlogd_info->num_categories == 3);
 

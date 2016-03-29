@@ -43,15 +43,21 @@ export default class InternalVirtualLink extends DescriptorModel {
 	}
 
 	set connection(connections) {
-		this.updateModelList('internal-connection-point-ref', connections, DescriptorModelFactory.InternalConnectionPointRef);
+		return this.updateModelList('internal-connection-point-ref', connections, DescriptorModelFactory.InternalConnectionPointRef);
 	}
 
 	addConnectionPoint(icp) {
+		icp.model['internal-vld-ref'] = this.id;
+		this.parent.removeAnyConnectionsForConnector(icp);
 		this.connection = icp.toInternalConnectionPointRef();
 	}
 
 	removeInternalConnectionPointRefForId(id) {
-		this.connection = this.connection.filter(d => d.id !== id);
+		return this.connection = this.connection.filter(d => d.id !== id).map(d => d.id);
+	}
+
+	remove() {
+		return this.parent.removeInternalVirtualLink(this);
 	}
 
 }

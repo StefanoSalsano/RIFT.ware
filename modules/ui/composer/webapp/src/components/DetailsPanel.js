@@ -34,6 +34,7 @@ const DetailsPanel = React.createClass({
 	componentDidMount() {
 	},
 	componentDidUpdate() {
+		SelectionManager.refreshOutline();
 	},
 	componentWillUnmount() {
 	},
@@ -50,7 +51,7 @@ const DetailsPanel = React.createClass({
 		const jsonViewerTitle = selectedContainer ? selectedContainer.model.name : 'nothing selected';
 		const hasNoCatalogs = this.props.hasNoCatalogs;
 		return (
-			<div {...this.preventDeselectOnClick} className="DetailsPanel" data-resizable="left" style={{width: this.props.layout.right}}>
+			<div className="DetailsPanel" data-resizable="left" data-resizable-handle-offset="0 5" style={{width: this.props.layout.right}} onClick={event => event.preventDefault()}>
 				<div className="DetailsPanelBody">
 					{hasNoCatalogs ? null : bodyComponent}
 				</div>

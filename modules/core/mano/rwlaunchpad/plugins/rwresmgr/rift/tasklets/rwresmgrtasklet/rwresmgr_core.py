@@ -5,6 +5,13 @@
 import uuid
 import collections
 import asyncio
+
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     RwYang,
@@ -514,6 +521,12 @@ class NetworkPool(ResourcePool):
         response.resource_state = 'active'
         return response
 
+    def get_info_by_id(self, resource_id):
+        info = self._cal.get_virtual_network_info(resource_id)
+        self._log.info("Successfully retrieved virtual-network information from CAL with resource-id: %s. Info: %s",
+                       resource_id, str(info))
+        return info
+
     def match_image_params(self, resource_info, request_params):
         return True
 
@@ -630,6 +643,12 @@ class ComputePool(ResourcePool):
         response.resource_state = self._get_resource_state(info, resource.requested_params)
         return response
 
+    def get_info_by_id(self, resource_id):
+        info = self._cal.get_virtual_compute_info(resource_id)
+        self._log.info("Successfully retrieved virtual-compute information from CAL with resource-id: %s. Info: %s",
+                       resource_id, str(info))
+        return info 
+
     def _get_resource_state(self, resource_info, requested_params):
         if resource_info.state == 'failed':
             self._log.error("<Compute-Resource: %s> Reached failed state.",
@@ -651,6 +670,10 @@ class ComputePool(ResourcePool):
                 self._log.warning("<Compute-Resource: %s> Management IP not assigned- waiting for public ip, %s",
                                   resource_info.name, requested_params)
                 return 'pending'
+
+        if(len(requested_params.connection_points) != 
+             len(resource_info.connection_points)):
+            return 'pending'
 
         not_active = [c for c in resource_info.connection_points
                       if c.state != 'active']
@@ -1070,7 +1093,51 @@ class ResourceMgrCore(object):
         self._log.info("Selected pool %s for resource allocation", pool.name)
 
         r_id, r_info = yield from pool.allocate_resource(request)
+
         self._resource_table[event_id] = (r_id, cloud_account_name, pool.name)
+        return r_info
+
+    @asyncio.coroutine
+    def reallocate_virtual_resource(self, event_id, cloud_account_name, request, resource_type, resource):
+        ### Check if event_id is unique or already in use
+        if event_id in self._resource_table:
+            r_id, cloud_account_name, pool_name = self._resource_table[event_id]
+            self._log.warning("Requested event-id :%s for resource-allocation already active with pool: %s",
+                              event_id, pool_name)
+            # If resource-type matches then return the same resource
+            cloud_pool_table = self._get_cloud_pool_table(cloud_account_name)
+            pool = cloud_pool_table[pool_name]
+            if pool.resource_type == resource_type:
+                info = pool.get_resource_info(r_id)
+                return info
+            else:
+                self._log.error("Event-id conflict. Duplicate event-id: %s", event_id)
+                raise ResMgrDuplicateEventId("Requested event-id :%s already active with pool: %s" %(event_id, pool_name))
+
+        r_info = None
+        cloud_pool_table = self._get_cloud_pool_table(cloud_account_name)
+        pool = cloud_pool_table[resource.pool_name]
+        if pool.resource_type == resource_type:
+            if resource_type == 'network':
+              r_id = resource.virtual_link_id
+              r_info = pool.get_info_by_id(resource.virtual_link_id)
+            elif resource_type == 'compute':
+              r_id = resource.vdu_id
+              r_info = pool.get_info_by_id(resource.vdu_id)
+
+        if r_info is None:
+            r_id, r_info = yield from pool.allocate_resource(request)
+            self._resource_table[event_id] = (r_id, cloud_account_name, resource.pool_name)
+            return r_info
+
+        self._resource_table[event_id] = (r_id, cloud_account_name, resource.pool_name)
+        new_resource = pool._resource_class(r_id, 'dynamic')
+        if resource_type == 'compute':
+            requested_params = RwcalYang.VDUInitParams()
+            requested_params.from_dict(request.as_dict())
+            new_resource.requested_params = requested_params
+        pool._all_resources[r_id] = new_resource
+        pool._allocated_resources[r_id] = new_resource
         return r_info
 
     @asyncio.coroutine

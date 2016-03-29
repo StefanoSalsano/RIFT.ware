@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 #
 # 
@@ -118,6 +118,7 @@ class TestLegacyManifestCompiler(unittest.TestCase):
                                 rift.vcs.RiftCli(),
                                 rift.vcs.Webserver(),
                                 rift.vcs.RedisServer(),
+                                rift.vcs.Watchdog(),
                                 rift.vcs.Confd(),
                                 ],
                             )
@@ -142,7 +143,7 @@ class TestLegacyManifestCompiler(unittest.TestCase):
         # The webserver is the one of the 2 native processes on the VM
         colony = manifest.components[0]
         native = rift.vcs.core.list_by_class(colony, rift.vcs.manifest.RaNativeProcess)
-        self.assertEqual(4, len(native))
+        self.assertEqual(5, len(native))
 
 
 class TestNoMoreThanOneConfdConstraint(unittest.TestCase):

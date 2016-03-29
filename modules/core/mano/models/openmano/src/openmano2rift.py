@@ -14,6 +14,10 @@ import tempfile
 import uuid
 import yaml
 
+import gi
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwVnfdYang', '1.0')
+gi.require_version('RwNsdYang', '1.0')
 from gi.repository import (
     RwYang,
     RwVnfdYang,

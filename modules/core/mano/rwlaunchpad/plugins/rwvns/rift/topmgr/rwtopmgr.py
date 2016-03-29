@@ -5,6 +5,11 @@
 
 import asyncio
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwSdn', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     IetfNetworkYang,
@@ -49,7 +54,10 @@ class SdnAccountMgr(object):
             sdn_account.name = account.name
             self._account[account.name] = sdn_account
             self._log.debug("Account set is %s , %s",type(self._account), self._account)
-          
+
+    def del_sdn_account(self, name):
+        self._log.debug("Account deleted is %s , %s", type(self._account), name)
+        del self._account[name]
 
     def get_sdn_account(self, name):
         """

@@ -7,8 +7,8 @@ SUBDIRS = \
 	self-dep
 
 noinst_PLUGIN = \
-	full-info.plugin		\
-	min-info.plugin			\
+	full-info.plugin	\
+	min-info.plugin		\
 	unavailable.plugin
 
 EXTRA_DIST = $(noinst_PLUGIN)

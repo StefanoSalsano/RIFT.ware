@@ -1545,13 +1545,20 @@ parser_control_t PbModel::output_h_file(const char* basename)
   return parser_control_t::DO_NEXT;
 }
 
-parser_control_t PbModel::output_doc_user_file(const char* basename)
+parser_control_t PbModel::output_doc_user_file(const doc_file_t file_type, const char* basename)
 {
   std::ofstream os;
   if (basename) {
     std::string filename = basename;
-    filename.append(".doc-user.txt");
 
+    switch (file_type) {
+      case doc_file_t::TEXT:
+        filename.append(".doc-user.txt");
+        break;
+      case doc_file_t::HTML:
+        filename.append(".doc-user.html");
+        break;
+    }
     os.open(filename,std::ios_base::trunc);
 
     if (!os.is_open()) {
@@ -1568,17 +1575,30 @@ parser_control_t PbModel::output_doc_user_file(const char* basename)
     doc_user_file_name.erase(0, last_slash_idx + 1);
   }
 
+  if (file_type == doc_file_t::HTML) {
+    os << "<title>";
+  }
+
   os << "User documentation for yang module "
-     << schema_pbmod_->get_ymod()->get_name() << ".yang\n\n";
+     << schema_pbmod_->get_ymod()->get_name() << ".yang";
+
+  if (file_type == doc_file_t::HTML) {
+    os << "</title>";
+  }
+
+  os << std::endl << std::endl;
 
   // ATTN: List of schema files
   // ATTN: List of direct imports
   // ATTN: List of transitive imports
+  if (file_type == doc_file_t::HTML) {
+    std::cout << "<ol>" << std::endl;
+  }
 
   if (has_data_) {
     unsigned chapter = 1;
     for (const auto& pbmod: modules_by_dependencies_) {
-      if (pbmod->output_doc(os, 0/*indent*/,
+      if (pbmod->output_doc(file_type, os, 0/*indent*/,
             PbMessage::doc_t::user_toc,
             chapter)) {
         ++chapter;
@@ -1586,11 +1606,14 @@ parser_control_t PbModel::output_doc_user_file(const char* basename)
     }
     os << "\n\n";
   }
+  if (file_type == doc_file_t::HTML) {
+    std::cout << "</ol>" << std::endl;
+  }
 
   if (has_data_) {
     unsigned chapter = 1;
     for (const auto& pbmod: modules_by_dependencies_) {
-      if (pbmod->output_doc(os, 0/*indent*/,
+      if (pbmod->output_doc(file_type, os, 0/*indent*/,
             PbMessage::doc_t::user_entry,
             chapter)) {
         ++chapter;
@@ -1603,13 +1626,19 @@ parser_control_t PbModel::output_doc_user_file(const char* basename)
   return parser_control_t::DO_NEXT;
 }
 
-parser_control_t PbModel::output_doc_api_file(const char* basename)
+parser_control_t PbModel::output_doc_api_file(const doc_file_t file_type, const char* basename)
 {
   std::ofstream os;
   if (basename) {
     std::string filename = basename;
-    filename.append(".doc-api.txt");
-
+    switch (file_type) {
+      case doc_file_t::TEXT:
+        filename.append(".doc-api.txt");
+        break;
+      case doc_file_t::HTML:
+        filename.append(".doc-api.html");
+        break;
+    }
     os.open(filename,std::ios_base::trunc);
 
     if (!os.is_open()) {
@@ -1626,30 +1655,50 @@ parser_control_t PbModel::output_doc_api_file(const char* basename)
     doc_api_file_name.erase(0, last_slash_idx + 1);
   }
 
+  if (file_type == doc_file_t::HTML) {
+    os << "<title>";
+  }
+
   os << "Programmer's API documentation for yang module "
      << schema_pbmod_->get_ymod()->get_name() << ".yang\n\n";
 
-  output_doc_heading(os, 0/*indent*/, PbMessage::doc_t::api_toc, "1", "Schema Globals" );
+  if (file_type == doc_file_t::HTML) {
+    os << "</title>";
+  }
+
+  os << std::endl << std::endl;
+
+  if (file_type == doc_file_t::HTML) {
+    std::cout << "<ol>" << std::endl;
+  }
+
+  output_doc_heading(file_type, os, 0/*indent*/, PbMessage::doc_t::api_toc, "1", "Schema Globals" );
   os << "\n";
   if (has_data_) {
     unsigned chapter = 2;
+
     for (const auto& pbmod: modules_by_dependencies_) {
-      if (pbmod->output_doc(os, 0/*indent*/,
+      if (pbmod->output_doc(file_type, os, 0/*indent*/,
             PbMessage::doc_t::api_toc,
             chapter)) {
         ++chapter;
       }
     }
+
   }
+  if (file_type == doc_file_t::HTML) {
+    std::cout << "</ol>" << std::endl;
+  }
+
   os << "\n\n";
 
   std::string str_chapter = "1";
-  output_doc_heading( os, 0/*indent*/, PbMessage::doc_t::api_entry, "1", "Schema Globals" );
-  output_doc_field( os, 2/*indent*/, "1",
+  output_doc_heading(file_type, os, 0/*indent*/, PbMessage::doc_t::api_entry, "1", "Schema Globals" );
+  output_doc_field( file_type, os, 2/*indent*/, "1",
     "schema_type",
     "Global Schema Type",
     get_ypbc_global("t_schema") );
-  output_doc_field( os, 2/*indent*/, "1",
+  output_doc_field( file_type, os, 2/*indent*/, "1",
     "schema_pointer",
     "Global Schema Pointer",
     get_ypbc_global("g_schema") );
@@ -1657,7 +1706,7 @@ parser_control_t PbModel::output_doc_api_file(const char* basename)
   if (has_data_) {
     unsigned chapter = 2;
     for (const auto& pbmod: modules_by_dependencies_) {
-      if (pbmod->output_doc(os, 0/*indent*/,
+      if (pbmod->output_doc(file_type, os, 0/*indent*/,
             PbMessage::doc_t::api_entry,
             chapter)) {
         ++chapter;
@@ -1671,12 +1720,14 @@ parser_control_t PbModel::output_doc_api_file(const char* basename)
 }
 
 void PbModel::output_doc_heading(
+  const doc_file_t file_type,
   std::ostream& os,
   unsigned indent,
   PbMessage::doc_t doc_style,
   const std::string& chapter,
   const std::string& title )
 {
+
   switch (doc_style) {
     case PbMessage::doc_t::api_toc:
     case PbMessage::doc_t::user_toc: {
@@ -1690,21 +1741,44 @@ void PbModel::output_doc_heading(
         sep.append(WIDTH-width, ' ');
       }
 
-      os << pad << title << sep << chapter << "\n";
+      if (file_type == doc_file_t::HTML) {
+        os << "<li> <A href=\"#" << chapter << "\"> " << std::endl;
+      }
+      
+      os << pad << title << sep << chapter;
+
+      if (file_type == doc_file_t::HTML) {
+        os << "</A></li>" << std::endl;
+      } else {
+        os << std::endl;
+      }
+
       break;
     }
     case PbMessage::doc_t::api_entry:
     case PbMessage::doc_t::user_entry: {
+      if (file_type == doc_file_t::HTML) {
+        os << "<h1><A name=\"" << chapter << "\"> " << std::endl;
+      }
+
       std::string pad(indent, ' ');
-      os << pad << chapter << "  " << title << "\n";
+      os << pad << chapter << "  " << title;
+      if (file_type == doc_file_t::HTML) {
+        os << "</A></h1>" << std::endl;
+      } else {
+        os << std::endl;
+      }
+
       break;
     }
     default:
       RW_ASSERT_NOT_REACHED();
   }
+
 }
 
 void PbModel::output_doc_field(
+  const doc_file_t file_type,    
   std::ostream& os,
   unsigned indent,
   const std::string& chapter,
@@ -1715,8 +1789,19 @@ void PbModel::output_doc_field(
   auto adjusted_data = YangModel::adjust_indent_normal(indent+2, entry_data);
   if (adjusted_data.length()) {
     std::string pad(indent, ' ');
+
+    if (file_type == doc_file_t::HTML) {
+      os << "<p>";
+    }
+
     os << pad << entry_type << "\n"
-       << adjusted_data << "\n";
+       << adjusted_data;
+
+    if (file_type == doc_file_t::HTML) {
+      os << "</p>";
+    } else {
+      os << std::endl;
+    }
   }
 }
 

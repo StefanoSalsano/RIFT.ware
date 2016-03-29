@@ -15,7 +15,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <poll.h>
+
 #include <sys/types.h>
 
 #include <unistd.h>
@@ -155,6 +155,15 @@ rwmsg_endpoint_t *rwmsg_endpoint_create(uint32_t sysid,
     rwtrace_ctx_category_destination_set(rwtctx,
                                      RWTRACE_CATEGORY_RWMSG,
                                      RWTRACE_DESTINATION_CONSOLE);
+  } else {
+#if 0
+    rwtrace_ctx_category_severity_set(rwtctx,
+                                  RWTRACE_CATEGORY_RWMSG,
+                                  RWTRACE_SEVERITY_DEBUG);
+    rwtrace_ctx_category_destination_set(rwtctx,
+                                     RWTRACE_CATEGORY_RWMSG,
+                                     RWTRACE_DESTINATION_CONSOLE);
+#endif
   }
 
   pthread_mutexattr_t attr;
@@ -170,7 +179,7 @@ rwmsg_endpoint_t *rwmsg_endpoint_create(uint32_t sysid,
     goto lockret;
   }
   ep->epid = ++rwmsg_global.epid_nxt;
-  sprintf(ep->rwtpfx, "[epid %u]", ep->epid);
+  sprintf(ep->rwtpfx, "[epid %u on i%u]", ep->epid, instid);
 
   RWMSG_TRACE(ep, INFO, "Creating endpoint %p (sysid=%u instid=%u bro_instid=%u rwsched=%p taskletinfo=%p)", ep, sysid, instid, bro_instid, rws, tinfo);
 
@@ -197,7 +206,7 @@ rwmsg_endpoint_t *rwmsg_endpoint_create(uint32_t sysid,
         rwmsg_endpoint_set_property_string(ep, prop->path, prop->sval);
         break;
       default:
-        RW_ASSERT(0);
+        RW_CRASH();
         break;
       }
       prop++;
@@ -460,7 +469,7 @@ static void rwmsg_endpoint_nn_rwsched_event_timer(void *ud) {
 static int rwmsg_endpoint_nn_tasklet_yield(int fd, int events, int timeout) {
 
   /* This only happens for blocking nn socket operations.  Ixnay on that! */
-  RW_ASSERT(0);
+  RW_CRASH();
 
   // block on e->nn.rwsource_fd_read?
   // which ep?
@@ -484,9 +493,11 @@ rwmsg_bool_t rwmsg_endpoint_halt_flush(rwmsg_endpoint_t *ep, int flush) {
 
   rwmsg_endpoint_trace_status(ep);
 
+  /*
   RW_ASSERT(ep->stat.objects.notify_eventfds == 0);
   uint32_t nn_eventfds = ck_pr_load_32(&ep->stat.objects.nn_eventfds);
   RW_ASSERT(nn_eventfds == 0);
+  */
 
   retval = rwmsg_endpoint_release(ep);
   return retval;
@@ -886,6 +897,7 @@ rwmsg_channel_t *rwmsg_endpoint_find_channel(rwmsg_endpoint_t *ep,
     if (mb->srvchans_ct) {
       /* TBD RR/HASH across multiple srvchans, per coherency value */
       ch = mb->srvchans[0].ch;
+      _RWMSG_CH_DEBUG_(ch, "++");
       ck_pr_inc_32(&ch->refct);
       if (ep != mb->ep) {
     /* Different tasklet.  Don't think we care. */
@@ -1061,6 +1073,7 @@ rw_status_t rwmsg_endpoint_add_channel_method_binding(rwmsg_endpoint_t *ep,
   RWMSG_EP_UNLOCK(ep);
   if (check_sc) {
     RW_ASSERT(btype == RWMSG_METHB_TYPE_SRVCHAN);
+    _RWMSG_CH_DEBUG_(check_sc, "--");
     rwmsg_srvchan_release(check_sc);
   }
   return rs;
@@ -1321,7 +1334,7 @@ static void rwmsg_garbage_truck_free(rwmsg_garbage_truck_t *gc,
     }
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
 

@@ -191,7 +191,7 @@ endfunction(rift_pb2c_command)
 # )
 function(rift_add_proto_target)
   set(parse_options
-    WITH_GPROTOC NO_PROTOCC WITH_DSO WITH_PB2C WITH_GI)
+    WITH_GPROTOC NO_PROTOCC WITH_DSO WITH_PB2C WITH_GI SUPPRESS_PROTO_DEPEND)
   set(parse_onevalargs
       TARGET SRC_DIR DEST_DIR
       PROTOCC_EXE PB2C_EXE
@@ -319,6 +319,12 @@ function(rift_add_proto_target)
         set(dso_arg)
       endif()
 
+      if(ARG_SUPPRESS_PROTO_DEPEND)
+        set(proto_file_depend)
+      else()
+        set(proto_file_depend ${proto_file})
+      endif()
+
       rift_gprotoc_command(command
         ARG_GPROTOC_EXE ${ARG_GPROTOC_EXE}
         PROTO_DIRS ${proto_dir} ${ARG_PROTO_DIRS} ${other_dirs}
@@ -328,7 +334,7 @@ function(rift_add_proto_target)
       add_custom_command(
         OUTPUT ${gpc_cc_file} ${gpc_h_file} ${dso_file}
         COMMAND ${command}
-        DEPENDS ${ARG_DEPENDS} ${extra_depends} ${proto_file}
+        DEPENDS ${ARG_DEPENDS} ${extra_depends} ${proto_file_depend}
       )
 
       list(APPEND cc_file_list ${gpc_cc_file})
@@ -371,7 +377,7 @@ function(rift_add_proto_target)
       add_custom_command(
            OUTPUT ${pcc_c_file} ${pcc_h_file} ${dso_file} ${py_file}
            COMMAND ${command} && ${CMAKE_INSTALL_PREFIX}/usr/bin/protoc ${proto_path_arg} --python_out=${ARG_DEST_DIR} ${proto_file}
-           DEPENDS ${ARG_DEPENDS} ${extra_depends} ${proto_file}
+           DEPENDS ${ARG_DEPENDS} ${extra_depends} ${proto_file_depend}
            )
 
       list(APPEND c_file_list ${pcc_c_file})

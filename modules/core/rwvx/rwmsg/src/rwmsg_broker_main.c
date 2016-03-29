@@ -23,6 +23,7 @@ void rwmsg_broker_main(uint32_t sid,
 		       rwsched_tasklet_ptr_t tinfo,
 		       rwcal_module_ptr_t rwcal,
 		       uint32_t usemainq,
+           rwtasklet_info_t *rwtasklet_info,
 		       rwmsg_broker_t **bro_out) {
   
   rwmsg_broker_t *bro;
@@ -30,7 +31,7 @@ void rwmsg_broker_main(uint32_t sid,
 
   ep = rwmsg_endpoint_create(sid, instid, bro_instid, rws, tinfo, rwtrace_init(), NULL);
 
-  bro = rwmsg_broker_create(sid, bro_instid, NULL, rws, tinfo, rwcal, usemainq, ep);
+  bro = rwmsg_broker_create(sid, bro_instid, NULL, rws, tinfo, rwcal, usemainq, ep, rwtasklet_info);
   if (bro_out) {
     *bro_out = bro;
   }
@@ -50,5 +51,5 @@ void rwmsg_broker_test_main(uint32_t sid,
                             void *rwcal,
                             uint32_t usemainq,
                             void **bro_out) {
-  rwmsg_broker_main(sid, instid, bro_instid, rws, tinfo, (rwcal_module_ptr_t) rwcal, usemainq, (rwmsg_broker_t **) bro_out);
+  rwmsg_broker_main(sid, instid, bro_instid, rws, tinfo, (rwcal_module_ptr_t) rwcal, usemainq, NULL, (rwmsg_broker_t **) bro_out);
 }

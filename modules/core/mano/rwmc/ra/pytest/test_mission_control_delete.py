@@ -12,6 +12,8 @@
 
 import pytest
 import rift.auto.proxy
+import gi
+gi.require_version('RwMcYang', '1.0')
 
 from gi.repository import RwMcYang
 

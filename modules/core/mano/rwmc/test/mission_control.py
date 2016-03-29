@@ -47,6 +47,7 @@ class Demo(rift.vcs.demo.Demo):
             rift.vcs.DtsRouterTasklet(),
             rift.vcs.MsgBrokerTasklet(),
             rift.vcs.RestconfTasklet(),
+            rift.vcs.Watchdog(),
             rift.vcs.RestPortForwardTasklet(),
             rift.vcs.CalProxy(),
             ]
@@ -261,7 +262,8 @@ def main(argv=sys.argv[1:]):
     demo = Demo(use_mock=args.mock, skip_ui=args.skip_ui, disable_cnt_mgr=args.no_cntr_mgr)
 
     # Create the prepared system from the demo
-    system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args)
+    system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args, 
+                  northbound_listing="cli_rwmc_schema_listing.txt")
 
     confd_ip = socket.gethostbyname(socket.gethostname())
     rift.vcs.logger.configure_sink(config_file=None, confd_ip=confd_ip)

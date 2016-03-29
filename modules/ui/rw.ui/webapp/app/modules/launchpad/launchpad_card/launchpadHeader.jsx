@@ -34,7 +34,7 @@ class LaunchpadHeader extends React.Component {
   }
   //TODO instead of calling the store method, an action should be emitted and the store should respond.
   deleteLaunchpad(e) {
-    if (window.confirm("Are you sure you want to delete this NSR?")) {
+    if (window.confirm("Preparing to delete "+ this.props.name + ".  Are you sure you want to delete this NSR?")) {
       launchpadFleetStore.deleteNsrInstance(this.props.id);
       launchpadFleetActions.deletingNSR(this.props.id);
     }
@@ -86,8 +86,7 @@ class LaunchpadHeader extends React.Component {
     let failed = this.state.failed;
     let startTime = currentTime - this.props.nsr["create-time"];
     let isLoading =  this.state.isLoading || failed;
-    let toggleStatus = isLoading ? '' :
-      (
+    let toggleStatus = (
         <h3 className="launchpadCard_header-link">
           <a onClick={this.openStatus} title="Open History" className={self.state.displayStatus ? 'activeIcon' : 'inActiveIcon'}>
             <span className="oi" data-glyph="clock" aria-hidden="true">
@@ -113,12 +112,12 @@ class LaunchpadHeader extends React.Component {
                             </a>
               }
             </h3>
-            <h3 className="launchpadCard_header-link" style={{display: this.props.nsr['cloud-account'] ? 'inherit' : 'none'}}>
+          <div className="launchpadCard_header-actions">
+          <h3 className="launchpadCard_header-link" style={{display: this.props.nsr['cloud-account'] ? 'inherit' : 'none'}}>
               <a onClick={this.openCloudAccountPanel} title="Cloud Account" className={self.state.displayCloudAccount ? 'activeIcon' : 'inActiveIcon'}>
                 <span className="oi" data-glyph="cloud" aria-hidden="true"></span>
               </a>
             </h3>
-          <div className="launchpadCard_header-actions">
             <h3>
               {isLoading ? this.props.nsr["operational-status"] : this.props.nsr['config-status'] != 'configured' ? this.props.nsr['config-status'] : 'Active' }
             </h3>

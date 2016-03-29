@@ -1,10 +1,11 @@
-
 /*
  * 
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
 'use strict';
+
+window['RIFT_wareLaunchpadComposerVersion'] = `semver 0.0.79`;
 
 import 'es5-shim'
 import 'babel-polyfill'
@@ -15,7 +16,6 @@ import React from 'react'
 import ReactDOM from 'react-dom'
 import Crouton from 'react-crouton'
 import ClassNames from 'classnames'
-import ReactTooltip from 'react-tooltip'
 import PureRenderMixin from 'react-addons-pure-render-mixin'
 import DeletionManager from '../libraries/DeletionManager'
 import SelectionManager from '../libraries/SelectionManager'
@@ -31,6 +31,8 @@ import PanelResizeAction from '../actions/PanelResizeAction'
 import ComposerAppActions from '../actions/ComposerAppActions'
 import ComposerAppStore from '../stores/ComposerAppStore'
 import CatalogDataStore from '../stores/CatalogDataStore'
+import TooltipManager from '../libraries/TooltipManager'
+import CatalogItemsActions from '../actions/CatalogItemsActions'
 
 import 'normalize.css'
 import '../styles/AppRoot.scss'
@@ -41,8 +43,6 @@ const clearLocalStorage = utils.getSearchParams(window.location).hasOwnProperty(
 
 const preventDefault = e => e.preventDefault();
 const clearDragState = () => ComposerAppActions.setDragState(null);
-
-window['RIFT_wareLaunchpadComposerVersion'] = `semver 0.0.12`;
 
 const ComposerApp = React.createClass({
 	mixins: [PureRenderMixin],
@@ -78,7 +78,7 @@ const ComposerApp = React.createClass({
 		ComposerAppStore.unlisten(this.onChange);
 		CatalogDataStore.unlisten(this.onCatalogDataChanged);
 		DeletionManager.removeEventListeners();
-		SelectionManager.removeEventListeners();
+		TooltipManager.removeEventListeners();
 	},
 	componentDidMount() {
 		resizeManager.addAllEventListeners();
@@ -94,11 +94,41 @@ const ComposerApp = React.createClass({
 				return false;
 			}
 		});
+		const appRootElement = ReactDOM.findDOMNode(this.refs.appRoot);
+		TooltipManager.addEventListeners(appRootElement);
+		SelectionManager.onClearSelection = () => {
+			if (this.state.item) {
+				CatalogItemsActions.catalogItemMetaDataChanged.defer(this.state.item);
+			}
+		};
+	},
+	componentDidUpdate() {
+		if (this.state.fullScreenMode) {
+			document.body.classList.add('-is-full-screen');
+		} else {
+			document.body.classList.remove('-is-full-screen');
+		}
+		SelectionManager.refreshOutline();
 	},
 	resize(e) {
 		PanelResizeAction.resize(e);
 	},
 	render() {
+
+		function onClickUpdateSelection(event) {
+			if (event.defaultPrevented) {
+				return
+			}
+			const element = SelectionManager.getClosestElementWithUID(event.target);
+			if (element) {
+				SelectionManager.select(element);
+				SelectionManager.refreshOutline();
+				event.preventDefault();
+			} else {
+				SelectionManager.clearSelectionAndRemoveOutline();
+			}
+		}
+
 		let cpNumber = 0;
 		const classNames = ClassNames('ComposerApp');
 		const isNew = this.state.item && this.state.item.uiState.isNew;
@@ -107,6 +137,7 @@ const ComposerApp = React.createClass({
 		const isEditingNSD = this.state.item && this.state.item.uiState && /nsd/.test(this.state.item.uiState.type);
 		const isEditingVNFD = this.state.item && this.state.item.uiState && /vnfd/.test(this.state.item.uiState.type);
 		const containers = [this.state.item].reduce(DescriptorModelFactory.buildCatalogItemFactory(CatalogDataStore.getState().catalogs), []);
+
 		containers.filter(d => DescriptorModelFactory.isConnectionPoint(d)).forEach(d => {
 			d.cpNumber = ++cpNumber;
 			containers.filter(d => DescriptorModelFactory.isVnfdConnectionPointRef(d)).filter(ref => ref.key === d.key).forEach(ref => ref.cpNumber = d.cpNumber);
@@ -114,8 +145,9 @@ const ComposerApp = React.createClass({
 		const canvasTitle = containers.length ? containers[0].model.name : '';
 		const hasNoCatalogs = CatalogDataStore.getState().catalogs.length === 0;
 		const isLoading = this.state.isLoading;
+
 		return (
-			<div className="AppRoot">
+			<div ref="appRoot" id="RIFT_wareLaunchpadComposerAppRoot" className="AppRoot" onClick={onClickUpdateSelection}>
 				<i className="corner-accent top left" />
 				<i className="corner-accent top right" />
 				<i className="corner-accent bottom left" />
@@ -126,16 +158,35 @@ const ComposerApp = React.createClass({
 				<Crouton id={Date.now()} type={this.state.messageType} message={this.state.message} onDismiss={ComposerAppActions.clearError} />
 				<div className="AppBody">
 					<div className={classNames}>
-						<CatalogPanel layout={this.state.layout} isLoading={isLoading} hasNoCatalogs={hasNoCatalogs} filterByType={this.state.filterCatalogByTypeValue} />
-						<CanvasPanel ref="canvasPanel" layout={this.state.layout} hasNoCatalogs={hasNoCatalogs} showMore={this.state.showMore} containers={containers} title={canvasTitle} zoom={this.state.zoom} />
-						<DetailsPanel layout={this.state.layout} hasNoCatalogs={hasNoCatalogs} showMore={this.state.showMore} containers={containers} showJSONViewer={this.state.showJSONViewer} />
-						<ComposerAppToolbar layout={this.state.layout} showMore={this.state.showMore} isEditingNSD={isEditingNSD} isEditingVNFD={isEditingVNFD} isModified={isModified} isNew={isNew} disabled={!hasItem} />
+						<CatalogPanel layout={this.state.layout}
+									  isLoading={isLoading}
+									  hasNoCatalogs={hasNoCatalogs}
+									  filterByType={this.state.filterCatalogByTypeValue} />
+						<CanvasPanel layout={this.state.layout}
+									 hasNoCatalogs={hasNoCatalogs}
+									 showMore={this.state.showMore}
+									 containers={containers}
+									 title={canvasTitle}
+									 zoom={this.state.zoom} />
+						<DetailsPanel layout={this.state.layout}
+									  hasNoCatalogs={hasNoCatalogs}
+									  showMore={this.state.showMore}
+									  containers={containers}
+									  showJSONViewer={this.state.showJSONViewer} />
+						<ComposerAppToolbar layout={this.state.layout}
+											showMore={this.state.showMore}
+											isEditingNSD={isEditingNSD}
+											isEditingVNFD={isEditingVNFD}
+											isModified={isModified}
+											isNew={isNew}
+											disabled={!hasItem}
+											onClick={event => event.stopPropagation()}/>
 					</div>
 				</div>
 				<ModalOverlay />
-				<ReactTooltip effect="solid" html={true} />
 			</div>
 		);
+
 	},
 	onChange(state) {
 		this.setState(state);
@@ -166,6 +217,7 @@ const ComposerApp = React.createClass({
 			return 'You have unsaved changes. If you do not onboard (or update) your changes they will be lost.';
 		}
 	}
+
 });
 
 ReactDOM.render(<ComposerApp />, document.getElementById('content'));

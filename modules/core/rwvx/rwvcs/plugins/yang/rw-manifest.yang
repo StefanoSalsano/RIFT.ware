@@ -50,8 +50,8 @@ module rw-manifest
         description "Base schema used by the system";
         rwpb:msg-new BaseSchema;
 
-        leaf schema-name {
-          description "Schema name to be loaded";
+        leaf northbound-listing {
+          description "Filename of the file enumerating the northbound exposed schema.";
           type string;
         }
       }
@@ -222,6 +222,11 @@ module rw-manifest
             type boolean;
             default false;
           }
+
+          leaf recovery-action {
+            description "Define recovery action if this component fail";
+            type rwvcstypes:recovery-type;
+          }
         }
       }
 
@@ -249,6 +254,27 @@ module rw-manifest
             type boolean;
             default false;
           }
+
+          leaf recovery-action {
+            description "Define recovery action if this component fail";
+            type rwvcstypes:recovery-type;
+          }
+        }
+      }
+
+      container rwsecurity {
+        description "bootstrap configuration for security";
+        leaf use-ssl {
+          description "set to true if the system should start up using ssl.";
+          type boolean;
+        }
+        leaf cert {
+          description "bootstrap ssl certificate";          
+          type string;
+        }
+        leaf key {
+          description "bootstrap ssl key";          
+          type string;
         }
       }
 
@@ -283,6 +309,20 @@ module rw-manifest
         leaf component-type {
           description "String which will evaluate to the instance-id of the
             first component to be started by rwmain.  Similar to
+            action/instance-id but cannot be static.";
+          type string;
+        }
+
+        leaf parent-id {
+          description "String which will evaluate to the parent-id of the
+            component to be started by RWInit.  Similar to
+            action/instance-id but cannot be static.";
+          type string;
+        }
+
+        leaf vm_instance-id {
+          description "String which will evaluate to the vminstance-id of the
+            component to be started by RWInit.  Similar to
             action/instance-id but cannot be static.";
           type string;
         }

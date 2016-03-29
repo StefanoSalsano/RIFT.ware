@@ -271,7 +271,7 @@ TEST(YangNcx, BasicModel)
   EXPECT_STREQ ("http://riftio.com/ns/core/util/yangtools/tests/testncx",
                 ycase->get_ns());
   EXPECT_TRUE (ycase->get_location().c_str()); // Dont really care whats in there
-  EXPECT_STREQ ("tnb", ycase->get_prefix());
+  EXPECT_STREQ ("tn", ycase->get_prefix());
   ASSERT_EQ (ycase->get_choice(), choice);
   EXPECT_STREQ ("ch", choice->get_name());
 

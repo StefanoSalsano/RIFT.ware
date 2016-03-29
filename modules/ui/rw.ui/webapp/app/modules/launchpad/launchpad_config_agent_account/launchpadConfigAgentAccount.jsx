@@ -14,6 +14,7 @@ export default class LaunchpadConfigAgentAccount extends React.Component {
     constructor(props) {
         super(props);
         this.state = ConfigAgentAccountStore.getState();
+        ConfigAgentAccountStore.getCatalog();
         ConfigAgentAccountStore.listen(this.updateState);
         if(this.props.edit) {
             ConfigAgentAccountStore.getConfigAgentAccount(window.location.hash.split('/')[4])
@@ -28,7 +29,7 @@ export default class LaunchpadConfigAgentAccount extends React.Component {
       let API_SERVER = rw.getSearchParams(window.location).api_server;
       let auth = window.sessionStorage.getItem("auth");
       let mgmtDomainName = window.location.hash.split('/')[2];
-        window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=http://' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + mgmtDomainName + '&auth=' + auth);
+        window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=' + window.location.protocol + '//' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + mgmtDomainName + '&auth=' + auth);
     }
     render() {
         let html;
@@ -42,7 +43,7 @@ export default class LaunchpadConfigAgentAccount extends React.Component {
                 name: 'DASHBOARD',
                 href: '#/launchpad/' + mgmtDomainName
             },{
-                name: 'CATALOG',
+                 name: 'CATALOG(' + this.state.descriptorCount + ')',
                 'onClick': this.loadComposer
             },
             {
@@ -50,7 +51,7 @@ export default class LaunchpadConfigAgentAccount extends React.Component {
             }
         ];
         if (this.props.isDashboard) {
-            body = (<div>Edit or Create a New Accounts</div>);
+            body = (<div>Edit or Create New Accounts</div>);
         } else {
              body = <ConfigAgentAccount {...this.props} />
         }

@@ -6,12 +6,40 @@
  */
 var Webpack = require('webpack');
 var WebpackDevServer = require('webpack-dev-server');
-var webpackConfig = require('./../webpack.config.js');
 var path = require('path');
 var fs = require('fs');
 var mainPath = path.resolve(__dirname, '..', 'app', 'main.js');
 
-module.exports = function () {
+module.exports = function (sslConfig) {
+
+  var webpackConfig = null;
+  var bundlerConfig = {
+    // We need to tell Webpack to serve our bundled application
+    // from the build path. When proxying:
+    // http://localhost:3000/build -> http://localhost:8080/build
+    publicPath: '/build/',
+
+    // Configure hot replacement
+    hot: true,
+    progress: true,
+    // The rest is terminal configurations
+    quiet: true,
+    noInfo: false,
+    stats: {
+      colors: true
+    }
+  };
+
+  if (sslConfig && sslConfig.httpsConfigured) {
+    webpackConfig = require('./../webpack.config.js').sslWebpackConfig;
+
+    bundlerConfig.https = true;
+    bundlerConfig.cert = sslConfig.sslOptions.cert;
+    bundlerConfig.key = sslConfig.sslOptions.key;
+
+  } else {
+    webpackConfig = require('./../webpack.config.js').config;
+  }
 
   // First we fire up Webpack an pass in the configuration we
   // created
@@ -31,23 +59,7 @@ module.exports = function () {
     console.log('Bundled in ' + (Date.now() - bundleStart) + 'ms!');
   });
 
-  var bundler = new WebpackDevServer(compiler, {
-
-    // We need to tell Webpack to serve our bundled application
-    // from the build path. When proxying:
-    // http://localhost:3000/build -> http://localhost:8080/build
-    publicPath: '/build/',
-
-    // Configure hot replacement
-    hot: true,
-    progress: true,
-    // The rest is terminal configurations
-    quiet: true,
-    noInfo: false,
-    stats: {
-      colors: true
-    }
-  });
+  var bundler = new WebpackDevServer(compiler, bundlerConfig);
 
   // We fire up the development server and give notice in the terminal
   // that we are starting the initial bundle

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 #
 # 
@@ -172,7 +172,7 @@ class TestSystemConstraints(unittest.TestCase):
 class TestManifestConstraints(unittest.TestCase):
     def test_unique_instance_ids(self):
         sysinfo = rift.vcs.SystemInfo()
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing="doesn't matter")
 
         vm1 = rift.vcs.manifest.RaVm(name='test.vm')
         vm2 = rift.vcs.manifest.RaVm(name='test.vm')
@@ -242,7 +242,7 @@ class TestManifestConstraints(unittest.TestCase):
 
     def test_check_number_of_brokers(self):
         sysinfo = rift.vcs.SystemInfo()
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing="doesn't matter")
         constraint = rift.vcs.compiler.constraints.CheckNumberOfBrokers()
 
         # It is valid for the manifest to have no broker in either multi-broker
@@ -278,7 +278,7 @@ class TestManifestConstraints(unittest.TestCase):
 
     def test_check_number_of_dtsrouters(self):
         sysinfo = rift.vcs.SystemInfo()
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing="doesn't matter")
         constraint = rift.vcs.compiler.constraints.CheckNumberOfDtsRouters()
 
         # It is valid for the manifest to have no dtsrouter in either multi-dtsrouter
@@ -314,7 +314,7 @@ class TestManifestConstraints(unittest.TestCase):
 
     def test_check_number_of_rwlog(self):
         sysinfo = rift.vcs.SystemInfo()
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing="doesn't matter")
         constraint = rift.vcs.compiler.constraints.CheckNumberOfLogd()
 
         # It is never valid for the manifest to have no rwlogs and no
@@ -346,7 +346,7 @@ class TestManifestConstraints(unittest.TestCase):
 
     def test_check_component_names_are_not_none(self):
         sysinfo = rift.vcs.SystemInfo()
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing="doesn't matter")
 
         # Add a single, unnamed colony to the manifest
         colony = rift.vcs.manifest.RaColony(name=None)

@@ -80,7 +80,7 @@ void rw_ncclnt_xml_release(rw_ncclnt_xml_t* xml)
 void rw_ncclnt_xml_terminate(rw_ncclnt_xml_t* xml)
 {
   /// ATTN: Neeed implementation
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 rw_ncclnt_xml_t*  rw_ncclnt_xml_create_empty(rw_ncclnt_instance_t* instance)
@@ -158,7 +158,7 @@ rw_ncclnt_xml_t* rw_ncclnt_xml_create_xml_yang_subtree(
     unsigned depth_limit)
 {
   //ATTN Need implementataion - Assert for now
-  RW_ASSERT(0);
+  RW_CRASH();
   return nullptr;
 }
 
@@ -168,7 +168,7 @@ rw_ncclnt_xml_t* rw_ncclnt_xml_create_xml_subtree(
     unsigned depth_limit)
 {
   //ATTN Need implementataion - Assert for now
-  RW_ASSERT(0);
+  RW_CRASH();
   return nullptr;
 }
 rw_ncclnt_instance_t* rw_ncclnt_xml_get_instance(
@@ -176,7 +176,7 @@ rw_ncclnt_instance_t* rw_ncclnt_xml_get_instance(
 )
 {
   //ATTN Need implementataion - Assert for now
-  RW_ASSERT(0);
+  RW_CRASH();
   return nullptr;
 }
 rw_yang_netconf_op_status_t rw_ncclnt_xml_consume_buffer(
@@ -199,7 +199,7 @@ rw_yang_netconf_op_status_t rw_ncclnt_xml_consume_buffer_pointer(
 )
 {
   //ATTN Need implementataion - Assert for now
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_YANG_NETCONF_OP_STATUS_OK;
 }
 
@@ -208,7 +208,7 @@ rw_yang_netconf_op_status_t rw_ncclnt_xml_consume_bytes(
     size_t consume)
 {
   //ATTN Need implementataion - Assert for now
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_YANG_NETCONF_OP_STATUS_OK;
 }
 rw_status_t rw_ncclnt_xml_consume_wait_producer(
@@ -218,7 +218,7 @@ rw_status_t rw_ncclnt_xml_consume_wait_producer(
 )
 {
   //ATTN Need implementataion - Assert for now
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_STATUS_SUCCESS;
 }
 rw_yang_netconf_op_status_t rw_ncclnt_xml_consume_get_producer_error(
@@ -241,7 +241,7 @@ void rw_ncclnt_xml_consume_set_error(
 )
 {
   //ATTN Need implementataion - Assert for now
-  RW_ASSERT(0);
+  RW_CRASH();
   return;
 }
 

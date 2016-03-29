@@ -143,9 +143,16 @@ class RwNsConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
         pass
 
     @asyncio.coroutine
+    def is_configured(self, vnfr_if):
+        return True
+
+    @asyncio.coroutine
     def vnf_config_primitive(self, nsr_id, vnfr_id, primitive, output):
         """Apply config primitive on a VNF"""
         pass
+
+    def is_vnfr_managed(self, vnfr_id):
+        return False
 
 class NsmConfigPlugins(object):
     """ NSM Config Agent Plugins """

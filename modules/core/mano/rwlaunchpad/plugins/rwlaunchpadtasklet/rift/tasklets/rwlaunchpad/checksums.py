@@ -5,10 +5,10 @@
 
 import hashlib
 import re
-import subprocess
 
 def checksum_string(s):
     return hashlib.md5(s.encode('utf-8')).hexdigest()
+
 
 def checksum(fd):
     """ Calculate a md5 checksum of fd file handle
@@ -19,13 +19,14 @@ def checksum(fd):
     Returns:
       A md5 checksum of the file
 
-    Raises:
-      CalledProcessError if the file doesn't exist
     """
+    current = hashlib.md5()
+    while True:
+        data = fd.read(2 ** 16)
+        if len(data) == 0:
+            return current.hexdigest()
+        current.update(data)
 
-    md5sum_cmd = ["md5sum", fd.name]
-    output = subprocess.check_output(md5sum_cmd, universal_newlines=True).strip()
-    return output.split()[0]
 
 class ArchiveChecksums(dict):
     @classmethod

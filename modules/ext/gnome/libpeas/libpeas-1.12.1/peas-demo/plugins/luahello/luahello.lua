@@ -1,3 +1,20 @@
+--
+--  Copyright (C) 2014 - Garrett Regier
+--
+-- libpeas is free software; you can redistribute it and/or
+-- modify it under the terms of the GNU Lesser General Public
+-- License as published by the Free Software Foundation; either
+-- version 2.1 of the License, or (at your option) any later version.
+--
+-- libpeas is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-- Lesser General Public License for more details.
+--
+-- You should have received a copy of the GNU Lesser General Public
+-- License along with this library; if not, write to the Free Software
+-- Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
+
 local lgi = require 'lgi'
 
 local GObject = lgi.GObject
@@ -6,7 +23,7 @@ local Peas = lgi.Peas
 local PeasGtk = lgi.PeasGtk
 
 
-LuaHelloPlugin = GObject.Object:derive('LuaHelloPlugin', {
+local LuaHelloPlugin = GObject.Object:derive('LuaHelloPlugin', {
     Peas.Activatable
 })
 
@@ -17,7 +34,7 @@ LuaHelloPlugin._property.object =
                               GObject.ParamFlags.WRITABLE })
 
 function LuaHelloPlugin:do_activate()
-    window = self.priv.object
+    local window = self.priv.object
     print('LuaHelloPlugin:do_activate', tostring(window))
     self.priv.label = Gtk.Label.new('Lua Says Hello!')
     self.priv.label:show()
@@ -25,19 +42,19 @@ function LuaHelloPlugin:do_activate()
 end
 
 function LuaHelloPlugin:do_deactivate()
-    window = self.priv.object
+    local window = self.priv.object
     print('LuaHelloPlugin:do_deactivate', tostring(window))
     window:get_child():remove(self.priv.label)
     self.priv.label:destroy()
 end
 
 function LuaHelloPlugin:do_update_state()
-    window = self.priv.object
+    local window = self.priv.object
     print('LuaHelloPlugin:do_update_state', tostring(window))
 end
 
 
-LuaHelloConfigurable = GObject.Object:derive('LuaHelloConfigurable', {
+local LuaHelloConfigurable = GObject.Object:derive('LuaHelloConfigurable', {
     PeasGtk.Configurable
 })
 

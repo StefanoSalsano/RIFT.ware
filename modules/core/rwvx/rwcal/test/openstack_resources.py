@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 # 
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
@@ -348,8 +349,6 @@ def main():
     parser.add_argument('--persist-vms',
                         action = 'store',
                         dest = 'persist_vms',
-                        nargs = '+',
-                        type = str,
                         help = 'VM instance name to persist')
 
     parser.add_argument('--salt-master',
@@ -389,16 +388,22 @@ def main():
                         dest = 'use_project',
                         help='Project name to be used for VM creation')
 
+    parser.add_argument('--clean-mclp',
+                        action='store_true',
+                        dest='clean_mclp',
+                        help='Remove Mission Control and Launchpad VMs')
 
     argument = parser.parse_args()
 
     if argument.persist_vms is not None:
-        for vm_name in argument.persist_vms:
-            vm_name_list = vm_name.split(',')
-            for single_vm in vm_name_list:
+        global persistent_resources
+        vm_name_list = argument.persist_vms.split(',')
+        for single_vm in vm_name_list:
                 persistent_resources['vms'].append(single_vm)
-        print("persist: {}".format(persistent_resources['vms']))
-        #sys.exit(0)
+        logger.info("persist-vms: %s" % persistent_resources['vms'])
+
+    if argument.clean_mclp:
+        persistent_resources['vms'] = []
 
     if argument.controller is None:
         logger.error('Need openstack controller IP address')
@@ -429,7 +434,12 @@ def main():
                 drv._destroy_networks()
 
     if argument.upload_image is not None:
-        drv.create_image(argument.upload_image)
+        image_name_list = argument.upload_image.split(',')
+        logger.info("Will upload %d iamge(s): %s" % (len(image_name_list), image_name_list))
+        for image_name in image_name_list:
+            drv.create_image(image_name)
+            #print("Uploaded :", image_name)
+
     elif argument.use_image is not None:
         img = drv.find_image(argument.use_image)
         if img == None:

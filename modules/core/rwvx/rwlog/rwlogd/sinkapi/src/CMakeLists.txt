@@ -18,6 +18,7 @@ set(PKG_LONG_NAME ${PKG_NAME}-${PKG_VERSION})
 # By default the directories are appended onto the current list of directories
 ##
 include_directories(BEFORE
+  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwlog/rwlogd/sinkapi/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwmsg/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwlog/rwlogd/include
@@ -52,10 +53,11 @@ target_link_libraries(rwlogd_sink
   rt
   tcpdump
   rwlog
+  rwdts_api
   -lcrypto
   -lpcap
   -lpthread)
 
-add_dependencies(rwlogd_sink rwlogdproto rwdynschema)
+add_dependencies(rwlogd_sink rwlogdproto rwdynschema rwdts)
 
 install(TARGETS rwlogd_sink LIBRARY DESTINATION usr/lib COMPONENT ${PKG_LONG_NAME})

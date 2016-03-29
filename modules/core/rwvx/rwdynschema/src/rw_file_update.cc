@@ -29,7 +29,6 @@ namespace fs = boost::filesystem;
   state_mc_.insert(                             \
       CREATE_STATE(S1, S2, Func))
 
-
 static constexpr const auto ten_seconds = 10LL;
 static constexpr const auto thirty_seconds = 30LL;
 
@@ -43,7 +42,7 @@ void rw_run_file_update_protocol(rwsched_instance_ptr_t sched,
 
 
 
-bool rw_create_runtime_schema_dir()
+bool rw_create_runtime_schema_dir(char const * northbound_schema_listing)
 {
   std::string rift_root = getenv("RIFT_INSTALL");
   if (!rift_root.length()) {
@@ -53,7 +52,9 @@ bool rw_create_runtime_schema_dir()
   std::string cmd;
   cmd = rift_root + FILE_PROTO_OPS_EXE;
 
-  cmd = cmd + " --lock-file-create --create-schema-dir --lock-file-delete";
+  cmd = cmd + " --lock-file-create --create-schema-dir "
+        + northbound_schema_listing
+        + " --lock-file-delete";
 
   auto ret = std::system(cmd.c_str());
   if (ret != EXIT_SUCCESS) {
@@ -95,7 +96,7 @@ static void update_lck_timestamp_cb(rwsched_CFRunLoopTimerRef cftimer,
   }
 }
 
-static bool check_version_staleness()
+static bool check_version_staleness(std::string const rift_root)
 {
   auto curr_ver = ConfdUpgradeMgr().get_max_version_unlinked();
   if (curr_ver == 0) {
@@ -105,7 +106,8 @@ static bool check_version_staleness()
   std::ostringstream strm;
   strm << std::setfill('0') << std::setw(8) << std::hex << curr_ver;
 
-  auto last_write_timer = fs::last_write_time(SCHEMA_VER_DIR + strm.str());
+  std::string const version_directory = rift_root + SCHEMA_VER_DIR + ("/" + strm.str());
+  auto last_write_timer = fs::last_write_time(version_directory);
   auto now = std::time(nullptr);
 
   return (now - last_write_timer) >= STALENESS_THRESH;
@@ -142,19 +144,10 @@ FileUpdateProtocol::FileUpdateProtocol(rwsched_instance_ptr_t sched,
     , app_data_(app_data)
 {
   initialize_state_mc();
-  char hostname[MAX_HOSTNAME_SZ];
-  hostname[MAX_HOSTNAME_SZ - 1] = 0;
-  int res = gethostname(hostname, MAX_HOSTNAME_SZ - 2);
-  RW_ASSERT(res != -1);
 
-  lock_file_ = SCHEMA_LOCK_FILE + std::string(hostname);
+  rift_root_ = getenv("RIFT_INSTALL");
 
-  const char* rift_root = getenv("RIFT_INSTALL");
-  if (nullptr == rift_root) {
-    rift_root_ = "/";
-  } else {
-    rift_root_ = rift_root;
-  }
+  lock_file_ = rift_root_ + SCHEMA_LOCK_FILE;
 
   cmd_ = rift_root_ + "/usr/bin/rwyangutil ";
 }
@@ -256,7 +249,7 @@ void FileUpdateProtocol::try_create_lock_file()
   // then bail out of this state machine.
   RW_LOG(this, Debug, "try_create_lock_file")
 
-  if (!check_version_staleness()) {
+  if (!check_version_staleness(rift_root_)) {
     RW_LOG(this, Info, "Version directory found is new, nothing to be done");
     set_state(INVALID, INVALID);
     // create a dummy owner so as to not rerun
@@ -291,22 +284,49 @@ void FileUpdateProtocol::copy_files_to_local_tmp_dir()
     return;
   }
 
-  cleanup_tmp_files();
-
   // ATTN: This could block for quite some time
   // considering the fact that it may be getting
   // copied over NFS link and NFS _will_ give
   // trouble!
+
+  fs::path const all_tmp_path = rift_root_ + "/" + SCHEMA_TMP_ALL_LOC;
+  fs::path const northbound_tmp_path = rift_root_ + "/" + SCHEMA_TMP_NORTHBOUND_LOC;
+
   try {
     for (int i = 0; i < app_data_->batch_size; ++i) {
-      std::string mod_name(app_data_->module_names[i]);
-      std::string lib_name("lib" + mod_name);
-      const auto& dir_file = SCHEMA_TMP_LOC + mod_name;
-      const auto& dir_lib = SCHEMA_TMP_LOC + lib_name;
-      fs::copy(app_data_->fxs_filenames[i], dir_file + ".fxs");
-      fs::copy(app_data_->so_filenames[i],  dir_lib + ".so");
-      fs::copy(app_data_->yang_filenames[i], dir_file + ".yang");
+      std::string const module_name(app_data_->modules[i].module_name);
+      std::string const lib_name("/lib/lib" + module_name + ".so");
+
+      fs::path const all_so_path = all_tmp_path / lib_name;
+      fs::path const all_fxs_path = all_tmp_path / ("/fxs/" + module_name + ".fxs");
+      fs::path const all_yang_path = all_tmp_path / ("/yang/" + module_name + ".yang");
+      fs::path const all_meta_path = all_tmp_path / ("/meta/" + module_name + META_INFO_FILE_PREFIX);
+
+      // bug in boost::filesystem::path when constructed from a char *
+      fs::path const inbound_fxs_path(std::string(app_data_->modules[i].fxs_filename));
+      fs::path const inbound_so_path(std::string(app_data_->modules[i].so_filename));
+      fs::path const inbound_yang_path(std::string(app_data_->modules[i].yang_filename));
+      fs::path const inbound_meta_path(std::string(app_data_->modules[i].metainfo_filename));
+
+      fs::copy_file(inbound_fxs_path,  all_fxs_path,  fs::copy_option::overwrite_if_exists);
+      fs::copy_file(inbound_so_path,   all_so_path,   fs::copy_option::overwrite_if_exists);
+      fs::copy_file(inbound_yang_path, all_yang_path, fs::copy_option::overwrite_if_exists);      
+      fs::copy_file(inbound_meta_path, all_meta_path, fs::copy_option::overwrite_if_exists);
+
+      if (app_data_->modules[i].exported) {
+        fs::path const northbound_so_path = northbound_tmp_path / lib_name;
+        fs::path const northbound_fxs_path = northbound_tmp_path / ("/fxs/" + module_name + ".fxs");
+        fs::path const northbound_yang_path = northbound_tmp_path / ("/yang/" + module_name + ".yang");
+        fs::path const northbound_meta_path = northbound_tmp_path / ("/meta/" + module_name + META_INFO_FILE_PREFIX);
+
+        fs::copy_file(inbound_fxs_path,  northbound_fxs_path,  fs::copy_option::overwrite_if_exists);
+        fs::copy_file(inbound_so_path,   northbound_so_path,   fs::copy_option::overwrite_if_exists);
+        fs::copy_file(inbound_yang_path, northbound_yang_path, fs::copy_option::overwrite_if_exists);      
+        fs::copy_file(inbound_meta_path, northbound_meta_path, fs::copy_option::overwrite_if_exists);
+      }
+
     }
+
   } catch (const fs::filesystem_error& e) {
     RW_LOG(this, Error, ("Copying files failed: " + std::string(e.what())).c_str());
     reset_state_machine();
@@ -317,19 +337,13 @@ void FileUpdateProtocol::copy_files_to_local_tmp_dir()
   set_state(COPY_TO_TMP, COPY_TO_REG);
 }
 
+// ATTN: remove
 void FileUpdateProtocol::copy_files_to_schema_dir()
 {
   RW_LOG(this, Debug, "copy_files_to_schema_dir");
 
   if (!owner_->check_lck_file_validity()) {
     set_state(INVALID, INVALID);
-    return;
-  }
-
-  auto ret = execute_cmd("--copy-from-tmp");
-  if (!ret) {
-    RW_LOG(this, Error, "Filesystem error while copying files to schema directory");
-    reset_state_machine();
     return;
   }
 
@@ -344,8 +358,6 @@ void FileUpdateProtocol::cleanup_files()
     return;
   }
 
-  cleanup_tmp_files();
-
   if (!create_new_version_dir()) {
     RW_LOG(this, Error, "Creation of version directory failed");
     reset_state_machine();
@@ -359,9 +371,43 @@ void FileUpdateProtocol::cleanup_files()
   set_state(INVALID, INVALID);
 }
 
-void FileUpdateProtocol::cleanup_tmp_files()
+void FileUpdateProtocol::set_state(State curr_state, State nxt_state)
 {
-  FSHelper::remove_all_files(SCHEMA_TMP_LOC);
+  state_.first = curr_state;
+  state_.second = nxt_state;
+}
+
+rwlog_ctx_t* FileUpdateProtocol::rwlog() const noexcept
+{
+  RW_ASSERT(tinfo_->rwlog_instance);
+  return tinfo_->rwlog_instance;
+}
+
+rwsched_tasklet_ptr_t FileUpdateProtocol::tasklet() const noexcept
+{
+  return tasklet_;
+}
+
+rwsched_instance_ptr_t FileUpdateProtocol::sched() const noexcept
+{
+  return sched_;
+}
+
+const char* owning_app_info::lock_file() const noexcept {
+  return parent_->lock_file_.c_str();
+}
+
+const char* watcher_app_info::lock_file() const noexcept {
+  return parent_->lock_file_.c_str();
+}
+
+void FileUpdateProtocol::app_callback()
+{
+  RW_LOG(this, Debug, "Calling application callback");
+      app_data_->app_sub_cb(app_data_->app_instance,
+                            app_data_->batch_size,
+                            app_data_->modules);
+  fini_state();
 }
 
 // -------------------------------------------------------------

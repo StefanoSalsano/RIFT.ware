@@ -43,6 +43,10 @@ module rw-dts-tailf
     tailf:callpoint base_show;
   }
   
+  tailf:annotate "/rwdts:journal-info" {
+    tailf:callpoint base_show;
+  }
+
   tailf:annotate "/rwdts:start-dts" {
     tailf:actionpoint rw_action;
   }

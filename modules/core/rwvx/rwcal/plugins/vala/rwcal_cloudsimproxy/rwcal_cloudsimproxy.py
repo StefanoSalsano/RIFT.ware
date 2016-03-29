@@ -544,6 +544,17 @@ class CloudSimProxyPlugin(GObject.Object, RwCal.Cloud):
         self._set_host_from_account(account)
         return self._proxy_rpc_call("get_virtual_link", link_id=link_id)
 
+    @rwstatus(ret_on_failure=[[]])
+    def do_get_virtual_link_list(self, account):
+        """Returns the a list of the Virtual links
+
+        Returns:
+            a list of RwcalYang.VirtualLinkInfoParams objects
+
+        """
+        self._set_host_from_account(account)
+        return self._proxy_rpc_call("get_virtual_link_list")
+
     @rwstatus(ret_on_failure=[None])
     def do_delete_virtual_link(self, account, link_id):
         """Delete the virtual link

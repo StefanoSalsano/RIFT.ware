@@ -5,6 +5,8 @@
 #
 
 
+import gi
+gi.require_version('RwYang', '1.0')
 from gi.repository import IetfL2TopologyYang as l2Tl
 from gi.repository import RwTopologyYang as RwTl
 from gi.repository import RwYang
@@ -57,7 +59,7 @@ class MyProvNetwork(object):
                 return node
 
     def get_tp(self, node, tp_name):
-        _tp_id = "urn:Rift:Lab:" + node.node_id + ":" + tp_name
+        _tp_id = node.node_id + ":" + tp_name
         for tp in node.termination_point :
             if (tp.tp_id == _tp_id):
                 return tp
@@ -86,7 +88,7 @@ class MyProvNetwork(object):
     def create_tp(self, node, cfg_tp, sup_node = None, sup_tp = None, vlan = False):
         logging.debug("   Creating termination point %s %s", node.l2_node_attributes.name, cfg_tp)
         tp = node.termination_point.add()
-        tp.tp_id = ("urn:Rift:Lab:{}:{}").format(node.node_id, cfg_tp)
+        tp.tp_id = ("{}:{}").format(node.node_id, cfg_tp)
         # L2 TP augmentation
         tp.l2_termination_point_attributes.description = cfg_tp
         tp.l2_termination_point_attributes.maximum_frame_size = 1500
@@ -305,14 +307,13 @@ if __name__ == "__main__":
     status = subprocess.call("sed -i '/xml version/d' " + xml_formatted_file, shell=True)
     status = subprocess.call("sed -i '/root xmlns/d' " + xml_formatted_file, shell=True)
     status = subprocess.call("sed -i '/\/root/d' " + xml_formatted_file, shell=True)
-    #adjust_xml_file(xml_formatted_file, "/tmp/stacked_provtop3.xml", "<lnk:source>", "</lnk:destination>")
-    #adjust_xml_file("/tmp/stacked_provtop3.xml", "/tmp/stacked_provtop4.xml", "<nd:network-types>", "</nd:network-types>")
 
     print ("Converting to JSON ")
     # Convert set of topologies to JSON
     json_str = nwtop.to_json(model)
     with open("/tmp/stacked_provtop.json", "w") as f:
         f.write(json_str)
-    status = subprocess.call("python -m json.tool /tmp/stacked_top.json > /tmp/stacked_provtop2.json", shell=True)
+    status = subprocess.call("python -m json.tool /tmp/stacked_provtop.json > /tmp/stacked_provtop2.json", shell=True)
     json_formatted_file = "/tmp/stacked_provtop2.json"
     status = subprocess.call("sed -i -e 's/\"l2t:ethernet\"/\"ethernet\"/g' " + json_formatted_file, shell=True)
+    status = subprocess.call("sed -i -e 's/\"l2t:vlan\"/\"vlan\"/g' " + json_formatted_file, shell=True)

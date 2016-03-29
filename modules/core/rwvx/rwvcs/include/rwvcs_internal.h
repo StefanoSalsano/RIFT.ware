@@ -45,16 +45,6 @@ rwvcs_rwzk_node_create(
     rwvcs_instance_ptr_t rwvcs,
     rw_component_info * component);
 
-/*
- * Delete a instance data node from the zookeeper
- *
- * @param rwvcs         - rwvcs instance
- * @param instance_name - name of instance to delete
- * @return              - rw_status_t
- */
-rw_status_t
-rwvcs_rwzk_delete_node(rwvcs_instance_ptr_t rwvcs, const char * instance_name);
-
 typedef struct rwvcs_rwzk_lookup_sync_s {
   rwvcs_instance_ptr_t rwvcs;
   const char * instance_id;
@@ -175,9 +165,105 @@ typedef struct rwvcs_rwzk_update_config_ready_sync_s {
   rwvcs_instance_ptr_t rwvcs;
   const char * instance_name;
   bool         config_ready;
+  vcs_recovery_type recovery_action;
   rw_status_t status;
 } rwvcs_rwzk_update_config_ready_sync_t;
 
+typedef struct rwvcs_rwzk_watcher_start_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  rwsched_tasklet_ptr_t    sched_tasklet_ptr;
+  rwsched_dispatch_queue_t rwq;
+  void (*cb)(void* ud);
+  void *ud;
+  rwcal_closure_ptr_t closure;
+} rwvcs_rwzk_watcher_start_sync_t;
+
+typedef struct rwvcs_rwzk_get_children_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  char ***children;
+  rw_status_t status;
+} rwvcs_rwzk_get_children_sync_t;
+
+typedef struct rwvcs_rwzk_get_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  char ** data;
+  rw_status_t status;
+} rwvcs_rwzk_get_sync_t;
+
+typedef struct rwvcs_rwzk_set_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  const char * data;
+  rw_status_t status;
+} rwvcs_rwzk_set_sync_t;
+
+typedef struct rwvcs_rwzk_create_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  rw_status_t status;
+} rwvcs_rwzk_create_sync_t;
+
+typedef struct rwvcs_rwzk_exists_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  bool         exists;
+} rwvcs_rwzk_exists_sync_t;
+
+typedef struct rwvcs_rwzk_lock_path_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  struct timeval * timeout;
+  rw_status_t status;
+} rwvcs_rwzk_lock_path_sync_t;
+
+typedef struct rwvcs_rwzk_unlock_path_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  rw_status_t status;
+} rwvcs_rwzk_unlock_path_sync_t;
+
+typedef struct rwvcs_rwzk_delete_path_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  rw_status_t status;
+} rwvcs_rwzk_delete_path_sync_t;
+
+typedef struct rwvcs_rwzk_watcher_stop_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * path;
+  rwcal_closure_ptr_t *closure;
+  rw_status_t status;
+} rwvcs_rwzk_watcher_stop_sync_t;
+
+typedef struct rwvcs_rwzk_update_recovery_action_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  const char * instance_name;
+  vcs_recovery_type recovery_action;
+  rw_status_t status;
+} rwvcs_rwzk_update_recovery_action_sync_t;
+
+typedef struct rwvcs_rwzk_seed_auto_instance_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  int start;
+  const char *path;
+  rw_status_t status;
+} rwvcs_rwzk_seed_auto_instance_sync_t;
+
+typedef struct rwvcs_rwzk_server_start_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  uint32_t instance_id;
+  bool unique_ports;
+  const char **server_names;
+  rw_status_t status;
+} rwvcs_rwzk_server_start_sync_t;
+
+typedef struct rwvcs_rwzk_client_start_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  rw_status_t status;
+} rwvcs_rwzk_client_start_sync_t;
 
 /* Lookup a component in the rwzk datastore without posting to rwq
  *
@@ -235,6 +321,7 @@ rwvcs_rwzk_lock_internal(rwvcs_instance_ptr_t rwvcs,
 rw_status_t
 rwvcs_rwzk_unlock_internal(rwvcs_instance_ptr_t rwvcs, const char * id);
 
+rw_status_t validate_bootstrap_phase(vcs_manifest_bootstrap * bootstrap);
 
 __END_DECLS
 

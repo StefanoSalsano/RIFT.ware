@@ -5,18 +5,28 @@
 
 import asyncio
 import logging
+import math
+import mmap
+import os
+import re
+import tarfile
+import tempfile
+import sys
 
 import tornado
 import tornado.httputil
 import tornado.httpserver
 import tornado.platform.asyncio
 
-
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwTypes', '1.0')
 from gi.repository import (
-    RwCompositeYang,
     RwDts as rwdts,
     RwLaunchpadYang as rwlaunchpad,
     RwcalYang as rwcal,
+    RwTypes,
 )
 
 import rift.tasklets
@@ -384,6 +394,13 @@ class LaunchpadTasklet(rift.tasklets.Tasklet):
 
         self.log.debug("Created DTS Api GI Object: %s", self.dts)
 
+    def stop(self):
+      try:
+         self.server.stop()
+         self.dts.deinit()
+      except Exception:
+         print("Caught Exception in LP stop:", sys.exc_info()[0])
+         raise
     def set_mode(self, mode):
         """ Sets the mode of this launchpad"""
         self.mode = mode
@@ -391,13 +408,30 @@ class LaunchpadTasklet(rift.tasklets.Tasklet):
     @asyncio.coroutine
     def init(self):
         io_loop = rift.tasklets.tornado.TaskletAsyncIOLoop(asyncio_loop=self.loop)
-
         self.app = uploader.UploaderApplication(self)
-        self.server = tornado.httpserver.HTTPServer(
+
+        manifest = self.tasklet_info.get_pb_manifest()
+        ssl_cert = manifest.bootstrap_phase.rwsecurity.cert
+        ssl_key = manifest.bootstrap_phase.rwsecurity.key
+        ssl_options = {
+            "certfile" : ssl_cert,
+            "keyfile" : ssl_key,
+        }
+
+        if manifest.bootstrap_phase.rwsecurity.use_ssl:
+            self.server = tornado.httpserver.HTTPServer(
                 self.app,
                 max_body_size=LaunchpadTasklet.UPLOAD_MAX_BODY_SIZE,
                 io_loop=io_loop,
-                )
+                ssl_options=ssl_options,                
+            )
+
+        else:
+            self.server = tornado.httpserver.HTTPServer(
+                self.app,
+                max_body_size=LaunchpadTasklet.UPLOAD_MAX_BODY_SIZE,
+                io_loop=io_loop,
+            )
 
         self.log.debug("creating VLD catalog handler")
         self.vld_catalog_handler = VldCatalogDtsHandler(self, self.app)

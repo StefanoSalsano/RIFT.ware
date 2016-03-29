@@ -19,10 +19,9 @@ export default {
     getNSR() {
         return {
             remote: function(state, recordID) {
-
                 return new Promise(function(resolve, reject) {
                     $.ajax({
-                        url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr/' + recordID + '?api_server=' + API_SERVER,
+                        url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr/' + recordID + '?api_server=' + API_SERVER,
                         type: 'GET',
                         beforeSend: Utils.addAuthorizationStub,
                         success: function(data) {
@@ -44,7 +43,7 @@ export default {
             remote: function(state, vnfrID) {
                 return new Promise(function(resolve, reject) {
                     $.ajax({
-                        url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/api/operational/vnfr-catalog/vnfr/' + vnfrID + '?api_server=' + API_SERVER,
+                        url: '//' + window.location.hostname + ':' + NODE_PORT + '/api/operational/vnfr-catalog/vnfr/' + vnfrID + '?api_server=' + API_SERVER,
                         type: 'GET',
                         beforeSend: Utils.addAuthorizationStub,
                         success: function(data) {
@@ -63,7 +62,7 @@ export default {
             remote: function(state, nsrID) {
                 return new Promise(function(resolve, reject) {
                     $.ajax({
-                        url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/api/operational/ns-instance-opdata/nsr/' + nsrID + '?api_server=' + API_SERVER,
+                        url: '//' + window.location.hostname + ':' + NODE_PORT + '/api/operational/ns-instance-opdata/nsr/' + nsrID + '?api_server=' + API_SERVER,
                         type: 'GET',
                         beforeSend: Utils.addAuthorizationStub,
                         success: function(data) {
@@ -86,14 +85,14 @@ export default {
                         //   resolve(false);
                         // }
                     $.ajax({
-                        url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER,
+                        url: '//' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER,
                         type: 'POST',
                         beforeSend: Utils.addAuthorizationStub,
                         data: {
                             url: HOST + ':' + NODE_PORT + '/launchpad/nsr/' + recordID + '?api_server=' + API_SERVER,
                         },
                         success: function(data) {
-                            var url = 'ws://' + window.location.hostname + ':' + data.port + data.socketPath;
+                            var url = Utils.webSocketProtocol() + '//' + window.location.hostname + ':' + data.port + data.socketPath;
                             var ws = new WebSocket(url);
                             resolve(ws);
                         }
@@ -113,14 +112,14 @@ export default {
                     //   resolve(false);
                     // }
                     $.ajax({
-                        url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER,
+                        url: '//' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER,
                         type: 'POST',
                         beforeSend: Utils.addAuthorizationStub,
                         data: {
                             url: HOST + ':' + NODE_PORT + '/launchpad/vnfr/' + state.recordID + '?api_server=' + API_SERVER,
                         },
                         success: function(data) {
-                            var url = 'ws://' + window.location.hostname + ':' + data.port + data.socketPath;
+                            var url = Utils.webSocketProtocol() + '//' + window.location.hostname + ':' + data.port + data.socketPath;
                             var ws = new WebSocket(url);
                             resolve(ws);
                         }
@@ -137,7 +136,7 @@ export default {
             remote(state, payload) {
                 return new Promise(function(resolve, reject) {
                     $.ajax({
-                        url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/exec-ns-config-primitive?api_server=' + API_SERVER,
+                        url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/exec-ns-config-primitive?api_server=' + API_SERVER,
                         type: 'POST',
                         data: payload,
                         beforeSend: Utils.addAuthorizationStub,

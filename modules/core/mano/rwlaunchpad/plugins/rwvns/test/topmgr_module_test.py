@@ -16,6 +16,14 @@ import random
 
 import xmlrunner
 
+import gi
+gi.require_version('CF', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwMain', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwTypes', '1.0')
 import gi.repository.CF as cf
 import gi.repository.RwDts as rwdts
 import gi.repository.RwMain as rwmain

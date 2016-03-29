@@ -60,7 +60,6 @@
 .install/usr/data/xsd/rw-c-types.xsd
 .install/usr/data/xsd/rw-cli-ext.xsd
 .install/usr/data/xsd/rw-cloud.xsd
-.install/usr/data/xsd/rw-composite.xsd
 .install/usr/data/xsd/rw-debug.xsd
 .install/usr/data/xsd/rw-dts-api-log.xsd
 .install/usr/data/xsd/rw-dts-router-log.xsd
@@ -189,9 +188,6 @@
 .install/usr/data/yang/rw-cli-ext.dsdl
 .install/usr/data/yang/rw-cli-ext.fxs
 .install/usr/data/yang/rw-cli-ext.yang
-.install/usr/data/yang/rw-composite.dsdl
-.install/usr/data/yang/rw-composite.fxs
-.install/usr/data/yang/rw-composite.yang
 .install/usr/data/yang/rw-debug.dsdl
 .install/usr/data/yang/rw-debug.fxs
 .install/usr/data/yang/rw-debug.yang
@@ -471,7 +467,6 @@
 .install/usr/lib/librwcli.so
 .install/usr/lib/librwcmdargs.so
 .install/usr/lib/librwcmdargs_yang_gen.so
-.install/usr/lib/librwcomposite_yang_parse_gen.so
 .install/usr/lib/librwconfd.so
 .install/usr/lib/librwdts_api.so
 .install/usr/lib/librwdts_redis.so
@@ -670,7 +665,6 @@
 .install/usr/lib/rift/girepository-1.0/RwCal-1.0.typelib
 .install/usr/lib/rift/girepository-1.0/RwCliExtYang-1.0.typelib
 .install/usr/lib/rift/girepository-1.0/RwCompositeDYang-1.0.typelib
-.install/usr/lib/rift/girepository-1.0/RwCompositeYang-1.0.typelib
 .install/usr/lib/rift/girepository-1.0/RwDebugYang-1.0.typelib
 .install/usr/lib/rift/girepository-1.0/RwDts-1.0.typelib
 .install/usr/lib/rift/girepository-1.0/RwDtsApiLogDYang-1.0.typelib
@@ -1147,7 +1141,6 @@
 .install/usr/lib64/python3.3/site-packages/gi/overrides/NsdYang.py
 .install/usr/lib64/python3.3/site-packages/gi/overrides/ProtobufC.py
 .install/usr/lib64/python3.3/site-packages/gi/overrides/RwBaseYang.py
-.install/usr/lib64/python3.3/site-packages/gi/overrides/RwCompositeYang.py
 .install/usr/lib64/python3.3/site-packages/gi/overrides/RwDebugYang.py
 .install/usr/lib64/python3.3/site-packages/gi/overrides/RwDts.py
 .install/usr/lib64/python3.3/site-packages/gi/overrides/RwDynSchema.py

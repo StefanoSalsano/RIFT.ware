@@ -4,7 +4,8 @@
 
 %define _topdir           %{_rift_root}/.install/rpmbuild/
 %define name              %{_rpmname}
-%define release           %{_buildnum}%{?dist}
+%define release           1%{?dist}
+#%%define release           %{_buildnum}%{?dist}
 %define version           %{_version}
 %define buildroot         %{_topdir}/%{name}-%{version}-root
 %define DST_RIFT_ROOT     %{_dst_rift_root}
@@ -28,7 +29,7 @@ BuildRequires: yum
 # turn this off when we have proper deps
 AutoReqProv: no
 
-Requires: riftware-base >= %{_version}-%{_buildnum}, httpd, php, php-gd
+Requires: riftware-base >= %{_version}, httpd, php, php-gd
 #Requires(post): info
 #Requires(preun): info
 

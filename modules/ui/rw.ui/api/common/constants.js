@@ -34,6 +34,7 @@ constants.HTTP_HEADERS = {
 
 constants.SOCKET_BASE_PORT = 3500;
 constants.SOCKET_POOL_LENGTH = 20;
+constants.NODE_API_PORT = process.env.NODE_API_PORT || 3000;
 
 
 module.exports = constants;

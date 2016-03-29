@@ -770,10 +770,12 @@ public:
 
 public:
   // ATTN: const char* get_syntax();
+  int32_t get_integer_value() override;
 
 public:
   //! The libncx enum value definition.
   typ_enum_t* const typ_enum_;
+  int32_t position_ = 0;
 };
 
 
@@ -971,6 +973,7 @@ class YangNodeNcx
   bool is_notification() override;
   std::string get_enum_string(int32_t value) override;
   YangNode* get_leafref_ref() override;
+  std::string get_leafref_path_str() override;
   bool app_data_is_cached(const AppDataTokenBase* token) const noexcept override;
   bool app_data_is_looked_up(const AppDataTokenBase* token) const noexcept override;
   bool app_data_check_and_get(const AppDataTokenBase* token, intptr_t* data) const noexcept override;
@@ -1175,7 +1178,7 @@ public:
   YangModule* get_module() { return nullptr; }
   YangUses* get_uses() { return nullptr; }
   YangModel* get_model();
-  uint32_t get_node_tag() {RW_ASSERT(0); return 0; } /* ATTN */
+  uint32_t get_node_tag() {RW_CRASH(); return 0; } /* ATTN */
 
   //! @see YangNode::app_data_is_cached(const AppDataTokenBase* token)
   bool app_data_is_cached(const AppDataTokenBase* token) const noexcept override;

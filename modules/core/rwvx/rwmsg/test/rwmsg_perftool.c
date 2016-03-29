@@ -12,6 +12,8 @@
 #include <assert.h>
 #include <sys/time.h>
 
+#include "rwtasklet.h"
+
 #include <rwmsg_int.h>
 #include <rwmsg_broker.h>
 
@@ -60,6 +62,7 @@ struct rwmsg_perf_task_s {
   rwmsg_perf_test_vector_t *v;
 
   rwsched_tasklet_ptr_t tasklet;
+
   char path[64];
   rwmsg_endpoint_t *ep;
   rwsched_dispatch_queue_t rws_q;
@@ -243,6 +246,9 @@ static struct {
   uint32_t killed_tasks;
 
   uint32_t done;
+
+  rwtasklet_info_t ti_s;
+  rwtasklet_info_t *ti;
 } perf = {
   .nnuri = "tcp://127.0.0.1:1234",
   //.nnuri = "tcp://" RWMSG_CONNECT_ADDR_STR ":1234",
@@ -285,7 +291,7 @@ static void init_broker(rwmsg_perf_task_t *t) {
   pnum++;
 
   //t->bro = rwmsg_broker_create(0, t->cfg.instance, "127.0.0.1", perf.rwsched, t->tasklet, perf.rwcal, t->cfg.mainq, t->ep);
-  t->bro = rwmsg_broker_create(0, t->cfg.instance, pnum, perf.rwsched, t->tasklet, perf.rwcal, t->cfg.mainq, t->ep);
+  t->bro = rwmsg_broker_create(0, t->cfg.instance, pnum, perf.rwsched, t->tasklet, perf.rwcal, t->cfg.mainq, t->ep, perf.ti);
   perf.bros_ct++;
 }
 static void deinit_broker(rwmsg_perf_task_t *t) {
@@ -1040,7 +1046,12 @@ int main(int argc, char * const *argv, const char *envp[]) {
 
   perf.rwtrace = rwtrace_init();
   perf.rwsched = rwsched_instance_new();
-  perf.rwcal = rwcal_module_alloc();
+
+  perf.ti = &perf.ti_s;
+  perf.ti->rwvx = rwvx_instance_alloc();
+  perf.ti->rwsched_instance = perf.rwsched;
+  perf.ti->rwvcs = perf.ti->rwvx->rwvcs;
+  perf.rwcal = perf.ti->rwvx->rwcal_module;
   RW_ASSERT(perf.rwcal);
 
 #if 1 // ZOOKEEPER

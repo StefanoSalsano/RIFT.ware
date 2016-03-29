@@ -78,7 +78,7 @@ void rwmsg_clichan_destroy(rwmsg_clichan_t *cc) {
     rwmsg_request_t *hreq = NULL, *hreq2 = NULL;
     HASH_ITER(hh, cc->outreqs, hreq, hreq2) {
       /* there shouldn't be any pending reqs at this point */
-      RW_ASSERT(0);
+      RW_CRASH();
     }
     memset(cc, 0, sizeof(*cc));
     RW_FREE_TYPE(cc, rwmsg_clichan_t);
@@ -134,6 +134,7 @@ rwmsg_stream_t *rwmsg_clichan_stream_find_destsig(rwmsg_clichan_t *cc,
   }
   return sti ? sti->stream : NULL;
 }
+
 rwmsg_stream_t *rwmsg_clichan_stream_find_destid(rwmsg_clichan_t *cc,
 						 rwmsg_destination_t *dt,
 						 uint32_t stid) {
@@ -144,6 +145,41 @@ rwmsg_stream_t *rwmsg_clichan_stream_find_destid(rwmsg_clichan_t *cc,
   rwmsg_stream_t *st = NULL;
   HASH_FIND(hh, cc->streamhash, &key, sizeof(key), st);
   return st;
+}
+
+/* Reset the stream cache assiciated with the pathhash on this cc */
+void rwmsg_clichan_stream_reset(rwmsg_clichan_t *cc,
+                                rwmsg_destination_t *dt) {
+
+  rwmsg_stream_idx_t *sti = NULL, *tmp = NULL;
+  HASH_ITER(hh, cc->streamidx, sti, tmp) {
+    if (sti->key.pathhash == dt->apathhash) {
+      HASH_DELETE(hh, cc->streamidx, sti);
+      RW_ASSERT(sti->stream->refct >= 1);
+      sti->stream->refct--;
+      RW_FREE_TYPE(sti, rwmsg_stream_idx_t);
+    }
+  }
+
+  rwmsg_stream_t *st=NULL, *stmp=NULL;
+  HASH_ITER(hh, cc->streamhash, st, stmp) {
+    if (st->key.pathhash == dt->apathhash) {
+      HASH_DELETE(hh, cc->streamhash, st);
+      RW_ASSERT(st->refct == 1);
+      if (st->dest) {
+        rwmsg_destination_release(st->dest);
+        st->dest = NULL;
+      }
+      int p;
+      for (p=0; p<RWMSG_PRIORITY_COUNT; p++) {
+        if (st->in_socket_defer[p]) {
+          RW_DL_REMOVE(&cc->streamdefer[p], st, socket_defer_elem[p]);
+          st->in_socket_defer[p] = FALSE;
+        }
+      }
+      RW_FREE_TYPE(st, rwmsg_stream_t);
+    }
+  }
 }
 
 /* Update and/or create this req's stream with data from the response / ack. */
@@ -159,54 +195,24 @@ void rwmsg_clichan_stream_update(rwmsg_clichan_t *cc,
   stid = req->hdr.stid;
   if (stid) {
     if (req->st->key.streamid != stid) {
+      rwmsg_stream_t *st_o = NULL;
+      rwmsg_stream_t *st;
       if (req->st->key.streamid) {
 	/* We actually had some other stream, forget it */
-	rwmsg_stream_t *st;
-	st = rwmsg_clichan_stream_find_destid(cc, req->dest, req->st->key.streamid);
-	if (st) {
-	  /* Find the old stream by sig, eject that index entry */
-	  rwmsg_stream_t *ost;
-	  rwmsg_stream_idx_t *sti = NULL;
-	  RW_ASSERT(!st->defstream);
-	  ost = rwmsg_clichan_stream_find_destsig(cc, req->dest, req->hdr.methno, req->hdr.payt, &sti);
-	  if (ost == st && sti) {
-	    RW_ASSERT(!ost->defstream);
-	    HASH_DELETE(hh, cc->streamidx, sti);
-	    RW_FREE_TYPE(sti, rwmsg_stream_idx_t);
-	    if (ost->refct > 0) {
-	      ost->refct--;
-	    }
-	    if (ost->refct == 0) {
-
-	      HASH_DELETE(hh, cc->streamhash, ost);
-	      if (ost->dest) {
-		rwmsg_destination_release(ost->dest);
-		ost->dest = NULL;
-	      }
-	      int p;
-	      for (p=0; p<RWMSG_PRIORITY_COUNT; p++) {
-		if (ost->in_socket_defer[p]) {
-		  RW_DL_REMOVE(&cc->streamdefer[p], ost, socket_defer_elem[p]);
-		  ost->in_socket_defer[p] = FALSE;
-		}
-	      }
-	      RW_FREE_TYPE(ost, rwmsg_stream_t);
-	    }
-	  }
-	}
+	st_o = rwmsg_clichan_stream_find_destid(cc, req->dest, req->st->key.streamid);
       }
 
-      rwmsg_stream_t *st = rwmsg_clichan_stream_find_destid(cc, req->dest, stid);
+      st = rwmsg_clichan_stream_find_destid(cc, req->dest, stid);
       if (!st) {
 	/* Create new stream */
 	st = RW_MALLOC0_TYPE(sizeof(*st), rwmsg_stream_t);
 	st->key.pathhash = req->dest->apathhash;
 	RW_ASSERT(req->hdr.stid == stid);
 	st->key.streamid = req->hdr.stid;
-	st->tx_win = 1;
-	st->tx_out = 0;
-	st->seqno = 1;
-	st->localsc = NULL;
+	st->tx_win = st_o ? st_o->tx_win : 1;
+	st->tx_out = st_o ? st_o->tx_out : 0;
+	st->seqno = st_o ? st_o->seqno : 1;
+	st->localsc = st_o ? st_o->localsc : NULL;
 	st->refct = 1;
 	st->dest = req->dest;
 	ck_pr_inc_32(&req->dest->refct);   
@@ -221,6 +227,37 @@ void rwmsg_clichan_stream_update(rwmsg_clichan_t *cc,
 	HASH_ADD(hh, cc->streamhash, key, sizeof(st->key), st);
       }
 
+      if (st_o) {
+        /* Find the old stream by sig, eject that index entry */
+        rwmsg_stream_t *ost;
+        rwmsg_stream_idx_t *sti = NULL;
+        RW_ASSERT(!st_o->defstream);
+        ost = rwmsg_clichan_stream_find_destsig(cc, req->dest, req->hdr.methno, req->hdr.payt, &sti);
+        if (ost == st_o && sti) {
+          RW_ASSERT(!ost->defstream);
+          HASH_DELETE(hh, cc->streamidx, sti);
+          RW_FREE_TYPE(sti, rwmsg_stream_idx_t);
+          if (ost->refct > 0) {
+            ost->refct--;
+          }
+          if (ost->refct == 0) {
+
+            HASH_DELETE(hh, cc->streamhash, ost);
+            if (ost->dest) {
+              rwmsg_destination_release(ost->dest);
+              ost->dest = NULL;
+            }
+            int p;
+            for (p=0; p<RWMSG_PRIORITY_COUNT; p++) {
+              if (ost->in_socket_defer[p]) {
+                RW_DL_REMOVE(&cc->streamdefer[p], ost, socket_defer_elem[p]);
+                ost->in_socket_defer[p] = FALSE;
+              }
+            }
+            RW_FREE_TYPE(ost, rwmsg_stream_t);
+          }
+        }
+      }
       req->st = st;
 
       /* Update dest/sig index */
@@ -386,6 +423,7 @@ static rw_status_t rwmsg_clichan_recv_req(rwmsg_clichan_t *cc,
   /* Stash the request handle to free later if the caller doesn't.
      Also release our reference to the srvchan, if any, right away. */
   if (req->srvchan) {
+    _RWMSG_CH_DEBUG_(&req->srvchan->ch, "--");
     rwmsg_srvchan_release(req->srvchan);
     req->srvchan = NULL;
   }
@@ -466,7 +504,7 @@ rw_status_t rwmsg_clichan_feedme_callback(rwmsg_clichan_t *cc,
     }
     cc->feedme_count ++;
   } else {
-    RW_ASSERT(0);		/* unsupported, once engaged it's clichan-wide */
+    RW_CRASH();		/* unsupported, once engaged it's clichan-wide */
     st->dest = NULL;
     memset(&st->cb, 0, sizeof(st->cb));
     cc->feedme_count --;
@@ -662,6 +700,7 @@ rw_status_t rwmsg_clichan_send_blocking(rwmsg_clichan_t *cc,
   /* Stash the request handle to free later if the caller doesn't.
      Also release our reference to the srvchan, if any, right away. */
   if (req->srvchan) {
+    _RWMSG_CH_DEBUG_(&req->srvchan->ch, "--");
     rwmsg_srvchan_release(req->srvchan);
     req->srvchan = NULL;
   }
@@ -690,7 +729,9 @@ static rw_status_t rwmsg_clichan_send_internal(rwmsg_clichan_t *cc,
   rw_status_t rs = RW_STATUS_FAILURE;
   RW_ASSERT_TYPE(req, rwmsg_request_t);
 
-  RWMSG_TRACE_CHAN(&cc->ch, DEBUG, "rwmsg_clichan_send_internal called%s", "");
+  RWMSG_TRACE_CHAN(&cc->ch, DEBUG, "rwmsg_clichan_send_internal called - req" FMT_MSG_HDR(req->hdr) "dest=%p dest.phash=0x%lx",
+                   PRN_MSG_HDR(req->hdr),
+                   dest, dest->apathhash);
 
   // dest pathserial is kosher? else lookup
   req->dest = dest;

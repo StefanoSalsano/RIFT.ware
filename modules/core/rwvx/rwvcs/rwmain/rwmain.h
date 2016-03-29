@@ -13,6 +13,8 @@
 #include <rwdts.h>
 #include <rwvcs.h>
 #include <rwvx.h>
+#include <time.h>
+#include "rwmain_gi.h"
 
 #include "serf_client.h"
 
@@ -42,6 +44,18 @@ __BEGIN_DECLS
         ##__VA_ARGS__); \
   } while (false);
 
+#define rwmain_trace_crit_info(__rwmain, __fmt, ...) \
+  do { \
+    RWTRACE_CRITINFO( \
+        (__rwmain)->rwvx->rwtrace, \
+        RWTRACE_CATEGORY_RWMAIN, \
+        "%s-%d: " __fmt, \
+        (__rwmain)->component_name, \
+        (__rwmain)->instance_id, \
+        ##__VA_ARGS__); \
+  } while (false);
+
+
 #define rwmain_trace_error(__rwmain, __fmt, ...) \
   do { \
     RWTRACE_ERROR( \
@@ -65,13 +79,13 @@ __BEGIN_DECLS
   } while (false);
 
 
-#define RWMAIN_DEREG_PATH_DTS(t_apih, t_component) {\
+#define RWMAIN_DEREG_PATH_DTS(t_apih, t_component, t_recovery) {\
   char *path; \
   int r = asprintf(&path, "/R/%s/%lu", \
                    (t_component)->component_name, \
                    (t_component)->instance_id); \
   RW_ASSERT(r != -1); \
-  rw_status_t dereg_status = rwdts_member_deregister_path ((t_apih), path); \
+  rw_status_t dereg_status = rwdts_member_deregister_path ((t_apih), path, t_recovery); \
   RW_ASSERT (dereg_status == RW_STATUS_SUCCESS); \
   RW_FREE(path); \
 }
@@ -85,26 +99,11 @@ typedef RWPB_T_MSG(RwBase_ProcHeartbeatStats_MissedHistogram) rwproc_heartbeat_h
 #define rwproc_heartbeat_timing__init(x)      RWPB_F_MSG_INIT(RwBase_ProcHeartbeatStats_Timing, x);
 #define rwproc_heartbeat_histogram__init(x)   RWPB_F_MSG_INIT(RwBase_ProcHeartbeatStats_MissedHistogram, x);
 
-struct cpu_usage {
-  struct {
-    double user;
-    double sys;
-    double idle;
-  } current;
 
-  struct {
-    unsigned long user;
-    unsigned long sys;
-    unsigned long idle;
-    unsigned long total;
-  } previous;
-};
 
 // Defined in heartbeat.c
 struct rwproc_heartbeat;
 
-// Forward decl for rwmain_tasklet;
-struct rwmain;
 
 struct rwmain_tasklet {
   rw_sklist_element_t _sklist;
@@ -116,7 +115,7 @@ struct rwmain_tasklet {
   RwTaskletPluginComponentHandle *h_component;
   RwTaskletPluginInstanceHandle *h_instance;
 
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwsched_CFRunLoopTimerRef kill_if_not_running;
 
   struct rwtasklet_info_s * tasklet_info;
@@ -127,8 +126,9 @@ struct rwmain_proc {
 
   char * instance_name;
   pid_t pid;
+  bool is_rwproc;
 
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwsched_CFRunLoopSourceRef cfsource;
 };
 
@@ -139,55 +139,6 @@ struct rwmain_multivm {
 };
 
 
-struct vstart {
-  rw_sklist_element_t _sklist;
-
-  char *instance_name;
-  uint32_t vstart_corr_id;
-};
-
-struct rwmain {
-  char * component_name;
-  rw_component_type component_type;
-  uint32_t instance_id;
-  char * parent_id;
-  char * vm_ip_address;
-  uint32_t vm_instance_id;
-
-
-  rwdts_api_t * dts;
-  uint32_t vstart_corr_id;
-  // List of vstart-reqs
-  rw_sklist_t vstarts;;
-
-  rwtasklet_info_ptr_t tasklet_info;
-  rwvx_instance_ptr_t rwvx;
-
-  struct {
-    double last_proc_systime;
-    double last_proc_cputime;
-    double proc_cpu_usage;
-
-    struct cpu_usage all_cpus;
-    struct cpu_usage ** each_cpu;
-  } sys;
-
-  struct serf_context * serf;
-  struct serf_event_callback * serf_handler;
-
-  struct rwproc_heartbeat * rwproc_heartbeat;
-
-  // List of native processes launched by this vcs instance.  Used
-  // to track the processes via a CFSource.
-  rw_sklist_t procs;
-
-  // List of tasklets launched by this vcs instance.
-  rw_sklist_t tasklets;
-
-  // List of muti_vms launched by this vcs instance.
-  rw_sklist_t multivms;
-};
-
 /*
  * Parse the command line and perform the setup of a rwvx instance.
  *
@@ -196,7 +147,7 @@ struct rwmain {
  * @param envp  - envp as passed to main()
  * @return      - fully initialized rwmain instance
  */
-struct rwmain * rwmain_setup(int argc, char ** argv, char ** envp);
+struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp);
 
 /*
  * Bootstrap the current component.  The bootstrap phase is defined in the
@@ -206,10 +157,10 @@ struct rwmain * rwmain_setup(int argc, char ** argv, char ** envp);
  * @param rwmain  - rwmain instance
  * @return        - rw_status
  */
-rw_status_t rwmain_bootstrap(struct rwmain * rwmain);
+rw_status_t rwmain_bootstrap(struct rwmain_gi * rwmain);
 
-rw_status_t rwmain_setup_dts_registrations(struct rwmain * rwmain);
-rw_status_t rwmain_setup_dts_rpcs(struct rwmain * rwmain);
+rw_status_t rwmain_setup_dts_registrations(struct rwmain_gi * rwmain);
+rw_status_t rwmain_setup_dts_rpcs(struct rwmain_gi * rwmain);
 
 /*
  * Setup a timer that will monitor the cpu utilization of both the entire
@@ -217,7 +168,7 @@ rw_status_t rwmain_setup_dts_rpcs(struct rwmain * rwmain);
  *
  * @param rwmain  - rwmain instance
  */
-void rwmain_setup_cputime_monitor(struct rwmain * rwmain);
+void rwmain_setup_cputime_monitor(struct rwmain_gi * rwmain);
 
 
 /*
@@ -227,7 +178,7 @@ void rwmain_setup_cputime_monitor(struct rwmain * rwmain);
  * @param tasklet_instance  - instance-name of tasklet to restart.
  */
 rw_status_t rwmain_tasklet_restart(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * tasklet_instance);
 
 /*
@@ -237,7 +188,7 @@ rw_status_t rwmain_tasklet_restart(
  * @param proc    - instance-name of native proc to restart
  */
 rw_status_t rwmain_native_proc_restart(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * proc);
 
 /*
@@ -251,7 +202,7 @@ rw_status_t rwmain_native_proc_restart(
  */
 rw_status_t
 rwmain_action_run(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
    vcs_manifest_action * action);
 
@@ -270,7 +221,7 @@ rwmain_action_run(
  * @return        - RW_STATUS_SUCCESS on success
  */
 rw_status_t
-rwmain_stop_instance(struct rwmain * rwmain, rw_component_info * id);
+rwmain_stop_instance(struct rwmain_gi * rwmain, rw_component_info * id);
 
 /*
  * Initialize the specified VM.  After that point, this process will be
@@ -286,7 +237,7 @@ rwmain_stop_instance(struct rwmain * rwmain, rw_component_info * id);
  */
 rw_status_t
 rwmain_rwvm_init(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     vcs_manifest_vm * vm_def,
     const char * component_name,
     uint32_t instance_id,
@@ -307,7 +258,7 @@ rwmain_rwvm_init(
  */
 rw_status_t
 rwmain_rwproc_init(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     vcs_manifest_proc * proc_def,
     const char * component_name,
     uint32_t instance_id,
@@ -364,7 +315,7 @@ void rwproc_heartbeat_free(struct rwproc_heartbeat * rwproc_heartbeat);
  * @return                - rw_status
  */
 rw_status_t rwproc_heartbeat_subscribe(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * instance_name);
 
 /*
@@ -376,7 +327,7 @@ rw_status_t rwproc_heartbeat_subscribe(
  * @return                - rw_status
  */
 rw_status_t rwproc_heartbeat_publish(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * instance_name);
 
 /*
@@ -389,7 +340,7 @@ rw_status_t rwproc_heartbeat_publish(
  * @return          - rw_status
  */
 rw_status_t rwproc_heartbeat_reset(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     uint16_t frequency,
     uint32_t tolerance,
     bool enabled);
@@ -403,7 +354,7 @@ rw_status_t rwproc_heartbeat_reset(
  * @param enabled   - on return, whether heartbeats are enabled or not
  */
 void rwproc_heartbeat_settings(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     uint16_t * frequency,
     uint32_t * tolerance,
     bool * enabled);
@@ -420,7 +371,7 @@ void rwproc_heartbeat_settings(
  * @return        - rw_status
  */
 rw_status_t rwproc_heartbeat_stats(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     rwproc_heartbeat_stat *** stats,
     size_t * n_stats);
 
@@ -456,7 +407,7 @@ void rwmain_tasklet_free(struct rwmain_tasklet * rt);
  * @return        - rw_status
  */
 rw_status_t rwmain_tasklet_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     struct rwmain_tasklet * rt);
 
 /*
@@ -464,6 +415,7 @@ rw_status_t rwmain_tasklet_start(
  *
  * @param rwmain        - rwmain instance
  * @param instance_name - proccess instance-name
+ * @param is_rwproc     - True if the proc is of type RWPROC
  * @param pid           - process pid
  * @param pipe_fd       - read side of pipe opened with the process.  This is
  *                        used as a cheap form of process monitoring.  If the
@@ -472,8 +424,9 @@ rw_status_t rwmain_tasklet_start(
  * @return              - rwmain process container
  */
 struct rwmain_proc * rwmain_proc_alloc(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * instance_name,
+    bool is_rwproc,
     pid_t pid,
     int pipe_fd);
 
@@ -488,54 +441,53 @@ void rwmain_proc_free(struct rwmain_proc * rp);
 #define VCS_INSTANCE_XPATH_FMT "D,/rw-base:vcs/instances/instance[instance-name='%s']"
 #define VCS_GET(t_rwmain) (t_rwmain)->rwvx->rwvcs
 rw_status_t rwmain_dts_register_vcs_instance(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char* instance_name);
 rw_status_t rwvcs_instance_update_child_state(
-    struct rwmain *rwmain,
+    struct rwmain_gi *rwmain,
     char *child_name,
     const char *parent_name,
     RwvcsTypes__YangEnum__ComponentType__E component_type,
     RwBase__YangEnum__AdminCommand__E admin_state);
 
 rw_status_t rwvcs_instance_delete_child(
-    struct rwmain *rwmain,
+    struct rwmain_gi *rwmain,
     char *child_name,
     const char *parent_name,
     RwvcsTypes__YangEnum__ComponentType__E component_type);
 
 rw_status_t rwvcs_instance_delete_instance(
-    struct rwmain *rwmain);
+    struct rwmain_gi *rwmain);
 
 rw_status_t 
 rwmain_dts_config_ready_process(rwvcs_instance_ptr_t rwvcs,
                                 rw_component_info * id);
 rw_status_t send2dts_start_req(
-  struct rwmain * rwmain,
+  struct rwmain_gi * rwmain,
   const rwdts_xact_info_t * xact_info,
-  char *component_name);
+  vcs_rpc_start_input *start_req);
 
 rw_status_t send2dts_stop_req(
-  struct rwmain * rwmain,
+  struct rwmain_gi * rwmain,
   const rwdts_xact_info_t * xact_info,
   char *instance_name,
   char *child_name);
 
 rwdts_member_rsp_code_t do_vstart(
     const rwdts_xact_info_t* xact_info,
-    struct rwmain * rwmain,
-    char *component_name,
-    char *ip_addr,
+    struct rwmain_gi * rwmain,
+    rw_vcs_instance_childn *child_n,
     char *parent_instance,
     char **child_instance);
 
 rwdts_member_rsp_code_t do_vstop(
     const rwdts_xact_info_t * xact_info,
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     char *stop_instance_name);
 
 rwdts_member_rsp_code_t do_vstop_new(
     const rwdts_xact_info_t * xact_info,
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     char *stop_instance_name);
 
 /*
@@ -554,7 +506,7 @@ void send_start_request_response(
   const char * instance_name);
 
 struct dts_start_stop_closure {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwdts_xact_t * xact;
   rwdts_query_handle_t query;
 
@@ -565,10 +517,36 @@ struct dts_start_stop_closure {
   // start: component-name
   char * rpc_query;
   char * ip_addr;
+  rw_admin_command admin_command;
 
   // corrilation-id for start-req
   uint32_t vstart_corr_id;
 };
 
+void init_phase(rwsched_CFRunLoopTimerRef timer, void * ctx);
+struct rwmain_gi * rwmain_alloc(
+    rwvx_instance_ptr_t rwvx,
+    const char * component_name,
+    uint32_t instance_id,
+    const char * component_type,
+    const char * parent_id,
+    const char * vm_ip_address,
+    uint32_t vm_instance_id);
+
+/*
+ * Create a start action and pass it to rwvcs to start an instance of an component
+ *
+ * @param rwmain          - rwmaininstance
+ * @param component_name  - name of the component to start
+ * @return                - RW_STATUS_SUCCESS on success, status from rwmain_action_run() otherwise
+ */
+rw_status_t start_component(
+    struct rwmain_gi * rwmain,
+    const char * component_name,
+    const char * ip_addr,
+    rw_admin_command admin_command,
+    const char * parent_instance,
+    char ** instance_name,
+    vcs_manifest_component *m_component);
 __END_DECLS
 #endif

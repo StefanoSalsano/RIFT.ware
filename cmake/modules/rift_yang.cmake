@@ -734,7 +734,10 @@ function(rift_add_yang_target)
     if(NOT yang_file MATCHES "^/")
       set(yang_file ${ARG_SRC_DIR}/${yang_file})
     endif()
+
     rift_get_bare_yang_filename(name "${yang_file}")
+    set(yang_meta_file "${CMAKE_CURRENT_BINARY_DIR}/${name}.meta_info.txt")
+
     if(ARG_COMPONENT AND NOT ARG_NO_INSTALL_YANG)
       install(FILES ${yang_file} DESTINATION usr/data/yang COMPONENT ${ARG_COMPONENT})
     endif()
@@ -742,6 +745,9 @@ function(rift_add_yang_target)
 
     set(schema_target ${name}.yang-schema)
     set(schema_depends ${ARG_DEPENDS} ${yang_file})
+
+    set(library_target ${library_name}.lib-tgt)
+    set(vapi_target ${name}.vapi-tgt)
 
     set(yangpbc_target ${name}.yang-ypb)
     set(yangpbc_depends ${ARG_DEPENDS} ${yang_file})
@@ -989,6 +995,7 @@ function(rift_add_yang_target)
         COMMAND ${command}
         DEPENDS ${annotate_depends} ${schema_depends} ${extra_depends}
       )
+
       if(ARG_COMPONENT)
         install(FILES ${fxs_file} DESTINATION usr/data/yang COMPONENT ${ARG_COMPONENT})
       endif()
@@ -1008,11 +1015,16 @@ function(rift_add_yang_target)
 
     if(ARG_COMPONENT)
       # Install CLI manifest files if any
-      get_filename_component(cli_manifest_file ${yang_file} DIRECTORY)
-      set(cli_manifest_file ${cli_manifest_file}/${name}.cli.xml)
+      get_filename_component(base_path ${yang_file} DIRECTORY)
+      set(cli_manifest_file ${base_path}/${name}.cli.xml)
 
       if(EXISTS ${cli_manifest_file})
         install(FILES ${cli_manifest_file} DESTINATION usr/data/yang COMPONENT ${ARG_COMPONENT})
+      endif()
+
+      set(cli_ssi_file ${base_path}/${name}.cli.ssi.sh)
+      if(EXISTS ${cli_ssi_file})
+        install(FILES ${cli_ssi_file} DESTINATION usr/data/yang COMPONENT ${ARG_COMPONENT})
       endif()
     endif()
 
@@ -1042,8 +1054,10 @@ function(rift_add_yang_target)
       set(ypb_c_file ${ypb_base}.ypbc.cpp)
       set(ypb_gi_c_file ${ypb_base}.ypbc.gi.c)
       set(bare_ypb_gi_h_file ${name}.ypbc.h)
-      set(doc_user_file ${ypb_base}.doc-user.txt)
-      set(doc_api_file ${ypb_base}.doc-api.txt)
+      set(doc_user_file_text ${ypb_base}.doc-user.txt)
+      set(doc_user_file_html ${ypb_base}.doc-user.html)
+      set(doc_api_file_text ${ypb_base}.doc-api.txt)
+      set(doc_api_file_html ${ypb_base}.doc-api.html)
 
       rift_yangpbc_command(command
         YANG_DIRS ${ARG_YANG_DIRS} ${other_dirs}
@@ -1052,23 +1066,26 @@ function(rift_add_yang_target)
       )
 
       # workaround for RIFT-5169, RIFT-5171 and RIFT-4892
-      set(workaround "YUMA_MODPATH=${CMAKE_CURRENT_SOURCE_DIR}:$ENV{YUMA_MODPATH}")
+      set(workaround "YUMA_MODPATH=${CMAKE_CURRENT_SOURCE_DIR}:${CMAKE_CURRENT_BINARY_DIR}:$ENV{YUMA_MODPATH}")
       add_custom_command(
         OUTPUT ${proto_file} ${ypb_h_file} ${ypb_c_file}
           ${ypb_gi_c_file} ${ypb_gi_h_file}
-          ${doc_user_file} ${doc_api_file}
+          ${doc_user_file_text_} ${doc_api_file_text}
+	  ${doc_user_file_html} ${doc_api_file_html}
         COMMAND ${workaround} ${command}
         DEPENDS ${yangpbc_depends} ${extra_depends}
       )
-      list(APPEND doc_file_list ${doc_user_file})
-      list(APPEND doc_file_list ${doc_api_file})
+      list(APPEND doc_file_list ${doc_user_file_text})
+      list(APPEND doc_file_list ${doc_user_file_html})
+      list(APPEND doc_file_list ${doc_api_file_text})
+      list(APPEND doc_file_list ${doc_api_file_html})
       list(APPEND c_file_list ${ypb_c_file})
       list(APPEND c_file_list ${ypb_gi_c_file})
       if(ARG_COMPONENT)
         install(FILES ${proto_file} DESTINATION usr/data/proto COMPONENT ${ARG_COMPONENT})
         install(FILES ${ypb_h_file} DESTINATION usr/include COMPONENT ${ARG_COMPONENT})
         install(
-          FILES ${doc_user_file} ${doc_api_file}
+          FILES ${doc_user_file_text} ${doc_api_file_text} ${doc_user_file_html} ${doc_api_file_html}
           DESTINATION usr/data/yang
           COMPONENT ${ARG_COMPONENT}
         )
@@ -1101,6 +1118,7 @@ function(rift_add_yang_target)
         SRC_DIR ${ARG_DEST_DIR}
         OTHER_DIRS ${other_dirs}
         PROTO_DIRS ${ARG_PROTO_DIRS}
+        SUPPRESS_PROTO_DEPEND
         DEPENDS ${proto_depends}
       )
 
@@ -1188,6 +1206,35 @@ function(rift_add_yang_target)
         COMPONENT ${library_pkg_name}-1.0)
     endif()
 
+    add_custom_target(${vapi_target} DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${name}.pc)
+
+    set(rift_meta_cmd ${PROJECT_TOP_DIR}/cmake/modules/rwyangmeta.py)
+
+    if(ARG_COMPONENT AND NOT ARG_NO_INSTALL_YANG)
+      add_custom_command(
+        OUTPUT ${yang_meta_file}
+        COMMAND
+          ${rift_meta_cmd} ${name} ${name}
+                         ${gi_namespace}-${GI_VERSION} 
+                         ${gi_vapi_namespace}-${GI_VERSION}
+                         ${library_name}
+                         ${CMAKE_CURRENT_SOURCE_DIR}
+        DEPENDS ${schema_target}
+          ${gi_target}
+          ${library_target}
+          ${rift_meta_cmd}
+          ${vapi_target}
+        )
+
+      set(meta_target "${name}-meta-tgt")
+
+      add_custom_target(
+        ${meta_target} ALL
+        DEPENDS ${yang_meta_file})
+
+      install(FILES ${yang_meta_file} DESTINATION usr/data/yang COMPONENT ${ARG_COMPONENT})
+   endif ()
+
   endforeach(yang_file)
 
 
@@ -1204,6 +1251,7 @@ function(rift_add_yang_target)
     install(TARGETS ${library_name} LIBRARY
       DESTINATION usr/lib COMPONENT ${ARG_COMPONENT})
     list(APPEND target_depends ${library_name})
+    add_custom_target(${library_target} DEPENDS ${library_name})
   endif()
 
 

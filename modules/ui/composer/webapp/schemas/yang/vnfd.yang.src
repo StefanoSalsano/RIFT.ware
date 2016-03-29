@@ -104,6 +104,12 @@ module vnfd
         type string;
       }
 
+      leaf logo {
+        description
+            "Vendor logo for the Virtual Network Function";
+        type string;
+      }
+
       leaf description {
         description "Description of the VNFD.";
         type string;
@@ -426,6 +432,18 @@ module vnfd
         }
       }
 
+      leaf service-function-chain {
+        description "Type of node in Service Function Chaining Architecture";
+
+        type enumeration {
+          enum UNAWARE;
+          enum CLASSIFIER;
+          enum SF;
+          enum SFF;
+        }
+        default "UNAWARE";
+      }
+      
       leaf service-function-type {
         description
             "Type of Service Function.

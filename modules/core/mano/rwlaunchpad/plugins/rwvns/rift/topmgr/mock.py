@@ -5,6 +5,8 @@
 
 import mock
 
+import gi
+gi.require_version('RwcalYang', '1.0')
 from gi.repository import RwcalYang
 
 from . import core

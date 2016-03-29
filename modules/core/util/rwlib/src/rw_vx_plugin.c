@@ -1080,7 +1080,7 @@ rw_vx_plug_port_free(rw_vx_plug_port_t *port)
         RW_DL_REMOVE(&port->plug->output_pin_list,pin,ft_dl_elem);
         break;
       default:
-        RW_ASSERT(0);
+        RW_CRASH();
         break;
     }
 
@@ -1386,7 +1386,7 @@ rw_vx_port_add_pin_with_blockid(rw_vx_plug_port_t *port,
       break;
       
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
 
   } /* switch(pin_dir) { */
@@ -1620,7 +1620,7 @@ rw_vx_link_helper(rw_vx_link_phase_t lphase,
         break;
 
       default:
-        RW_ASSERT(0);
+        RW_CRASH();
         break;
     }
   }
@@ -1936,7 +1936,7 @@ rw_vx_pseudo_module_instance_prelink_check(RwpluginApi *api,
                                              const gchar *apistr)
 {
   //ZZZ
-  //RW_ASSERT(0);
+  //RW_CRASH();
   return TRUE;
 }
 static void
@@ -1949,7 +1949,7 @@ rw_vx_pseudo_module_instance_prelink(RwpluginApi *api,
                                        const gchar *apistr)
 {
   //ZZZ
-  //RW_ASSERT(0);
+  //RW_CRASH();
 }
 static void
 rw_vx_pseudo_module_instance_postlink(RwpluginApi *api,
@@ -1961,7 +1961,7 @@ rw_vx_pseudo_module_instance_postlink(RwpluginApi *api,
                                         const gchar *apistr)
 {
   //ZZZ
-  //RW_ASSERT(0);
+  //RW_CRASH();
 }
 static void
 rw_vx_pseudo_module_instance_preunlink(RwpluginApi *api,
@@ -1973,7 +1973,7 @@ rw_vx_pseudo_module_instance_preunlink(RwpluginApi *api,
                                          const gchar *apistr)
 {
   //ZZZ
-  //RW_ASSERT(0);
+  //RW_CRASH();
 }
 static void
 rw_vx_pseudo_module_instance_postunlink(RwpluginApi *api,
@@ -1985,7 +1985,7 @@ rw_vx_pseudo_module_instance_postunlink(RwpluginApi *api,
                                           const gchar *apistr)
 {
   //ZZZ
-  //RW_ASSERT(0);
+  //RW_CRASH();
 }
 
                                

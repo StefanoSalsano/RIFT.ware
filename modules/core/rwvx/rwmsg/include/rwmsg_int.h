@@ -399,10 +399,11 @@ void rwmsg_channel_load_funcs(struct rwmsg_channel_funcs *funcs, int ct);
 rw_status_t rwmsg_channel_send_buffer_pri(rwmsg_channel_t *ch, rwmsg_priority_t pri, int pauseonxoff, int sendreq);
 
 struct rwmsg_handshake_s {
-  uint64_t chanid;
+  uint32_t chanid;
   uint32_t pid;
   rwmsg_priority_t pri:16;
   enum rwmsg_chantype_e chtype:16;
+  uint32_t instid;
 };
 
 
@@ -889,6 +890,10 @@ rw_status_t rwmsg_send_methbinding(rwmsg_channel_t *ch,
                                    struct rwmsg_methbinding_key_s *k,
                                    const char *path);
 
+void rwmsg_channelspecific_halt(rwmsg_channel_t *ch);
+void rwmsg_broker_acceptor_remove_bch_from_hash(void *ctx);
+
+
 #define RWMSG_SLEEP_MS(x) {						\
   struct timespec ts = { .tv_sec = (x)/1000, .tv_nsec = (x) * 1000000 }; \
   int rv = 0;								\
@@ -963,6 +968,12 @@ rw_status_t rwmsg_send_methbinding(rwmsg_channel_t *ch,
 #define RWMSG_LOG_EVENT(__ep__, __evt__, ...)  \
   RWLOG_EVENT((__ep__)->rwlog_instance, RwMsgLog_notif_##__evt__, __VA_ARGS__)
 
+#if 0
+#define _RWMSG_CH_DEBUG_(ch, p_or_m) \
+  fprintf(stderr, "%s%s (%u): %u - %s:%u\n", p_or_m, (ch)->rwtpfx, (ch)->ep->instid, (ch)->refct, __FILE__, __LINE__)
+#else
+#define _RWMSG_CH_DEBUG_(ch, p_or_m)
+#endif
 __END_DECLS
 
 #endif // __RWMSG_INT_H

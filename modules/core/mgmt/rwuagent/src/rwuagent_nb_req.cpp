@@ -39,6 +39,13 @@ NbReq::~NbReq()
     RWMEMLOG_ARG_PRINTF_INTPTR("nbreq=0x%" PRIX64,(intptr_t)this) );
 }
 
+rwsched_dispatch_queue_t NbReq::get_execution_q() const
+{
+  // Return main queue if client does not have its own
+  // preference
+  return rwsched_dispatch_get_main_queue(instance_->rwsched());
+}
+
 StartStatus NbReq::respond(
   SbReq* sbreq )
 {

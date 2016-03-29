@@ -27,7 +27,6 @@ export default class VirtualDeploymentUnit extends DescriptorModel {
 		this.type = 'vdu';
 		this.uiState['qualified-type'] = 'vnfd.vdu';
 		this.className = 'VirtualDeploymentUnit';
-		this._connectors = [];
 	}
 
 	get key() {
@@ -36,34 +35,41 @@ export default class VirtualDeploymentUnit extends DescriptorModel {
 
 	get connectionPoint() {
 		const list = this.model['internal-connection-point'] || (this.model['internal-connection-point'] = []);
-		return list.map(d => DescriptorModelFactory.newInternalConnectionPoint(d, this));
+		return list.map(d => DescriptorModelFactory.newVirtualDeploymentUnitInternalConnectionPoint(d, this));
 	}
 
 	set connectionPoint(obj) {
-		this.updateModelList('internal-connection-point', obj, DescriptorModelFactory.InternalConnectionPoint);
+		return this.updateModelList('internal-connection-point', obj, DescriptorModelFactory.VirtualDeploymentUnitInternalConnectionPoint);
 	}
 
-	get internalConnectionPoint() {
-		//https://trello.com/c/ZOyKQd3z/122-hide-lines-representing-interface-connection-point-references-both-internal-and-external-interfaces
-		const vduc = this;
-		if (this.model && this.model['internal-interface']) {
-			const icpMap = this.model['internal-connection-point'].reduce((r, d) => {
-				r[d.id] = d;
-				return r;
-			}, {});
-			return this.model['internal-interface'].reduce((result, internalIfc) => {
-				const id = internalIfc['vdu-internal-connection-point-ref'];
-				const keyPrefix = vduc.parent ? vduc.parent.key + '/' : '';
-				const icp = Object.assign({}, icpMap[id], {
-					key: keyPrefix + id,
-					name: internalIfc.name,
-					'virtual-interface': internalIfc['virtual-interface']
-				});
-				result.push(icp);
-				return result;
-			}, []);
-		}
-		return [];
+	//get internalConnectionPoint() {
+	//	//https://trello.com/c/ZOyKQd3z/122-hide-lines-representing-interface-connection-point-references-both-internal-and-external-interfaces
+	//	const vduc = this;
+	//	if (this.model && this.model['internal-interface']) {
+	//		const icpMap = this.model['internal-connection-point'].reduce((r, d) => {
+	//			r[d.id] = d;
+	//			return r;
+	//		}, {});
+	//		return this.model['internal-interface'].reduce((result, internalIfc) => {
+	//			const id = internalIfc['vdu-internal-connection-point-ref'];
+	//			const keyPrefix = vduc.parent ? vduc.parent.key + '/' : '';
+	//			if (icpMap[id]) {
+	//				const icp = Object.assign({}, icpMap[id], {
+	//					key: keyPrefix + id,
+	//					name: internalIfc.name,
+	//					'virtual-interface': internalIfc['virtual-interface']
+	//				});
+	//				result.push(icp);
+	//			}
+	//			return result;
+	//		}, []);
+	//	}
+	//	return [];
+	//}
+
+	removeInternalConnectionPoint(icp) {
+		this.parent.removeAnyConnectionsForConnector(icp);
+		return this.removeModelListItem('connectionPoint', icp);
 	}
 
 	//get externalConnectionPoint() {
@@ -81,16 +87,15 @@ export default class VirtualDeploymentUnit extends DescriptorModel {
 	//}
 	//
 	get connectors() {
-		if (!this._connectors.length) {
-			this._connectors = this.internalConnectionPoint.map(icp => {
-				return DescriptorModelFactory.newInternalConnectionPoint(icp, this);
-			});
-		}
-		return this._connectors;
+		return this.connectionPoint;
 	}
 
-	get connection() {
-		return this.externalConnectionPoint;
+	//get connection() {
+	//	return this.externalConnectionPoint;
+	//}
+
+	remove() {
+		return this.parent.removeVirtualDeploymentUnit(this);
 	}
 
 }

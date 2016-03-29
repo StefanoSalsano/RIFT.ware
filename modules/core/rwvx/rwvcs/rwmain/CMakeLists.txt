@@ -7,12 +7,12 @@ include(rift_pkg_config)
 
 rift_pkg_check_modules(RW_VX REQUIRED rw_vx_plugin>=1.0)
 rift_pkg_check_modules(RWLIB REQUIRED rwlib>=1.0)
-
 rift_pkg_check_modules(CFLITE REQUIRED cflite>=744.12)
 rift_pkg_check_modules(GLIB REQUIRED glib-2.0>=2.42.0)
 rift_pkg_check_modules(MSGPACK REQUIRED msgpack>=0.5.9)
 rift_pkg_check_modules(PB_C REQUIRED libprotobuf-c>=1.1.0)
 rift_pkg_check_modules(TALLOC REQUIRED talloc>=2.1.0)
+rift_pkg_check_modules(COREDUMPER REQUIRED coredumper>=1.2.1)
 
 
 add_definitions(-std=gnu99 -D_GNU_SOURCE -D_CF_)
@@ -49,10 +49,12 @@ target_link_libraries(librwmain
   ${PB_C_LIBRARIES}
   ${TALLOC_LIBRARIES}
   ${RWLIB_LIBRARIES}
+  ${COREDUMPER_LIBRARIES}
 
   reaper_client
   rwdts_api
   rwdtsproto
+  dispatch
   rwlog
   rwmanifest_yang_gen
   rwmsg

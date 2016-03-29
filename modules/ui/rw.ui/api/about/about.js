@@ -15,18 +15,18 @@ var about = {};
 about.getVCS = function(req) {
   var api_server = req.query["api_server"];
 
-  return new Promise (function(resolve, reject) {
-      var requestHeaders = {};
-      _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.data,
-        {
-            'Authorization': req.get('Authorization')
-        });
-      request({
+  return new Promise(function(resolve, reject) {
+    var requestHeaders = {};
+    _.extend(requestHeaders,
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
+      });
+    request({
         url: utils.confdPort(api_server) + '/api/operational/vcs/info?deep',
         type: 'GET',
         headers: requestHeaders,
-        forever: constants.FOREVER_ON
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false,
       },
       function(error, response, body) {
         var data;
@@ -34,7 +34,7 @@ about.getVCS = function(req) {
         if (utils.validateResponse('about/vcs.get', error, response, body, resolve, reject)) {
           try {
             data = JSON.parse(response.body)["rw-base:info"]
-          } catch(e) {
+          } catch (e) {
             return reject({});
           }
 
@@ -47,18 +47,18 @@ about.getVCS = function(req) {
 about.getVersion = function(req) {
   var api_server = req.query["api_server"];
 
-  return new Promise (function(resolve, reject) {
-      var requestHeaders = {};
-      _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.data,
-        {
-            'Authorization': req.get('Authorization')
-        });
-      request({
+  return new Promise(function(resolve, reject) {
+    var requestHeaders = {};
+    _.extend(requestHeaders,
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
+      });
+    request({
         url: utils.confdPort(api_server) + '/api/operational/version?deep',
         type: 'GET',
         headers: requestHeaders,
-        forever: constants.FOREVER_ON
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false,
       },
       function(error, response, body) {
         var data;
@@ -66,7 +66,7 @@ about.getVersion = function(req) {
         if (utils.validateResponse('about/version.get', error, response, body, resolve, reject)) {
           try {
             data = JSON.parse(response.body)['rw-base:version']
-          } catch(e) {
+          } catch (e) {
             return reject({});
           }
 
@@ -82,18 +82,18 @@ about.get = function(req) {
 
   return new Promise(function(resolve, reject) {
     Promise.all([
-      about.getVCS(req),
-      about.getVersion(req)
-    ])
-    .then(function(results) {
-      var aboutObject = {};
-      aboutObject.vcs = results[0];
-      aboutObject.version = results[1];
-      resolve(aboutObject);
-    }, function(error) {
-      console.log('error getting vcs data', error);
-      reject(error)
-    });
+        about.getVCS(req),
+        about.getVersion(req)
+      ])
+      .then(function(results) {
+        var aboutObject = {};
+        aboutObject.vcs = results[0];
+        aboutObject.version = results[1];
+        resolve(aboutObject);
+      }, function(error) {
+        console.log('error getting vcs data', error);
+        reject(error)
+      });
   });
 };
 

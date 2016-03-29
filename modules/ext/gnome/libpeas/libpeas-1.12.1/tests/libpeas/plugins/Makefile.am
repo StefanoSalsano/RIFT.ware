@@ -1,6 +1,6 @@
 include $(top_srcdir)/tests/Makefile.plugin
 
-SUBDIRS = extension-c
+SUBDIRS = embedded extension-c
 
 if ENABLE_LUA51
 SUBDIRS += extension-lua
@@ -25,6 +25,7 @@ noinst_PLUGIN = \
 	nonexistent-dep.plugin			\
 	not-loadable.plugin			\
 	os-dependant-help.plugin		\
+	two-deps.plugin				\
 	unkown-loader.plugin
 
 EXTRA_DIST = $(noinst_PLUGIN)

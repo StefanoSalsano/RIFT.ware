@@ -19,6 +19,7 @@ import CatalogFilterActions from '../actions/CatalogFilterActions'
 import CanvasPanelTrayActions from '../actions/CanvasPanelTrayActions'
 import SelectionManager from '../libraries/SelectionManager'
 import CatalogDataStore from '../stores/CatalogDataStore'
+import isFullScreen from '../libraries/isFullScreen'
 
 const getDefault = (name, defaultValue) => {
 	const val = window.localStorage.getItem('defaults-' + name);
@@ -42,8 +43,8 @@ const setDefault = (name, defaultValue) => {
 /* the top and bottom positions are managed by css; requires div to be display: absolute*/
 const defaults = {
 	left: getDefault('catalog-panel-start-width', 300),
-	right: getDefault('details-panel-start-width', 300),
-	bottom: 25 + getDefault('forwarding-graphs-panel-start-width', 0),
+	right: getDefault('details-panel-start-width', 365),
+	bottom: 25 + getDefault('defaults-forwarding-graphs-panel-start-height', 0),
 	showMore: false,
 	zoom: getDefault('zoom', 100),
 	filterCatalogBy: 'nsd',
@@ -61,6 +62,8 @@ const defaults = {
 
 const autoZoomCanvasScale = d3.scale.linear().domain([0, 300]).range([100, 50]).clamp(true);
 
+const uiTransientState = {};
+
 class ComposerAppStore {
 
 	constructor() {
@@ -72,6 +75,7 @@ class ComposerAppStore {
 			right: defaults.right,
 			bottom: defaults.bottom
 		};
+		uiTransientState.restoreLayout = this.layout;
 		this.zoom = defaults.zoom;
 		this.showMore = defaults.showMore;
 		this.filterCatalogByTypeValue = defaults.filterCatalogBy;
@@ -82,6 +86,7 @@ class ComposerAppStore {
 		this.showJSONViewer = false;
 		this.showClassifiers = {};
 		this.editPathsMode = false;
+		this.fullScreenMode = false;
 		this.bindListeners({
 			onResize: PanelResizeAction.RESIZE,
 			editCatalogItem: CatalogItemsActions.EDIT_CATALOG_ITEM,
@@ -93,6 +98,7 @@ class ComposerAppStore {
 			applyDefaultLayout: CanvasEditorActions.APPLY_DEFAULT_LAYOUT,
 			addVirtualLinkDescriptor: CanvasEditorActions.ADD_VIRTUAL_LINK_DESCRIPTOR,
 			addForwardingGraphDescriptor: CanvasEditorActions.ADD_FORWARDING_GRAPH_DESCRIPTOR,
+			addVirtualDeploymentDescriptor: CanvasEditorActions.ADD_VIRTUAL_DEPLOYMENT_DESCRIPTOR,
 			selectModel: ComposerAppActions.SELECT_MODEL,
 			outlineModel: ComposerAppActions.OUTLINE_MODEL,
 			showError: ComposerAppActions.SHOW_ERROR,
@@ -104,7 +110,9 @@ class ComposerAppStore {
 			closeJsonViewer: ComposerAppActions.CLOSE_JSON_VIEWER,
 			toggleCanvasPanelTray: CanvasPanelTrayActions.TOGGLE_OPEN_CLOSE,
 			openCanvasPanelTray: CanvasPanelTrayActions.OPEN,
-			closeCanvasPanelTray: CanvasPanelTrayActions.CLOSE
+			closeCanvasPanelTray: CanvasPanelTrayActions.CLOSE,
+			enterFullScreenMode: ComposerAppActions.ENTER_FULL_SCREEN_MODE,
+			exitFullScreenMode: ComposerAppActions.EXIT_FULL_SCREEN_MODE
 		});
 	}
 
@@ -135,26 +143,28 @@ class ComposerAppStore {
 		} else if (e.type !== 'resize') {
 			console.log('no resize handler for ', e.type, '. Do you need to add a handler in ComposerAppStore::onResize()?')
 		}
+		SelectionManager.refreshOutline();
 	}
 
 	updateItem(item) {
 		if(!document.body.classList.contains('resizing')) {
 			this.setState({item: _.cloneDeep(item)});
 		}
+		SelectionManager.refreshOutline();
 	}
 
 	editCatalogItem(item) {
 		if (item && item.uiState) {
 			item.uiState.isOpenForEdit = true;
+			if (item.uiState.type !== 'nsd') {
+				this.closeCanvasPanelTray();
+			}
 		}
 		SelectionManager.select(item);
 		this.updateItem(item);
 	}
 
 	catalogItemMetaDataChanged(item) {
-		if (item && item.uiState) {
-			item.uiState.modified = true;
-		}
 		this.updateItem(item);
 	}
 
@@ -192,14 +202,22 @@ class ComposerAppStore {
 	}
 
 	addVirtualLinkDescriptor(dropCoordinates = null) {
-		if (this.item && this.item.uiState.type === 'nsd') {
-			const nsdc = DescriptorModelFactory.newNetworkService(this.item);
-			const vldc = nsdc.createVld();
-			vldc.uiState.dropCoordinates = dropCoordinates;
-			SelectionManager.clearSelectionAndRemoveOutline();
-			SelectionManager.addSelection(vldc);
-			this.updateItem(nsdc.model);
-			CatalogItemsActions.catalogItemDescriptorChanged.defer(nsdc);
+		let vld;
+		if (this.item) {
+			if (this.item.uiState.type === 'nsd') {
+				const nsdc = DescriptorModelFactory.newNetworkService(this.item);
+				vld = nsdc.createVld();
+			} else if (this.item.uiState.type === 'vnfd') {
+				const vnfd = DescriptorModelFactory.newVirtualNetworkFunction(this.item);
+				vld = vnfd.createVld();
+			}
+			if (vld) {
+				vld.uiState.dropCoordinates = dropCoordinates;
+				SelectionManager.clearSelectionAndRemoveOutline();
+				SelectionManager.addSelection(vld);
+				this.updateItem(vld.getRoot().model);
+				CatalogItemsActions.catalogItemDescriptorChanged.defer(vld.getRoot());
+			}
 		}
 	}
 
@@ -212,6 +230,18 @@ class ComposerAppStore {
 			SelectionManager.addSelection(fg);
 			this.updateItem(nsdc.model);
 			CatalogItemsActions.catalogItemDescriptorChanged.defer(nsdc);
+		}
+	}
+
+	addVirtualDeploymentDescriptor(dropCoordinates = null) {
+		if (this.item.uiState.type === 'vnfd') {
+			const vnfd = DescriptorModelFactory.newVirtualNetworkFunction(this.item);
+			const vdu = vnfd.createVdu();
+			vdu.uiState.dropCoordinates = dropCoordinates;
+			SelectionManager.clearSelectionAndRemoveOutline();
+			SelectionManager.addSelection(vdu);
+			this.updateItem(vdu.getRoot().model);
+			CatalogItemsActions.catalogItemDescriptorChanged.defer(vdu.getRoot());
 		}
 	}
 
@@ -289,6 +319,70 @@ class ComposerAppStore {
 		} else {
 			this.setState({layout: layout, restoreZoom: null});
 		}
+	}
+
+	enterFullScreenMode() {
+
+		/**
+		 * https://developer.mozilla.org/en-US/docs/Web/API/Fullscreen_API
+		 * This is an experimental api but works our target browsers and ignored by others
+		 */
+		const eventNames = ['fullscreenchange', 'mozfullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange'];
+
+		const appRoot = document.body;//.getElementById('RIFT_wareLaunchpadComposerAppRoot');
+
+		const comp = this;
+
+		function onFullScreenChange() {
+
+			if (isFullScreen()) {
+				const layout = comp.layout;
+				const restoreLayout = _.cloneDeep(layout);
+				uiTransientState.restoreLayout = restoreLayout;
+				layout.left = 0;
+				layout.right = 0;
+				comp.setState({fullScreenMode: true, layout: layout, restoreLayout: restoreLayout});
+			} else {
+				comp.setState({fullScreenMode: false, layout: uiTransientState.restoreLayout});
+			}
+
+		}
+
+		if (this.fullScreenMode === false) {
+
+			if (appRoot.requestFullscreen) {
+				appRoot.requestFullscreen();
+			} else if (appRoot.msRequestFullscreen) {
+				appRoot.msRequestFullscreen();
+			} else if (appRoot.mozRequestFullScreen) {
+				appRoot.mozRequestFullScreen();
+			} else if (appRoot.webkitRequestFullscreen) {
+				appRoot.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
+			}
+
+			eventNames.map(name => {
+				document.removeEventListener(name, onFullScreenChange);
+				document.addEventListener(name, onFullScreenChange);
+			});
+
+		}
+
+	}
+
+	exitFullScreenMode() {
+
+		if (document.exitFullscreen) {
+			document.exitFullscreen();
+		} else if (document.msExitFullscreen) {
+			document.msExitFullscreen();
+		} else if (document.mozCancelFullScreen) {
+			document.mozCancelFullScreen();
+		} else if (document.webkitExitFullscreen) {
+			document.webkitExitFullscreen();
+		}
+
+		this.setState({fullScreenMode: false});
+
 	}
 
 }

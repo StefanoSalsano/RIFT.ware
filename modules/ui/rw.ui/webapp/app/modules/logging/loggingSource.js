@@ -17,7 +17,7 @@ export default {
         console.log('getting url')
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/logging/syslog-viewer?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/logging/syslog-viewer?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {

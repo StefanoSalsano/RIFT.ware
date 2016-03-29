@@ -53,8 +53,15 @@
       flex-direction:column;
     }
     &.-is-selected {
-      outline: 1px dashed $brand-blue;
+      outline: 2px dashed $brand-blue;
       outline-offset: 2px;
+
+      background-color: #7e9bc1;
+      cursor: pointer;
+      color: white;
+      span, abbr {
+        color:white;
+      }
     }
     img {
       width: 50px;

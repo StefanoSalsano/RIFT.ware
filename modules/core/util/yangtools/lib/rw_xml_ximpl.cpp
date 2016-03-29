@@ -1307,7 +1307,7 @@ XMLAttribute::uptr_t XMLNodeXImpl::get_attribute(const char* attr_name, const ch
 
 void XMLNodeXImpl::remove_attribute(XMLAttribute *attribute)
 {
-  RW_ASSERT(0) ; // Implement this
+  RW_CRASH() ; // Implement this
 }
 
 void XMLNodeXImpl::set_attribute(
@@ -2137,7 +2137,7 @@ X::DOMLSInput* XImplDOMLSResourceResolver::resolveResource(
   }
 
   // Find the RIFT XSD lookup paths // ATTN: This is a prime candidate for CmdArgs!
-  const char* env = getenv("RW_XSD_PATH");
+  const char* env = getenv("RIFT_XSD_PATH");
   std::string rw_xsd_path;
   if (env) {
     rw_xsd_path = env;

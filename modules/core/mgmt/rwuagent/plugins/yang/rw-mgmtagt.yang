@@ -185,18 +185,6 @@ module rw-mgmtagt
     }
   }
 
-  container system {
-    description
-      "Show the system level information";
-    container information {
-      description
-        "General information command";
-      leaf all {
-        type string;
-      }
-    }
-  }
-
   container uagent {
 
     container confd {
@@ -300,6 +288,35 @@ module rw-mgmtagt
       }
     }
 
+    container logrotate-conf {
+      rwpb:msg-new LogrotateConf;
+      description
+        "Configuration for logrotate";
+      config true;
+
+      leaf compress {
+        description
+          "Compress rotated log file";
+        type boolean;
+        default true;
+      }
+
+      leaf size {
+        description
+          "Max size of log file (in MB) after which it must be rotated.";
+        type uint32;
+        units "MB";
+        default 10;
+      }
+
+      leaf rotations {
+        description
+          "Number of rotations before the oldest file gets overwritten";
+        type uint32;
+        default 10;
+      }
+
+    }
 
     container state {
       description
@@ -376,6 +393,7 @@ module rw-mgmtagt
       description
         "Displays the last-error, reported by Mgmt Agent";
     }
+
   }
 
   rpc mgmt-agent {
@@ -528,9 +546,9 @@ module rw-mgmtagt
     input {
       rwpb:msg-new AgentLogsInput;
       choice output {
-        default console;
+        default string;
 
-        leaf console {
+        leaf string {
           description
             "Show the management system logs on console.";
           type empty;

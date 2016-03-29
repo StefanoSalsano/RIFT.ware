@@ -32,7 +32,7 @@ static rwdts_member_rsp_code_t on_tasklet_info(
     void *getnext_ptr)
 {
   rw_status_t status;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
   rw_component_info * component;
   rw_component_info * parent = NULL;
@@ -50,7 +50,7 @@ static rwdts_member_rsp_code_t on_tasklet_info(
   if (action != RWDTS_QUERY_READ)
     return RWDTS_ACTION_OK;
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
   rwvcs = rwmain->rwvx->rwvcs;
 
@@ -192,7 +192,7 @@ err:
     protobuf_free(component);
 
   if (parent)
-    protobuf_free(parent);
+    free(parent);
 
   info.components = NULL;
   protobuf_free_stack(info);
@@ -211,7 +211,7 @@ static rwdts_member_rsp_code_t on_tasklet_resource(
 {
   rw_status_t status;
   rwdts_member_rsp_code_t dts_ret;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
 
   ProtobufCMessage * msgs[1];
@@ -221,7 +221,7 @@ static rwdts_member_rsp_code_t on_tasklet_resource(
   if (action != RWDTS_QUERY_READ)
     return RWDTS_ACTION_OK;
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
 
@@ -366,7 +366,7 @@ static rwdts_member_rsp_code_t on_tasklet_heap(
 {
   rw_status_t status;
   rwdts_member_rsp_code_t dts_ret;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
 
   rwdts_member_query_rsp_t rsp;
@@ -375,7 +375,7 @@ static rwdts_member_rsp_code_t on_tasklet_heap(
   if (action != RWDTS_QUERY_READ)
     return RWDTS_ACTION_OK;
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
 
@@ -598,14 +598,14 @@ static rwdts_member_rsp_code_t on_config_tasklet_heap(
     uint32_t credits,
     void *getnext_ptr)
 {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
 
   RW_ASSERT(xact_info);
   if (action != RWDTS_QUERY_UPDATE)
     return RWDTS_ACTION_OK;
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
 
@@ -624,14 +624,14 @@ static rwdts_member_rsp_code_t on_config_tasklet_scheduler(
     uint32_t credits,
     void *getnext_ptr)
 {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
 
   RW_ASSERT(xact_info);
   if (action != RWDTS_QUERY_UPDATE)
     return RWDTS_ACTION_OK;
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
 
@@ -650,7 +650,7 @@ static rwdts_member_rsp_code_t on_config_tasklet_scheduler(
  *
  * @param vm_info - VCS Resource object to add cpu information to.
  */
-static void fill_vcs_cpu(struct rwmain * rwmain, RWPB_T_MSG(RwBase_VcsResource_Vm) * vm_info)
+static void fill_vcs_cpu(struct rwmain_gi * rwmain, RWPB_T_MSG(RwBase_VcsResource_Vm) * vm_info)
 {
   size_t n_cpus;
 
@@ -887,7 +887,7 @@ static rwdts_member_rsp_code_t on_vcs_resources(
     void *getnext_ptr)
 {
   rw_status_t status;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
   rw_component_info self;
   char * instance_name = NULL;
@@ -909,7 +909,7 @@ static rwdts_member_rsp_code_t on_vcs_resources(
     req = (RWPB_T_MSG(RwBase_data_Vcs_Resource_Utilization) *)msg;
   }
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
   rwvcs = rwmain->rwvx->rwvcs;
 
@@ -1019,7 +1019,7 @@ static rwdts_member_rsp_code_t on_vcs_proc_heartbeat_pub(
     void *getnext_ptr)
 {
   rw_status_t status;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwdts_member_rsp_code_t dts_ret;
 
   if (action != RWDTS_QUERY_READ) {
@@ -1032,7 +1032,7 @@ static rwdts_member_rsp_code_t on_vcs_proc_heartbeat_pub(
     RW_ASSERT(msg->descriptor == RWPB_G_MSG_PBCMD(RwBase_data_Vcs_ProcHeartbeat));
   }
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
 
   dts_ret = RWDTS_ACTION_OK;
@@ -1082,7 +1082,7 @@ static rwdts_member_rsp_code_t on_vcs_proc_heartbeat_sub(
     void *getnext_ptr)
 {
   rw_status_t status;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwdts_member_rsp_code_t dts_ret;
   RWPB_T_MSG(RwBase_data_Vcs_ProcHeartbeat) * req;
   uint16_t frequency;
@@ -1092,7 +1092,7 @@ static rwdts_member_rsp_code_t on_vcs_proc_heartbeat_sub(
   RW_ASSERT(xact_info);
   RW_ASSERT(msg->descriptor == RWPB_G_MSG_PBCMD(RwBase_data_Vcs_ProcHeartbeat));
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
 
   dts_ret = RWDTS_ACTION_OK;
@@ -1111,7 +1111,7 @@ static rwdts_member_rsp_code_t on_vcs_proc_heartbeat_sub(
       req->has_tolerance ? req->tolerance : tolerance,
       req->has_enabled ? req->enabled : enabled);
   if (status != RW_STATUS_SUCCESS) {
-    RW_ASSERT(0);
+    RW_CRASH();
     dts_ret = RWDTS_ACTION_NOT_OK;
   }
 
@@ -1132,7 +1132,7 @@ static rwdts_member_rsp_code_t on_version(
     void *getnext_ptr)
 {
   rw_status_t status;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   RWPB_T_MSG(RwBase_data_Version) info;
 
   ProtobufCMessage * msgs[1];
@@ -1142,7 +1142,7 @@ static rwdts_member_rsp_code_t on_version(
   if (action != RWDTS_QUERY_READ)
     return RWDTS_ACTION_OK;
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
 
   RWPB_F_MSG_INIT(RwBase_data_Version, &info);
@@ -1164,6 +1164,71 @@ static rwdts_member_rsp_code_t on_version(
   status = rwdts_member_send_response(xact_info->xact, xact_info->queryh, &rsp);
   if (status != RW_STATUS_SUCCESS)
     rwmain_trace_error(rwmain, "Failed to send response to version query");
+
+  return RWDTS_ACTION_OK;
+}
+
+static rwdts_member_rsp_code_t on_uptime(
+    const rwdts_xact_info_t * xact_info,
+    RWDtsQueryAction action,
+    const rw_keyspec_path_t* key_in,
+    const ProtobufCMessage * msg,
+    uint32_t credits,
+    void *getnext_ptr)
+{
+  rw_status_t status;
+  struct rwmain_gi * rwmain;
+  RWPB_T_MSG(RwBase_data_Uptime) info;
+
+  ProtobufCMessage * msgs[1];
+  rwdts_member_query_rsp_t rsp;
+
+  RW_ASSERT(xact_info);
+  if (action != RWDTS_QUERY_READ)
+    return RWDTS_ACTION_NA;
+
+  rwmain = (struct rwmain_gi *)xact_info->ud;
+  RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
+
+  RWPB_F_MSG_INIT(RwBase_data_Uptime, &info);
+  const RWPB_T_PATHSPEC(RwBase_data_Uptime) *key =
+      RWPB_G_PATHSPEC_VALUE(RwBase_data_Uptime);
+
+  if (!rwmain->start_sec)
+    return RWDTS_ACTION_NA;
+
+  time_t uptime;
+  struct timespec tp;
+  int r;
+
+  r = clock_gettime(CLOCK_MONOTONIC, &tp);
+  RW_ASSERT(r == 0);
+
+  uptime = tp.tv_sec - rwmain->start_sec;
+  if (uptime > 60)
+    uptime += 30;
+
+  info.uptime = uptime;
+  info.has_uptime = true;
+  info.has_days = info.days = uptime / 86400;
+  uptime %= 86400;
+  info.has_hours = info.hours = uptime / 3600;
+  uptime %= 3600;
+  info.has_minutes = info.minutes = uptime / 60;
+  info.has_seconds = true;
+  info.seconds = uptime % 60;
+
+  memset (&rsp, 0, sizeof (rsp));
+
+  rsp.msgs = msgs;
+  rsp.msgs[0] = &info.base;
+  rsp.n_msgs = 1;
+  rsp.ks = (rw_keyspec_path_t*)key;
+  rsp.evtrsp = RWDTS_EVTRSP_ACK;
+
+  status = rwdts_member_send_response(xact_info->xact, xact_info->queryh, &rsp);
+  if (status != RW_STATUS_SUCCESS)
+    rwmain_trace_error(rwmain, "Failed to send response to uptime query");
 
   return RWDTS_ACTION_OK;
 }
@@ -1245,6 +1310,10 @@ char * rwvcs_get_publish_xpath(
     }
     break;
     case RWVCS_TYPES_COMPONENT_TYPE_RWTASKLET:
+      RW_ASSERT(parent_name);
+      if (strcmp(rwvcs->instance_name, parent_name)) {
+        return NULL;
+      }
     case RWVCS_TYPES_COMPONENT_TYPE_PROC:
     default:
     break;
@@ -1256,7 +1325,7 @@ char * rwvcs_get_publish_xpath(
 }
 
 rw_status_t rwvcs_instance_update_child_state(
-    struct rwmain *rwmain,
+    struct rwmain_gi *rwmain,
     char *child_name,
     const char *parent_name,
     RwvcsTypes__YangEnum__ComponentType__E component_type,
@@ -1322,7 +1391,7 @@ skip_to_done:
 }
 
 rw_status_t rwvcs_instance_delete_child(
-    struct rwmain *rwmain,
+    struct rwmain_gi *rwmain,
     char *child_name,
     const char *parent_name,
     RwvcsTypes__YangEnum__ComponentType__E component_type)
@@ -1355,7 +1424,7 @@ rw_status_t rwvcs_instance_delete_child(
   return rs;
 }
 
-rw_status_t rwvcs_instance_delete_instance(struct rwmain *rwmain)
+rw_status_t rwvcs_instance_delete_instance(struct rwmain_gi *rwmain)
 {
   rw_status_t rs = RW_STATUS_SUCCESS;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
@@ -1460,7 +1529,9 @@ static void send2dts_stop_req_done(
       status = rwmain_stop_instance(cls->rwmain, &self);
       RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-      RWMAIN_DEREG_PATH_DTS(cls->rwmain->dts, &self);
+      RWMAIN_DEREG_PATH_DTS(cls->rwmain->dts, &self,
+                            self.has_recovery_action? self.recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
+
 
       status = rwvcs_instance_delete_instance(cls->rwmain);
       RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -1477,11 +1548,11 @@ static void send2dts_stop_req_done(
 }
 
 rw_status_t send2dts_start_req(
-  struct rwmain * rwmain,
+  struct rwmain_gi * rwmain,
   const rwdts_xact_info_t * xact_info,
-  char *component_name)
+  vcs_rpc_start_input *start_req)
 {
-  RW_ASSERT(component_name);
+  RW_ASSERT(start_req->component_name);
   rwvcs_instance_ptr_t rwvcs;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
@@ -1490,8 +1561,11 @@ rw_status_t send2dts_start_req(
   child_n = (RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN)*)RW_MALLOC0(sizeof(*child_n));
   RWPB_F_MSG_INIT(RwBase_VcsInstance_Instance_ChildN, child_n);
   child_n->instance_name = strdup("START-REQ");
-  child_n->component_name = strdup(component_name);
-  //child_n->ip_address = strdup("10.0.106.14");
+  child_n->component_name = strdup(start_req->component_name);
+  if (start_req->has_recover && start_req->recover) {
+    child_n->has_admin_command = true;
+    child_n->admin_command = RW_BASE_ADMIN_COMMAND_RECOVER;
+  }
 
   RWPB_T_MSG(RwBase_VcsInstance_Instance) *inst;
   inst = (RWPB_T_MSG(RwBase_VcsInstance_Instance)*)RW_MALLOC0(sizeof(*inst));
@@ -1513,13 +1587,9 @@ rw_status_t send2dts_start_req(
     cls->query = xact_info->queryh;
     cls->vstart_corr_id = rwmain->vstart_corr_id;
 
-    struct vstart *vstart = RW_MALLOC0(sizeof(*vstart));
-    RW_ASSERT(vstart);
-    vstart->vstart_corr_id = rwmain->vstart_corr_id;
-
     cls->instance_name = to_instance_name(rwmain->component_name, rwmain->instance_id);
     RW_ASSERT(cls->instance_name);
-    cls->rpc_query = strdup(component_name);
+    cls->rpc_query = strdup(start_req->component_name);
   }
 
   rwmain_trace_info(rwmain, "SENDING START-REQ to xpath: %s", VCS_GET(rwmain)->vcs_instance_xpath);
@@ -1544,7 +1614,7 @@ rw_status_t send2dts_start_req(
 }
 
 rw_status_t send2dts_stop_req(
-  struct rwmain * rwmain,
+  struct rwmain_gi * rwmain,
   const rwdts_xact_info_t * xact_info,
   char *instance_name,
   char *child_name)
@@ -1606,10 +1676,6 @@ rw_status_t send2dts_stop_req(
     cls->query = xact_info->queryh;
     cls->vstart_corr_id = rwmain->vstart_corr_id;
 
-    struct vstart *vstart = RW_MALLOC0(sizeof(*vstart));
-    RW_ASSERT(vstart);
-    vstart->vstart_corr_id = rwmain->vstart_corr_id;
-
     cls->instance_name = to_instance_name(rwmain->component_name, rwmain->instance_id);
     RW_ASSERT(cls->instance_name);
     //cls->rpc_query = strdup(component_name);
@@ -1642,7 +1708,7 @@ static void rwmain_dts_vcs_instance_reg_ready(
     rw_status_t                rs,
     void*                      user_data)
 {
-  struct rwmain *rwmain = (struct rwmain *)user_data;
+  struct rwmain_gi *rwmain = (struct rwmain_gi *)user_data;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
 
   RWPB_T_MSG(RwBase_VcsInstance_Instance) *inst;
@@ -1702,7 +1768,7 @@ static rwdts_member_rsp_code_t rwmain_dts_vcs_instance_prepare(
     const ProtobufCMessage*  msg,
     void*                    user_data)
 {
-  struct rwmain *rwmain = (struct rwmain *)user_data;
+  struct rwmain_gi *rwmain = (struct rwmain_gi *)user_data;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
   rwdts_member_rsp_code_t dts_ret = RWDTS_ACTION_OK;
 
@@ -1737,8 +1803,7 @@ static rwdts_member_rsp_code_t rwmain_dts_vcs_instance_prepare(
       dts_ret = do_vstart(
           xact_info,
           rwmain,
-          inst->child_n[0]->component_name,
-          inst->child_n[0]->ip_address,
+          inst->child_n[0],
           instance_name,
           &child_instance);
       if (dts_ret == RWDTS_ACTION_OK) {
@@ -1794,7 +1859,7 @@ static rwdts_member_rsp_code_t rwmain_dts_vcs_instance_prepare(
   return dts_ret;
 }
 
-rw_status_t rwmain_setup_dts_registrations(struct rwmain * rwmain)
+rw_status_t rwmain_setup_dts_registrations(struct rwmain_gi * rwmain)
 {
   rw_status_t status = RW_STATUS_SUCCESS;
 
@@ -1856,6 +1921,16 @@ rw_status_t rwmain_setup_dts_registrations(struct rwmain * rwmain)
       .flags = RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_SHARED,
       .callback = {
         .cb.prepare = &on_version,
+      }
+    },
+
+    // Show uptime info
+    {
+      .keyspec = (rw_keyspec_path_t *)RWPB_G_PATHSPEC_VALUE(RwBase_data_Uptime),
+      .desc = RWPB_G_MSG_PBCMD(RwBase_data_Uptime),
+      .flags = RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_SHARED,
+      .callback = {
+        .cb.prepare = &on_uptime,
       }
     },
 
@@ -1943,7 +2018,7 @@ rw_status_t rwmain_setup_dts_registrations(struct rwmain * rwmain)
 }
 
 
-rw_status_t rwmain_dts_register_vcs_instance(struct rwmain * rwmain, const char* instance_name)
+rw_status_t rwmain_dts_register_vcs_instance(struct rwmain_gi * rwmain, const char* instance_name)
 {
   char xpath[999];
   rwdts_member_reg_handle_t regh;

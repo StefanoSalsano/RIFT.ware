@@ -6,10 +6,14 @@ import subprocess
 import time
 import shlex
 import logging
+import gi
 
 import getopt, sys
 
 import rwlogger
+
+gi.require_version('RwVcsYang', '1.0')
+
 from gi.repository import RwVcsYang
 
 logger = logging.getLogger("rwlogd-report-cores")

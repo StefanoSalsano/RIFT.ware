@@ -45,6 +45,7 @@ SbReq::SbReq(
 
 SbReq::~SbReq()
 {
+  RW_ASSERT (responded_);
   // ATTN:- What is the use of this?
   if (xact_) {
     rwsched_instance_ptr_t sched = instance_->rwsched();

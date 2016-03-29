@@ -306,7 +306,7 @@ module rw-dts-api-log
   notification reg-retry{
     rwnotify:log-event-id 00030020;
     description "DTS registration retry";
-    uses rwlog:severity-warning;
+    uses rwlog:severity-info;
 
     uses dts-api-attr;
 
@@ -384,7 +384,7 @@ module rw-dts-api-log
   notification reg-added {
     rwnotify:log-event-id 00030023;
     description "DTS registration added/updated";
-    uses rwlog:severity-notice;
+    uses rwlog:severity-debug;
     uses dts-reg-attr;
 
     leaf log {
@@ -1148,7 +1148,7 @@ module rw-dts-api-log
     rwnotify:log-event-id 00030056;
     description "DTS API trace configured/set event";
     uses rwlog:severity-critical;
-    uses dts-xact-attr;
+    uses dts-api-attr;
     leaf xpath {
       description "xpath targeted for tracing";
       type string;
@@ -1510,31 +1510,6 @@ module rw-dts-api-log
 
     leaf xpath {
       description "xpath";
-      type string;
-    }
-  }
-
-  notification appconf-install-failed {
-    rwnotify:log-event-id 00030079;
-    description "DTS Appconf install event failure";
-    uses rwlog:severity-error;
-    uses dts-xact-attr;
-
-    leaf log {
-      type string;
-    }
-
-    leaf err_ct {
-      type uint32;
-    }
-
-    leaf callback {
-      description "Callback fn";
-      type string;
-    }
-
-    leaf client {
-      description "Client path";
       type string;
     }
   }
@@ -1924,8 +1899,48 @@ module rw-dts-api-log
     }
   }
 
+  notification appconf-install-failed {
+    rwnotify:log-event-id 00030108;
+    description "DTS Appconf install event failure";
+    uses rwlog:severity-error;
+    uses dts-xact-attr;
+
+    leaf log {
+      type string;
+    }
+
+    leaf err_ct {
+      type uint32;
+    }
+
+    leaf callback {
+      description "Callback fn";
+      type string;
+    }
+
+    leaf client {
+      description "Client path";
+      type string;
+    }
+  }
+
+  notification appconf-error {
+    rwnotify:log-event-id 00030109;
+    description "DTS Appconf install event failure";
+    uses rwlog:severity-error;
+    uses dts-xact-attr;
+
+    leaf log {
+      type string;
+    }
+    leaf client {
+      type string;
+    }
+
+  }
+
   notification delete-non-existent {
-    rwnotify:log-event-id 000300110;
+    rwnotify:log-event-id 00030110;
     description "DTS attempting to delete non-existent data";
     uses rwlog:severity-debug;
     uses dts-xact-attr;
@@ -1944,8 +1959,16 @@ module rw-dts-api-log
     }
   }
 
-  notification config-ready-monitor {
+  notification trace-prepcheck-timeout {
     rwnotify:log-event-id 00030111;
+    description "Prepare cb timeout at member";
+    uses rwlog:severity-critical;
+    leaf xact-id          { type string; }
+    leaf member           { type string; }
+  }
+
+  notification config-ready-monitor {
+    rwnotify:log-event-id 00030112;
     description "Still waiting for all config-ready tasks to reach RUNNING state";
     uses rwlog:severity-info-critinfo;
     leaf waiting-on {

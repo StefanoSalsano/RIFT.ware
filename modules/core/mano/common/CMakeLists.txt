@@ -22,3 +22,9 @@ set(subdirs
 # Include the subdirs
 ##
 rift_add_subdirs(SUBDIR_LIST ${subdirs})
+
+install(
+  FILES
+    rw_gen_package.py
+  DESTINATION usr/rift/mano/common
+  COMPONENT ${PKG_LONG_NAME})

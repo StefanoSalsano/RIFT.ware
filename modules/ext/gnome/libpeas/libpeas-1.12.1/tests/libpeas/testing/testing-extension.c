@@ -4,19 +4,19 @@
  *
  * Copyright (C) 2011-2014 - Garrett Regier
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -35,7 +35,6 @@
 
 #include "introspection-base.h"
 #include "introspection-callable.h"
-#include "introspection-has-missing-prerequisite.h"
 #include "introspection-has-prerequisite.h"
 #include "introspection-unimplemented.h"
 
@@ -81,10 +80,17 @@ static void
 test_extension_garbage_collect (PeasEngine     *engine,
                                 PeasPluginInfo *info)
 {
+  gchar **loaded_plugins;
+
   peas_engine_garbage_collect (engine);
 
   /* Check that we can collect the garbage when no plugins are loaded */
   g_assert (peas_engine_unload_plugin (engine, info));
+
+  loaded_plugins = peas_engine_get_loaded_plugins (engine);
+  g_assert_cmpstr (loaded_plugins[0], ==, NULL);
+  g_strfreev (loaded_plugins);
+
   peas_engine_garbage_collect (engine);
 }
 
@@ -145,7 +151,7 @@ test_extension_create_invalid (PeasEngine     *engine,
 
   testing_util_push_log_hook ("*assertion*G_TYPE_IS_INTERFACE*failed");
   testing_util_push_log_hook ("*does not provide a 'IntrospectionUnimplemented' extension");
-  testing_util_push_log_hook ("*type 'IntrospectionCallable' has no property named 'invalid-property'");
+  testing_util_push_log_hook ("*type 'IntrospectionCallable' has no property named 'does-not-exist'");
   testing_util_push_log_hook ("*assertion*peas_plugin_info_is_loaded*failed");
 
   /* Invalid GType */
@@ -164,30 +170,12 @@ test_extension_create_invalid (PeasEngine     *engine,
                                             NULL);
   g_assert (!PEAS_IS_EXTENSION (extension));
 
-  /* Interface does not have an 'invalid-property' property */
+  /* Interface does not have a specified property */
   extension = peas_engine_create_extension (engine, info,
                                             INTROSPECTION_TYPE_CALLABLE,
-                                            "invalid-property", "does-not-exist",
+                                            "does-not-exist", "",
                                             NULL);
   g_assert (!PEAS_IS_EXTENSION (extension));
-
-  /* This cannot be tested in PyGI and Seed's log handler messes this up */
-  if (g_strcmp0 (extension_plugin, "extension-c") != 0 &&
-      g_strcmp0 (extension_plugin, "extension-lua51") != 0 &&
-      g_strcmp0 (extension_plugin, "extension-python") != 0 &&
-      g_strcmp0 (extension_plugin, "extension-python3") != 0)
-    {
-      testing_util_push_log_hook ("*cannot add *IntrospectionHasMissingPrerequisite* "
-                                  "which does not conform to *IntrospectionCallable*");
-      testing_util_push_log_hook ("*Type *HasMissingPrerequisite* is invalid");
-      testing_util_push_log_hook ("*does not provide a *HasMissingPrerequisite* extension");
-
-      /* Missing Prerequisite */
-      extension = peas_engine_create_extension (engine, info,
-                                                INTROSPECTION_TYPE_HAS_MISSING_PREREQUISITE,
-                                                NULL);
-      g_assert (!PEAS_IS_EXTENSION (extension));
-    }
 
   /* Not loaded */
   g_assert (peas_engine_unload_plugin (engine, info));

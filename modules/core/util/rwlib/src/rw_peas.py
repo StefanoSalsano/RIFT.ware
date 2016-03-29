@@ -11,6 +11,9 @@ import importlib
 import logging
 import os
 import sys
+import gi
+gi.require_version('Peas', '1.0')
+gi.require_version('YangModelPlugin', '1.0')
 
 from gi.repository import GObject, Peas, GLib, GIRepository
 

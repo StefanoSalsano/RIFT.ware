@@ -38,6 +38,7 @@ const RiftHeader = React.createClass({
 			RiftHeaderStore.loadCatalogs();
 			uiTransientState.timeoutId = setTimeout(loadCatalogs, 2000);
 		};
+		RiftHeaderStore.requestLaunchpadConfig();
 		loadCatalogs();
 	},
 	componentDidUpdate() {
@@ -59,6 +60,13 @@ const RiftHeader = React.createClass({
 		RiftHeaderStore.unlisten(this.onChange);
 		window.location.href = '//' + window.location.hostname + ':8000/index.html?api_server=' + utils.getSearchParams(window.location).api_server + '#/launchpad/' + utils.getSearchParams(window.location).mgmt_domain_name;
 	},
+	onClickOpenAccounts() {
+		if (uiTransientState.timeoutId) {
+			clearTimeout(uiTransientState.timeoutId);
+		}
+		RiftHeaderStore.unlisten(this.onChange);
+		window.location.href = '//' + window.location.hostname + ':8000/index.html?api_server=' + utils.getSearchParams(window.location).api_server + '#/launchpad/' + utils.getSearchParams(window.location).mgmt_domain_name + '/cloud-account/dashboard';
+	},
 	render() {
 		return (
 			<div className="RiftHeader">
@@ -71,6 +79,9 @@ const RiftHeader = React.createClass({
 					<span style={{'marginRight': '0.5rem', 'marginLeft': '0.5rem',fontWeight:'bold'}}>|</span>
 					<span style={{'display': 'flex', 'marginBottom': '0.5rem', 'marginRight': '0.25rem', 'fontWeight': 'bold'}}>CATALOG</span>
 					<span style={{'marginRight': '0.25rem', 'marginLeft': '0.25rem'}}>({this.state.descriptorCount})</span>
+					<span style={{'marginRight': '0.5rem', 'marginLeft': '0.5rem',fontWeight:'bold', 'display': this.state.isStandAlone ? 'inherit' : 'none'}}>|</span>
+					<a href="#" onClick={this.onClickOpenAccounts} style={{fontWeight: 'normal', color: 'black', 'display': this.state.isStandAlone ? 'inherit' : 'none'}}>ACCOUNTS</a>
+
 			    </div>
 			</div>
 		);

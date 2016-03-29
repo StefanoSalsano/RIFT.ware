@@ -26,6 +26,11 @@
 #include <unistd.h>
 #include <vector>
 
+#define BOOST_NO_CXX11_SCOPED_ENUMS
+#include <boost/filesystem.hpp>
+#undef BOOST_NO_CXX11_SCOPED_ENUMS
+
+namespace fs = boost::filesystem;
 using namespace rw_uagent;
 using namespace rw_yang;
 
@@ -150,7 +155,7 @@ StartStatus ShowSysInfo::execute()
     child_read_src_ = rwsched_dispatch_source_create(
         tasklet, RWSCHED_DISPATCH_SOURCE_TYPE_READ, parent_read_fd_,
         0/*mask*/,
-        instance_->cc_dispatchq() );
+        instance_->serial_q() );
 
     rwsched_dispatch_set_context( tasklet, child_read_src_, this );
     rwsched_dispatch_source_set_event_handler_f(
@@ -163,7 +168,7 @@ StartStatus ShowSysInfo::execute()
   // because we want the callback to be in queue-context. 
   // The libdispatch signal source also doesn't seem to work.
   child_status_poll_timer_  = rwsched_dispatch_source_create(
-      tasklet, RWSCHED_DISPATCH_SOURCE_TYPE_TIMER, 0, 0, instance_->cc_dispatchq());
+      tasklet, RWSCHED_DISPATCH_SOURCE_TYPE_TIMER, 0, 0, instance_->serial_q());
 
   rwsched_dispatch_source_set_event_handler_f(
       tasklet, child_status_poll_timer_, poll_for_child_status);
@@ -219,17 +224,14 @@ void ShowSysInfo::execute_child_process()
   }
 
   // Now invoke the cli
-  auto rift_install = getenv("RIFT_INSTALL");
-  if (!rift_install) {
-    rift_install = strdup("");
-  }
+  auto rift_install = get_rift_install();
 
   char* ssd_path = nullptr;
-  ioerr = asprintf( &ssd_path, "%s%s", rift_install, RW_MGMT_AGENT_SSD_PATH );
+  ioerr = asprintf( &ssd_path, "%s%s", rift_install.c_str(), RW_MGMT_AGENT_SSD_PATH );
   ASSERT_IOERR( ioerr > 0, "bad ssd path" );
 
   char* zsh_path = nullptr;
-  ioerr = asprintf( &zsh_path, "%s%s", rift_install, RW_MGMT_AGENT_ZSH_PATH );
+  ioerr = asprintf( &zsh_path, "%s%s", rift_install.c_str(), RW_MGMT_AGENT_ZSH_PATH );
   ASSERT_IOERR( ioerr > 0, "bad zsh path" );
 
   // Get my VM INSTANCE ID. ATTN: Change this to use zk api
@@ -297,6 +299,12 @@ void ShowSysInfo::cleanup_and_send_response()
 
     RW_ASSERT (ssi_fname_.length());
     RW_ASSERT (!output_buff_);
+
+    // make ssi file readable
+    fs::permissions(ssi_fname_,
+                    fs::owner_read | fs::owner_write |
+                    fs::group_read | fs::group_write |
+                    fs::others_read);
 
     if (!nc_errors_.length()) {
       rpco.result = output_buff_ = strdup("SSI Saved to file");
@@ -436,7 +444,7 @@ void ShowSysInfo::try_reap_child()
       auto when = dispatch_time(DISPATCH_TIME_NOW, 0.01 * NSEC_PER_SEC); // after 100 ms. ok?
       rwsched_dispatch_after_f(tasklet,
                                when,
-                               instance_->cc_dispatchq(),
+                               instance_->serial_q(),
                                this,
                                async_self_delete);
     } else {

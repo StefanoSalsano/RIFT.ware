@@ -17,6 +17,13 @@ import time
 
 import rift.auto.proxy
 from . import yang_model
+
+import gi
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('RwVcsYang', '1.0')
+
 from gi.repository import RwYang
 
 from gi.repository import (
@@ -152,7 +159,7 @@ class VcsComponentInfo(object):
             if time_remaining <= 0:
                 break
 
-            time.sleep(min(time_remaining, 5))
+            time.sleep(min(time_remaining, 10))
 
         unstarted_components = self.get_unstarted_components()
         unstarted_names = [comp.instance_name for comp in unstarted_components]

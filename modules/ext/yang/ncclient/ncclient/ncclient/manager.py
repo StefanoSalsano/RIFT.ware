@@ -44,6 +44,7 @@ OPERATIONS = {
     "kill_session": operations.KillSession,
     "poweroff_machine": operations.PoweroffMachine,
     "reboot_machine": operations.RebootMachine,
+    "create_subscription": operations.CreateSubscription,
 }
 
 """
@@ -244,6 +245,17 @@ class Manager(compat.with_metaclass(OpExecutor, object)):
 
     def session(self):
         raise NotImplementedError
+
+    def register_notification_callback(self, cbk):
+        """Registers a callback to receive Netconf Notifications.
+
+        The *cbk* should be a callable accepting an argument of class 
+        Notification. :seealso: :class:`ncclient.operations.Notification`.
+        Notifications are reported only after a successful create_subscription 
+        operation. Since Netconf Notifications are reported on a session basis,
+        the callback is tied to a session (rather than per subscription).
+        """
+        self._session.register_notification_callback(cbk)
 
     def __getattr__(self, method):
         """Parse args/kwargs correctly in order to build XML element"""

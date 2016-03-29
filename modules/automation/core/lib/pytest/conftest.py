@@ -7,16 +7,22 @@ import _pytest.mark
 import _pytest.runner
 
 import itertools
+import os
 import pytest
 import re
 import subprocess
+import uuid
 
 from collections import OrderedDict
 
-import rift.auto.log_scraper
+from rift.rwlib.util import certs
+import rift.auto.log
 import rift.auto.session
 import rift.vcs.vcs
 import logging
+
+from gi import require_version
+require_version('RwMcYang', '1.0')
 
 from gi.repository import RwMcYang
 
@@ -80,6 +86,30 @@ def pytest_addoption(parser):
     #   Raise exception on errors observed in the system log
     parser.addoption("--fail-on-error", action="store_true")
 
+    # --standalone_launchpad
+    #   If enabled,  Launchpad session will be directly used.
+    parser.addoption("--lp-standalone", dest="disabled_features", action="append_const", const='mission-control', default=[])
+
+    rift_root = os.environ['RIFT_ROOT']
+    # --log-stdout
+    #   Indicates the location the host rift instance is logging stdout to
+    parser.addoption("--log-stdout", action="store", default="%s/.artifacts/systemtest_stdout.log" % (rift_root))
+
+    # --log-stderr
+    #   Indicates the location the host rift instance is logging stderr to
+    parser.addoption("--log-stderr", action="store", default="%s/.artifacts/systemtest_stderr.log" % (rift_root))
+
+@pytest.fixture(autouse=True)
+def skip_disabled_features(request):
+    """Fixture to skip any tests that rely on a disabled feature
+    """
+    item_features = request.node.get_marker('feature')
+
+    if item_features:
+        feature_disabled = set(item_features.args).intersection(
+                           set(request.config.option.disabled_features))
+        if feature_disabled:
+            pytest.skip('Test relies on disabled feature ({})'.format(feature_disabled))
 
 @pytest.fixture(scope='session', autouse=True)
 def cloud_host(request):
@@ -96,16 +126,54 @@ def launchpad_vm_id(request):
     """Fixture that returns --launchpad-vm-id option value"""
     return request.config.getoption("--launchpad-vm-id")
 
-@pytest.fixture(scope='module', autouse=True)
-def logger(request):
-    """Fixture that returns a logger that can be used within a module"""
-    logger = logging.getLogger(request.module.__name__)
-    logging.basicConfig(format='%(asctime)-15s %(levelname)s %(message)s')
-    logging.getLogger().setLevel(logging.DEBUG if request.config.option.verbose else logging.INFO)
-    return logger
+@pytest.fixture(scope='session')
+def standalone_launchpad(request):
+    '''Fixture which indicates if the system is being run with a standalone launchpad
+
+    Arguments:
+        request       - pytest fixture request
+
+    Returns:
+        True if standalone launchpad
+        False otherwise
+    '''
+    return 'mission-control' in request.config.option.disabled_features
 
 @pytest.fixture(scope='session', autouse=True)
-def mgmt_session(request, confd_host, session_type, cloud_type):
+def logger(request):
+    """Fixture that returns a logger"""
+    logging.basicConfig(format='%(asctime)-15s %(levelname)s %(message)s')
+    logging.getLogger().setLevel(logging.DEBUG if request.config.option.verbose else logging.INFO)
+    logger = logging.getLogger()
+    return logger
+
+
+@pytest.fixture(scope='session')
+def scheme(request, use_https):
+    """Fixture to return the protocol to be used in url queries.
+    """
+    if use_https:
+        return "https"
+
+    return "http"
+
+
+@pytest.fixture(scope='session')
+def use_https(request):
+    return certs.USE_SSL
+
+
+@pytest.fixture(scope='session')
+def cert(request):
+    """Fixture to get the cert & key to be used for https requests.
+    """
+    _, cert, key = certs.get_bootstrap_cert_and_key()
+
+    return (cert, key)
+
+
+@pytest.fixture(scope='session', autouse=True)
+def mgmt_session(request, confd_host, session_type, cloud_type, use_https):
     """Fixture that returns mgmt_session to be used
 
     # Note: cloud_type's exists in this fixture to ensure it appears in test item's _genid
@@ -118,66 +186,123 @@ def mgmt_session(request, confd_host, session_type, cloud_type):
     if session_type == 'netconf':
         mgmt_session = rift.auto.session.NetconfSession(host=confd_host)
     elif session_type == 'restconf':
-        mgmt_session = rift.auto.session.RestconfSession(host=confd_host)
+        mgmt_session = rift.auto.session.RestconfSession(host=confd_host, use_https=use_https)
 
     mgmt_session.connect()
     rift.vcs.vcs.wait_until_system_started(mgmt_session)
     return mgmt_session
 
 @pytest.fixture(scope='session', autouse=True)
-def _riftlog_scraper_session(confd_host):
-    '''Fixture which returns an instance of rift.auto.log_scraper.RemoteLogScraper to scrape riftlog
+def log_manager():
+    return rift.auto.log.LogManager()
 
-    Arguments:
-        confd_host - host on which confd is running (mgmt_ip)
+@pytest.fixture(scope='session', autouse=True)
+def log_sink(log_manager):
+    '''Fixture which returns an instance of rift.auto.log.Sink to serve as a collector
+    for all logs
     '''
-    scraper = rift.auto.log_scraper.RemoteLogScraper('/var/log/rift/rift.log')
-    scraper.connect(host=confd_host)
-    scraper.scrape(discard=True)
+    log_id = uuid.uuid4()
+    rift_root = os.environ['RIFT_ROOT']
+    file_sink = rift.auto.log.FileSink('%s/.artifacts/%s.unified.log' % (rift_root, log_id))
+    log_manager.sink(file_sink)
+    return file_sink
 
-    return scraper
-
-class ExceptionLogged(Exception):
-    """ Exception raised when an exception is captured via a log
-    """
-    pass
 
 @pytest.fixture(scope='function', autouse=True)
-def splat_riftlog(request, _riftlog_scraper_session):
-    '''Fixture which scrapes riftlog
-
-    @ splat_ : the function returned by this fixture will be run when a
-    #          test that uses this fixture fails
+def _log_set_test_name(request, log_manager):
+    ''' Fixture which sets the current test name in the log manager to 
+    the value of the currently executed test item
 
     Arguments:
         request - fixture request object
-        _riftlog_scraper_session - instance of rift.auto.log_scraper.RemoteLogScraper
+        log_manager - manager of logging sources and sinks
+    '''
+    log_manager.set_test_name(request._pyfuncitem.name)
+
+@pytest.fixture(scope='session', autouse=True)
+def log_recent(log_manager):
+    '''Fixture which returns an instance of rift.auto.log.Sink which retains recently 
+    collected logs
+    '''
+    buffer_sink = rift.auto.log.MemorySink()
+    log_manager.sink(buffer_sink)
+    return buffer_sink
+
+@pytest.fixture(scope='function', autouse=True)
+def _truncate_log_recent(log_recent):
+    '''Fixture which truncates the contents memory sink log_recent
+
+    Arguments
+        log_recent - sink containing recently collected logs
+    '''
+    log_recent.truncate(generations=1)
+
+@pytest.fixture(scope='session', autouse=True)
+def _logger_scraper_session(logger, log_manager):
+    '''Fixture which returns an instance of rift.auto.log.LoggerSource to scrape logger
+
+    Arguments:
+        log_manager - manager of logging sources and sinks
+    '''
+    scraper = rift.auto.log.LoggerSource(logger)
+    log_manager.source(source=scraper)
+    return scraper
+
+@pytest.fixture(scope='session', autouse=True)
+def _stdout_scraper_session(request, log_manager, confd_host):
+    '''Fixture which returns an instance of rift.auto.log.FileSource to scrape
+    stdout of the host rift process (mission control or launchpad)
+
+    Arguments:
+        request - pytest request item
+        log_manager - manager of logging sources and sinks
+        confd_host -  host on which confd is running
+    '''
+    scraper = rift.auto.log.FileSource(host=confd_host, path=request.config.getoption("--log-stdout"))
+    log_manager.source(source=scraper)
+    return scraper
+
+@pytest.fixture(scope='session', autouse=True)
+def _stderr_scraper_session(request, log_manager, confd_host):
+    '''Fixture which returns an instance of rift.auto.log.FileSource to scrape
+    stderr of the host rift process (mission control or launchpad)
+
+    Arguments:
+        request - pytest request item
+        log_manager - manager of logging sources and sinks
+        confd_host -  host on which confd is running
+    '''
+    scraper = rift.auto.log.FileSource(host=confd_host, path=request.config.getoption("--log-stderr"))
+    log_manager.source(source=scraper)
+    return scraper
+
+@pytest.fixture(scope='function', autouse=True)
+def finally_handle_logs(log_manager):
+    '''Fixture that causes the log_manager to capture from log sources and
+       distribute to log sinks
+
+        # finally_ : the function returned by this fixture will be run unconditionally
+        #            at the end of each test that uses it
+
+    Arguments:
+        log_manager - handler of logging events
+    '''
+    return log_manager.dispatch
+
+@pytest.fixture(scope='function', autouse=True)
+def splat_log(log_recent):
+    '''Fixture which emits captured logs on splat
+
+    # splat_ : the function returned by this fixture will be run when a
+    #          test that uses this fixture fails
+
+    Arguments:
+        log_recent - sink containing recently collected logs
     '''
     def on_test_failure():
-        '''When a test fails scrape the riftlog and print it'''
-        scraped = _riftlog_scraper_session.scrape()
-        if scraped:
-            print("=== START RIFTLOG ===")
-            print(scraped)
-            print("=== END RIFTLOG ===")
-
-    def fin_scrape():
-        '''At the end of each test scrape the riftlog and discard
-        any entries scraped.
-
-        if test is run with --fail-on-error raise an exception if
-        an error is encountered in the log.
-        '''
-        scraped = _riftlog_scraper_session.scrape()
-        if scraped and request.config.getoption("--fail-on-error"):
-            print("=== START RIFTLOG ===")
-            print(scraped)
-            print("=== END RIFTLOG ===")
-            raise ExceptionLogged("Exception witnessed in riftlog")
-
-    request.addfinalizer(fin_scrape)
+        '''When a test fails emit collected logs'''
+        print(log_recent.read())
     return on_test_failure
-
 
 @pytest.fixture(scope='session', autouse=True)
 def test_iteration(request, iteration):
@@ -231,9 +356,18 @@ def pytest_pyfunc_call(pyfuncitem):
     """
     test_outcome = yield
 
+    splat = False
     try:
         result = test_outcome.get_result()
     except:
+        splat = True
+
+    for funcarg in pyfuncitem.funcargs:
+        # run all 'finally_' methods attached to the test
+        if funcarg.startswith('finally_'):
+            pyfuncitem.funcargs[funcarg]()
+
+    if splat:
         # Test threw an exception (i.e. failed)
         # run all 'splat_' methods attached to the test
         # logging that occurs during a splat will be added to the captured log (unlike a finalizer)
@@ -324,19 +458,19 @@ def pytest_collection_modifyitems(session, config, items):
 
             m_setup = item.get_marker('setup')
             if m_setup:
-                for arg in item.get_marker('setup').args:
+                for arg in m_setup.args:
                     setup.add(arg)
                     edges[(group_name, arg)] = True
 
             m_depends = item.get_marker('depends')
             if m_depends:
-                for arg in item.get_marker('depends').args:
+                for arg in m_depends.args:
                     dependencies.add(arg)
                     edges[(arg, group_name)] = True
 
             m_teardown = item.get_marker('teardown')
             if m_teardown:
-                for arg in item.get_marker('teardown').args:
+                for arg in m_teardown.args:
                     dependencies.add(arg)
                     edges[(arg, group_name)] = True
                     edges[('teardown', group_name)] = True
@@ -368,8 +502,10 @@ def pytest_collection_modifyitems(session, config, items):
     def filter_items(items, filter_value):
         filtered_items = []
         for item in items:
+
             if item.get_marker("slow") and not item.config.option.include_slow:
                 continue
+
             if filter_value in item._genid:
                 filtered_items.append(item)
         return filtered_items
@@ -466,6 +602,10 @@ def pytest_collection_modifyitems(session, config, items):
 
 
         satisfied_deps = set()
+
+        if 'mission-control' in config.option.disabled_features:
+            satisfied_deps.add('launchpad')
+
         if one_shot_itemlist:
             # make sure to use only using one implementation of the one_shot_items as they aren't being repeated
             if need_deps:

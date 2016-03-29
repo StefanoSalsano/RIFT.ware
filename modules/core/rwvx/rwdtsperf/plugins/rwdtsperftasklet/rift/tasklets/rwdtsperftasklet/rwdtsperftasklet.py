@@ -20,6 +20,14 @@ import math
 import sys
 import time
 
+import gi
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwDtsperfYang', '1.0')
+gi.require_version('RwDtsperfmgrYang', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('RwVcsYang', '1.0')
+
 import gi.repository.RwTypes as rwtypes
 import rift.tasklets
 import rift.tasklets.dts

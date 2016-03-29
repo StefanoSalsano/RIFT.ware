@@ -90,6 +90,7 @@ class CatalogDataStore {
 		const id = guid();
 		const type = newItem.uiState.type;
 		newItem.id = id;
+		UID.assignUniqueId(newItem.uiState);
 		this.getCatalogs().filter(d => d.type === type).forEach(catalog => {
 			catalog.descriptors.push(newItem);
 		});
@@ -105,7 +106,7 @@ class CatalogDataStore {
 		const vnfdLookup = {};
 		const updatedCatalogs = catalogs.map(catalog => {
 			catalog.descriptors.map(descriptor => {
-				if (typeof descriptor.meta === 'string') {
+				if (typeof descriptor.meta === 'string' && descriptor.meta.trim() !== '') {
 					try {
 						descriptor.uiState = JSON.parse(descriptor.meta);
 					} catch (ignore) {
@@ -132,12 +133,17 @@ class CatalogDataStore {
 		});
 		updatedCatalogs.filter(d => d.type === 'nsd').forEach(catalog =>  {
 			catalog.descriptors = catalog.descriptors.map(descriptor => {
+				const instanceRefCount = parseInt(descriptor.uiState['instance-ref-count'], 10);
 				if (descriptor['constituent-vnfd']) {
 					descriptor.vnfd = descriptor['constituent-vnfd'].map(d => {
 						const vnfdId = d['vnfd-id-ref'];
 						const vnfd = vnfdLookup[vnfdId];
 						if (!vnfd) {
 							throw new ReferenceError('no VNFD found in the VNFD Catalog for the constituent-vnfd: ' + d);
+						}
+						if (!isNaN(instanceRefCount) && instanceRefCount > 0) {
+							// this will notify user that this item cannot be updated when/if they make a change to it
+							vnfd.uiState['instance-ref-count'] = instanceRefCount;
 						}
 						// create an instance of this vnfd to carry transient ui state properties
 						const instance = _.cloneDeep(vnfd);
@@ -244,16 +250,7 @@ class CatalogDataStore {
 	}
 
 	selectCatalogItem(item = {}) {
-		SelectionManager.clearSelectionAndRemoveOutline();
-		const catalogs = this.getCatalogs().map(catalog => {
-			catalog.descriptors = catalog.descriptors.map(d => {
-				// deselect other items and select this one
-				SelectionManager.updateSelection(d, d.id === item.id);
-				return d;
-			});
-			return catalog;
-		});
-		this.setState({catalogs: catalogs});
+		SelectionManager.select(item);
 	}
 
 	catalogItemMetaDataChanged(item) {
@@ -264,10 +261,18 @@ class CatalogDataStore {
 					if (d.id === item.id) {
 						// compare just the catalog uiState data (id, name, short-name, description, etc.)
 						const modified = !areCatalogItemsMetaDataEqual(d, item);
-						item.uiState.modified = modified;
 						if (modified) {
-							requiresSave = true;
-							this.addSnapshot(item);
+							if (d.uiState['instance-ref-count'] > 0) {
+								console.log('cannot edit NSD/VNFD with references to instantiated Network Services');
+								ComposerAppActions.showError.defer({
+									errorMessage: 'Cannot edit NSD/VNFD with references to instantiated Network Services'
+								});
+								return _.cloneDeep(d);
+							} else {
+								item.uiState.modified = modified;
+								requiresSave = true;
+								this.addSnapshot(item);
+							}
 						}
 						return item;
 					}
@@ -291,9 +296,17 @@ class CatalogDataStore {
 				// replace the old descriptor with the updated one
 				catalog.descriptors = catalog.descriptors.map(d => {
 					if (d.id === descriptorId) {
-						itemDescriptor.model.uiState.modified = true;
-						this.addSnapshot(itemDescriptor.model);
-						return itemDescriptor.model;
+						if (d.uiState['instance-ref-count'] > 0) {
+							console.log('cannot edit NSD/VNFD with references to instantiated Network Services');
+							ComposerAppActions.showError.defer({
+								errorMessage: 'Cannot edit NSD/VNFD with references to instantiated Network Services'
+							});
+							return _.cloneDeep(d);
+						} else {
+							itemDescriptor.model.uiState.modified = true;
+							this.addSnapshot(itemDescriptor.model);
+							return itemDescriptor.model;
+						}
 					}
 					return d;
 				});
@@ -346,9 +359,9 @@ class CatalogDataStore {
 				CatalogDataStore.confirmDelete(remove, confirmDeleteCancel);
 			} else {
 				if (item.uiState['instance-ref-count'] > 0) {
-					console.log('cannot delete NSD with references to instantiated Network Services');
+					console.log('cannot delete NSD/VNFD with references to instantiated Network Services');
 					ComposerAppActions.showError.defer({
-						errorMessage: 'Cannot delete NSD with references to instantiated Network Services'
+						errorMessage: 'Cannot delete NSD/VNFD with references to instantiated Network Services'
 					});
 					undo();
 				} else {
@@ -388,12 +401,14 @@ class CatalogDataStore {
 		const model = DescriptorModelMetaFactory.createModelInstanceForType(type);
 		if (model) {
 			const newItem = this.addNewItemToCatalog(model);
-			this.selectCatalogItem(newItem);
 			newItem.uiState.isNew = true;
 			newItem.uiState.modified = true;
 			newItem.uiState['instance-ref-count'] = 0;
 			// open the new model for editing in the canvas/details panels
-			CatalogItemsActions.editCatalogItem.defer(newItem);
+			setTimeout(() => {
+				this.selectCatalogItem(newItem);
+				CatalogItemsActions.editCatalogItem.defer(newItem);
+			}, 200);
 		}
 	}
 
@@ -413,7 +428,10 @@ class CatalogDataStore {
 				nsd.uiState.containerPositionMap[nsd.id] = nsd.uiState.containerPositionMap[item.id];
 				delete nsd.uiState.containerPositionMap[item.id];
 			}
-			CatalogItemsActions.editCatalogItem.defer(nsd);
+			setTimeout(() => {
+				this.selectCatalogItem(nsd);
+				CatalogItemsActions.editCatalogItem.defer(nsd);
+			}, 200);
 		}
 	}
 
@@ -450,6 +468,7 @@ class CatalogDataStore {
 				return catalog;
 			});
 			this.setState({catalogs: catalogs});
+			this.catalogItemMetaDataChanged(item);
 		}
 	}
 
@@ -471,6 +490,13 @@ class CatalogDataStore {
 	saveCatalogItem() {
 		const activeItem = ComposerAppStore.getState().item;
 		if (activeItem) {
+			if (activeItem.uiState['instance-ref-count'] > 0) {
+				console.log('cannot save NSD/VNFD with references to instantiated Network Services');
+				ComposerAppActions.showError.defer({
+					errorMessage: 'Cannot save NSD/VNFD with references to instantiated Network Services'
+				});
+				return;
+			}
 			const success = () => {
 				delete activeItem.uiState.isNew;
 				delete activeItem.uiState.modified;

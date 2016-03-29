@@ -27,6 +27,7 @@
 #include <rw_confd_upgrade.hpp>
 #include <confd_xml.h>
 #include <rw-mgmtagt.confd.h>
+#include "rw-mgmtagt.pb-c.h"
 
 
 namespace rw_uagent {
@@ -42,6 +43,7 @@ const int MAX_UAGENT_CONFD_CONNECTION_ATTEMPT = 20;
 const int RWUAGENT_RETRY_CONFD_CONNECTION_TIMEOUT_SEC = 3;
 
 const uint8_t RW_MAX_CONFD_WORKERS = 20;
+const uint8_t RWUAGENT_DAEMON_DEFAULT_POOL_SIZE = 10;
 
 
 typedef enum rw_confd_hkeypath_cmp_t
@@ -270,6 +272,76 @@ class ConfdDomStats
   RWPB_T_MSG(RwMgmtagt_CachedDom) *get_pbcm ();
 };
 
+
+/**
+ * Confd Log
+ * ConfdLog class manages the actions on confd log files.
+ * 1. Logrotate configuration for confd logs.
+ * 2. Show logs rpc command
+ */
+class ConfdLog
+{
+public:
+  using LogrotateConf = RWPB_T_MSG(RwMgmtagt_LogrotateConf);
+  static const char* LOGROTATE_CFG_FILE;
+
+  ConfdLog(Instance*);
+  ~ConfdLog();
+
+  // non-copyable and non-assignable
+  ConfdLog(const ConfdLog&) = delete;
+  void operator=(ConfdLog) = delete;
+
+public:
+  /*!
+   * Register as a subscriber for the
+   * logrotate config.
+   */
+  rw_status_t register_config();
+
+  /*!
+   * Called by show-agent-logs RPC
+   */
+  StartStatus show_logs(SbReqRpc* rpc,
+                        const RWPB_T_MSG(RwMgmtagt_input_ShowAgentLogs)* req);
+private:
+  /*!
+   * Creates logrotate config file.
+   * The file is created only in production mode.
+   * In non-production mode, the callback does nothing.
+   */
+  rwdts_member_rsp_code_t create_logrotate_config(const ProtobufCMessage*);
+
+  std::string get_log_records(const std::string& file);
+
+  StartStatus output_to_string(SbReqRpc* rpc);
+
+  StartStatus output_to_file(SbReqRpc* rpc,
+                             const std::string& file_name);
+
+  static rwdts_member_rsp_code_t create_logrotate_cfg_cb(
+                        const rwdts_xact_info_t* xact_info,
+                        RWDtsQueryAction action,
+                        const rw_keyspec_path_t* keyspec,
+                        const ProtobufCMessage* msg,
+                        uint32_t credits,
+                        void* get_next_key);
+private: 
+  // Non owning data members
+  Instance* instance_ = nullptr;
+  rwdts_api_t* apih_ = nullptr;
+
+private:
+  // Owning data members
+  RwMemlogBuffer memlog_buf_;
+  // Subscriber registration handle
+  rwdts_member_reg_handle_t sub_regh_ = {};
+  // script which needs to be run after file is rotated
+  std::string postrotate_script_;
+  // List of log files which needs to be rotated
+  std::vector<std::string> logs_;
+};
+
 /**
  * Confd Deamon
  *
@@ -329,9 +401,17 @@ class ConfdDaemon
   rwdts_member_rsp_code_t send_notification_to_confd(
            rw_yang::ConfdTLVBuilder& builder, struct xml_tag xtag);
 
+  ConfdLog* confd_log() const noexcept {
+    return confd_log_.get();
+  }
+
   private:
   void async_execute_on_main_thread(dispatch_function_t task,
       void* user_data);
+
+  rwsched_dispatch_queue_t get_dp_q(int index) const noexcept {
+    return dp_q_pool_[index % dp_q_pool_.size()];
+  }
 
  public:
   Instance *instance_;
@@ -355,13 +435,22 @@ class ConfdDaemon
 
  private:
   // The data used by worker pool API. This implementation can change at any time.
-  std::vector<int> worker_fd_;
+  std::vector<int> worker_fd_vec_;
+
+  // Pool of serial queues for dispatching confd
+  // transations.
+  // All transactions on a worker socket will go to
+  // a particular serial queue from the pool.
+  std::vector<rwsched_dispatch_queue_t> dp_q_pool_;
 
   // Confd transaction that is being handled currently
   struct confd_trans_ctx *ctxt_;
 
   // Last allocated confd worker index
   uint8_t last_alloced_index_;
+
+  // Confd log manager
+  std::unique_ptr<ConfdLog> confd_log_ = nullptr;
 
 protected:
   /// rwmemlog logging buffer
@@ -416,6 +505,8 @@ public:
 
   bool is_keypath_present(const confd_hkeypath_t *keypath) const;
   bool is_keypath_present(const char* keypath) const;
+
+  std::string debug_print();
 
 private:
   bool node_exists(const rw_yang::XMLNode* node) const noexcept;
@@ -480,6 +571,8 @@ public:
   void cleanup_if_expired(rw_confd_client_type_t type, uint32_t cli_refresh_period,
                           uint32_t nc_rest_refresh_period);
 
+  std::string debug_print();
+
 private:
   rw_yang::XMLDocument* dom(uint32_t counter) const noexcept;
   rw_yang::XMLDocument* dom(const char* keypath) const noexcept;
@@ -504,7 +597,8 @@ class NbReqConfdDataProvider
 
  public:
   NbReqConfdDataProvider (ConfdDaemon *daemon, struct confd_trans_ctx *ctxt,
-                           uint32_t cli_refresh_period, uint32_t nc_rest_refresh_period);
+                          rwsched_dispatch_queue_t current_dispatch_q,
+                          uint32_t cli_refresh_period, uint32_t nc_rest_refresh_period);
   ~NbReqConfdDataProvider();
 
   StartStatus respond(
@@ -516,6 +610,9 @@ class NbReqConfdDataProvider
     SbReq* sbreq,
     NetconfErrorList* nc_errors
   ) override;
+
+  rwsched_dispatch_queue_t get_execution_q() const override
+  { return current_dispatch_q_; }    // Default Implementation
 
   /// transaction finish callback for operational data
   int finish_confd_trans(struct confd_trans_ctx *ctxt);
@@ -604,6 +701,9 @@ class NbReqConfdDataProvider
 
   // DOM cleanup timer
   rwsched_dispatch_source_t dom_timer_ = nullptr;
+
+  // Serial dispatch queue on which this DP is executing
+  rwsched_dispatch_queue_t current_dispatch_q_;
 
   uint32_t cli_dom_refresh_period_msec_;
   uint32_t nc_rest_dom_refresh_period_msec_;

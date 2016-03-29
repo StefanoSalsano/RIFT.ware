@@ -11,7 +11,7 @@ include(rift_cmdargs)
 ##
 # Set various yang files
 ##
-set(rwschema_yang_files config_root.yang rw-log.yang rw-base.yang rw-debug.yang rw-mgmt-schema.yang
+set(rwschema_yang_files rw-log.yang rw-base.yang rw-debug.yang rw-mgmt-schema.yang
   mano-base.yang rw-vnf-base-config.yang rw-vnf-base-opdata.yang
   toy-vnf-config.yang toy-vnf-opdata.yang mano-types.yang rwvcs-types.yang
   rw-vnf-base-types.yang
@@ -35,7 +35,6 @@ rift_gen_yang_tree(rw-base-pyang-trees
     ${CMAKE_CURRENT_SOURCE_DIR}/mano-types.yang
     ${CMAKE_CURRENT_SOURCE_DIR}/rw-base.yang
     ${CMAKE_CURRENT_SOURCE_DIR}/rw-debug.yang
-    ${CMAKE_CURRENT_SOURCE_DIR}/config_root.yang
     ${CMAKE_CURRENT_SOURCE_DIR}/rw-log.yang
     ${CMAKE_CURRENT_SOURCE_DIR}/rw-mgmt-schema.yang
 )

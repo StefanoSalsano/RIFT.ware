@@ -28,7 +28,7 @@ mkdir $RPM_BUILD_ROOT
 tar xf $RPM_SOURCE_DIR/rift-scripts.tar.xz -C $RPM_BUILD_ROOT
 
 
-%post
+%pre
 
 # remove /usr/rift symlink if it exists which comes from internal labmode
 RDIR="/usr/rift"

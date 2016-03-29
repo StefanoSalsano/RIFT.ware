@@ -205,6 +205,7 @@ size_t foo__bar__baz_bah__pack_to_buffer
 #include <stdbool.h>
 
 #include <glib-object.h>
+#include <pthread.h>
 
 #ifdef __cplusplus
 # define PROTOBUF_C_BEGIN_DECLS  extern "C" {
@@ -679,6 +680,61 @@ struct ProtobufCBuffer {
  * NOTE: you may modify this instance.
  */
 extern PROTOBUF_C_API ProtobufCInstance protobuf_c_default_instance; /* settable */
+
+/*!
+ * GI reference-management mutex.
+ */
+PROTOBUF_C_API
+extern pthread_mutex_t protobuf_c_gi_ref_mutex;
+
+/*!
+ * GI reference-management mutex lock guard lock.  Obtains the mutex
+ * and returns a magic value, which can be passed to the release
+ * function for validation, or to detect (intentional) early releases.
+ *
+ * @return - A magic number to indicate that the lock is taken.
+ */
+PROTOBUF_C_API
+extern intptr_t protobuf_c_gi_mutex_guard_lock(void);
+
+/*!
+ * GI reference-management mutex lock guard release.  Used in
+ * conjunction with a gcc-cleanup attribute to automatcially release a
+ * mutex lock.  May also be called directly to explicitly release a
+ * lock early.
+ */
+PROTOBUF_C_API
+extern void protobuf_c_gi_mutex_guard_release(intptr_t* guard);
+
+
+/*!
+ * Define and set a local variable to guard the global mutex, and
+ * obtain the mutex.  The guard will auto-destroy on scope exit, and
+ * release lock.
+ */
+#define PROTOBUF_C_GI_MUTEX_GUARD_AUTO_RELEASE() \
+  PROTOBUF_C_GI_MUTEX_GUARD_AUTO_RELEASE_NAMED(__LINE__)
+
+/*!
+ * Define and set a local variable to guard the global mutex, and
+ * obtain the mutex.  Give the mutex a specific name.  The guard will
+ * auto-destroy on scope exit, and release lock.  The lock may be
+ * released early.
+ */
+#define PROTOBUF_C_GI_MUTEX_GUARD_AUTO_RELEASE_NAMED(name_) \
+  PROTOBUF_C_GI_MUTEX_GUARD_AUTO_RELEASE_NAMED_1(name_)
+
+#define PROTOBUF_C_GI_MUTEX_GUARD_AUTO_RELEASE_NAMED_1(name_) \
+  intptr_t protobuf_c_gi_mutex_guard_##name_ \
+        __attribute__((__cleanup__(protobuf_c_gi_mutex_guard_release))) \
+    = protobuf_c_gi_mutex_guard_lock()
+
+/*!
+ * Release the guarded global mutex, if currently held.
+ */
+#define PROTOBUF_C_GI_MUTEX_GUARD_RELEASE(name_) \
+  protobuf_c_gi_mutex_guard_release(&(protobuf_c_gi_mutex_guard_##name_))
+
 
 /*!
  * Simple buffer "subclass" of `ProtobufCBuffer`.

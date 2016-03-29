@@ -18,6 +18,9 @@ from ..util import (
     TargetType,
 )
 
+import gi
+gi.require_version('RwYang', '1.0')
+
 from gi.repository import RwYang
 from rift.rwlib.schema import collect_children
 from rift.rwlib.util import iterate_with_lookahead
@@ -64,8 +67,9 @@ def _split_tag_and_update_prefixes(element, prefixes):
 class XmlToJsonTranslator(object):
     ''' Converts the results of a NETCONF query into JSON.'''
 
-    def __init__(self, schema):
+    def __init__(self, schema, logger):
         self._schema = schema
+        self._logger = logger
 
     def convert(self, is_collection, url, xpath, xml_string):
         ''' Entry for XML -> JSON conversion
@@ -143,6 +147,55 @@ class XmlToJsonTranslator(object):
         json.append("}")
 
         return ''.join(json)
+
+    def convert_notification(self, xml_string):
+        '''Converts the given XML Notification string into JSON
+
+        Returns converted JSON string 
+        '''
+        # Assuming 'notification' tag and 'eventTime' to be present, since the
+        # ncclient would have done the correct validation
+        notification = lxml.etree.fromstring(xml_string)
+
+        json = []
+
+        json.append('{"notification" : ')
+        json.append('{"eventTime" : ')
+        # The first element in notification is always 'eventTime'
+        json.append('"' + notification[0].text + '"') 
+        json.append(",")
+        prefixes = []
+        for element in notification[1:]:
+            qelem = lxml.etree.QName(element)
+            name, prefix, prefixes = _split_tag_and_update_prefixes(element, prefixes)
+            schema_node = self._schema.search_child(qelem.localname,
+                                                    qelem.namespace)
+            if schema_node is None:
+                self._logger.error(
+                    "Notification: Unable to find node %s{%s} in loaded schema",
+                    qelem.localname, qelem.namespace)
+                return None
+
+            # Node should be of type notification
+            if schema_node.get_stmt_type() != RwYang.StmtType.STMT_TYPE_NOTIF:
+                self._logger.error(
+                    "Notification schema node - invalid type. Expected "+\
+                    "STMT_TYPE_NOTIF, got %s", schema_node.get_stmt_type())
+                return None
+
+            json.append('"%s%s" : {' % (prefix, name))
+            tstr = self._translate_node(False, schema_node, element, prefixes)
+            json.append(tstr)
+            json.append("}")
+            json.append(",")
+        json.pop()  # Pops the last ','
+
+        json.append("}")
+        json.append("}")
+
+        result = ''.join(json)
+        return result
+
 
     def _translate_node(self, is_collection, schema_root, xml_node, prefixes, depth=0):
         ''' Translates the given XML node into JSON

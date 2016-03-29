@@ -35,7 +35,10 @@ function rpm_get_buildnum() {
 
 	source ${RIFT_ROOT}/scripts/packaging/getbuild
 	echo "RIFT_Build_Number: ${RIFT_BUILD_NUMBER}";
-	#BUILD_NUMBER=nate
+#	BUILD_NUMBER=grant
+#	RIFT_BUILD_NUMBER=grant
+#	BUILD_NUMBER=26000
+#	RIFT_BUILD_NUMBER=26000
 
 }
 
@@ -48,6 +51,9 @@ function rpm_get_version() {
 	if [ -f ${verfile} ]; then
 		version=`cat ${verfile} | cut -d. -f1-4 `;
 	fi
+
+	# version actually needs to be the VERSION.buildnum for proper dependencies -RIFT-10430
+	version=${version}.${RIFT_BUILD_NUMBER}
 
 	echo "RIFT_Version: ${version}";
 }
@@ -66,7 +72,7 @@ function rpm_collect_files() {
         fi
 
 	# create destination dirs
-	dst=${rpmbuildroot}SOURCES/${rpmname}-${version}
+	dst=${rpmbuildroot}/SOURCES/${rpmname}-${version}
 	tgz_rift_root=${dst}${dst_rift_root}
 	#mkdir -p ${dst}
 	mkdir -p ${tgz_rift_root}
@@ -74,6 +80,7 @@ function rpm_collect_files() {
 	# setup output directories
 	mkdir -p ${rpmbuildroot}/RPMS
 	mkdir -p ${rpmbuildroot}/BUILD
+	mkdir -p ${rpmbuildroot}/SRPMS
 
 	echo "Destination is ${dst}";
 	echo "RIFT_ROOT is ${RIFT_ROOT}";
@@ -274,9 +281,9 @@ function rpm_install {
 	du -hs ${rpm} || exit 1;
 	#sudo rpm -Uvh ${rpm}
 
-	echo " ";
-	echo "!!! *** WE HAVE TO REMOVE THE --nodeps AND DO DEPS CORRECTLY *** !!!";
-	echo " ";
+	#echo " ";
+	#echo "!!! *** WE HAVE TO REMOVE THE --nodeps AND DO DEPS CORRECTLY *** !!!";
+	#echo " ";
 	#sudo rpm --nodeps -Uvh  ${rpm}
 }
 
@@ -315,16 +322,20 @@ function rpm_distribute {
 	#dst_repo="/net/boson/home1/autobot/www/mirrors/releases/riftware/4.0/20/x86_64/${repo}/";
 	dst_repo="/net/charm/localdisk/jenkins/rpm-staging/"
 
-	# copy the RPM to the staging area
-
 	if [ ${rpmname} = "riftware-release" ]; then
-		echo "[info] riftware-release is a special case and doesn't get automatically put into a riftware-release repo"
+		#echo "[info] riftware-release is a special case and doesn't get automatically put into a riftware-release repo"
+		echo "[info] copying to ritware-release special rpm staging area"
+		echo "CMD: cp -v ${rpm} ${dst_repo}/riftware-release/ "
+		cp -v ${rpm} ${dst_repo}/riftware-release/
 	else
 		echo "[info] copying to rpm staging area"
 		echo "CMD: cp -v ${rpm} ${dst_repo} "
 		cp -v ${rpm} ${dst_repo}
-	fi
 
+		if [ -f ${debuginforpm} ]; then
+			cp -v ${debuginforpm} ${dst_repo}
+		fi
+	fi
 
 }
 
@@ -356,11 +367,13 @@ rpm_get_version
 # setup variables
 rpmname=$1
 repo=$2
+dist='fc20'
+arch='x86_64'
 
 # NEED BETTER ARG CHECKING
 
 # rpm build root
-rpmbuildroot=${RIFT_ROOT}/.install/rpmbuild/
+rpmbuildroot=${RIFT_ROOT}/.install/rpmbuild
 
 #spec=${rpmbuildroot}/SPECS/${rpmname}.spec
 spec=${RIFT_ROOT}/scripts/packaging/rpmbuild/SPECS/${rpmname}.spec
@@ -370,7 +383,10 @@ dst_rift_root="/home/rift/"
 filelist=${RIFT_ROOT}/scripts/packaging/rpmbuild/FILELISTS/${rpmname}.txt
 
 # build the rpm to .install
-rpm=${RIFT_ROOT}/.install/rpmbuild/RPMS/x86_64/${rpmname}-${version}-${RIFT_BUILD_NUMBER}.fc20.x86_64.rpm
+#rpm=${RIFT_ROOT}/.install/rpmbuild/RPMS/x86_64/${rpmname}-${version}-${RIFT_BUILD_NUMBER}.fc20.x86_64.rpm # RIFT-10430
+#debuginforpm=${RIFT_ROOT}/.install/rpmbuild/RPMS/x86_64/${rpmname}-debuginfo-${version}-${RIFT_BUILD_NUMBER}.fc20.x86_64.rpm
+rpm=${RIFT_ROOT}/.install/rpmbuild/RPMS/x86_64/${rpmname}-${version}-1.${dist}.${arch}.rpm
+debuginforpm=${RIFT_ROOT}/.install/rpmbuild/RPMS/x86_64/${rpmname}-debuginfo-${version}-1.${dist}.${arch}.rpm
 
 START=`date`
 rpm_announce "START do_rpm_build @ $START";

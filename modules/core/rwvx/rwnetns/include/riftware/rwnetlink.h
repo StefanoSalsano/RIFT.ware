@@ -68,15 +68,6 @@ typedef enum rw_netlink_arp_state{
   RW_ARP_RESOLVED
 }rw_arp_state_t;
 
-#define RW_MAX_PCI_ADDRESS_NAME 64
-typedef struct rw_pci_address{
-  char      pci_name[RW_MAX_PCI_ADDRESS_NAME];
-  uint16_t domain;
-  uint8_t bus;
-  uint8_t devid;
-  uint8_t function;
-}rw_pci_address_t;
-
 
 typedef struct {
   rw_ip_prefix_t          dest;
@@ -580,18 +571,12 @@ rw_status_t rw_netlink_read_ow(rw_netlink_handle_proto_t *proto_handle,
 #endif
 
 
-int
-rw_netlink_get_pci_addr(const char *ifname, rw_pci_address_t *addr);
+
 rw_status_t
 rw_netlink_get_link(rw_netlink_handle_t *handle);
 rw_status_t
 rw_netlink_get_link_addr(rw_netlink_handle_t *handle);
-int
-rw_strsplit(char *string, int stringlen,
-            char **tokens, int maxtokens, char delim);
-int
-rw_parse_pci_addr_format(char *buf, int bufsize,
-                         rw_pci_address_t *pci_addr);
+
 __END_DECLS
 
 #endif /* __RW_NETLINK_H__ */

@@ -338,7 +338,7 @@ string PrimitiveFieldGenerator::GetGiGetterParameterList() const
   return param_list;
 }
 
-string PrimitiveFieldGenerator::GetGiParameterAnnotations() const
+string PrimitiveFieldGenerator::GetGiSetterAnnotations() const
 {
   std::string annotations = "";
 

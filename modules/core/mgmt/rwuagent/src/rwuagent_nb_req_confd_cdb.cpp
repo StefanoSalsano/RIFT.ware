@@ -205,6 +205,9 @@ void NbReqConfdConfig::async_reload_configuration(NbReqConfdConfig* self)
     log = "Reload failed after " + std::to_string(reload_count) +
           " attempts.";
     RW_MA_NBREQ_LOG (self, ClientError, __FUNCTION__, log.c_str());
+
+    // Proceed with confd startup
+    self->instance_->mgmt_handler()->proceed_to_next_state();
     return;
   }
   reload_count++;
@@ -268,7 +271,7 @@ void NbReqConfdConfig::reload_configuration(void* ctxt)
     self->reload_fd_ = RWUAGENT_INVALID_SOCK_ID;
   }
 
-  self->instance_->startup_hndl()->proceed_to_next_state();
+  self->instance_->mgmt_handler()->proceed_to_next_state();
 
   RW_MA_NBREQ_LOG (self, ClientDebug, __FUNCTION__, "CDB configuration reload completed");
   return;
@@ -366,6 +369,15 @@ StartStatus NbReqConfdConfig::respond(
       err_str += elem.get_error_message();
     }
     err_str += "\n";
+  }
+
+  if (instance_->mgmt_handler()->is_under_reload()) {
+    std::string log = "Confd transaction failed under reload: " + err_str;
+    RW_MA_NBREQ_LOG (this, ClientCritInfo, __FUNCTION__, log.c_str());
+    RW_MA_NBREQ_LOG (this, ClientCritInfo, __FUNCTION__, 
+        "Marking the failed transaction as success under reload");
+
+    return respond (sbreq);
   }
 
   cdb_sub_abort_trans (sub_fd_, CONFD_ERRCODE_RESOURCE_DENIED, 0, 0,

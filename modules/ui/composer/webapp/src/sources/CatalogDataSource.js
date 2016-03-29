@@ -21,7 +21,8 @@ const CatalogDataSource = {
 				return new Promise(function(resolve, reject) {
 					$.ajax({
 						beforeSend: utils.addAuthorizationStub,
-						url: 'http://' + window.location.hostname + ':3000/launchpad/catalog?api_server=' + utils.getSearchParams(window.location).api_server,
+						url: '//' + window.location.hostname + ':3000/launchpad/catalog?api_server=' + utils.getSearchParams(window.location).api_server,
+						//url: 'assets/big-honking-catalog.json',
 						//url: 'assets/ping-pong-catalog.json',
 						//url: 'assets/empty-nsd-catalog.json',
 						success: function(data) {
@@ -50,7 +51,7 @@ const CatalogDataSource = {
 			remote: function(state, catalogType, itemId) {
 				return new Promise(function(resolve, reject) {
 					$.ajax({
-						url: 'http://' + window.location.hostname + ':3000/launchpad/catalog/' + catalogType + '/' + itemId + '?api_server=' + utils.getSearchParams(window.location).api_server,
+						url: '//' + window.location.hostname + ':3000/launchpad/catalog/' + catalogType + '/' + itemId + '?api_server=' + utils.getSearchParams(window.location).api_server,
 						type: 'DELETE',
 						beforeSend: utils.addAuthorizationStub,
 						success: function(data) {
@@ -90,7 +91,7 @@ const CatalogDataSource = {
 					}
 					if (method === 'POST') {
 						$.ajax({
-							url: 'http://' + window.location.hostname + ':3000/launchpad/catalog/' + item.uiState.type + '?api_server=' + utils.getSearchParams(window.location).api_server,
+							url: '//' + window.location.hostname + ':3000/launchpad/catalog/' + item.uiState.type + '?api_server=' + utils.getSearchParams(window.location).api_server,
 							type: method,
 							beforeSend: utils.addAuthorizationStub,
 							data: payload,
@@ -112,7 +113,7 @@ const CatalogDataSource = {
 						});
 					} else {
 						$.ajax({
-							url: 'http://' + window.location.hostname + ':3000/launchpad/catalog/' + item.uiState.type + '/' + payload.id + '?api_server=' + utils.getSearchParams(window.location).api_server,
+							url: '//' + window.location.hostname + ':3000/launchpad/catalog/' + item.uiState.type + '/' + payload.id + '?api_server=' + utils.getSearchParams(window.location).api_server,
 							type: method,
 							beforeSend: utils.addAuthorizationStub,
 							data: payload,

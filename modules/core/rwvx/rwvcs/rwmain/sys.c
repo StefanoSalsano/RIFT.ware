@@ -15,7 +15,7 @@
 
 #include "rwmain.h"
 
-static void update_proc_cputime(struct rwmain * rwmain)
+static void update_proc_cputime(struct rwmain_gi * rwmain)
 {
   int r;
   struct timespec cputime;
@@ -41,7 +41,7 @@ static void update_proc_cputime(struct rwmain * rwmain)
     rwmain->sys.proc_cpu_usage = 100.0;
 }
 
-static void update_sys_cputime(struct rwmain * rwmain)
+static void update_sys_cputime(struct rwmain_gi * rwmain)
 {
   FILE * fp;
   char * line = NULL;
@@ -53,7 +53,7 @@ static void update_sys_cputime(struct rwmain * rwmain)
   fp = fopen("/proc/stat", "r");
   if (!fp) {
     perror("fopen:");
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   line_len = getline(&line, &cline_len, fp);
@@ -138,11 +138,11 @@ static void update_sys_cputime(struct rwmain * rwmain)
  */
 static void on_update_cputime(rwsched_CFRunLoopTimerRef timer, void * info)
 {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
 
   UNUSED(timer);
 
-  rwmain = (struct rwmain *)info;
+  rwmain = (struct rwmain_gi *)info;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
 
   update_proc_cputime(rwmain);
@@ -150,7 +150,7 @@ static void on_update_cputime(rwsched_CFRunLoopTimerRef timer, void * info)
 }
 
 
-void rwmain_setup_cputime_monitor(struct rwmain * rwmain)
+void rwmain_setup_cputime_monitor(struct rwmain_gi * rwmain)
 {
   FILE * fp;
   char * line = NULL;

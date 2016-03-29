@@ -12,6 +12,11 @@ import asyncio
 import logging
 import sys
 
+import gi
+gi.require_version('CF', '1.0')
+gi.require_version('RwSched', '1.0')
+gi.require_version('RwTaskletPlugin', '1.0')
+
 import gi.repository.CF as cf
 import gi.repository.GObject as GObject
 import gi.repository.RwSched as rwsched

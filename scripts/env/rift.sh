@@ -1,5 +1,7 @@
 
-# STANDARD_RIFT_IO_COPYRIGHT
+# 
+# (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
+#
 
 # this script is designed to set all of the workspace 
 # independent variables needed

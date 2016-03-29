@@ -307,7 +307,7 @@ static void rwdts_xact_query_cb(RWDtsXactResult* rsp_in,
       }
       if (1)
       {
-        rwdts_dbg_tracert_dump(rsp->dbg->tr, xact->apih->ypbc_schema);
+        rwdts_dbg_tracert_dump(rsp->dbg->tr, xact);
       }
     }
     if (rsp->dbg->err_report)
@@ -473,6 +473,9 @@ static void rwdts_xact_query_cb(RWDtsXactResult* rsp_in,
 
           RWVCS_LATENCY_CHK_POST (apih->rwtrace_instance, RWTRACE_CATEGORY_RWTASKLET,
                                   xact->blocks[i]->cb.cb, "blocks.cb at"); // %s", apih->client_path);
+          if (xact_status->xact_done) {
+            xact->blocks[i]->cb.cb = NULL;
+          }
         }
         else {
           RWDTS_API_LOG_XACT_EVENT(xact->apih, xact, RwDtsApiLog_notif_ClientCallbackSkipped,
@@ -503,6 +506,9 @@ static void rwdts_xact_query_cb(RWDtsXactResult* rsp_in,
 
       RWVCS_LATENCY_CHK_POST (apih->rwtrace_instance, RWTRACE_CATEGORY_RWTASKLET,
                               xact->cb->cb, "xact cb at %s", apih->client_path);
+      if (xact_status->xact_done) {
+        xact->cb->cb = NULL;
+      }
     }
   } else {
     RWDTS_API_LOG_XACT_EVENT(xact->apih, xact, RwDtsApiLog_notif_ClientCallbackSkipped,
@@ -527,6 +533,7 @@ static void rwdts_xact_query_cb(RWDtsXactResult* rsp_in,
   if (xact_status->xact_done) {
     rwdts_xact_unref(xact, __PRETTY_FUNCTION__, __LINE__);
   }
+  rwdts_xact_unref(xact, __PRETTY_FUNCTION__, __LINE__);
 
   RW_FREE(xact_status);                /* BUG put this on stack, let GObject copy it to heap.  Or is it reference counted?  Yikes */
 
@@ -2130,11 +2137,6 @@ rwdts_xact_block_create(rwdts_xact_t *xact) {
   rwdts_xact_block_t *block = RW_MALLOC0(sizeof(rwdts_xact_block_t));
   block->xact = xact;
   rwdts_xact_block_ref(block, __PRETTY_FUNCTION__, __LINE__);  // xact ref
-  if (!rwdts_member_allow_add_block(xact, block)) {
-    rwdts_xact_block_unref(block, __PRETTY_FUNCTION__, __LINE__);
-    return NULL;
-  }
-
 
   RW_ASSERT(block);
   rwdts_xact_block__init(&block->subx);
@@ -2150,6 +2152,9 @@ rwdts_xact_block_create(rwdts_xact_t *xact) {
   }
   blockidx++;
 
+  if (HASH_CNT(hh, xact->queries)) {
+    block->newblockadd_notify = RWDTS_NEWBLOCK_TO_NOTIFY;
+  }
 
   xact->blocks_ct++;
   xact->blocks = realloc(xact->blocks, (xact->blocks_ct * sizeof(xact->blocks[0])));
@@ -2408,19 +2413,9 @@ rwdts_xact_send(rwdts_xact_t *xact) {
   rpc_xact.subx = (RWDtsXactBlock**) xact->blocks;
   rwdts_apply_trace(&rpc_xact, xact, apih);
   rpc_xact.flags |= RWDTS_XACT_FLAG_UPDATE_CREDITS; /* why is there even a flag, just always do it */
+  rpc_xact.flags |= (xact->flags & RWDTS_XACT_FLAG_PEER_REG);
+  rpc_xact.flags |= (xact->flags & RWDTS_XACT_FLAG_REG);
   rpc_xact.has_flags = TRUE;
-
-  /* Let there be no more requests without keystr filled in. It makes debugging unpossible. */
-  {
-    int b;
-    for (b=0; b<xact->blocks_ct; b++) {
-      int q;
-      for (q=0; q<xact->blocks[b]->subx.n_query; q++) {
-        RW_ASSERT(xact->blocks[b]->subx.query[q]->key);
-        RW_ASSERT(xact->blocks[b]->subx.query[q]->key->keystr);
-      }
-    }
-  }
 
   RWMEMLOG(&xact->rwml_buffer,
 	   RWMEMLOG_MEM0,
@@ -2445,6 +2440,20 @@ rwdts_xact_send(rwdts_xact_t *xact) {
   }
   if (rs == RW_STATUS_SUCCESS) {
     xact->req_out++;
+    rwdts_xact_ref(xact, __PRETTY_FUNCTION__, __LINE__);
+    /* Let there be no more requests without keystr filled in. It makes debugging unpossible. */
+    {
+      int b;
+      for (b=0; b<xact->blocks_ct; b++) {
+        int q;
+        for (q=0; q<xact->blocks[b]->subx.n_query; q++) {
+          RW_ASSERT(xact->blocks[b]->subx.query[q]->key);
+          RW_ASSERT(xact->blocks[b]->subx.query[q]->key->keystr);
+          rwdts_member_notify_newblock(xact, xact->blocks[b]);
+        }
+      }
+    }
+
   }
   RW_FREE(rpc_xact.block);
   RW_FREE(rpc_xact.client_path);

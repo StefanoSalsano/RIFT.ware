@@ -18,7 +18,10 @@
 #include "rwcli_zsh.h"
 #include "rwcli_agent.h"
 
+#include <stdio.h>
 #include <sys/prctl.h>
+#include <termios.h>
+
 #ifdef alloca
 # undef alloca
 #endif
@@ -36,11 +39,11 @@ extern rift_cmdargs_t rift_cmdargs;
 
 /* Module Features. We don't have any. */
 static struct features module_features = {
-    NULL, 0,
-    NULL, 0,
-    NULL, 0,
-    NULL, 0,
-    0
+  NULL, 0,
+  NULL, 0,
+  NULL, 0,
+  NULL, 0,
+  0
 };
 
 /*
@@ -94,14 +97,16 @@ static void launch_netconf_agent()
         argv[argc++] = "--netconf-port";
         argv[argc++] = rift_cmdargs.netconf_port;
       }
+
       if (rift_cmdargs.netconf_username) {
         argv[argc++] = "--username";
         argv[argc++] = rift_cmdargs.netconf_username;
-      }
+      } 
       if (rift_cmdargs.netconf_passwd) {
         argv[argc++] = "--passwd";
         argv[argc++] = rift_cmdargs.netconf_passwd;
-      }
+      } 
+
       if (rift_cmdargs.trace_level != RWTRACE_SEVERITY_ERROR) {
         argv[argc++] = "--trace-level";
         argv[argc++] = trace_level_str;
@@ -141,7 +146,7 @@ static void launch_netconf_agent()
 int
 setup_(UNUSED(Module m))
 {
-    return 0;
+  return 0;
 }
 
 /* This function is called after the setup, to get the capabilities of this
@@ -151,8 +156,8 @@ setup_(UNUSED(Module m))
 int
 features_(Module m, char ***features)
 {
-    *features = featuresarray(m, &module_features);
-    return 0;
+  *features = featuresarray(m, &module_features);
+  return 0;
 }
 
 /* This is called from within the featuresarray to enable the features */
@@ -161,7 +166,7 @@ features_(Module m, char ***features)
 int
 enables_(Module m, int **enables)
 {
-    return handlefeatures(m, &module_features, enables);
+  return handlefeatures(m, &module_features, enables);
 }
 
 /* Called after the features are enabled when the module is loaded.
@@ -193,6 +198,6 @@ cleanup_(Module m)
 int
 finish_(UNUSED(Module m))
 {
-    return 0;
+  return 0;
 }
 

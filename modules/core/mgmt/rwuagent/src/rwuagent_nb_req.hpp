@@ -117,6 +117,8 @@ class NbReq
   virtual int set_timeout(int timeout_sec)
   { return timeout_sec; } // Empty implementation.
 
+  virtual rwsched_dispatch_queue_t get_execution_q() const;
+
  public:
   RwMgmtagt_NbReqType nbreq_type() const
   {
@@ -180,6 +182,8 @@ public:
     SbReq* sbreq,
     NetconfErrorList* nc_errors
   ) override;
+
+  rwsched_dispatch_queue_t get_execution_q() const override;
 
 private:
 

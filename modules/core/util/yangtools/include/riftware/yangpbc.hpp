@@ -56,6 +56,10 @@ enum class parser_control_t {
   DO_SKIP_TO_SIBLING, ///< Skip this yang subtree
 };
 
+enum class doc_file_t {
+  TEXT = 0,
+  HTML = 1,
+};
 
 /**
  * Define special message types.  The message types determine how the
@@ -1621,11 +1625,9 @@ public:
   void output_gi_desc_keyspec_leaf_method(std::ostream& os, unsigned indent);
   void output_gi_desc_retrieve_descriptor_method(std::ostream& os, unsigned indent);
 
-  /// Output help
-  void output_docs_description(std::ostream& os, unsigned indent);
-
   /// Output programmer's guide
   void output_doc_message(
+    const doc_file_t file_type,    
     std::ostream& os,
     unsigned indent,
     doc_t doc_style,
@@ -1831,7 +1833,8 @@ public:
 
   std::string get_schema_element_type() const;
 
-  std::string get_yang_fieldname() const;
+  std::string get_yang_description() const;
+  std::string get_yang_fieldname() const;  
   std::string get_proto_fieldname() const;
   std::string get_pbc_fieldname() const;
 
@@ -2605,6 +2608,7 @@ public:
 
   /// Output the documentation for a module.
   bool output_doc(
+    const doc_file_t file_type,
     std::ostream& os,
     unsigned indent,
     PbMessage::doc_t doc_style,
@@ -3148,18 +3152,23 @@ public:
 
   /// Output the user documentation file
   parser_control_t output_doc_user_file(
+    /// The output file type
+    const doc_file_t file_type,
     /// The output base filename.  Must be able to create or write basename.user.txt
     const char* basename
   );
 
   /// Output the API documentation file
   parser_control_t output_doc_api_file(
+    /// The output file type
+    const doc_file_t file_type,
     /// The output base filename.  Must be able to create or write basename.api.txt
     const char* basename
   );
 
   /// Output a documentation table of contents or heading.
   void output_doc_heading(
+    const doc_file_t file_type,
     std::ostream& os,
     unsigned indent,
     PbMessage::doc_t doc_style,
@@ -3168,6 +3177,7 @@ public:
 
   /// Output a documentation entry.
   void output_doc_field(
+    const doc_file_t file_type,
     std::ostream& os,
     unsigned indent,
     const std::string& chapter,

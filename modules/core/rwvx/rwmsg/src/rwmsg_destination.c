@@ -91,6 +91,7 @@ void rwmsg_destination_destroy(rwmsg_destination_t *dt) {
     }
     
     if (dt->defstream.localsc) {
+      _RWMSG_CH_DEBUG_(&dt->defstream.localsc->ch, "--");
       rwmsg_srvchan_release(dt->defstream.localsc);
       dt->defstream.localsc = NULL;
     }

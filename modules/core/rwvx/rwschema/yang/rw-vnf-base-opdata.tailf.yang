@@ -40,5 +40,18 @@ module rw-vnf-base-opdata.tailf
   tailf:annotate "/rwvnfbaseopdata:stop" {
     tailf:actionpoint rw_action;
   }
-  
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:virtual-fabric-access-point" {
+    tailf:callpoint base_show;
+  }
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:virtual-service-access-point" {
+    tailf:callpoint base_show;
+  }
+  /*
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:ip-flow-signatures" {
+    tailf:callpoint base_show;
+  }
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:ip-classifiers" {
+    tailf:callpoint base_show;
+  }
+  */
 }

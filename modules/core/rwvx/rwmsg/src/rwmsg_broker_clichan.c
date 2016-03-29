@@ -169,7 +169,7 @@ static void rwmsg_broker_clichan_reqwheel_tick(void*ud) {
       RWMSG_REQ_TRACK(req);
       rw_status_t rs = rwmsg_queue_enqueue(&cc->ch.localq, req);
       if (rs != RW_STATUS_SUCCESS) {
-	RW_ASSERT(0);
+	RW_CRASH();
       }
 
       /* Also send a cancel request in the general direction the request went */
@@ -846,7 +846,7 @@ rw_status_t rwmsg_broker_clichan_recv_buf(rwmsg_broker_clichan_t *cc,
     rwmsg_queue_enqueue(&cc->ch.localq, req);
     rwmsg_sockset_pollout(cc->ch.ss, req->hdr.pri, TRUE);
   } else {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
   rs = RW_STATUS_BACKPRESSURE;
   goto out;

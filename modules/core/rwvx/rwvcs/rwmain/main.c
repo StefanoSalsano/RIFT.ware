@@ -14,7 +14,7 @@
 
 int main(int argc, char ** argv, char ** envp)
 {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
 
   rwmain = rwmain_setup(argc, argv, envp);
   if (!rwmain)

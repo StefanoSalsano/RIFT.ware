@@ -6,6 +6,7 @@
  */
 'use strict';
 
+import UID from '../libraries/UniqueId'
 import React from 'react'
 import messages from './messages'
 import ClassNames from 'classnames'
@@ -30,27 +31,16 @@ const CatalogItems = React.createClass({
 	},
 	componentWillMount() {
 		CatalogDataStore.listen(this.onChange);
-		document.body.addEventListener('click', this.onClickBody);
 	},
 	componentDidMount() {
 		// async actions creator will dispatch loadCatalogsSuccess and loadCatalogsError messages
 		CatalogDataStore.loadCatalogs().catch(e => console.warn('unable to load catalogs', e));
 	},
-	componentDidUpdate() {
-	},
 	componentWillUnmount() {
 		CatalogDataStore.unlisten(this.onChange);
-		document.body.removeEventListener('click', this.onClickBody);
 	},
 	onChange(state) {
 		this.setState(state);
-	},
-	onClickBody(e) {
-		if (e.target.nodeName === 'DIV') {
-			// user did not click a button so it is most
-			// likely safe to deselect the catalog items
-			CatalogItemsActions.selectCatalogItem({});
-		}
 	},
 	render() {
 		const onDragStart = function(event) {
@@ -63,21 +53,22 @@ const CatalogItems = React.createClass({
 			CatalogItemsActions.editCatalogItem(this);
 		};
 		const onClickCatalogItem = function () {
-			CatalogItemsActions.selectCatalogItem(this);
+			// single clicking an item is handled by ComposerApp::onClick handler
+			//CatalogItemsActions.selectCatalogItem(this);
 		};
 		const cleanDataURI = this.cleanDataURI;
 		const items = this.getCatalogItems().map(function (d) {
 			const isNSD = d.uiState.type === 'nsd';
 			const isDeleted = d.uiState.deleted;
 			const isModified = d.uiState.modified;
-			const isSelected = SelectionManager.isSelected(d);// d.uiState.selected;
+			const isSelected = SelectionManager.isSelected(d);
 			const isOpenForEdit = d.uiState.isOpenForEdit;
 			const spanClassNames = ClassNames({'-is-selected': isSelected, '-is-open-for-edit': isOpenForEdit});
 			const sectionClassNames = ClassNames('catalog-item', {'-is-modified': isModified, '-is-deleted': isDeleted});
 			const instanceCount = d.uiState['instance-ref-count'];
 			const instanceCountLabel = isNSD && instanceCount ? <span>({instanceCount})</span> : null;
 			return (
-				<li key={d.id} onClick={onClickCatalogItem.bind(d)} onDoubleClick={onDblClickCatalogItem.bind(d)}>
+				<li key={d.id} data-uid={UID.from(d)} onClick={onClickCatalogItem.bind(d)} onDoubleClick={onDblClickCatalogItem.bind(d)}>
 					<div className={spanClassNames}>
 						<div className={sectionClassNames} id={d.id} draggable="true" onDragStart={onDragStart.bind(d)}>
 							{isModified ? <div className="-is-modified-indicator" title="This descriptor has changes."></div> : null}
@@ -97,7 +88,7 @@ const CatalogItems = React.createClass({
 			);
 		});
 		return (
-			<div className="CatalogItems">
+			<div className="CatalogItems" data-offset-parent="true">
 				<ul>
 					{items.length ? items : messages.catalogWelcome}
 				</ul>

@@ -4,19 +4,19 @@
  *
  * Copyright (C) 2010 Steve Frécinaux
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -26,10 +26,12 @@
 #include <string.h>
 
 #include "peas-extension-set.h"
+
+#include "peas-i18n.h"
+#include "peas-introspection.h"
 #include "peas-plugin-info.h"
 #include "peas-marshal.h"
 #include "peas-utils.h"
-#include "peas-introspection.h"
 
 /**
  * SECTION:peas-extension-set
@@ -92,7 +94,7 @@ struct _PeasExtensionSetPrivate {
   guint n_parameters;
   GParameter *parameters;
 
-  GList *extensions;
+  GQueue extensions;
 };
 
 typedef struct {
@@ -217,11 +219,11 @@ add_extension (PeasExtensionSet *set,
                                          priv->n_parameters,
                                          priv->parameters);
 
-  item = (ExtensionItem *) g_slice_new (ExtensionItem);
+  item = g_slice_new (ExtensionItem);
   item->info = info;
   item->exten = exten;
 
-  priv->extensions = g_list_prepend (priv->extensions, item);
+  g_queue_push_tail (&priv->extensions, item);
   g_signal_emit (set, signals[EXTENSION_ADDED], 0, info, exten);
 }
 
@@ -242,16 +244,16 @@ remove_extension (PeasExtensionSet *set,
 {
   PeasExtensionSetPrivate *priv = GET_PRIV (set);
   GList *l;
-  ExtensionItem *item;
 
-  for (l = priv->extensions; l; l = l->next)
+  for (l = priv->extensions.head; l != NULL; l = l->next)
     {
-      item = (ExtensionItem *) l->data;
+      ExtensionItem *item = l->data;
+
       if (item->info != info)
         continue;
 
       remove_extension_item (set, item);
-      priv->extensions = g_list_delete_link (priv->extensions, l);
+      g_queue_delete_link (&priv->extensions, l);
       return;
     }
 }
@@ -259,6 +261,9 @@ remove_extension (PeasExtensionSet *set,
 static void
 peas_extension_set_init (PeasExtensionSet *set)
 {
+  PeasExtensionSetPrivate *priv = GET_PRIV (set);
+
+  g_queue_init (&priv->extensions);
 }
 
 static void
@@ -294,13 +299,12 @@ peas_extension_set_dispose (GObject *object)
   PeasExtensionSetPrivate *priv = GET_PRIV (set);
   GList *l;
 
-  if (priv->extensions != NULL)
+  if (priv->extensions.length > 0)
     {
-      for (l = priv->extensions; l != NULL; l = l->next)
+      for (l = priv->extensions.tail; l != NULL; l = l->prev)
         remove_extension_item (set, (ExtensionItem *) l->data);
 
-      g_list_free (priv->extensions);
-      priv->extensions = NULL;
+      g_queue_clear (&priv->extensions);
     }
 
   if (priv->parameters != NULL)
@@ -313,6 +317,8 @@ peas_extension_set_dispose (GObject *object)
     }
 
   g_clear_object (&priv->engine);
+
+  G_OBJECT_CLASS (peas_extension_set_parent_class)->dispose (object);
 }
 
 static gboolean
@@ -325,7 +331,7 @@ peas_extension_set_call_real (PeasExtensionSet *set,
   GList *l;
   GIArgument dummy;
 
-  for (l = priv->extensions; l; l = l->next)
+  for (l = priv->extensions.head; l != NULL; l = l->next)
     {
       ExtensionItem *item = (ExtensionItem *) l->data;
       ret = peas_extension_callv (item->exten, method_name, args, &dummy) && ret;
@@ -363,7 +369,7 @@ peas_extension_set_class_init (PeasExtensionSetClass *klass)
    * was created. You should set those up by yourself.
    */
   signals[EXTENSION_ADDED] =
-    g_signal_new ("extension-added",
+    g_signal_new (I_("extension-added"),
                   the_type,
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (PeasExtensionSetClass, extension_added),
@@ -391,7 +397,7 @@ peas_extension_set_class_init (PeasExtensionSetClass *klass)
    * instance is destroyed. You should clean those up by yourself.
    */
   signals[EXTENSION_REMOVED] =
-    g_signal_new ("extension-removed",
+    g_signal_new (I_("extension-removed"),
                   the_type,
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (PeasExtensionSetClass, extension_removed),
@@ -451,7 +457,7 @@ peas_extension_set_get_extension (PeasExtensionSet *set,
   g_return_val_if_fail (PEAS_IS_EXTENSION_SET (set), NULL);
   g_return_val_if_fail (info != NULL, NULL);
 
-  for (l = priv->extensions; l != NULL; l = l->next)
+  for (l = priv->extensions.head; l != NULL; l = l->next)
     {
       ExtensionItem *item = l->data;
 
@@ -590,7 +596,7 @@ peas_extension_set_foreach (PeasExtensionSet            *set,
   g_return_if_fail (PEAS_IS_EXTENSION_SET (set));
   g_return_if_fail (func != NULL);
 
-  for (l = priv->extensions; l; l = l->next)
+  for (l = priv->extensions.head; l != NULL; l = l->next)
     {
       ExtensionItem *item = (ExtensionItem *) l->data;
 

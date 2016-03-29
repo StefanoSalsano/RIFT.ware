@@ -13,11 +13,32 @@
  */
 
 #include "rwuagent.hpp"
+#include <sstream>
 
 using namespace rw_uagent;
 using namespace rw_yang;
 using namespace std::chrono;
 
+
+std::string NodeMap::debug_print()
+{
+  std::ostringstream oss;
+  for (auto& elem : keypath_set_) {
+    oss << elem << '\n';
+  }
+  return oss.str();
+}
+
+std::string OperationalDomMap::debug_print()
+{
+  std::ostringstream oss;
+  for (auto& elem : list_ctxt_map_) {
+    oss << elem.first << ':' << elem.second << '\n';
+    auto n = node(elem.second);
+    if (n) oss << n.get().debug_print() << '\n';
+  }
+  return oss.str();
+}
 
 void OperationalDomMap::add_dom(
   rw_yang::XMLDocument::uptr_t&& dom_ptr,

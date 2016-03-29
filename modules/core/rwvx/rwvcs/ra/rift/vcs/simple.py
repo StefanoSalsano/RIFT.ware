@@ -1,9 +1,4 @@
-#!/usr/bin/env python
-
-# 
-# (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
-#
-
+#!/usr/bin/env python3
 
 import logging
 import os
@@ -21,18 +16,22 @@ class CliVM(rift.vcs.VirtualMachine):
     This class represents a CLI VM.
     """
 
-    def __init__(self, name=None, *args, **kwargs):
+    def __init__(self, netconf_username=None, netconf_password=None, name=None, *args, **kwargs):
         """Creates a CliVM object.
 
         Arguments:
+            netconf_username - the netconf username
+            netconf_password - the netconf password
             name - the name of the tasklet
-
         """
         name = "RW_VM_CLI" if name is None else name
         super(CliVM, self).__init__(name=name, *args, **kwargs)
 
+        #self.add_proc(rift.vcs.DtsPerfTasklet())
+        #self.add_proc(rift.vcs.LogdTasklet())
+
         self.add_tasklet(rift.vcs.uAgentTasklet())
-        self.add_proc(rift.vcs.procs.RiftCli());
+        self.add_proc(rift.vcs.procs.RiftCli(netconf_username, netconf_password));
         self.add_proc(rift.vcs.DtsPerfTasklet())
 
 class MgmtVM(rift.vcs.VirtualMachine):
@@ -50,13 +49,17 @@ class MgmtVM(rift.vcs.VirtualMachine):
         name = "RW_VM_MGMT" if name is None else name
         super(MgmtVM, self).__init__(name=name, *args, **kwargs)
 
-        self.add_proc(rift.vcs.MsgBrokerTasklet())
+        #self.add_proc(rift.vcs.MsgBrokerTasklet())
         self.add_proc(rift.vcs.DtsRouterTasklet())
         self.add_proc(rift.vcs.DtsPerfTasklet())
+        #self.add_proc(rift.vcs.LogdTasklet())
 
+        self.add_proc(rift.vcs.procs.RiftCli());
         #Confd would need RestConf present
+        self.add_tasklet(rift.vcs.uAgentTasklet())
         #self.add_proc(rift.vcs.Confd())
-        #self.add_proc(rift.vcs.RestconfTasklet())
+        self.add_proc(rift.vcs.RestconfTasklet())
+        self.add_proc(rift.vcs.Watchdog())
 
         #self.add_proc(rift.vcs.Webserver())
         #self.add_proc(rift.vcs.RedisCluster())
@@ -76,7 +79,27 @@ class GenVM(rift.vcs.VirtualMachine):
         name = "RW_VM_GEN" if name is None else name
         super(GenVM, self).__init__(name=name, *args, **kwargs)
 
-        self.add_proc(rift.vcs.DtsPerfTasklet())
+
+        #self.add_proc(rift.vcs.DtsPerfTasklet())
+        #self.add_proc(rift.vcs.LogdTasklet())
+
+class Gen2VM(rift.vcs.VirtualMachine):
+    """
+    This class represents a generic VM.
+    """
+
+    def __init__(self, name=None, *args, **kwargs):
+        """Creates a Gen2VM object.
+
+        Arguments:
+            name          - the name of the tasklet
+
+        """
+        name = "RW_VM_GEN2" if name is None else name
+        super(Gen2VM, self).__init__(name=name, *args, **kwargs)
+
+        #self.add_proc(rift.vcs.DtsPerfTasklet())
+        #self.add_proc(rift.vcs.LogdTasklet())
 
 
 def main():
@@ -84,12 +107,16 @@ def main():
     VM1="10.0.23.175"
     VM2="10.0.23.143"
     collapsed = False
+    MASTER='10.0.106.26'
+    VM1='10.0.106.13'
+    VM2='10.0.106.25'
+    VM3='10.0.106.27'
 
     if '-l' in sys.argv:
         MASTER='127.0.0.1'
         VM1='127.0.0.1'
         VM2='127.0.0.1'
-        VM3='127.0.0.1'
+        VM3='127.0.0.2'
         collapsed = True
 
     if '-g' in sys.argv:
@@ -105,6 +132,9 @@ def main():
     #vm3 = GenVM(ip=VM2)
     #vm3.leader = True
     #gen.add_virtual_machine(vm3)
+
+    #vm4 = Gen2VM(ip=VM3)
+    #gen.add_virtual_machine(vm4)
 
 
     mgmt = rift.vcs.core.Cluster(name='mgmt')
@@ -135,7 +165,11 @@ def main():
 
     # Compile the manifest
     compiler = rift.vcs.compiler.LegacyManifestCompiler()
-    _, manifest = compiler.compile(sysinfo)
+    try:
+        sysinfo_ret, manifest = compiler.compile(sysinfo)
+    except:
+        sysinfo_ret, manifest = compiler.compile(sysinfo, "cli_rwfpath_schema_listing.txt")
+        pass
 
     pwd = os.getcwd()
     os.chdir(os.environ['RIFT_INSTALL'])

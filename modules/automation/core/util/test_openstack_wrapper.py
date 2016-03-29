@@ -3,60 +3,27 @@
 # 
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
+"""
+Provides 4 env variables for development convenience:
+NOCREATE    : If set, mission_control and launchpad are not created,
+              instead existing launchpad & MC instances will be used.
+SITE        : If set to "blr" , enable lab along with -s "blr" option
+MGMT_NETWORK: If set, this will be used as mgmt_network in cloud account details
+PROJECT_NAME: If set, this will be used as the tenant name.
 
+"""
 import argparse
 import logging
 import os
-import re
 import signal
 import subprocess
 import sys
-import time
-import uuid
 
-import rw_peas
-import rwlogger
+from gi import require_version
+require_version('RwcalYang', '1.0')
+from gi.repository import RwcalYang
+import rift.auto.mano as mano
 
-from gi.repository import (
-    RwMcYang,
-    RwcalYang,
-    RwTypes,
-)
-
-class ValidationError(Exception):
-    '''Thrown if success of the bootstrap process is not verified'''
-    pass
-
-def wait_for_image_state(account, image_id, state, timeout=300):
-    state=state.lower()
-    current_state = 'unknown'
-    while current_state != state:
-        rc, image_info = cal.get_image(account, image_id)
-        current_state = image_info.state.lower()
-        if current_state in ['failed']:
-           raise ValidationError('Image [{}] entered failed state while waiting for state [{}]'.format(image_id, state))
-        if current_state != state:
-            time.sleep(1)
-    if current_state != state:
-        logger.error('Image still in state [{}] after [{}] seconds'.format(current_state, timeout))
-        raise TimeoutError('Image [{}] failed to reach state [{}] within timeout [{}]'.format(image_id, state, timeout))
-    return image_info
-
-def wait_for_vdu_state(account, vdu_id, state, timeout=300):
-    state = state.lower()
-    current_state = 'unknown'
-    while current_state != state:
-        rc, vdu_info = cal.get_vdu(account, vdu_id)
-        print(vdu_info)
-        assert rc == RwTypes.RwStatus.SUCCESS
-        current_state = vdu_info.state.lower()
-        if current_state in ['failed']:
-           raise ValidationError('VM [{}] entered failed state while waiting for state [{}]'.format(vdu_id, state))
-        if current_state != state:
-            time.sleep(1)
-    if current_state != state:
-        raise TimeoutError('VM [{}] failed to reach state [{}] within timeout [{}]'.format(vdu_id, state, timeout))
-    return vdu_info
 
 def parse_known_args(argv=sys.argv[1:]):
     """Create a parser and parse system test arguments
@@ -110,6 +77,14 @@ def parse_known_args(argv=sys.argv[1:]):
             help='arguments to the test script')
 
     parser.add_argument(
+            '--post-restart-test-script',
+            help='script to test the system, after restart')
+
+    parser.add_argument(
+            '--post-restart-test-args',
+            help='args for the script to be tested post restart')
+
+    parser.add_argument(
             '--up-cmd',
             help='command to run to wait until system is up')
 
@@ -123,7 +98,13 @@ def parse_known_args(argv=sys.argv[1:]):
             action='store_true',
             help='wait for interrupt after tests complete')
 
+    parser.add_argument(
+            '--lp-standalone',
+            action='store_true',
+            help='Start launchpad in standalone mode.')
+
     return parser.parse_known_args(argv)
+
 
 if __name__ == '__main__':
     (args, unparsed_args) = parse_known_args()
@@ -138,207 +119,101 @@ if __name__ == '__main__':
     def handle_term_signal(_signo, _stack_frame):
         sys.exit(2)
 
+    def reset_openstack(account):
+        openstack = mano.OpenstackCleanup(account)
+        openstack.delete_vms()
+
+        openstack.delete_networks(skip_list=mano.OpenstackCleanup.DEFAULT_NETWORKS)
+        openstack.delete_ports_on_default_network()
+
+        openstack.delete_images(skip_list=mano.OpenstackCleanup.DEFAULT_IMAGES)
+        openstack.delete_flavors(skip_list=mano.OpenstackCleanup.DEFAULT_FLAVORS)
+
     signal.signal(signal.SIGINT, handle_term_signal)
     signal.signal(signal.SIGTERM, handle_term_signal)
 
     test_execution_rc = 1
 
-    try:
-        logging_level = logging.DEBUG if args.verbose else logging.INFO
-        logging.basicConfig(level=logging_level)
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging_level)
+    logging_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(level=logging_level)
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging_level)
 
-        def get_cal_interface():
-            """Get an instance of the rw.cal interface
+    auth_url = 'http://{cloud_host}:5000/v3/'.format(cloud_host=args.cloud_host)
+    account = RwcalYang.CloudAccount.from_dict({
+            'name': 'rift.auto.openstack',
+            'account_type': 'openstack',
+            'openstack': {
+              'key':  "pluto",
+              'secret': "mypasswd",
+              'auth_url': auth_url,
+              'tenant': os.getenv('PROJECT_NAME', 'demo'),
+              'mgmt_network': os.getenv('MGMT_NETWORK', 'private')}})
 
-            Load an instance of the rw.cal plugin via libpeas
-            and returns the interface to that plugin instance
+    use_existing = os.getenv("NOCREATE", None)
+    use_existing = True if use_existing is not None else False
+    openstack = mano.OpenstackManoSetup(
+            account,
+            site=os.getenv("SITE"),
+            use_existing=use_existing)
 
-            Returns:
-                rw.cal interface to created rw.cal instance
-            """
-            plugin = rw_peas.PeasPlugin('rwcal_openstack', 'RwCal-1.0')
-            engine, info, extension = plugin()
-            cal = plugin.get_interface("Cloud")
-            rwloggerctx = rwlogger.RwLog.Ctx.new("Cal-Log")
-            rc = cal.init(rwloggerctx)
-            assert rc == RwTypes.RwStatus.SUCCESS
-            return cal
+    cleanup_clbk = None
+    if use_existing is False:
+        reset_openstack(account)
+        cleanup_clbk = reset_openstack
 
-        logger.debug("Initializing CAL Interface")
-        cal = get_cal_interface()
+    with openstack.setup(cleanup_clbk=cleanup_clbk) as (master, slaves):
 
-        username='pluto'
-        password='mypasswd'
-        auth_url='http://{cloud_host}:5000/v3/'.format(cloud_host=args.cloud_host)
-        project_name='demo'
-        mgmt_network='private'
+        system_cmd = ("ssh -q -o BatchMode=yes -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -- "
+                "{master_ip} sudo {rift_root}/rift-shell -e -r -- {system_script} {system_args}").format(
+                master_ip=master.ip,
+                rift_root="${RIFT_ROOT}",
+                system_script=args.system_script,
+                system_args=args.system_args)
 
-        account = RwcalYang.CloudAccount.from_dict({
-                'name':'rift.auto.openstack',
-                'account_type':'openstack',
-                'openstack':{
-                  'key':username,
-                  'secret':password,
-                  'auth_url':auth_url,
-                  'tenant':project_name,
-                  'mgmt_network':mgmt_network}})
+        test_cmd_template = ("{test_script} --confd-host {master_ip} "
+                "{launchpad_data} {other_args}")
 
-        # Heavy handed fix for resources not being cleaned up [RIFT-10488, RIFT-10611]
-        rc, vdulist = cal.get_vdu_list(account)
-        for vduinfo in vdulist.vdu_info_list:
-            if vduinfo.name in ["rift.auto.mission_control", "rift.auto.launchpad"]:
-                cal.delete_vdu(account, vduinfo.vdu_id)
+        confd_ips = [master.ip]
+        launchpad_data = ""
 
-        flavor_name = 'rift.auto.flavor.{}'.format(str(uuid.uuid4()))
-        flavor = RwcalYang.FlavorInfoItem.from_dict({
-            'name':flavor_name,
-            'vm_flavor':{
-                'memory_mb':8192, # 8 GB
-                'vcpu_count':4,
-                'storage_gb':40, # 40 GB
-            }
-        })
+        if args.lp_standalone:
+            system_cmd = system_cmd.replace("LAUNCHPAD_IPS", master.ip)
+            launchpad_data = "--lp-standalone"
+        else:
+            launchpad = slaves.pop(0)
+            confd_ips.append(launchpad.ip)
+            launchpad_data = "--launchpad-vm-id {}".format(launchpad.id)
 
-        logger.debug("Creating VM Flavor")
-        rc, flavor_id = cal.create_flavor(account, flavor)
-        assert rc == RwTypes.RwStatus.SUCCESS
-
-        image = RwcalYang.ImageInfoItem.from_dict({
-            'name':'rift.auto.image',
-            'location':'/net/sharedfiles/home1/common/vm/rift-root-latest.qcow2',
-            'disk_format':'qcow2',
-            'container_format':'bare'})
-
-        logger.debug("Uploading VM Image")
-        rc, image_id = cal.create_image(account, image)
-        assert rc == RwTypes.RwStatus.SUCCESS
-        image_info = wait_for_image_state(account, image_id, 'active')
-
-        mc_id = str(uuid.uuid4())
-        mc_userdata = """#cloud-config
-
-    runcmd:
-     - /usr/rift/scripts/cloud/enable_lab
-    """
-
-        mc_vdu_info = RwcalYang.VDUInitParams.from_dict({
-            'name':'rift.auto.mission_control',
-            'node_id':mc_id,
-            'flavor_id':str(flavor_id),
-            'image_id':image_id,
-            'allocate_public_address':False,
-            'vdu_init':{
-                'userdata':mc_userdata}
-        })
+        test_cmd = test_cmd_template.format(
+                test_script=args.test_script,
+                master_ip=master.ip,
+                launchpad_data=launchpad_data,
+                other_args=args.test_args)
 
 
-        logger.debug("Creating Mission Control VM")
-        rc, mc_vdu_id = cal.create_vdu(account, mc_vdu_info)
-        assert rc == RwTypes.RwStatus.SUCCESS
-        # OPTIMIZE: We only really need the mission control vm's management ip to proceed
-        mc_vdu_info = wait_for_vdu_state(account, mc_vdu_id, 'active')
-        logger.debug("Mission Control VM Active!")
+        systemtest_cmd = ('{systest_script} {other_args} '
+                '--up_cmd "{up_cmd}" '
+                '--system_cmd "{system_cmd}" '
+                '--test_cmd "{test_cmd}" '
+                '--confd_ip {confd_ips} ').format(
+                        systest_script=args.systest_script,
+                        up_cmd=args.up_cmd.replace('CONFD_HOST', master.ip),
+                        system_cmd=system_cmd,
+                        test_cmd=test_cmd,
+                        confd_ips=",".join(confd_ips),
+                        other_args=args.systest_args
+                        )
 
-        class VDUResource:
-            def __init__(self, vdu_id, vdu_info):
-                self.vdu_id = vdu_id
-                self.vdu_info = vdu_info
-                self.accessible = False
+        if args.post_restart_test_script is not None:
+            post_restart_test_cmd = test_cmd_template.format(
+                    test_script=args.post_restart_test_script,
+                    master_ip=master.ip,
+                    launchpad_data=launchpad_data,
+                    other_args=args.post_restart_test_args,
+                    )
+            systemtest_cmd += '--post_restart_test_cmd "{}" '.format(post_restart_test_cmd)
 
-        def create_vdu_resource(mc_vdu_info, vdu_name):
-            vdu_id = str(uuid.uuid4())
-            vdu_userdata = """#cloud-config
-
-        salt_minion:
-          conf:
-            master: {mgmt_ip}
-            id: {vdu_id}
-            acceptance_wait_time: 1
-            recon_default: 100
-            recon_max: 1000
-            recon_randomize: False
-            log_level: debug
-
-        runcmd:
-         - echo Sleeping for 5 seconds and attempting to start minion
-         - sleep 5
-         - /bin/systemctl start salt-minion.service
-
-        runcmd:
-         - /usr/rift/scripts/cloud/enable_lab
-        """.format(mgmt_ip=mc_vdu_info.management_ip, vdu_id=vdu_id)
-
-            vdu_info = RwcalYang.VDUInitParams.from_dict({
-                'name':vdu_name,
-                'node_id':vdu_id,
-                'flavor_id':str(flavor_id),
-                'image_id':image_id,
-                'allocate_public_address':False,
-                'vdu_init':{'userdata':vdu_userdata},
-            })
-
-            logger.debug("Creating vdu resource {}".format(vdu_name))
-            rc, vdu_id = cal.create_vdu(account, vdu_info)
-            return VDUResource(vdu_id, vdu_info)
-
-        vdu_resources.append(VDUResource(mc_vdu_id, mc_vdu_info))
-        launchpad_resource = create_vdu_resource(mc_vdu_info, 'rift.auto.launchpad')
-        vdu_resources.append(launchpad_resource)
-
-        for index in range(args.num_vm_resources):
-            resource = create_vdu_resource(mc_vdu_info, 'rift.auto.resource.{}'.format(index))
-            vdu_resources.append(resource)
-
-        for vdu in vdu_resources:
-            vdu.vdu_info = wait_for_vdu_state(account, vdu.vdu_id, 'active')
-
-        all_vdu_resources_accessible = False
-        start = time.time()
-        elapsed = 0
-        timeout = 600
-        check_host_cmd = 'ssh -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o StrictHostKeyChecking=no -- {mgmt_ip} ls'
-        while elapsed < timeout:
-            all_vdu_resources_accessible = True
-
-            for vdu in vdu_resources:
-                if vdu.accessible:
-                    continue
-                rc = subprocess.call(check_host_cmd.format(mgmt_ip=vdu.vdu_info.management_ip), shell=True)
-                if rc != 0:
-                    all_vdu_resources_accessible = False
-                    break
-                else:
-                    logger.info("Successfully connected to %s", vdu.vdu_info.name)
-                    vdu.accessible = True
-
-
-            if all_vdu_resources_accessible:
-                break
-
-            time.sleep(5)
-            elapsed = time.time() - start
-
-        if not all_vdu_resources_accessible:
-            raise ValidationError("Failed to verify all VM resources started")
-
-        # Potential work around for RIFT-10299
-        time.sleep(400)
-
-        systemtest_cmd = (
-                '{systest_script} --up_cmd "{up_cmd}" {systest_args} --system_cmd "ssh -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o StrictHostKeyChecking=no -- {mgmt_ip} sudo {rift_root}/rift-shell -e -r -- {system_script} {system_args}" --test_cmd "{test_script} --confd-host {mgmt_ip} {test_args} --launchpad-vm-id {launchpad_vm_id}"'
-                ).format(
-                    rift_root="${RIFT_ROOT}",
-                    systest_script=args.systest_script,
-                    up_cmd=args.up_cmd.replace('CONFD_HOST', mc_vdu_info.management_ip),
-                    systest_args=args.systest_args,
-                    system_script=args.system_script,
-                    system_args=args.system_args,
-                    test_script=args.test_script,
-                    test_args=args.test_args,
-                    mgmt_ip=mc_vdu_info.management_ip,
-                    launchpad_vm_id=launchpad_resource.vdu_id)
 
         print('Executing Systemtest with command: {}'.format(systemtest_cmd))
         test_execution_rc = subprocess.call(systemtest_cmd, shell=True)
@@ -346,27 +221,5 @@ if __name__ == '__main__':
         if args.wait:
             # Wait for signal to cleanup
             signal.pause()
-
-    finally:
-        for vdu in vdu_resources:
-            logger.debug("deleting vdu {}".format(vdu.vdu_info.name))
-            cal.delete_vdu(account, vdu.vdu_id)
-
-        if image_id:
-            logger.debug("Deleting VM Image")
-            cal.delete_image(account, image_id)
-
-        # Try to clean up dynamic resources (whose names should be UUIDs)
-        hex_group_re = '[0-9a-fA-F]'
-        uuid_re = '^%(hex)s{8}-%(hex)s{4}-%(hex)s{4}-%(hex)s{4}-%(hex)s{12}$' % {'hex':hex_group_re}
-        rc, vdu_list = cal.get_vdu_list(account)
-        for vdu in vdu_list.vdu_info_list:
-            if not re.match(uuid_re, vdu.name):
-                continue
-            cal.delete_vdu(account, vdu.vdu_id)
-
-        if flavor_id:
-            logger.debug("Deleting VM Flavor")
-            cal.delete_flavor(account, flavor_id)
 
     exit(test_execution_rc)

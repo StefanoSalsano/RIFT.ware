@@ -1,3 +1,20 @@
+--
+--  Copyright (C) 2014 - Garrett Regier
+--
+-- libpeas is free software; you can redistribute it and/or
+-- modify it under the terms of the GNU Lesser General Public
+-- License as published by the Free Software Foundation; either
+-- version 2.1 of the License, or (at your option) any later version.
+--
+-- libpeas is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+-- Lesser General Public License for more details.
+--
+-- You should have received a copy of the GNU Lesser General Public
+-- License along with this library; if not, write to the Free Software
+-- Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
+
 local lgi = require 'lgi'
 
 local GObject = lgi.GObject
@@ -61,6 +78,27 @@ end
 function ExtensionLuaPlugin:do_call_multi_args(in_, inout)
     return inout, in_
 end
+
+-- Test strict mode
+local UNIQUE = {}
+
+local function assert_error(success, result)
+    assert(not success, result)
+end
+
+assert_error(pcall(function() _G[UNIQUE] = true end))
+assert(pcall(function()
+    rawset(_G, UNIQUE, true)
+    assert(_G[UNIQUE] == true)
+    _G[UNIQUE] = nil
+end))
+assert_error(pcall(function() _G[UNIQUE] = true end))
+assert(pcall(function()
+    __STRICT = false
+    _G[UNIQUE] = true
+    _G[UNIQUE] = nil
+    __STRICT = true
+end))
 
 return { ExtensionLuaPlugin }
 

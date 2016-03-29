@@ -56,8 +56,6 @@ namespace LIBXML {
 #include <libxml/xpath.h>
 } using namespace LIBXML;
 
-#define CLI_CONFIG_ROOT_NAMESPACE "http://riftio.com/ns/riftware-1.0/config_root"
-#define CLI_CONFIG_ROOT_MODULE_NAME "config_root"
 
 #ifdef RW_DOXYGEN_PARSING
 #define __cplusplus 201103

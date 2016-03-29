@@ -23,6 +23,7 @@ endif ()
 set(test_libs
   ${boost_filesystem_path}
   ${boost_system_path}
+  rwyangutil_lib
 )
 
 rift_gtest(rwyangutil_utest
@@ -30,3 +31,12 @@ rift_gtest(rwyangutil_utest
   TEST_LIBS ${test_libs}
   TEST_ARGS --gtest_shuffle --gtest_repeat=1
 )
+
+# install test northbound listing
+install(FILES
+    test_northbound_listing.txt
+  DESTINATION
+    usr/data/manifest
+  COMPONENT
+    ${PKG_LONG_NAME}
+  )

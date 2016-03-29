@@ -8,27 +8,36 @@ logger = logging.getLogger(__name__)
 
 
 class NetconfToolTestCase(unittest.TestCase):
+    JRE_PATH = "/usr/bin/java"  # JRE8 or above required
     NETCONF_TOOL_JAR = \
-     "/usr/share/java/netconf-testtool-0.4.0-SNAPSHOT-executable.jar"
+     "/usr/share/java/netconf-testtool-1.1.0-20160203.095402-24-executable.jar"
     NETCONF_TOOL_PORT = 17830
     NETCONF_TOOL_HOST = "127.0.0.1"
     NETCONF_TOOL_SCHEMA_SOURCE_DIR = os.path.join(
             os.path.dirname(os.path.realpath(__file__)),
             "schema_files",
             )
+    NETCONF_TOOL_NOTIFICATION_FILE = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            "notification_file.xml",
+            )
 
     def __init__(self, *args, **kwargs):
         super(NetconfToolTestCase, self).__init__(*args, **kwargs)
+        self._jre_path = NetconfToolTestCase.JRE_PATH
         self._netconf_tool_jar = NetconfToolTestCase.NETCONF_TOOL_JAR
         self._netconf_tool_host = NetconfToolTestCase.NETCONF_TOOL_HOST
+        self._notification_file = NetconfToolTestCase.NETCONF_TOOL_NOTIFICATION_FILE
         self._netconf_tool_proc = None
         self._yang_schema_dir = None
 
     @property
     def test_tool_cmd(self):
-        return ("java -Xmx1G -XX:MaxPermSize=256M -jar " +
+        return ("{} ".format(self._jre_path) +
+               "-Xmx1G -XX:MaxPermSize=256M -jar " +
                "{} --ssh true ".format(self._netconf_tool_jar) +
-               "--schemas-dir {}".format(self._yang_schema_dir))
+               "--schemas-dir {} ".format(self._yang_schema_dir) +
+               "--notification-file {}".format(self._notification_file))
 
     def _create_yang_schema_dir(self):
         test_schema_dir = tempfile.mkdtemp("ncclienttest_schema")

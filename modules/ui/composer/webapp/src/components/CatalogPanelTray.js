@@ -48,7 +48,7 @@ const CatalogPanelTray = React.createClass({
 		});
 		return (
 			<div className={classNames} onMouseMove={this.preventResizeCursor} onDragOver={this.onDragOver} onDragLeave={this.onDragLeave}>
-				<h1 onClick={CatalogPanelTrayActions.toggleOpenClose}>Catalog Package Manager</h1>
+				<h1 data-open-close-icon={this.props.show ? 'open' : 'closed'} onClick={CatalogPanelTrayActions.toggleOpenClose}>Catalog Package Manager</h1>
 				<div className="tray-body">
 					{this.props.children}
 				</div>

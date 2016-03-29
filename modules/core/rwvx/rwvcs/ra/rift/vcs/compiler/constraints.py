@@ -131,7 +131,6 @@ class AdjacentAgentRestconfTasklets(SystemConstraint):
                 # Reset the component list
                 components = []
 
-
 class UniqueInstanceIds(ManifestConstraint):
     def __call__(self, manifest, sysinfo):
         """Check that the system does not contain duplicate instance IDs

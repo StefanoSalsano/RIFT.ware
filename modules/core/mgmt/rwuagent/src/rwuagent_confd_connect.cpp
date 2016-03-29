@@ -61,12 +61,12 @@ rw_status_t Instance::setup_confd_connection()
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "setup confd connection");
   RW_ASSERT(confd_daemon_);
 
-  if (!startup_handler_->is_instance_ready()) {
+  if (!mgmt_handler_->is_instance_ready()) {
     RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "instance not ready");
     return RW_STATUS_FAILURE;
   }
 
-  if (startup_handler_->initialize_conn() != RW_STATUS_SUCCESS) {
+  if (mgmt_handler_->initialize_conn() != RW_STATUS_SUCCESS) {
     RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "connection failed");
     RW_MA_INST_LOG(this, InstanceNotice, "RW.uAgent - startup_handler - maapi connection failed");
     return RW_STATUS_FAILURE;
@@ -80,7 +80,7 @@ rw_status_t Instance::setup_confd_connection()
   }
 
   RW_MA_INST_LOG(this, InstanceNotice, "RW.uAgent - Moving on to subscription phase");
-  startup_handler_->proceed_to_next_state();
+  mgmt_handler_->proceed_to_next_state();
 
   return RW_STATUS_SUCCESS;
 }
@@ -115,7 +115,7 @@ rw_status_t Instance::setup_confd_subscription()
   RW_MA_INST_LOG(this, InstanceInfo, "RW.uAgent - Version consistency check completed");
 
   RW_MA_INST_LOG(this, InstanceNotice, "RW.uAgent - Moving on to confd reload phase");
-  startup_handler_->proceed_to_next_state();
+  mgmt_handler_->proceed_to_next_state();
 
   return ret;
 }

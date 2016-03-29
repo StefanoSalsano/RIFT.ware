@@ -43,9 +43,9 @@ endif ()
 add_library(
   rwdynschema
   SHARED
-  ${C_SOURCES}
-  ${auto_c_files}
-  ${CXX_SOURCES}
+    ${C_SOURCES}
+    ${auto_c_files}
+    ${CXX_SOURCES}
   )
 
 include_directories(BEFORE
@@ -60,29 +60,28 @@ include_directories(BEFORE
 target_link_libraries(
   rwdynschema
   PRIVATE
-  rwmemlog
-  rwdts_api
-  rwlib
-  rwlog
-  rwdynschema_yang_gen
-  rwschema_yang_gen
-  rwconfd
-  ${boost_filesystem_path}
-  ${boost_system_path}
-  rwgeneric_yang_gen
-  glib-2.0
-  gobject-2.0
-  protobuf-c
-  rt
-  ssl
-  pthread
-  crypto
-  rwsched
-  dispatch
-  CoreFoundation
+    ${boost_filesystem_path}
+    ${boost_system_path}
+    CoreFoundation
+    crypto
+    dispatch
+    glib-2.0
+    gobject-2.0
+    protobuf-c
+    pthread
+    rt
+    rwconfd
+    rwdts_api
+    rwdynschema_yang_gen
+    rwgeneric_yang_gen
+    rwlib
+    rwlog
+    rwmemlog
+    rwsched
+    rwschema_yang_gen
+    rwyangutil_lib
+    ssl
   )
-
-
 
 add_dependencies(
   rwdynschema
@@ -93,6 +92,7 @@ add_dependencies(
   rwgeneric_yang.headers
   rwschema_yang.headers
   rwlog_event_auto
+  rwyangutil_lib
   process_rwlog_evt_files
   )
 
@@ -105,19 +105,36 @@ set(INSTALL_HFILES
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdynschema/include/riftware/rwdynschema_load_schema.h  
   )
 
-install(FILES ${INSTALL_HFILES} DESTINATION usr/include COMPONENT ${PKG_LONG_NAME})
-install(TARGETS rwdynschema LIBRARY DESTINATION usr/lib COMPONENT ${PKG_LONG_NAME})
+install(
+  FILES
+    ${INSTALL_HFILES}
+  DESTINATION
+    usr/include
+  COMPONENT
+    ${PKG_LONG_NAME}
+  )
+install(
+  TARGETS
+    rwdynschema
+  LIBRARY
+  DESTINATION
+    usr/lib
+  COMPONENT
+    ${PKG_LONG_NAME}
+  )
 
 ##
 # documentation target
 ##
 rift_add_doxygen_target(${PKG_NAME}_doxygen
-  DOXY_NAME "RW.DynSchema QuickStart and API Reference"
+  DOXY_NAME
+    "RW.DynSchema QuickStart and API Reference"
   DOXY_FILES 
-  include/riftware/rwdynschema.h 
-  include/riftware/rw_file_update.h
-  include/riftware/rwdynschema_load_schema.h
-  DEST_DIR ${PKG_NAME}
+    include/riftware/rwdynschema.h 
+    include/riftware/rw_file_update.h
+    include/riftware/rwdynschema_load_schema.h
+  DEST_DIR
+    ${PKG_NAME}
   )
 
 ##
@@ -131,48 +148,61 @@ set(GI_NAMESPACE RwDynSchema)
 rift_uncamel(${GI_NAMESPACE} UNCAMEL_GI_NAMESPACE)
 
 rift_add_introspection(${GI_NAME}_gi
-  NAMESPACE ${GI_NAMESPACE}
-  VERSION ${GI_VERSION}
-  VAPI_PREFIX ${UNCAMEL_GI_NAMESPACE}
+  NAMESPACE
+    ${GI_NAMESPACE}
+  VERSION
+    ${GI_VERSION}
+  VAPI_PREFIX
+    ${UNCAMEL_GI_NAMESPACE}
   GIR_PATHS
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/src
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/rwtasklet
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/plugins/vala
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/plugins/yang
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwlog/src
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwsched/src
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwdts
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwschema/yang
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/src
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/rwtasklet
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/plugins/vala
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/plugins/yang
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwlog/src
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwsched/src
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwdts
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwschema/yang
   LIBRARY_PATHS
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwdts
-  ${RIFT_SUBMODULE_BINARY_ROOT}/rwdynschema
-  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwsched/src
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwdts
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwdynschema
+    ${RIFT_SUBMODULE_SOURCE_ROOT}/rwsched/src
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/plugins/yang
   PACKAGES
-  CF-1.0
-  RwDts-1.0
-  RwSched-1.0
-  RwTypes-1.0
-  RwTasklet-1.0
-  RwYang-1.0
-  RwKeyspec-1.0
-  RwLog-1.0
-  RwManifestYang-1.0
-  ProtobufC-1.0
+    CF-1.0
+    RwDts-1.0
+    RwSched-1.0
+    RwTypes-1.0
+    RwTasklet-1.0
+    RwYang-1.0
+    RwKeyspec-1.0
+    RwLog-1.0
+    RwManifestYang-1.0
+    ProtobufC-1.0
   HFILES
-  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdynschema/include/riftware/rwdynschema.h
-  LIBRARIES rwdynschema 
-  IDENTIFIER_FILTER_CMD "python ${CMAKE_CURRENT_SOURCE_DIR}/src/rwdynschema_gi_filter.py"
-  IDENTIFIER_PREFIX "RwDynSchema"
+    ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdynschema/include/riftware/rwdynschema.h
+  LIBRARIES
+    rwdynschema 
+  IDENTIFIER_FILTER_CMD
+    "python ${CMAKE_CURRENT_SOURCE_DIR}/src/rwdynschema_gi_filter.py"
+  IDENTIFIER_PREFIX
+    "RwDynSchema"
   GI_INCLUDE_HFILES 
-  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdynschema/include/riftware/rwdynschema.h
+    ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdynschema/include/riftware/rwdynschema.h
   INCLUDE_PATHS
-  ${CMAKE_INSTALL_PREFIX}/usr/include/dispatch
-  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdynschema/include/
-  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include
-  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwmsg/include
-  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwsched/src
-  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwschema/src
-  DEPENDS rwdynschema rwdts_gi rwdts_api rwschema_yang
+    ${CMAKE_INSTALL_PREFIX}/usr/include/dispatch
+    ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdynschema/include/
+    ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include
+    ${RIFT_SUBMODULE_SOURCE_ROOT}/rwmsg/include
+    ${RIFT_SUBMODULE_SOURCE_ROOT}/rwsched/src
+    ${RIFT_SUBMODULE_SOURCE_ROOT}/rwschema/src
+    ${RIFT_SUBMODULE_BINARY_ROOT}/rwvcs/plugins/yang
+  DEPENDS
+    rwdynschema
+    rwdts_gi
+    rwdts_api
+    rwschema_yang
+    rwmanifest_yang
   GENERATE_GI_OVERRIDE
   )
 
@@ -180,13 +210,20 @@ rift_add_introspection(${GI_NAME}_gi
 # Install the generated gir and typelib files
 ##
 rift_install_vala_artifacts(
-  COMPONENT ${PKG_LONG_NAME}
-  GIR_FILES ${GI_NAMESPACE}-${GI_VERSION}.gir
-  TYPELIB_FILES ${GI_NAMESPACE}-${GI_VERSION}.typelib
-  VAPI_FILES ${UNCAMEL_GI_NAMESPACE}-${GI_VERSION}.vapi
-  LUA_OVERRIDES ${GI_NAMESPACE}.lua
-  PYTHON_OVERRIDES ${GI_NAMESPACE}.py
-  DEST_PREFIX .
+  COMPONENT
+    ${PKG_LONG_NAME}
+  GIR_FILES
+    ${GI_NAMESPACE}-${GI_VERSION}.gir
+  TYPELIB_FILES
+    ${GI_NAMESPACE}-${GI_VERSION}.typelib
+  VAPI_FILES
+    ${UNCAMEL_GI_NAMESPACE}-${GI_VERSION}.vapi
+  LUA_OVERRIDES
+    ${GI_NAMESPACE}.lua
+  PYTHON_OVERRIDES
+    ${GI_NAMESPACE}.py
+  DEST_PREFIX
+    .
   )
 
 
@@ -196,13 +233,18 @@ set(test_srcs test/rwdynschema_test.cpp)
 set(test_libs
   rwdynschema
   rwyang
-
+  ${boost_filesystem_path}
+  ${boost_system_path}
   )
 
 rift_gtest(rwdynschema_gtest
-  TEST_SRCS ${test_srcs}
-  TEST_LIBS ${test_libs}
-  TEST_ARGS --gtest_shuffle --gtest_repeat=1
+  TEST_SRCS
+    ${test_srcs}
+  TEST_LIBS
+    ${test_libs}
+  TEST_ARGS
+    --gtest_shuffle
+    --gtest_repeat=1
   )
 
 

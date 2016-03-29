@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # 
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
@@ -22,25 +22,25 @@ class TestPort(unittest.TestCase):
         port_name = rift.vcs.port.PortName("ethsim", "fakename")
         new_port = rift.vcs.port.Port(port_name=port_name)
 
-        self.assertEquals(new_port.port_name, str(port_name))
-        self.assertEquals(new_port.logical_name, None)
-        self.assertEquals(new_port.port_type, False)
+        self.assertEqual(new_port.port_name, str(port_name))
+        self.assertEqual(new_port.logical_name, None)
+        self.assertEqual(new_port.port_type, False)
 
         new_port.logical_name = "logical"
-        self.assertEquals(new_port.logical_name, "logical")
+        self.assertEqual(new_port.logical_name, "logical")
 
         new_port.port_type = "faketype"
-        self.assertEquals(new_port.port_type, "faketype")
+        self.assertEqual(new_port.port_type, "faketype")
 
         fabric_port = rift.vcs.port.Fabric("logical", port_name)
-        self.assertEquals(fabric_port.logical_name, "logical")
-        self.assertEquals(fabric_port.port_name, str(port_name))
-        self.assertEquals(fabric_port.port_type, "vfap")
+        self.assertEqual(fabric_port.logical_name, "logical")
+        self.assertEqual(fabric_port.port_name, str(port_name))
+        self.assertEqual(fabric_port.port_type, "vfap")
 
         external_port = rift.vcs.port.External("logical", port_name)
-        self.assertEquals(external_port.logical_name, "logical")
-        self.assertEquals(external_port.port_name, str(port_name))
-        self.assertEquals(external_port.port_type, "external")
+        self.assertEqual(external_port.logical_name, "logical")
+        self.assertEqual(external_port.port_name, str(port_name))
+        self.assertEqual(external_port.port_type, "external")
 
     def test_port_equality(self):
         port_a = rift.vcs.port.Port(port_name=rift.vcs.port.PortName("ethsim", "fakename"))
@@ -98,7 +98,7 @@ class TestPortGroup(unittest.TestCase):
 
 
         ports = group.get_ports()
-        self.assertItemsEqual([port_a], ports)
+        self.assertEqual([port_a], ports)
 
         ports.remove(port_a)
         # Port should still be in the group since get_ports returns a copy
@@ -113,7 +113,7 @@ class TestPortGroup(unittest.TestCase):
 
         port_b = rift.vcs.port.Port(port_name=rift.vcs.port.PortName("ethsim", "fakename_b"))
         group.add_port(port_b)
-        self.assertItemsEqual([port_a, port_b], group.get_ports())
+        self.assertEqual(set([port_a, port_b]), set(group.get_ports()))
 
 
 class TestPortNetwork(unittest.TestCase):

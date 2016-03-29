@@ -3,6 +3,9 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
+import LaunchNetworkServiceSource from '../network_service_launcher/launchNetworkServiceSource.js';
+import LaunchNetworkServiceActions from '../network_service_launcher/launchNetworkServiceActions.js';
+import AppHeaderActions from '../../components/header/headerActions.js';
 var alt = require('../../core/alt');
 var CloudAccountSource = require('./cloudAccountSource');
 var CloudAccountActions = require('./cloudAccountActions.js');
@@ -19,10 +22,15 @@ function createCloudAccountStore() {
     this.bindAction(CloudAccountActions.GET_CLOUD_ACCOUNTS_SUCCESS, this.getCloudAccountsSuccess);
     this.bindAction(CloudAccountActions.VALIDATE_ERROR, this.validateError);
     this.bindAction(CloudAccountActions.VALIDATE_RESET, this.validateReset);
+    this.exportAsync(LaunchNetworkServiceSource);
+    this.bindListeners({
+        getCatalogSuccess: LaunchNetworkServiceActions.getCatalogSuccess
+    });
     this.cloudAccount = {
       name: '',
       'account-type': 'openstack'
     };
+    this.descriptorCount = 0;
     this.cloudAccounts = [];
     this.validateErrorMsg = "";
     this.validateErrorEvent = 0;
@@ -82,7 +90,8 @@ function createCloudAccountStore() {
         params: this.params['openstack']
     };
     this.exportPublicMethods({
-      updateCloud: this.updateCloud.bind(this)
+      updateCloud: this.updateCloud.bind(this),
+      resetState: this.resetState.bind(this)
     })
 }
 
@@ -96,8 +105,22 @@ createCloudAccountStore.prototype.createSuccess = function() {
         isLoading: false
     });
 };
+createCloudAccountStore.prototype.resetState = function() {
+    this.setState({
+        cloudAccount: {
+          name: '',
+          'account-type': 'openstack'
+        },
+        cloud: {
+            name: '',
+            'account-type': 'openstack',
+            params: this.params['openstack']
+        }
+    });
+};
 createCloudAccountStore.prototype.createFail = function() {
     var xhr = arguments[0];
+    AppHeaderActions.validateError.defer('There was an error creating your Cloud Account. Please contact your system administrator');
     this.setState({
         isLoading: false,
         validateErrorEvent: true,
@@ -170,6 +193,16 @@ createCloudAccountStore.prototype.getCloudAccountsSuccess = function(cloudAccoun
         isLoading: false
     });
 };
+createCloudAccountStore.prototype.getCatalogSuccess = function(data) {
+  var self = this;
+  var descriptorCount = 0;
+  data.forEach(function(catalog) {
+    descriptorCount += catalog.descriptors.length;
+  });
 
+  self.setState({
+    descriptorCount: descriptorCount
+  });
+};
 
 module.exports = alt.createStore(createCloudAccountStore);;

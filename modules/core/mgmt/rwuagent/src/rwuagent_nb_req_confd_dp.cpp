@@ -11,7 +11,7 @@
  *
  * Management agent confd northbound handler for data
  */
-
+#include <thread>
 #include "rwuagent.hpp"
 
 using namespace rw_uagent;
@@ -21,6 +21,7 @@ using namespace rw_yang;
 NbReqConfdDataProvider::NbReqConfdDataProvider(
   ConfdDaemon *daemon,
   struct confd_trans_ctx *ctxt,
+  rwsched_dispatch_queue_t serial_q,
   uint32_t cli_dom_refresh_period_ms,
   uint32_t nc_rest_dom_refresh_period_ms )
 : NbReq(
@@ -28,6 +29,7 @@ NbReqConfdDataProvider::NbReqConfdDataProvider(
     "NbReqConfdDP",
     RW_MGMTAGT_NB_REQ_TYPE_CONFDGET ),
   daemon_(daemon),
+  current_dispatch_q_(serial_q),
   cli_dom_refresh_period_msec_(cli_dom_refresh_period_ms),
   nc_rest_dom_refresh_period_msec_(nc_rest_dom_refresh_period_ms)
 {
@@ -113,6 +115,9 @@ int NbReqConfdDataProvider::confd_get_next(
     RW_MA_NBREQ_LOG (this, ClientDebug, "Confd get_next requires fetch ",confd_hkeypath_buffer);
     return retrieve_operational_data(ctxt, keypath);
   }
+
+  std::string prntstr;
+  RW_MA_NBREQ_LOG (this, ClientDebug, (prntstr=op_dom_.debug_print()).c_str(), "");
 
   XMLNode *node = nullptr;
   auto op_node = op_dom_.node(dom_ptr_);
@@ -330,10 +335,16 @@ int NbReqConfdDataProvider::confd_get_case(
   RW_MA_NBREQ_LOG(this, ClientDebug, "Getting case", confd_hkeypath_buffer );
 
   auto op_node = op_dom_.node(dom_ptr_);
-  RW_ASSERT(op_node);
 
-  // Track the keypath
-  op_node.get().add_keypath(keypath);
+  if (op_node) {
+    op_node.get().add_keypath(keypath);
+  } else {
+    //ATTN: Ideally we should not be here, but there is a possibility
+    //if confd overlaps two requests
+    std::string log;
+    RW_MA_NBREQ_LOG (this, ClientNotice, "Cached node not found for ", confd_hkeypath_buffer);
+    RW_MA_NBREQ_LOG (this, ClientDebug, (log=op_dom_.debug_print()).c_str(), "");
+  }
 
   confd_value_t case_val = {};
   rw_status_t status = RW_STATUS_FAILURE;
@@ -385,9 +396,16 @@ int NbReqConfdDataProvider::confd_get_elem(
     RW_ASSERT (cs_node);
 
     auto op_node = op_dom_.node(dom_ptr_);
-    RW_ASSERT(op_node);
-    // Track the keypath
-    op_node.get().add_keypath(keypath);
+
+    if (op_node) {
+      op_node.get().add_keypath(keypath);
+    } else {
+      //ATTN: Ideally we should not be here, but there is a possibility
+      //if confd overlaps two requests
+      std::string log;
+      RW_MA_NBREQ_LOG (this, ClientNotice, "Cached node not found for ", confd_hkeypath_buffer);
+      RW_MA_NBREQ_LOG (this, ClientDebug, (log=op_dom_.debug_print()).c_str(), "");
+    }
 
     confd_value_t value;
     rw_status_t status = get_element (node, cs_node, &value);

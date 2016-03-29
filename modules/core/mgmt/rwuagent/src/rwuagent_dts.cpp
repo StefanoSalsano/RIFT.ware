@@ -95,7 +95,7 @@ void DtsMember::state_change(
     case RW_DTS_STATE_RUN:
       // set the dynamic schema state to ready
       instance_->update_dyn_state(RW_MGMT_SCHEMA_APPLICATION_STATE_READY);
-      instance_->startup_hndl()->wait_for_critical_tasklets();
+      instance_->mgmt_handler()->wait_for_critical_tasklets();
       break;
     default:
       RWMEMLOG(memlog_buf_, RWMEMLOG_ALWAYS, "bad state change!" );
@@ -133,7 +133,6 @@ void DtsMember::register_rpc()
 void DtsMember::dts_state_init() 
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "dts state init");
-  load_registrations(instance_->yang_model());
   register_rpc();
   ready_ = true;
 }
@@ -141,6 +140,10 @@ void DtsMember::dts_state_init()
 void DtsMember::load_registrations(YangModel *model)
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "load registrations");
+
+  model->app_data_get_token(rwdynschema_app_data_namespace,
+                            rwdynschema_dts_registrations_extension,
+                            &dts_registrations_token_);
 
   YangNode *root = model->get_root_node();
   RW_ASSERT(root);
@@ -162,7 +165,19 @@ void DtsMember::load_registrations(YangModel *model)
     // ATTN: These seem like bugs. RPC is top level
     RW_ASSERT(!first_level->is_rpc());
 
-    auto ypbc = first_level->get_ypbc_msgdesc();
+    const std::string module_name{first_level->get_module()->get_name()};
+
+    // if the app_data exists than the node has been registered already
+    bool const already_registered = first_level->app_data_is_cached(
+        &dts_registrations_token_);
+
+    if (already_registered
+        || (!instance_->module_is_exported(module_name))) {
+      first_level = first_level->get_next_sibling();
+      continue;
+    }
+
+    const rw_yang_pb_msgdesc_t * ypbc = first_level->get_ypbc_msgdesc();
     RW_ASSERT(ypbc);
 
     rw_keyspec_path_t *ks = nullptr;
@@ -202,8 +217,17 @@ void DtsMember::load_registrations(YangModel *model)
 
     all_dts_regs_.push_back(reg);
 
+    northbound_dts_registrations_app_data * app_data    
+        = new northbound_dts_registrations_app_data();
+
+    app_data->exported = true;
+    app_data->registration = reg;
+
+    first_level->app_data_set_and_give_ownership(&dts_registrations_token_, app_data);
+
     rw_keyspec_path_free (ks, NULL);
     first_level = first_level->get_next_sibling();
+
   }
 }
 
@@ -269,7 +293,7 @@ rwdts_member_rsp_code_t DtsMember::get_config(
 
   if ((RW_YANG_NETCONF_OP_STATUS_OK != ncrs) || (found.empty())) {
     log_str += " not found";
-    RW_MA_INST_LOG (instance_, InstanceNotice, log_str.c_str());
+    RW_MA_INST_LOG (instance_, InstanceDebug, log_str.c_str());
     return RWDTS_ACTION_OK;
   }
 
@@ -334,6 +358,7 @@ rwdts_member_rsp_code_t DtsMember::rpc_cb(
   RW_ASSERT_TYPE(xact, rwdts_xact_t);
 
   auto dts_mgr = static_cast<DtsMember*>( xact_info->ud );
+  RW_ASSERT (dts_mgr);
   return dts_mgr->rpc( xact_info, action, ks_in, msg );
 }
 

@@ -973,10 +973,10 @@ TEST(YangToPb, ParseAllFiles)
       pbmodel->output_gi_c_file(nullptr);
       EXPECT_EQ(0, pbmodel->get_errors());
 
-      pbmodel->output_doc_user_file(nullptr);
+      pbmodel->output_doc_user_file(doc_file_t::TEXT, nullptr);
       EXPECT_EQ(0, pbmodel->get_errors());
 
-      pbmodel->output_doc_api_file(nullptr);
+      pbmodel->output_doc_api_file(doc_file_t::TEXT, nullptr);
       EXPECT_EQ(0, pbmodel->get_errors());
     }
   }

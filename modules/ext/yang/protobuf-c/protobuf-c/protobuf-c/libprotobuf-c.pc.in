@@ -7,7 +7,7 @@ bindir=@bindir@
 Name: libprotobuf-c
 Description: Protocol Buffers C library
 Version: @VERSION@
-Libs: -L${libdir} -lprotobuf-c
+Libs: -L${libdir} -lprotobuf-c -lpthread
 Libs.private:
 Cflags: -I${includedir}
 Requires: glib-2.0 gobject-2.0

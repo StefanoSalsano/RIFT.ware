@@ -10,7 +10,6 @@ import React from 'react'
 import ReactDOM from 'react-dom'
 import PureRenderMixin from 'react-addons-pure-render-mixin'
 import DescriptorGraph from '../libraries/graph/DescriptorGraph'
-import ReactTooltip from 'react-tooltip'
 import ComposerAppStore from '../stores/ComposerAppStore'
 
 import '../styles/CatalogItemCanvasEditor.scss'
@@ -50,10 +49,6 @@ const CatalogItemCanvasEditor = React.createClass({
 			this.state.graph.showMoreInfo = true;
 		}
 		this.state.graph.update();
-		try {
-			// todo fix tooltips for IE11 - it throws an error
-			ReactTooltip.rebuild();
-		} catch (ignore) {}
 	},
 	componentWillUnmount() {
 		this.state.graph.destroy();

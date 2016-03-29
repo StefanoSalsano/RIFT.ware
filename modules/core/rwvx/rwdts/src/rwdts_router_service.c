@@ -20,6 +20,15 @@
 #include "rw-base.pb-c.h"
 #include "rw-dts.pb-c.h"
 
+static bool rwdts_router_check_and_queue_msg(RWDtsQueryRouter_Service *mysrv,
+                                             const ProtobufCMessage *message,
+                                             const ProtobufCMessageDescriptor *desc,
+                                             const ProtobufCMessage *id,
+                                             uint32_t flags,
+                                             rwdts_router_t *dts,
+                                             rwdts_router_queue_closure_t *queue_closure, 
+                                             void *fn,
+                                             rwmsg_request_t *rwreq);
 static void
 rwdts_router_get_shard_db_info(rwdts_router_t *dts,
                                char *member,
@@ -132,6 +141,21 @@ static void rwdts_router_msg_execute(RWDtsQueryRouter_Service *mysrv,
   RW_ASSERT_TYPE(dts, rwdts_router_t);
   rwdts_router_xact_t* xact = NULL;
 
+  rwdts_router_queue_closure_t queue_closure = {
+    .execute_clo = clo
+  };
+  if (rwdts_router_check_and_queue_msg(mysrv, 
+                                       &input->base,
+                                       input->base.descriptor,
+                                       &input->id.base,
+                                       input->flags,
+                                       dts,
+                                       &queue_closure,
+                                       (void *)rwdts_router_msg_execute,
+                                       rwreq)) {
+    return;
+  }
+
   if (!RWDTS_ROUTER_IS_LOCAL_XACT(dts, (&input->id))) {
     rwdts_FORWARD_execute_to_router(dts, input, rwreq, clo, input->id.router_idx);
     return;
@@ -199,6 +223,21 @@ static void rwdts_router_msg_end(RWDtsQueryRouter_Service *mysrv,
   rwdts_router_xact_t* xact = NULL;
   bool router_xact_run = TRUE;
 
+  rwdts_router_queue_closure_t queue_closure = {
+    .status_clo = clo
+  };
+  if (rwdts_router_check_and_queue_msg(mysrv, 
+                                       &input->base,
+                                       input->base.descriptor,
+                                       &input->base,
+                                       0,
+                                       dts,
+                                       &queue_closure,
+                                       (void *)rwdts_router_msg_end,
+                                       rwreq)) {
+    return;
+  }
+
 
   if (!RWDTS_ROUTER_IS_LOCAL_XACT(dts, input)) {
     rwdts_FORWARD_end_to_router(dts, input, rwreq, clo, input->router_idx);
@@ -229,6 +268,7 @@ static void rwdts_router_msg_end(RWDtsQueryRouter_Service *mysrv,
       xact->abrt = TRUE;
     } else {
       xact->ended = TRUE;
+      RWDTS_RTR_ADD_TR_ENT_ENDED(xact);
       if (xact->move_to_precomm) {
         rwdts_router_xact_move_to_precomm(xact);
       } else {
@@ -290,6 +330,21 @@ static void rwdts_router_msg_abort(RWDtsQueryRouter_Service *mysrv,
   rwdts_router_t *dts = (rwdts_router_t *)self;
   rwdts_router_xact_t* xact = NULL;
   RW_ASSERT_TYPE(dts, rwdts_router_t);
+
+  rwdts_router_queue_closure_t queue_closure = {
+    .status_clo = clo
+  };
+  if (rwdts_router_check_and_queue_msg(mysrv, 
+                                       &input->base,
+                                       input->base.descriptor,
+                                       &input->base,
+                                       0,
+                                       dts,
+                                       &queue_closure,
+                                       (void *)rwdts_router_msg_abort,
+                                       rwreq)) {
+    return;
+  }
 
   if (!RWDTS_ROUTER_IS_LOCAL_XACT(dts, input)) {
     rwdts_FORWARD_abort_to_router(dts, input, rwreq, clo, input->router_idx);
@@ -358,6 +413,21 @@ static void rwdts_router_msg_flush(RWDtsQueryRouter_Service *mysrv,
                                    rwmsg_request_t *rwreq) {
   rwdts_router_t *dts = (rwdts_router_t *)self;
   RW_ASSERT_TYPE(dts, rwdts_router_t);
+
+  rwdts_router_queue_closure_t queue_closure = {
+    .status_clo = clo
+  };
+  if (rwdts_router_check_and_queue_msg(mysrv, 
+                                       &input->base,
+                                       input->base.descriptor,
+                                       &input->base,
+                                       0,
+                                       dts,
+                                       &queue_closure,
+                                       (void *)rwdts_router_msg_flush,
+                                       rwreq)) {
+    return;
+  }
 
   if (!RWDTS_ROUTER_IS_LOCAL_XACT(dts, input)) {
     rwdts_FORWARD_flush_to_router(dts, input, rwreq, clo, input->router_idx);
@@ -792,3 +862,78 @@ rwdts_router_delete_shard_db_info(rwdts_router_t*  dts)
   }
   return;
 }
+
+void rwdts_router_replay_queued_msgs(rwdts_router_t *dts)
+{
+  rwdts_router_queue_msg_t *queued_msg = dts->queued_msgs;
+  rwdts_router_queue_msg_t *next_queued_msg;
+  dts->queued_msgs =
+  dts->queued_msgs_tail = NULL;
+
+  while (queued_msg) {
+    RW_ASSERT_TYPE(queued_msg, rwdts_router_queue_msg_t);
+    next_queued_msg = queued_msg->next_msg;
+  
+    if (queued_msg->fn == rwdts_router_msg_execute) {
+      ((rwdts_router_msg_queued_execute_fptr)queued_msg->fn) (queued_msg->mysrv,
+                                                              (const RWDtsXact *)queued_msg->input,
+                                                              (void *)dts,
+                                                              queued_msg->clo.execute_clo,
+                                                              queued_msg->rwreq);
+    }
+    else {
+      ((rwdts_router_msg_queued_general_fptr)queued_msg->fn) (queued_msg->mysrv,
+                                                              (const RWDtsXactID *)queued_msg->input,
+                                                              (void *)dts,
+                                                              queued_msg->clo.status_clo,
+                                                              queued_msg->rwreq);
+    }
+
+    RW_FREE_TYPE(queued_msg, rwdts_router_queue_msg_t);
+    queued_msg = next_queued_msg;
+  }
+}
+
+static bool rwdts_router_check_and_queue_msg(RWDtsQueryRouter_Service *mysrv,
+                                             const ProtobufCMessage *message,
+                                             const ProtobufCMessageDescriptor *desc,
+                                             const ProtobufCMessage *id,
+                                             uint32_t flags,
+                                             rwdts_router_t *dts,
+                                             rwdts_router_queue_closure_t *queue_closure, 
+                                             void *fn,
+                                             rwmsg_request_t *rwreq)
+{
+  /* Peer Reg Reads are passed through */
+  if (flags & RWDTS_XACT_FLAG_PEER_REG) {
+    return false;
+  }
+  /* Registration May need to handle this better */
+  if (flags & RWDTS_XACT_FLAG_REG) {
+    return false;
+  }
+  else if (dts->pend_peer_table || dts->queued_msgs_tail) {
+    rwdts_router_queue_msg_t *queue_msg = 
+        RW_MALLOC0_TYPE(sizeof(*queue_msg), rwdts_router_queue_msg_t);
+    RW_ASSERT_TYPE(queue_msg, rwdts_router_queue_msg_t);
+    queue_msg->mysrv = mysrv;
+    queue_msg->input = protobuf_c_message_duplicate(NULL, message, desc);
+    queue_msg->clo.execute_clo = queue_closure->execute_clo;
+    queue_msg->fn = fn;
+    queue_msg->rwreq = rwreq;
+    if (dts->queued_msgs_tail) {
+      RW_ASSERT(dts->queued_msgs != NULL);
+      dts->queued_msgs_tail->next_msg = queue_msg;
+      dts->queued_msgs_tail = queue_msg;
+    }
+    else {
+      RW_ASSERT(dts->queued_msgs == NULL);
+      RW_ASSERT(dts->queued_msgs_tail == NULL);
+      dts->queued_msgs = queue_msg;
+      dts->queued_msgs_tail = queue_msg;
+    }
+    return true;
+  }
+  return false;
+}
+

@@ -32,6 +32,10 @@ module rw-base-annotation
     tailf:callpoint base_show;
   }
 
+  tailf:annotate "/rwbase:uptime" {
+    tailf:callpoint base_show;
+  }
+
   tailf:annotate "/rwbase:vcs/rwbase:resource/rwbase:utilization" {
     tailf:callpoint base_show;
   }

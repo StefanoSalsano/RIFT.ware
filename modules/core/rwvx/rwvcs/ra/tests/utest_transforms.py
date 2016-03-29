@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 """
 #
 # 
@@ -261,7 +261,7 @@ class TestSystemTransforms(unittest.TestCase):
         self.assertEqual(1, len(sysinfo.vm_bootstrap))
 
     def test_assign_dtsrouter_vm(self):
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
         transform = rift.vcs.compiler.transforms.AssignDtsRouterVM()
 
         # A CompilationError is raised if the system does not contain a 
@@ -362,23 +362,23 @@ class TestManifestTransforms(unittest.TestCase):
         colony = rift.vcs.manifest.RaColony(name='test.colony-1')
         colony.add_component(cluster)
 
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
         manifest.add_component(colony)
         manifest.init = cli
 
         # Initially the init component will have no startups
-        self.assertEquals(0, len(manifest.init.startups))
+        self.assertEqual(0, len(manifest.init.startups))
 
         transform = rift.vcs.compiler.transforms.StartupColony()
         transform(manifest, rift.vcs.SystemInfo())
 
         # After the transform the init component will have 1 startup and it
         # should be the colony.
-        self.assertEquals(1, len(manifest.init.startups))
-        self.assertEquals(colony, manifest.init.startups[0])
+        self.assertEqual(1, len(manifest.init.startups))
+        self.assertEqual(colony, manifest.init.startups[0])
 
     def test_assign_broker_vm(self):
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
         transform = rift.vcs.compiler.transforms.AssignBrokerVM()
 
         # A CompilationError is raised if the system does not contain a message
@@ -427,7 +427,7 @@ class TestManifestTransforms(unittest.TestCase):
         colony = rift.vcs.manifest.RaColony(name='test.colony')
         colony.add_component(cluster)
 
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
         manifest.add_component(colony)
 
         transform = rift.vcs.compiler.transforms.AssignInitVM()
@@ -447,7 +447,7 @@ class TestManifestTransforms(unittest.TestCase):
         transform(manifest, rift.vcs.SystemInfo())
 
     def test_assign_ip_addresses(self):
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
         sysinfo = rift.vcs.SystemInfo(
                 colonies=[
                     rift.vcs.Collection(

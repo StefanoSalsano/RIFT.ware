@@ -13,7 +13,7 @@ while [[ $# > 0 ]]
 do
   arg=$1
   case $arg in
-    --trace_level| --schema_listing | --netconf_host | --netconf_port | --username | --passwd | --vm_instance)
+    --trace_level | --netconf_host | --netconf_port | --username | --passwd | --vm_instance)
       zsh_cmd="${zsh_cmd} $1 $2"
       shift 2
     ;;
@@ -24,6 +24,11 @@ do
       fi
       netconf=1
       shift
+    ;;
+    --schema_listing)
+      schema_listing=$2
+      zsh_cmd="${zsh_cmd} $1 $2"
+      shift 2
     ;;
     --rwmsg)
       if [ -n "${netconf}" ]; then
@@ -55,7 +60,7 @@ file_proto_yutil="${rift_install}/usr/bin/rwyangutil"
 # Check if the dynamic schema directory exists, if not create it
 if [ ! -d ${schema_dir} ]; then
    echo "Creating ${schema_dir} directory.."
-   ${file_proto_yutil} --create-schema-dir
+   ${file_proto_yutil} --lock-file-create --create-schema-dir ${schema_listing} --lock-file-delete
    estat=$?
    if [[ $estat != 0 ]]; then
       echo "Failed to create ${schema_dir} directory"

@@ -18,6 +18,8 @@ rift_python_install_tree(
     rift/rwcal/aws/aws_table.py
     rift/rwcal/aws/aws_drv.py
     rift/rwcal/aws/exceptions.py
+    rift/rwcal/aws/prepare_vm.py
+    rift/rwcal/aws/delete_vm.py
   PYTHON3_ONLY
   COMPONENT ${PKG_LONG_NAME})
 

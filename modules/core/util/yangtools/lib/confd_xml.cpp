@@ -76,7 +76,7 @@ rw_status_t get_current_key_and_next_node (
     RW_ASSERT (cs_node->info.type);
     std::string value_string = key_node->get_text_value();
     if (!value_string.length()) {
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     }
     
@@ -173,7 +173,7 @@ XMLNode* get_node_by_hkeypath (XMLNode *node,
           case C_BIT32:
           case C_BIT64:
           case C_XMLTAG:
-            RW_ASSERT(0);
+            RW_CRASH();
             break;
           case C_ENUM_VALUE:
             if (nullptr == node->find_enum (tag, ns, CONFD_GET_ENUM_VALUE (val))) {
@@ -1324,7 +1324,7 @@ rw_tree_walker_status_t add_tlv_list_child (RwTLVListIterator *parent,
     case C_DQUAD:
     case C_XMLEND:
     case C_MAXTYPE:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
       
     case C_XMLTAG:      
@@ -1484,7 +1484,7 @@ rw_tree_walker_status_t add_xml_child (XMLNode *parent,
     case C_DQUAD: 
     case C_HEXSTR: 
 
-      RW_ASSERT(0);
+      RW_CRASH();
     break;
     
     case C_XMLTAG:
@@ -1588,7 +1588,7 @@ rw_tree_walker_status_t add_pbcm_child (ProtobufCMessage *parent,
     case C_NOEXISTS:
     case C_STR:
     case C_SYMBOL: 
-      RW_ASSERT(0);
+      RW_CRASH();
     break;
     
     case C_XMLTAG: 
@@ -1653,23 +1653,23 @@ rw_tree_walker_status_t add_pbcm_child (ProtobufCMessage *parent,
       break;
       
     case C_QNAME: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
       
     case C_DATETIME: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
       
     case C_DATE: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
       
     case C_TIME: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
  
     case C_DURATION:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_ENUM_VALUE: 
       v_uint32 = (uint32_t) CONFD_GET_ENUM_VALUE (child_src);
@@ -1677,10 +1677,10 @@ rw_tree_walker_status_t add_pbcm_child (ProtobufCMessage *parent,
       break;
       
     case C_BIT32: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_BIT64: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
       
     case C_LIST: {
@@ -1724,23 +1724,23 @@ rw_tree_walker_status_t add_pbcm_child (ProtobufCMessage *parent,
       break;
       
     case C_XMLEND: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_OBJECTREF: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_UNION: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_PTR: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
  
     case C_CDBBEGIN: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_OID: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_BINARY: 
       child_tgt->element = CONFD_GET_BINARY_PTR(child_src);
@@ -1773,21 +1773,21 @@ rw_tree_walker_status_t add_pbcm_child (ProtobufCMessage *parent,
     }
       break;
     case C_DEFAULT: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
       
     case C_IDENTITYREF: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_XMLBEGINDEL: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
  
     case C_DQUAD: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case C_HEXSTR: 
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
   }
 

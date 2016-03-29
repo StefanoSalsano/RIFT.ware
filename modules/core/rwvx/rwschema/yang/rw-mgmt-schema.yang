@@ -140,6 +140,24 @@ module rw-mgmt-schema
         "Will be present if the module is a built-in module, that was
           not loaded dynamically.";
     }
+    leaf metainfo-filename {
+      type string;
+      description
+        "Absolute path of the meta info file which
+        holds the hash information of the schema files for a yang module.";
+    }
+    leaf exported {
+      description
+        "Determines whether the module will be exported via the
+          RIFT.ware northbound interfaces.  Only one revision of a
+          module may be exported at the same time.  A module must be
+          exported for any part of the config or operational data to be
+          accessible, for the rpcs to be usable, for notifications to
+          be generated, or for augments to be applied.  However, a
+          module does not need to be exported in order for its types or
+          groupings to be used by other modules.";
+      type boolean;
+    }
   }
 
   container rw-mgmt-schema {
@@ -182,18 +200,6 @@ module rw-mgmt-schema
         uses schema-module;
         description
           "The particulars of the dynamic module being loaded.";
-      }
-      leaf exported {
-        description
-          "Determines whether the module will be exported via the
-          RIFT.ware northbound interfaces.  Only one revision of a
-          module may be exported at the same time.  A module must be
-          exported for any part of the config or operational data to be
-          accessible, for the rpcs to be usable, for notifications to
-          be generated, or for augments to be applied.  However, a
-          module does not need to be exported in order for its types or
-          groupings to be used by other modules.";
-        type boolean;
       }
 
       // ATTN: Some notion of which package it came from? leafref into catalog?

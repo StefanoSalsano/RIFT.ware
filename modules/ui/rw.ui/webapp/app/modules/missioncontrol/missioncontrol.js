@@ -155,7 +155,7 @@ angular.module('missioncontrol', ['ui.router'])
     self.open = function(index) {
         var isOnline = rw.getSearchParams(window.location).api_server;
         if (isOnline) {
-            window.open(window.location.origin + '/index.html?api_server=localhost#/launchpad/' + self.federations[index].id)
+            window.open(window.location.origin + '/index.html?api_server=' + window.location.protocol + '//localhost#/launchpad/' + self.federations[index].id)
         } else {
             window.open('#/launchpad/' + self.federations[index].id)
         }

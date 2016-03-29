@@ -1,3 +1,4 @@
+
 /*
  * 
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
@@ -10,13 +11,16 @@ var utils = require('../utils/utils.js');
 var constants = require('../common/constants.js')
 var _ = require('underscore');
 var epa_aggregator = require('./epa_aggregator.js');
+var transforms = require('./transforms.js');
+
 // Revealing module pattern objects
 var Catalog = {};
 var Config = {};
 var NSR = {};
 var VNFR = {};
 var RIFT = {};
-var Topology = {};
+var ComputeTopology = {};
+var NetworkTopology = {};
 var VDUR = {};
 var CloudAccount = {};
 var ConfigAgentAccount = {};
@@ -29,19 +33,18 @@ RPC.executeNSConfigPrimitive = function(req) {
             "input": req.body
         };
 
-        var headers = _.extend(
-                {},
-                constants.HTTP_HEADERS.accept.data,
-                constants.HTTP_HEADERS.content_type.data,
-                {
-                    'Authorization': req.get('Authorization')
-                }
-            );
+        var headers = _.extend({},
+            constants.HTTP_HEADERS.accept.data,
+            constants.HTTP_HEADERS.content_type.data, {
+                'Authorization': req.get('Authorization')
+            }
+        );
         request({
             url: utils.confdPort(api_server) + '/api/operations/exec-ns-config-primitive',
             method: 'POST',
             headers: headers,
             forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
             json: jsonData
         }, function(error, response, body) {
             if (utils.validateResponse('RPC.executeNSConfigPrimitive', error, response, body, resolve, reject)) {
@@ -63,21 +66,20 @@ RPC.getNSConfigPrimitiveValues = function(req) {
             "input": req.body
         };
 
-        var headers = _.extend(
-                {},
-                constants.HTTP_HEADERS.accept.data,
-                constants.HTTP_HEADERS.content_type.data,
-                {
-                    'Authorization': req.get('Authorization')
-                }
-            );
+        var headers = _.extend({},
+            constants.HTTP_HEADERS.accept.data,
+            constants.HTTP_HEADERS.content_type.data, {
+                'Authorization': req.get('Authorization')
+            }
+        );
         request({
             uri: utils.confdPort(api_server) + '/api/operations/get-ns-config-primitive-values',
             method: 'POST',
             headers: requestHeaders,
             forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
             json: jsonData
-        }, function(error, response,body) {
+        }, function(error, response, body) {
             if (utils.validateResponse('RPC.getNSConfigPrimitiveValues', error, response, body, resolve, reject)) {
 
                 resolve({
@@ -106,6 +108,7 @@ Catalog.get = function(req) {
                     'Authorization': req.get('Authorization')
                 }),
                 forever: constants.FOREVER_ON,
+                rejectUnauthorized: false,
                 resolveWithFullResponse: true
             }),
             rp({
@@ -115,6 +118,7 @@ Catalog.get = function(req) {
                     'Authorization': req.get('Authorization')
                 }),
                 forever: constants.FOREVER_ON,
+                rejectUnauthorized: false,
                 resolveWithFullResponse: true
             }),
             rp({
@@ -124,6 +128,7 @@ Catalog.get = function(req) {
                     'Authorization': req.get('Authorization')
                 }),
                 forever: constants.FOREVER_ON,
+                rejectUnauthorized: false,
                 resolveWithFullResponse: true
             })
             // Not enabled for now
@@ -136,6 +141,7 @@ Catalog.get = function(req) {
             //       'Authorization': req.get('Authorization')
             //     }),
             //   forever: constants.FOREVER_ON,
+            // rejectUnauthorized: false,
             //   resolveWithFullResponse: true
             // })
         ]).then(function(result) {
@@ -190,6 +196,9 @@ Catalog.get = function(req) {
                             if (!nsd["meta"]) {
                                 nsd["meta"] = {};
                             }
+                            if (typeof nsd['meta'] == 'string') {
+                                nsd['meta'] = JSON.parse(nsd['meta']);
+                            }
                             nsd["meta"]["instance-ref-count"] = _.findWhere(nsdRefCountCollection, {
                                 "nsd-id-ref": nsd.id
                             })["instance-ref-count"];
@@ -232,7 +241,8 @@ Catalog.delete = function(req) {
             headers: _.extend({}, constants.HTTP_HEADERS.accept.data, {
                 'Authorization': req.get('Authorization')
             }),
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('Catalog.delete', error, response, body, resolve, reject)) {
                 resolve({
@@ -279,7 +289,8 @@ Catalog.getVNFD = function(req) {
                 headers: _.extend({}, constants.HTTP_HEADERS.accept.data, {
                     'Authorization': authorization
                 }),
-                forever: constants.FOREVER_ON
+                forever: constants.FOREVER_ON,
+                rejectUnauthorized: false,
             }, function(error, response, body) {
                 if (utils.validateResponse('Catalog.create', error, response, body, resolve, reject)) {
                     var data;
@@ -316,6 +327,7 @@ Catalog.create = function(req) {
             method: 'POST',
             headers: requestHeaders,
             forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
             json: jsonData
         }, function(error, response, body) {
             if (utils.validateResponse('Catalog.create', error, response, body, resolve, reject)) {
@@ -345,6 +357,7 @@ Catalog.update = function(req) {
             method: 'PUT',
             headers: requestHeaders,
             forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
             json: jsonData
         }, function(error, response, body) {
             if (utils.validateResponse('Catalog.update', error, response, body, resolve, reject)) {
@@ -371,7 +384,8 @@ NSR.get = function(req) {
             headers: _.extend({}, constants.HTTP_HEADERS.accept.collection, {
                 'Authorization': req.get('Authorization')
             }),
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('NSR.get nsd-catalog', error, response, body, resolve, reject)) {
                 var data;
@@ -393,7 +407,8 @@ NSR.get = function(req) {
             headers: _.extend({}, id ? constants.HTTP_HEADERS.accept.data : constants.HTTP_HEADERS.accept.collection, {
                 'Authorization': req.get('Authorization')
             }),
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('NSR.get ns-instance-config', error, response, body, resolve, reject)) {
                 var data;
@@ -416,7 +431,8 @@ NSR.get = function(req) {
             headers: _.extend({}, id ? constants.HTTP_HEADERS.accept.data : constants.HTTP_HEADERS.accept.collection, {
                 'Authorization': req.get('Authorization')
             }),
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('NSR.get ns-instance-opdata', error, response, body, resolve, reject)) {
                 var data;
@@ -577,6 +593,7 @@ NSR.create = function(req) {
             method: 'POST',
             headers: requestHeaders,
             forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
             json: data
         }, function(error, response, body) {
             if (utils.validateResponse('VNFR.get', error, response, body, resolve, reject)) {
@@ -611,7 +628,8 @@ NSR.delete = function(req) {
             uri: utils.confdPort(api_server) + '/api/config/ns-instance-config/nsr/' + id,
             method: 'DELETE',
             headers: requestHeaders,
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('NSR.delete', error, response, body, resolve, reject)) {
                 resolve({
@@ -730,7 +748,8 @@ NSR.setStatus = function(req) {
             json: {
                 "nsr:admin-status": command
             },
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('NSR.setStatus', error, response, body, resolve, reject)) {
                 resolve({
@@ -754,7 +773,8 @@ VNFR.get = function(req) {
             url: uri,
             method: 'GET',
             headers: headers,
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('VNFR.get', error, response, body, resolve, reject)) {
                 var data = JSON.parse(response.body);
@@ -793,7 +813,8 @@ VNFR.getByNSR = function(req) {
                 url: uri,
                 method: 'GET',
                 headers: headers,
-                forever: constants.FOREVER_ON
+                forever: constants.FOREVER_ON,
+                rejectUnauthorized: false,
             }, function(error, response, body) {
                 if (utils.validateResponse('VNFR.getByNSR', error, response, body, resolve, reject)) {
                     var data = JSON.parse(response.body);
@@ -830,7 +851,8 @@ RIFT.api = function(req) {
             headers: _.extend({}, constants.HTTP_HEADERS.accept.data, {
                 'Authorization': req.get('Authorization')
             }),
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('RIFT.api', error, response, body, resolve, reject)) {
                 resolve(JSON.parse(response.body))
@@ -839,7 +861,7 @@ RIFT.api = function(req) {
     })
 };
 
-Topology.get = function(req) {
+ComputeTopology.get = function(req) {
     var api_server = req.query['api_server'];
     var nsr_id = req.params.id;
     var result = {
@@ -858,9 +880,10 @@ Topology.get = function(req) {
                     constants.HTTP_HEADERS.accept.data, {
                         'Authorization': req.get('Authorization')
                     }),
-                forever: constants.FOREVER_ON
+                forever: constants.FOREVER_ON,
+                rejectUnauthorized: false,
             }, function(error, response, body) {
-                if (utils.validateResponse('Topology.get ns-instance-opdata/nsr/:id', error, response, body, success, failure)) {
+                if (utils.validateResponse('ComputeTopology.get ns-instance-opdata/nsr/:id', error, response, body, success, failure)) {
                     var data;
                     var isString = typeof(response.body) == "string";
                     if (isString && response.body == '') {
@@ -904,9 +927,10 @@ Topology.get = function(req) {
                                     'Authorization': req.get('Authorization')
                                 }),
                                 forever: constants.FOREVER_ON,
+                                rejectUnauthorized: false,
                                 resolveWithFullResponse: true
                             }, function(error, response, body) {
-                                if (utils.validateResponse('Topology.get vnfr-catalaog/vnfr/:id', error, response, body, success, failure)) {
+                                if (utils.validateResponse('ComputeTopology.get vnfr-catalaog/vnfr/:id', error, response, body, success, failure)) {
                                     try {
                                         var data = JSON.parse(response.body);
                                         var returnData = data["vnfr:vnfr"];
@@ -960,7 +984,7 @@ Topology.get = function(req) {
                 }).catch(function(error) {
                     // Todo: Can this be made better?
                     // Right now if one of the southbound APIs fails - we just return what's populated so far in result
-                    console.log('Problem with Topology.get vnfr-catalog/vnfr/:id', error, 'Resolving with partial data', result);
+                    console.log('Problem with ComputeTopology.get vnfr-catalog/vnfr/:id', error, 'Resolving with partial data', result);
                     resolve({
                         statusCode: 200,
                         data: result
@@ -986,6 +1010,34 @@ Topology.get = function(req) {
     });
 };
 
+NetworkTopology.get = function(req) {
+    var api_server = req.query["api_server"];
+    var uri = utils.confdPort(api_server);
+    uri += '/api/operational/network?deep';
+    var headers = _.extend({}, constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
+    });
+    return new Promise(function(resolve, reject) {
+        request({
+            url: uri,
+            method: 'GET',
+            headers: headers,
+            forever: constants.FOREVER_ON
+        }, function(error, response, body) {
+            if (utils.validateResponse('NetworkTopology.get', error, response, body, resolve, reject)) {
+                var data = JSON.parse(response.body);
+                var returnData = transforms.transformNetworkTopology(
+                    data["ietf-network:network"]
+                );
+                resolve({
+                    statusCode: 200,
+                    data: returnData
+                });
+            };
+        });
+    })
+}
+
 VDUR.get = function(req) {
     var api_server = req.query["api_server"];
     var vnfrID = req.params.vnfr_id;
@@ -1000,7 +1052,8 @@ VDUR.get = function(req) {
             url: uri,
             method: 'GET',
             headers: headers,
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('VDUR.get', error, response, body, resolve, reject)) {
                 var data = JSON.parse(response.body);
@@ -1023,7 +1076,8 @@ CloudAccount.get = function(req) {
             url: uri,
             method: 'GET',
             headers: headers,
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('CloudAccount.get', error, response, body, resolve, reject)) {
                 var data = JSON.parse(response.body);
@@ -1049,7 +1103,8 @@ Config.get = function(req) {
             url: uri,
             method: 'GET',
             headers: headers,
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('Config.get', error, response, body, resolve, reject)) {
                 var data = JSON.parse(response.body);
@@ -1084,7 +1139,8 @@ ConfigAgentAccount.get = function(req) {
                     url: utils.confdPort(api_server) + '/api/config/config-agent/account',
                     type: 'GET',
                     headers: requestHeaders,
-                    forever: constants.FOREVER_ON
+                    forever: constants.FOREVER_ON,
+                    rejectUnauthorized: false,
                 },
                 function(error, response, body) {
                     var data;
@@ -1123,7 +1179,8 @@ ConfigAgentAccount.get = function(req) {
                     url: utils.confdPort(api_server) + '/api/config/config-agent/account/' + id,
                     type: 'GET',
                     headers: requestHeaders,
-                    forever: constants.FOREVER_ON
+                    forever: constants.FOREVER_ON,
+                    rejectUnauthorized: false,
                 },
                 function(error, response, body) {
                     var data;
@@ -1176,6 +1233,7 @@ ConfigAgentAccount.create = function(req) {
             method: 'POST',
             headers: requestHeaders,
             forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
             json: jsonData,
         }, function(error, response, body) {
             if (utils.validateResponse('ConfigAgentAccount.create', error, response, body, resolve, reject)) {
@@ -1213,6 +1271,7 @@ ConfigAgentAccount.update = function(req) {
             method: 'PUT',
             headers: requestHeaders,
             forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
             json: jsonData,
         }, function(error, response, body) {
             if (utils.validateResponse('ConfigAgentAccount.update', error, response, body, resolve, reject)) {
@@ -1252,7 +1311,8 @@ ConfigAgentAccount.delete = function(req) {
             url: utils.confdPort(api_server) + '/api/config/config-agent/account/' + id,
             method: 'DELETE',
             headers: requestHeaders,
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('ConfigAgentAccount.delete', error, response, body, resolve, reject)) {
                 return resolve({
@@ -1277,7 +1337,8 @@ DataCenters.get = function(req) {
             url: utils.confdPort(api_server) + '/api/operational/datacenters/cloud-accounts?deep',
             method: 'GET',
             headers: requestHeaders,
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false,
         }, function(error, response, body) {
             if (utils.validateResponse('DataCenters.get', error, response, body, resolve, reject)) {
                 var returnData = {};
@@ -1313,7 +1374,8 @@ module.exports.catalog = Catalog;
 module.exports.nsr = NSR;
 module.exports.vnfr = VNFR;
 module.exports.rift = RIFT;
-module.exports.topology = Topology;
+module.exports.computeTopology = ComputeTopology;
+module.exports.networkTopology = NetworkTopology;
 module.exports.config = Config;
 module.exports.cloud_account = CloudAccount;
 module.exports['config-agent-account'] = ConfigAgentAccount;

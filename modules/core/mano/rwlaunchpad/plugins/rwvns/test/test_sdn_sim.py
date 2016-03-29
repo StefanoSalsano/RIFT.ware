@@ -10,6 +10,9 @@ import unittest
 import rw_peas
 import rwlogger
 
+import gi
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwSdn', '1.0')
 from gi.repository import RwsdnYang
 from gi.repository import IetfNetworkYang
 from gi.repository.RwTypes import RwStatus
@@ -20,7 +23,7 @@ logger = logging.getLogger('sdnsim')
 
 def get_sdn_account():
     """
-    Creates an object for class RwcalYang.SdnAccount()
+    Creates an object for class RwsdnYang.SdnAccount()
     """
     account                 = RwsdnYang.SDNAccount()
     account.account_type    = "sdnsim"

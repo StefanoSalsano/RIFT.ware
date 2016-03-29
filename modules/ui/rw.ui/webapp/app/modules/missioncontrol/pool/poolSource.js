@@ -25,7 +25,7 @@ var poolSource = {
       remote: function(state, Pool) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/pool?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/pool?api_server=' + API_SERVER,
             type:'POST',
             beforeSend: Utils.addAuthorizationStub,
             data: JSON.stringify(Pool),
@@ -54,7 +54,7 @@ var poolSource = {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/all-resources?api_server=' + API_SERVER + '&cloud_account=' + cloudAccount,
+            url: '//' + window.location.hostname + ':3000/mission-control/all-resources?api_server=' + API_SERVER + '&cloud_account=' + cloudAccount,
             type:'GET',
             beforeSend: Utils.addAuthorizationStub,
             contentType: "application/json",
@@ -117,7 +117,7 @@ var poolSource = {
       remote: function(state, Pool) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/pool?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/pool?api_server=' + API_SERVER,
             type:'PUT',
             beforeSend: Utils.addAuthorizationStub,
             data: JSON.stringify(Pool),
@@ -146,7 +146,7 @@ var poolSource = {
       remote: function(state, pool) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/pool?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/pool?api_server=' + API_SERVER,
             type:'DELETE',
             beforeSend: Utils.addAuthorizationStub,
             dataType: "json",
@@ -175,7 +175,7 @@ var poolSource = {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/get-pools-by-cloud-account?api_server=' + API_SERVER + '&cloud_account=' + cloudAccount,
+            url: '//' + window.location.hostname + ':3000/mission-control/get-pools-by-cloud-account?api_server=' + API_SERVER + '&cloud_account=' + cloudAccount,
             type:'GET',
             beforeSend: Utils.addAuthorizationStub,
             dataType: "json",

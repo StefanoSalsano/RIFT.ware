@@ -74,6 +74,7 @@ module rw-base
       enum INITIALIZING;
       enum RECOVERING;
       enum RUNNING;
+      enum TO_RECOVER;
       /* Also new states to waitstates[] in rwdts_api.c */
     }
   }
@@ -107,6 +108,38 @@ module rw-base
       type string;
       description "Build date";
     }
+  }
+
+  container uptime {
+    config false;
+    rwpb:msg-new Uptime;
+    description "Riftware system uptime information";
+
+    leaf uptime {
+      type uint64;
+      description "System uptime";
+    }
+
+    leaf days {
+      description "System uptime - days";
+      type uint32;
+    }
+
+    leaf hours {
+      description "System uptime - hours";
+      type uint32;
+    }
+
+    leaf minutes {
+      description "System uptime - minutes";
+      type uint32;
+    }
+
+    leaf seconds {
+      description "System uptime - seconds";
+      type uint32;
+    }
+
   }
 
   container vcs {
@@ -209,9 +242,14 @@ module rw-base
           }
 
           leaf config-ready {
-            description "Config readiness check enable";
+            description "Config readiness check state";
             type boolean;
             default false;
+          }
+
+          leaf recovery-action {
+            description "Defined recovery action if this component fail";
+            type rwvcstypes:recovery-type;
           }
 
           leaf rwcomponent_parent {
@@ -397,16 +435,19 @@ module rw-base
       leaf tolerance {
         description "Maximum number of consecutive missed heartbeats";
         type uint32;
+        default 600;
       }
 
       leaf frequency {
         description "Number of heartbeats sent per second";
         type uint16;
+        default 10;
       }
 
       leaf enabled {
         description "Heartbeating enabled";
         type boolean;
+        default true;
       }
 
       list stats {
@@ -476,9 +517,13 @@ module rw-base
           type state_type;
         }
         leaf config-ready {
-          description "Config readiness check enable";
+          description "Config readiness check state";
           type boolean;
           default false;
+        }
+        leaf recovery-action {
+          description "Defined recovery action if this component fail";
+          type rwvcstypes:recovery-type;
         }
       }
     }
@@ -531,6 +576,7 @@ module rw-base
             type enumeration {
               enum START;
               enum STOP;
+              enum RECOVER;
             }
           }
         }

@@ -20,6 +20,7 @@ set(test_libs
   rwmsg
   rwmsgbroker
   rwlib
+  rwcal_api
   rwtrace
   rwtasklet
   rwmemlog
@@ -413,6 +414,41 @@ rift_unittest(rwdts_gi_test-68
   python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_no_recovery_advance_with_no_registrations
   ENVSET_ARGS FORCE=1)
 
+rift_unittest(rwdts_gi_test-69
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_xact_create_shallow_reroot
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-70
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_xact_create_deep_reroot
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-71
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_xact_update_deep_reroot
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-72
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_xact_update_shallow_reroot
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-73
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_xact_delete_deep_reroot
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-74
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_xact_delete_shallow_reroot
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-75
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_container_pub_in_list_pub
+  ENVSET_ARGS FORCE=1)
+
 rift_unittest(rwdts_gi_test-76
   TEST_ARGS
   python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_delete_partial
@@ -437,6 +473,11 @@ rift_unittest(rwdts_gi_test-80
   TEST_ARGS
   python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_delete_key
   ENVSET_ARGS FORCE=1)
+
+#rift_unittest(rwdts_gi_test-81
+#  TEST_ARGS
+#  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_recovery_test.py DtsTestCase.test_read_pub
+#  ENVSET_ARGS FORCE=1)
 
 add_custom_target(rwdts_gi_ut
   DEPENDS
@@ -508,11 +549,19 @@ rwdts_gi_test-62
     rwdts_gi_test-66
     rwdts_gi_test-67
     rwdts_gi_test-68
+    rwdts_gi_test-69
+    rwdts_gi_test-70
+    rwdts_gi_test-71
+    rwdts_gi_test-72
+    rwdts_gi_test-73
+    rwdts_gi_test-74
+    rwdts_gi_test-75
     rwdts_gi_test-76
     rwdts_gi_test-77
     rwdts_gi_test-78
     rwdts_gi_test-79
     rwdts_gi_test-80
+    #rwdts_gi_test-81
 )
 
 add_custom_target(rwdts_unittest

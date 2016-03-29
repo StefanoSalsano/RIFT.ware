@@ -435,7 +435,7 @@ string BytesFieldGenerator::GetGiGetterParameterList() const
   return param_list;
 }
 
-string BytesFieldGenerator::GetGiParameterAnnotations() const
+string BytesFieldGenerator::GetGiSetterAnnotations() const
 {
   std::string annotations = "";
 

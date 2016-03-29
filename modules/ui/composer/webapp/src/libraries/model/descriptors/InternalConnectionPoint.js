@@ -23,11 +23,16 @@ export default class InternalConnectionPoint extends DescriptorModel {
 		return 'InternalConnectionPoint';
 	}
 
+	static get qualifiedType() {
+		return 'vnfd.vdu.' + InternalConnectionPoint.type;
+	}
+
 	constructor(model, parent) {
 		super(model, parent);
-		this.className = 'InternalConnectionPoint';
 		// evil type collides with the YANG property 'type' for this object
 		this.type = 'internal-connection-point';
+		this.uiState['qualified-type'] = InternalConnectionPoint.qualifiedType;
+		this.className = 'InternalConnectionPoint';
 		this.location = 'bottom-left';
 		this.position = new Position(parent.position.value());
 		this.position.top = parent.position.bottom;
@@ -41,6 +46,14 @@ export default class InternalConnectionPoint extends DescriptorModel {
 
 	toInternalConnectionPointRef() {
 		return DescriptorModelFactory.newInternalConnectionPointRef(this.id);
+	}
+
+	canConnectTo(obj) {
+		return DescriptorModelFactory.isInternalVirtualLink(obj) || (DescriptorModelFactory.isInternalConnectionPoint(obj) && obj.parent !== this.parent);
+	}
+
+	remove() {
+		return this.parent.removeInternalConnectionPoint(this);
 	}
 
 }

@@ -5,6 +5,8 @@
 #
 
 
+import gi
+gi.require_version('RwYang', '1.0')
 from gi.repository import IetfL2TopologyYang as l2Tl
 from gi.repository import RwTopologyYang as RwTl
 from gi.repository import RwYang
@@ -105,7 +107,7 @@ class MySfcNetwork(object):
     def create_tp(self, node, cfg_tp, sup_node = None, sup_tp = None, nw_ref = None):
         logging.debug("   Creating termination point %s %s", node.l2_node_attributes.name, cfg_tp)
         tp = node.termination_point.add()
-        tp.tp_id = ("urn:Rift:Lab:{}:{}").format(node.node_id, cfg_tp)
+        tp.tp_id = ("{}:{}").format(node.node_id, cfg_tp)
         # L2 TP augmentation
         tp.l2_termination_point_attributes.description = cfg_tp
         tp.l2_termination_point_attributes.maximum_frame_size = 1500
@@ -246,6 +248,10 @@ if __name__ == "__main__":
         f.write(xml_str)
     status = subprocess.call("xmllint --format " + xml_file + " > " + xml_formatted_file, shell=True)
 
+    status = subprocess.call("sed -i '/xml version/d' " + xml_formatted_file, shell=True)
+    status = subprocess.call("sed -i '/root xmlns/d' " + xml_formatted_file, shell=True)
+    status = subprocess.call("sed -i '/\/root/d' " + xml_formatted_file, shell=True)
+
     print ("Converting to JSON ")
     # Convert set of topologies to JSON
     json_str = nwtop.to_json(model)
@@ -254,4 +260,6 @@ if __name__ == "__main__":
     status = subprocess.call("python -m json.tool /tmp/stacked_sfctop.json > /tmp/stacked_sfctop2.json", shell=True)
     json_formatted_file = "/tmp/stacked_sfctop2.json"
     status = subprocess.call("sed -i -e 's/\"l2t:ethernet\"/\"ethernet\"/g' " + json_formatted_file, shell=True)
+    status = subprocess.call("sed -i -e 's/\"l2t:vlan\"/\"vlan\"/g' " + json_formatted_file, shell=True)
+    status = subprocess.call("sed -i -e 's/\"l2t:vxlan\"/\"vxlan\"/g' " + json_formatted_file, shell=True)
 

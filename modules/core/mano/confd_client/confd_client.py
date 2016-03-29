@@ -13,6 +13,9 @@ import time
 import rw_peas
 import requests
 
+import gi
+gi.require_version('RwMcYang', '1.0')
+gi.require_version('YangModelPlugin', '1.0')
 from gi.repository import RwMcYang
 
 # NOTE: This cript measures the single threaded performance

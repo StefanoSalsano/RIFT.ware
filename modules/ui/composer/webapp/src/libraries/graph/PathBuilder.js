@@ -169,7 +169,7 @@ export default class PathBuilder {
 			// left
 			.L(0 - borderRadius, 0 + borderRadius).C(0 - borderRadius, 0 + borderRadius, 0 - borderRadius, 0, 0, 0)
 			// icon separator
-			.L(iconWidthHeight, 0).L(iconWidthHeight, iconWidthHeight + (borderRadius + height - iconWidthHeight))
+			//.L(iconWidthHeight, 0).L(iconWidthHeight, iconWidthHeight + (borderRadius + height - iconWidthHeight))
 			// label separator
 			//.L(iconWidthHeight, iconWidthHeight).L(0 - borderRadius, iconWidthHeight);
 	}

@@ -19,6 +19,10 @@ module rw-restconf
     prefix "rw-mgmt-schema";
   }
 
+  import ietf-restconf-monitoring {
+    prefix "rcmon";
+  }
+
   description "Rift RestConf Data Model";
   revision 2015-08-26 {
     description "Initial version"; 
@@ -30,12 +34,18 @@ module rw-restconf
 
     leaf log-timing {
       type boolean;
+      default false;
+    }
+
+    leaf use-https {
+      type boolean;
     }
   }
 
   container rwrestconf-statistics {
     rwpb:msg-new Restconfstats;
     description "Restconf statistics";
+    config false;
 
     leaf get-req {
       type uint64;
@@ -132,7 +142,41 @@ module rw-restconf
     leaf del-200-rsp {
       type uint64;
     }
-  }
 
+    container eventsource-statistics {
+      description
+          "Statistics for RESTCONF event notifications";
+
+      leaf websocket-stream-open {
+        type uint64;
+        description "Number of Websocket event streams opened/subscribed.";
+      }
+
+      leaf websocket-stream-close {
+        type uint64;
+        description "Number of Websocket event streams closed/unsubscribed.";
+      }
+
+      leaf websocket-events {
+        type uint64;
+        description "Number of Websocket events notified.";
+      }
+
+      leaf http-stream-open {
+        type uint64;
+        description "Number of HTTP event streams opened.";
+      }
+
+      leaf http-stream-close {
+        type uint64;
+        description "Number of HTTP event streams closed.";
+      }
+
+      leaf http-events {
+        type uint64;
+        description "Number of HTTP events notified.";
+      }
+    }
+  }
 
 }

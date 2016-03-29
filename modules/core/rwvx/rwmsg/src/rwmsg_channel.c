@@ -234,7 +234,7 @@ void rwmsg_channelspecific_halt(rwmsg_channel_t *ch) {
 
 void rwmsg_channel_halt(rwmsg_channel_t *ch) {
   if (!ch->halted) {
-    RWMSG_TRACE_CHAN(ch, INFO, "rwmsg_channel_halt(%p)", ch);
+    //RWMSG_TRACE_CHAN(ch, INFO, "rwmsg_channel_halt(%p)", ch);
     ch->halted=1;
     if (ch->ss) {
       rwmsg_sockset_close(ch->ss);
@@ -283,7 +283,7 @@ void rwmsg_channel_destroy(rwmsg_channel_t *ch) {
       RW_DL_REMOVE(&ch->ep->track.peerclichans, ch, trackelem);
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     }
     RWMSG_EP_UNLOCK(ch->ep);
@@ -376,7 +376,7 @@ void rwmsg_channel_create(rwmsg_channel_t *ch, rwmsg_endpoint_t *ep, enum rwmsg_
   default:
     lqname = "invalid";
     bufqname = "invalid";
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
   RWMSG_EP_UNLOCK(ep);
@@ -417,12 +417,14 @@ void rwmsg_channel_create(rwmsg_channel_t *ch, rwmsg_endpoint_t *ep, enum rwmsg_
       RW_ASSERT(rs == RW_STATUS_SUCCESS);
 
       if (!broker) {
+        /* This is the clichan/srvchan code */
 	struct rwmsg_handshake_s hs;
 	RW_ZERO_VARIABLE(&hs);
 	hs.chanid = ch->chanid;
 	hs.pid = getpid();
 	hs.pri = 0;
 	hs.chtype = ch->chantype;
+	hs.instid = ep->instid;
 	
 	ch->ss = rwmsg_sockset_create(ep, (uint8_t*)&hs, sizeof(hs), FALSE);
 
@@ -438,6 +440,7 @@ void rwmsg_channel_create(rwmsg_channel_t *ch, rwmsg_endpoint_t *ep, enum rwmsg_
 	  peeruri = NULL;
 	}
 	if (peeruri) {
+          // This is the peerclichan/peersrvchan code
 	  struct rwmsg_handshake_s hs;
 	  RW_ZERO_VARIABLE(&hs);
 	  hs.chanid = ch->chanid;
@@ -463,7 +466,8 @@ void rwmsg_channel_create(rwmsg_channel_t *ch, rwmsg_endpoint_t *ep, enum rwmsg_
 	}
       }
       else {
-	/* Broker, no handshake data */
+	// Broker, no handshake data
+        // This is the broclichan/brosrvchan code
 	ch->ss = rwmsg_sockset_create(ep, NULL, 0, TRUE);
       }
     }
@@ -518,7 +522,7 @@ rw_status_t rwmsg_channel_send_buffer_pri(rwmsg_channel_t *ch, rwmsg_priority_t 
       goto out;
     } else {
       // nn reconnects automagically so there should be little else to handle here?
-      RW_ASSERT(0);
+      RW_CRASH();
     }
   }
 

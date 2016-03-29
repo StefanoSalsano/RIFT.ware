@@ -82,15 +82,19 @@ export default class ConstituentVnfd extends DescriptorModel {
 	}
 
 	get name() {
-		return this.vnfdRef.model.name;
+		return this.vnfdRef.name;
 	}
 
 	get 'short-name'() {
-		return this.vnfdRef.model['short-name'];
+		return this.vnfdRef['short-name'];
 	}
 
 	get title() {
-		return this['short-name'] || this.name;
+		return (this['short-name'] || this.name) + `/${this.vnfdIndex}`;
+	}
+
+	get vnfdServiceFunctionChain() {
+		return this.vnfdRef.model['service-function-chain'] || 'UNAWARE';
 	}
 
 	remove() {

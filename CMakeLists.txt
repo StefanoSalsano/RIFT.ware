@@ -375,66 +375,6 @@ foreach(submodule ${submodules})
   endif(deps)
 endforeach(submodule)
 
-if(NOT "${submodules}" STREQUAL "")
-  ##
-  # Generate the rw-composite.yang based on the yang files installed
-  # by all checked-out submodules and their dependencies.  We need to do this
-  # before the yang_composite external project below since it needs
-  # rw-composite.yang to be written before its CMake is run.
-  ##
-  rift_gen_composite_yang(rw.composite_gen
-    OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/rw-composite.yang
-    INPUT_YANG_DIR ${CMAKE_INSTALL_PREFIX}/usr/data/yang
-    DEPENDS ${submodule_targets}
-    )
-
-  ##
-  # Remove the stamp directory for yang_composite to force the yang_composite
-  # external project to always be built.
-  ##
-  add_custom_target(remove_yang_composite_stamp
-    COMMAND rm -rf ${CMAKE_CURRENT_BINARY_DIR}/modules/yang_composite/src/yang_composite-stamp
-    COMMENT "Removing yang_composite stamp directory"
-  )
-
-  ##
-  # Create a "virtual" yang composite submodule which depends on all other checked
-  # out submodules and the generated yang file above.  This virtual submobmodule
-  # is resonsible for generating the toolchain (proto, GI, etc) for the generated
-  # composite yang file.
-  #
-  # Since modules/yang_composite does not show up in 'git submodules', it is not
-  # added as part of the build-cache system (as expected).
-  ##
-  externalproject_add(
-    yang_composite
-    DOWNLOAD_COMMAND ""
-    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/modules/yang_composite
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/yang_composite
-    CMAKE_ARGS
-    -DCMAKE_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
-    -DPROJECT_TOP_DIR=${PROJECT_TOP_DIR}
-    -DNOT_DEVELOPER_BUILD="${NOT_DEVELOPER_BUILD}"
-    -DCOVERAGE_BUILD="${COVERAGE_BUILD}"
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    -DCONFD_FLAVOUR=${CONFD_FLAVOUR}
-    DEPENDS rw.composite_gen remove_yang_composite_stamp
-    )
-
-  ##
-  # Add targets for generating the yang_composite package.  This is to ensure
-  # that the artifacts are packaged for install.
-  # NOTE: We do not add a target for any other submodule-like target
-  # (bcache, unittest, systemtest, coverage, etc)
-  ##
-  list(APPEND package_targets rw.package.yang_composite)
-  add_custom_target(rw.package.yang_composite
-    $(MAKE) rw.package
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/modules/yang_composite/src/yang_composite-build
-    DEPENDS yang_composite
-    )
-endif()
-
 ##
 # A target which writes solib search path configuration for gdb into a file
 #
@@ -443,7 +383,6 @@ if(NOT "${submodules}" STREQUAL "")
     COMMAND ${PROJECT_TOP_DIR}/scripts/util/generate_gdbinit.sh ${CMAKE_INSTALL_PREFIX}
     # This is an utter hack, the gdbinit ends up not included in rpm installs.  For bcache rpms we
     # don't mind; for real rpm installs there may well not be symbols anyway so it'll do for now
-    DEPENDS yang_composite
     )
 endif()
 
@@ -459,12 +398,6 @@ add_custom_target(rw.foss ALL
     --output-file ${CMAKE_INSTALL_PREFIX}/foss/foss.html
   DEPENDS ${submodule_targets}
   )
-
-##
-# The main rift target depends on the rw-composite yang toolchain generation.
-##
-add_custom_target(rift DEPENDS yang_composite)
-
 
 ##
 # Add a top level target for forcing the clean on all submodules

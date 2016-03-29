@@ -12,7 +12,7 @@ import alt from '../alt';
 class ComposerAppActions {
 
 	constructor() {
-		this.generateActions('showError', 'clearError', 'setDragState', 'propertySelected', 'showJsonViewer', 'closeJsonViewer', 'selectModel', 'outlineModel', 'clearSelection');
+		this.generateActions('showError', 'clearError', 'setDragState', 'propertySelected', 'showJsonViewer', 'closeJsonViewer', 'selectModel', 'outlineModel', 'clearSelection', 'enterFullScreenMode', 'exitFullScreenMode');
 	}
 
 }

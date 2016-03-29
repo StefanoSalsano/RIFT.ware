@@ -279,18 +279,19 @@ static HashNode rift_lookup(char *cmdarg)
  */
 static int rift_exec(char *nam, char **args, UNUSED(Options ops), UNUSED(int func))
 {
-  char buf[1024] = {0};
+  char* buf[RW_CLI_MAX_ARGS] = {0};
   int len = 0;
   rw_resp = NULL;
 
-  len += sprintf(buf + len, "%s ", nam);
+  buf[0] = nam;
   while (*args) {
-    len += sprintf(buf + len, "%s ", *args);
+    buf[++len] = *args;
     args++;
+    RW_ASSERT_MESSAGE (len < sizeof(buf)/sizeof(buf[0]),
+        "Command arguments more than %d configured", RW_CLI_MAX_ARGS);
   }
-  buf[len-1] = '\0';
 
-  rwcli_exec_command(buf);
+  rwcli_exec_command(len + 1, (const char* const*)buf);
   fflush(stdout);
 
   if (rw_resp) {

@@ -1042,7 +1042,7 @@ class YangData
    */
   rw_status_t move_to_child( SchemaNode *in)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
 
@@ -1068,7 +1068,7 @@ class YangData
    */
   rw_status_t move_to_child(const YangData *in)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
 
@@ -1110,7 +1110,7 @@ class YangData
    */
   rw_status_t move_to_sibling(const YangData *in)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
 
@@ -1129,7 +1129,7 @@ class YangData
    */
   rw_status_t move_to_sibling(SchemaNode *in)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
 
@@ -1245,7 +1245,7 @@ rw_status_t walk_iterator_tree (SourceNode *source, TargetNode *target)
     case RW_TREE_WALKER_FAILURE:
       return RW_STATUS_FAILURE;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
     
   }
   RW_ASSERT_NOT_REACHED();

@@ -539,7 +539,7 @@ callable_param_parse (lua_State *L, Param *param)
 
 /* Parses callable from given table. */
 int
-lgi_callable_parse (lua_State *L, int info)
+lgi_callable_parse (lua_State *L, int info, gpointer addr)
 {
   Callable *callable;
   int nargs, i;
@@ -558,9 +558,13 @@ lgi_callable_parse (lua_State *L, int info)
   lua_rawseti (L, -2, 0);
 
   /* Get address of the function. */
-  lua_getfield (L, info, "addr");
-  callable->address = lua_touserdata (L, -1);
-  lua_pop (L, 1);
+  if (addr == NULL)
+    {
+      lua_getfield (L, info, "addr");
+      addr = lua_touserdata (L, -1);
+      lua_pop (L, 1);
+    }
+  callable->address = addr;
 
   /* Handle 'return' table. */
   lua_getfield (L, info, "ret");
@@ -683,6 +687,7 @@ callable_describe (lua_State *L, Callable *callable, FfiClosure *closure)
     {
       lua_getfenv (L, 1);
       lua_rawgeti (L, -1, 0);
+      lua_replace (L, -2);
       lua_pushfstring (L, "lgi.efn (%s): %s", lua_tostring (L, -2),
 		       lua_tostring (L, -1));
       lua_replace (L, -2);
@@ -890,6 +895,10 @@ callable_call (lua_State *L)
 	    lua_insert (L, -nret - 1);
 	    caller_allocated++;
 	  }
+	else
+	  /* Normal OUT parameters.  Ideally we don't have to touch
+	     them, but see https://github.com/pavouk/lgi/issues/118 */
+	  memset (&args[argi], 0, sizeof (args[argi]));
       }
     else if (param->internal_user_data)
       /* Provide userdata for the callback. */
@@ -1003,7 +1012,7 @@ callable_index (lua_State *L)
   Callable *callable = callable_get (L, 1);
   const gchar *verb = lua_tostring (L, 2);
   if (g_strcmp0 (verb, "info") == 0)
-    return lgi_gi_info_new (L, callable->info);
+    return lgi_gi_info_new (L, g_base_info_ref (callable->info));
   else if (g_strcmp0 (verb, "params") == 0)
     {
       int index = 1, i;
@@ -1464,17 +1473,18 @@ lgi_closure_create (lua_State *L, gpointer user_data,
 }
 
 /* Creates new Callable instance according to given gi.info. Lua prototype:
-   callable = callable.new(callable_info) or
-   callable = callable.new(description_table) */
+   callable = callable.new(callable_info[, addr]) or
+   callable = callable.new(description_table[, addr]) */
 static int
 callable_new (lua_State *L)
 {
+  gpointer addr = lua_touserdata (L, 2);
   if (lua_istable (L, 1))
-    return lgi_callable_parse (L, 1);
+    return lgi_callable_parse (L, 1, addr);
   else
     return lgi_callable_create (L,  *(GICallableInfo **)
-				luaL_checkudata (L, 1, LGI_GI_INFO),
-				NULL);
+				  luaL_checkudata (L, 1, LGI_GI_INFO),
+				  addr);
 }
 
 /* Callable module public API table. */

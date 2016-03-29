@@ -250,19 +250,43 @@ class RecordViewStore {
             // }
 
         });
+
+        nsConfigPrimitive['vnf-primitive-group'] && nsConfigPrimitive['vnf-primitive-group'].map((vnfPrimitiveGroup, vnfPrimitiveGroupIndex) => {
+            vnfPrimitiveGroup['inputs'] && vnfPrimitiveGroup['inputs'].map((input, inputIndex) => {
+                input['parameter'] && input['parameter'].map((param) => {
+                    let msg = 'Parameter: ' + param.name + ' is not valid';
+                    validateParameter(param, msg)
+                })
+            })
+        });
+
+
         function validateParameter(parameter, msg) {
+            if ((parameter['hidden'] == 'true') || (parameter['read-only'] == 'true')) {
+                if (!parameter['default-value']) {
+                    var errorMsg = 'Your descriptor has hidden or read-only parameters with no default-values. Please rectify this.';
+                    console.log(errorMsg);
+                    AppHeaderActions.validateError(errorMsg);
+                    isValid = false;
+                    return false;
+                } else {
+                    parameter.value = parameter['default-value'];
+                    return true;
+                }
+            }
+
             if (parameter.mandatory == "true") {
-                    if (!parameter.value) {
-                        console.log(msg);
-                        if (!parameter['default-value']) {
-                            AppHeaderActions.validateError(msg);
-                            isValid = false;
-                            return false;
-                        } else {
-                            parameter.value = parameter['default-value'];
-                            return true;
-                        }
+                if (!parameter.value) {
+                    console.log(msg);
+                    if (!parameter['default-value']) {
+                        AppHeaderActions.validateError(msg);
+                        isValid = false;
+                        return false;
+                    } else {
+                        parameter.value = parameter['default-value'];
+                        return true;
                     }
+                }
             };
             return true;
         };

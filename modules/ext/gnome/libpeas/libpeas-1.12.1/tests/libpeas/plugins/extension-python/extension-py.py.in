@@ -1,24 +1,41 @@
 # -*- coding: utf-8 -*-
-# ex:set ts=4 et sw=4 ai:
+
+# extension-py.py.in
+# This file is part of libpeas
+#
+# Copyright (C) 2011-2014 Garrett Regier
+#
+# libpeas is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# libpeas is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
 
 import threading
 
 from gi.repository import GObject, Introspection, Peas
 
 
+__all__ = [ 'ExtensionPythonPlugin' ]
+
+
 class ExtensionPythonPlugin(GObject.Object, Peas.Activatable,
                             Introspection.Base, Introspection.Callable,
                             Introspection.HasPrerequisite):
 
-    object = GObject.property(type=GObject.Object)
-
-    @GObject.property(type=int)
-    def update_count(self):
-        return self.__update_count
+    object = GObject.Property(type=GObject.Object)
+    update_count = GObject.Property(type=int, default=0, minimum=0)
 
     def __init__(self):
         self.__lock = threading.Lock()
-        self.__update_count = 0
 
     def do_activate(self):
         pass
@@ -28,7 +45,7 @@ class ExtensionPythonPlugin(GObject.Object, Peas.Activatable,
 
     def do_update_state(self):
         with self.__lock:
-            self.__update_count += 1
+            self.update_count += 1
 
     def do_get_plugin_info(self):
         return self.plugin_info
@@ -48,3 +65,4 @@ class ExtensionPythonPlugin(GObject.Object, Peas.Activatable,
     def do_call_multi_args(self, in_, inout):
         return (inout, in_)
 
+# ex:set ts=4 et sw=4 ai:

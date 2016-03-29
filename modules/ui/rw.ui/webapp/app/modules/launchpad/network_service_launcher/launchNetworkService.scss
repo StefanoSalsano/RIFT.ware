@@ -16,17 +16,17 @@ $treemargin: 0.25rem;
   >header {
     padding: 20px 0px;
 
-    h1 {
-      background: url('../../../assets/img/header-logo.png') no-repeat;
-      height: 51px;
-      line-height: 51px;
-      margin-left: 80px;
-      padding-left: 118px;
-      left: 0;
-      text-transform: uppercase;
-      font-size: 1.625rem;
-      font-weight: 400;
-    }
+    // h1 {
+    //   background: url('../../../assets/img/header-logo.png') no-repeat;
+    //   height: 51px;
+    //   line-height: 51px;
+    //   margin-left: 80px;
+    //   padding-left: 118px;
+    //   left: 0;
+    //   text-transform: uppercase;
+    //   font-size: 1.625rem;
+    //   font-weight: 400;
+    // }
   }
 }
 .create-fleet {
@@ -34,12 +34,16 @@ $treemargin: 0.25rem;
     select {
       font-size: 1.125rem;
       color: black;
-      width: 200px;
+      min-width: 200px;
       display: block;
       margin-top: 0.25rem;
       margin-left: 0rem;
       margin-bottom: 0;
     }
+  }
+  .dashboardCard {
+    min-width:380px;
+    min-height:300px;
   }
 }
 .launchNetworkService {
@@ -49,6 +53,7 @@ $treemargin: 0.25rem;
   align-items: stretch; /* align items in Cross Axis */
   align-content: stretch;
   flex: 1;
+  flex-wrap:wrap;
 
   /* Extra space in Cross Axis */
   &_panels {
@@ -191,5 +196,6 @@ $treemargin: 0.25rem;
   justify-content: center;
   align-items: center;
   display: flex;
+  flex: 1 1 100%;
   padding: 1rem;
 }

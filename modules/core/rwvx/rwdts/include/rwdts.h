@@ -356,6 +356,7 @@ For an introduction to the Core API, see \ref api_gi.
 #include <rwdts_member_api.h>
 #include <rwdts_appstats_api.h>
 #include <rwdts_appconf_api.h>
+#include <rwdts_kv_light_api_gi.h>
 
 /// @cond BEGIN_DECLS
 __BEGIN_DECLS

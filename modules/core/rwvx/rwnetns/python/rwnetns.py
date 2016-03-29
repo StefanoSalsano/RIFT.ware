@@ -8,6 +8,10 @@ import logging
 
 import rwlogger
 
+import gi
+gi.require_version('RwNetns', '1.0')
+gi.require_version('RwNetnsLogYang', '1.0')
+
 from gi.repository import RwNetns
 import six
 

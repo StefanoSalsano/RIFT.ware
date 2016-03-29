@@ -326,6 +326,9 @@ rw_status_t rwmsg_clichan_send_protoc_internal(rwmsg_clichan_t *cc,
    messages, etc into service+method destinations.  Mainly for
    bindings in python etc? or use in the broker?  */
 
+/* Reset the stream cache assiciated with the pathhash on this cc */
+void rwmsg_clichan_stream_reset(rwmsg_clichan_t *cc,
+                                rwmsg_destination_t *dt);
 
 
 __END_DECLS

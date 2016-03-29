@@ -40,7 +40,7 @@ static pid_t start_trebuchet(const char * trebuchet_path, const char * trebuchet
             "--no-suid",
             NULL);
     fprintf(stderr, "execl: %s\n", strerror(errno));
-    RW_ASSERT(0);
+    RW_CRASH();
   } else {
     int sock;
     struct sockaddr_in addr;

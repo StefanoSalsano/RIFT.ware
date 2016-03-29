@@ -67,6 +67,8 @@ rift_files_prepend_path(
   test-field-merge-b.yang       ## for protobuf message diff test
   test-augment-a1.yang          ## for yangpbc_test.cpp
   test-augment-b1.yang          ## for yangpbc_test.cpp
+  test-yang-json-aug-base.yang
+  test-yang-json.yang
 )
 
 ##
@@ -131,7 +133,6 @@ rift_files_prepend_path(
   testncx-mod-top3.yang           ## sanity
   testncx.yang                    ## this is a test of yangncx
   testycli-ia.yang                ## sanity
-
   #tailf-raw.yang                 ## this is a test of confdc annotation files
 )
 

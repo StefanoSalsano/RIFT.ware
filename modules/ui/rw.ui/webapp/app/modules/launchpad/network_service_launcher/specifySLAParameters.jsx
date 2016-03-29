@@ -48,7 +48,7 @@ function constructVDU(VDU) {
 }
 function constructTopLevel(VNF, i) {
   let html = (
-          <TreeView key={i} nodeLabel={VNF.name}>
+          <TreeView key={i} nodeLabel={VNF.name} defaultCollapsed={true}>
              {
                 VNF.vdu.map(function(vdu, i) {
                   return constructVDU(vdu, i);

@@ -14,6 +14,7 @@ set(ietf_yang_sources
   ietf-inet-types.yang 
   ietf-yang-types.yang
   ietf-netconf.yang
+  ietf-netconf-notifications.yang
 )
 
 rift_add_yang_target(

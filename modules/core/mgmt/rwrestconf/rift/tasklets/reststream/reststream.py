@@ -36,10 +36,9 @@ class RestStreamTasklet(rift.tasklets.Tasklet):
         super(RestStreamTasklet, self).start()
 
         manifest = self.tasklet_info.get_pb_manifest()
-        self.schema_name = manifest.bootstrap_phase.rwbaseschema.schema_name
         yang_model = RwYang.Model.create_libncx()
 
-        self._schema_handle = RwYang.Model.load_and_get_schema(self.schema_name)
+        self._schema_handle = RwYang.Model.load_and_get_schema("rw-reststream")
         self._schema = yang_model.get_root_node()
 
         self._dts = rift.tasklets.DTS(
@@ -47,6 +46,13 @@ class RestStreamTasklet(rift.tasklets.Tasklet):
             self._schema_handle,
             self.loop,
             self.on_dts_state_change)
+
+    def stop(self):
+      try:
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in LP stop:", sys.exc_info()[0])
+         raise
 
     @asyncio.coroutine
     def on_dts_state_change(self, state):

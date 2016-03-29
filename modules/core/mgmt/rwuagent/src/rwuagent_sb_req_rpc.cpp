@@ -209,7 +209,7 @@ StartStatus SbReqRpc::start_ssi()
 
   // This will take significantly larger time. Increase the time-out on the NB
   // side.
-  nbreq_->set_timeout(SSI_CONFD_ACTION_TIMEOUT);
+  nbreq_->set_timeout(SSI_CONFD_ACTION_TIMEOUT_SEC);
 
   // Create a new ShowSysInfo and execute the command.
   ShowSysInfo *ssi = new ShowSysInfo(
@@ -222,9 +222,9 @@ StartStatus SbReqRpc::show_agent_logs()
 {
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "process show-agent-logs rpc");
   RWPB_M_MSG_DECL_CAST(RwMgmtagt_input_ShowAgentLogs, req, rpc_input_.get());
-  nbreq_->set_timeout(SSI_CONFD_ACTION_TIMEOUT);
+  nbreq_->set_timeout(SHOW_LOGS_ACTION_TIMEOUT_SEC);
 
-  return read_logs_and_send(instance_, this, req);
+  return instance_->confd_daemon_->confd_log()->show_logs(this, req);
 }
 
 void SbReqRpc::start_xact_async(void *ud)
@@ -256,7 +256,7 @@ StartStatus SbReqRpc::start_xact_dts()
   xact_ = rwdts_api_query_ks(dts_->api(),
                              ks,
                              RWDTS_QUERY_RPC,
-                             RWDTS_XACT_FLAG_NOTRAN | dts_flags_,
+                             dts_flags_,
                              dts_complete_cb,
                              this,
                              rpc_input_.get());
@@ -302,7 +302,7 @@ void SbReqRpc::dts_complete_cb(
 
       RW_ASSERT (xact == rpc->dts_xact());
       rwsched_dispatch_async_f(rpc->instance()->rwsched_tasklet(),
-                               rpc->instance()->cc_dispatchq(),
+                               rpc->instance()->concurrent_q(),
                                rpc,
                                dts_cb_async);
       break;

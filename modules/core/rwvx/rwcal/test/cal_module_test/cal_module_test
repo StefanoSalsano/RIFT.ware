@@ -1,0 +1,15 @@
+#!/bin/bash
+
+SYS_TEST=$RIFT_INSTALL/usr/rift/systemtest/
+PYTEST_DIR=$SYS_TEST/cal_module_test/pytest
+
+TEST_NAME="TC_CAL_MODULE_TEST"
+RESULT_XML="cal_module_test.xml"
+
+test_args="\
+    --junitprefix ${TEST_NAME} \
+    --junitxml ${RIFT_MODULE_TEST}/${RESULT_XML}"
+
+TEST_CMD="py.test -vvv -s ${PYTEST_DIR}/cal_module_test.py ${test_args} "
+
+$TEST_CMD

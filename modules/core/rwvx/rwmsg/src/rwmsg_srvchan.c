@@ -32,6 +32,7 @@ static void rwmsg_srvchan_recv_req(rwmsg_srvchan_t *sc,
   RW_ASSERT_TYPE(req, rwmsg_request_t);
   RW_ASSERT(!req->srvchan);
   req->srvchan = sc;
+  _RWMSG_CH_DEBUG_(&sc->ch, "++");
   ck_pr_inc_32(&sc->ch.refct);
 
   RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "rwmsg_srvchan_recv_req" FMT_MSG_HDR(req->hdr), PRN_MSG_HDR(req->hdr));
@@ -290,6 +291,7 @@ void rwmsg_srvchan_halt(rwmsg_srvchan_t *sc) {
     }
   }
 
+  _RWMSG_CH_DEBUG_(&sc->ch, "--");
   rwmsg_srvchan_release(sc);
   return;
 }
@@ -492,6 +494,7 @@ rw_status_t rwmsg_srvchan_send(rwmsg_srvchan_t *sc,
     /* local */
     rwmsg_srvchan_t *sc = req->srvchan;
     if (req->srvchan) {
+      _RWMSG_CH_DEBUG_(&req->srvchan->ch, "--");
       rwmsg_srvchan_release(req->srvchan);
       req->srvchan = NULL;
     }
@@ -502,6 +505,7 @@ rw_status_t rwmsg_srvchan_send(rwmsg_srvchan_t *sc,
       RWMSG_REQ_TRACK(req);
       rs = rwmsg_queue_enqueue(&req->clichan->ch.localq, req);
       if (rs == RW_STATUS_BACKPRESSURE) {
+        _RWMSG_CH_DEBUG_(&sc->ch, "++");
 	ck_pr_inc_32(&sc->ch.refct);
 	req->srvchan = sc;
       }

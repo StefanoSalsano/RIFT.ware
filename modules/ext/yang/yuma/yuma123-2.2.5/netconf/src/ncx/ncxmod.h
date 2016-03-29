@@ -312,10 +312,13 @@ extern void
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*  YUMA_MODPATH environment var (or set by modpath CLI var)
+*  is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -350,10 +353,13 @@ extern status_t
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -386,10 +392,13 @@ extern status_t
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -424,10 +433,13 @@ extern ncxmod_search_result_t *
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) HOME/modules directory
-* 3) YUMA_HOME/modules directory
-* 4) YUMA_INSTALL/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) HOME/modules directory
+* 2) YUMA_HOME/modules directory
+* 3) YUMA_INSTALL/modules directory
 *
 * INPUTS:
 *   resultQ == address of Q to stor malloced search results
@@ -452,10 +464,13 @@ extern status_t
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   devname == deviation module name with 
@@ -487,10 +502,13 @@ extern status_t
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -1070,11 +1088,14 @@ extern status_t
 *
 * Search order:
 *
+* IF
+*   YUMA_MODPATH environment var (or set by datapath CLI var)
+*   is set, search only that path.
+* ELSE
 * 1) current directory or absolute path
-* 2) YUMA_MODPATH environment var (or set by datapath CLI var)
-* 3) HOME/modules directory
-* 4) YUMA_HOME/modules directory
-* 5) YUMA_INSTALL/modules directory
+* 2) HOME/modules directory
+* 3) YUMA_HOME/modules directory
+* 4) YUMA_INSTALL/modules directory
 *
 * INPUTS:
 *   helpmode == BRIEF, NORMAL or FULL 

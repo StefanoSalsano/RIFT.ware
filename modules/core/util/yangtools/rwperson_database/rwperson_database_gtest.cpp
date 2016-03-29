@@ -202,7 +202,7 @@ TEST(RwpersonDB, RefCounting)
 
 void rwpersondb_test_setup(int argc, char** argv)
 {
-  g_mem_set_vtable (&my_vtable);
+// g_mem_set_vtable (&my_vtable);
 }
 
 RWUT_INIT(rwpersondb_test_setup);

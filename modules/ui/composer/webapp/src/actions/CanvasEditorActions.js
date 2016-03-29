@@ -12,7 +12,7 @@ import alt from '../alt';
 class CanvasEditorActions {
 
 	constructor() {
-		this.generateActions('showMoreInfo', 'showLessInfo', 'toggleShowMoreInfo', 'applyDefaultLayout', 'addVirtualLinkDescriptor', 'addForwardingGraphDescriptor', 'setCanvasZoom');
+		this.generateActions('showMoreInfo', 'showLessInfo', 'toggleShowMoreInfo', 'applyDefaultLayout', 'setCanvasZoom', 'addVirtualLinkDescriptor', 'addForwardingGraphDescriptor', 'addVirtualDeploymentDescriptor');
 	}
 
 }

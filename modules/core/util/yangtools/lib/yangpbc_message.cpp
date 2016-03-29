@@ -3703,6 +3703,7 @@ void PbMessage::output_gi_c_funcs(std::ostream& os, unsigned indent)
 }
 
 void PbMessage::output_doc_message(
+  const doc_file_t file_type,
   std::ostream& os,
   unsigned indent,
   doc_t doc_style,
@@ -3720,17 +3721,14 @@ void PbMessage::output_doc_message(
     case RW_YANG_STMT_TYPE_LIST:
       title = "list " + pbnode_->get_xml_element_name();
       break;
-    case RW_YANG_STMT_TYPE_LEAF:
-      title = "leaf " + pbnode_->get_xml_element_name();
-      break;
     case RW_YANG_STMT_TYPE_LEAF_LIST:
       title = "leaf-list " + pbnode_->get_xml_element_name();
       break;
     case RW_YANG_STMT_TYPE_RPCIO:
       if (pbnode_->get_yang_fieldname() == "input") {
-        title = "rpc input " + pbnode_->get_xml_element_name();
+        title = "rpc input " + pbnode_->get_parent_pbnode()->get_xml_element_name();
       } else {
-        title = "rpc output " + pbnode_->get_xml_element_name();
+        title = "rpc output " + pbnode_->get_parent_pbnode()->get_xml_element_name();
       }
       break;
     case RW_YANG_STMT_TYPE_NOTIF:
@@ -3789,7 +3787,7 @@ void PbMessage::output_doc_message(
       RW_ASSERT_NOT_REACHED();
   }
 
-  pbmodel->output_doc_heading( os, indent, doc_style, chapter, title );
+  pbmodel->output_doc_heading( file_type, os, indent, doc_style, chapter, title );
 
   indent += 2;
   if (RW_YANG_STMT_TYPE_ROOT == stmt_type) {
@@ -3802,7 +3800,7 @@ void PbMessage::output_doc_message(
     switch (doc_style) {
       case doc_t::api_entry:
       case doc_t::user_entry:
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "description",
           "Description",
           desc );
@@ -3826,19 +3824,51 @@ void PbMessage::output_doc_message(
         if (ydesc && ydesc[0]) {
           desc = YangModel::adjust_indent_yang( indent, ydesc );
         }
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "description",
           "Description",
           desc );
-        pbmodel->output_doc_field( os, indent, chapter,
+
+        // generate leaf descriptions
+        std::stringstream leaves;
+        for (auto fi = field_list_.begin(); fi != field_list_.end(); ++fi) {
+          YangNode * ynode = (*fi)->get_ynode(); 
+          const rw_yang_stmt_type_t field_stmt_type = ynode->get_stmt_type();
+          if (field_stmt_type != RW_YANG_STMT_TYPE_LEAF) {
+            continue;
+          }
+
+          YangType * type = ynode->get_type();
+          RW_ASSERT(type);
+
+          const rw_yang_leaf_type_t field_leaf_type = type->get_leaf_type();
+          std::string const description = ynode->get_description();
+          
+          leaves << "name: " <<  ynode->get_name() 
+                 << ", type: " << rw_yang_leaf_type_string(field_leaf_type);
+
+          if (description.length() >0) {
+            leaves << ", description: " << description;
+          }
+
+          leaves << std::endl;
+            
+        }
+        std::string const leaves_desc = YangModel::adjust_indent_yang( indent, leaves.str() );
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
+          "leaves",
+          "Leaves",
+          leaves_desc );
+
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "xpath_path",
           "XPath Path",
           get_xpath_path() );
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "xpath_keyed_path",
           "XPath Keyed Path",
           get_xpath_keyed_path() );
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "rw_rest_uri_path",
           "RW.REST URI Path",
           get_rwrest_uri_path() );
@@ -3868,11 +3898,11 @@ void PbMessage::output_doc_message(
           case PbMsgType::group:
             if (ynode->is_config()) {
               prefix = "C,";
-              pbmodel->output_doc_field( os, indent, chapter,
+              pbmodel->output_doc_field( file_type, os, indent, chapter,
                 "rw_xpath_path",
                 "RW Keyspec XPath Path",
                 prefix + get_xpath_path() );
-              pbmodel->output_doc_field( os, indent, chapter,
+              pbmodel->output_doc_field( file_type, os, indent, chapter,
                 "rw_xpath_keyed_path",
                 "RW Keyspec XPath Keyed Path",
                 prefix + get_xpath_keyed_path() );
@@ -3897,11 +3927,11 @@ void PbMessage::output_doc_message(
           case PbMsgType::notif:
             prefix = "N,";
           output_rw_xpath:
-            pbmodel->output_doc_field( os, indent, chapter,
+            pbmodel->output_doc_field( file_type, os, indent, chapter,
               "rw_xpath_path",
               "RW Keyspec XPath Path",
               prefix + get_xpath_path() );
-            pbmodel->output_doc_field( os, indent, chapter,
+            pbmodel->output_doc_field( file_type, os, indent, chapter,
               "rw_xpath_keyed_path",
               "RW Keyspec XPath Keyed Path",
               prefix + get_xpath_keyed_path() );
@@ -3914,16 +3944,16 @@ void PbMessage::output_doc_message(
             RW_ASSERT_NOT_REACHED();
         }
 
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "protobuf_type",
           "Protobuf Type",
           get_proto_message_path() );
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "gi_python_type",
           "Python Proto-GI Type",
           get_gi_python_typename() );
 
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "c_pbc_struct",
           "C Protobuf-C Struct Type",
           get_pbc_message_typename() );
@@ -3941,12 +3971,12 @@ void PbMessage::output_doc_message(
             rwpb.append(alias);
           }
         }
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "c_rwpb_identifiers",
           "C RWPB Identifiers",
           rwpb );
 
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "c_ypbc_identifiers",
           "YPBC Base Identifier",
           get_ypbc_long_alias() );
@@ -3990,28 +4020,28 @@ void PbMessage::output_doc_message(
       }
       case doc_t::user_entry:
         if (ynode->is_config()) {
-          pbmodel->output_doc_field( os, indent, chapter,
+          pbmodel->output_doc_field( file_type, os, indent, chapter,
             "json_config_sample",
             "JSON Config Sample",
-            ynode->get_rwrest_json_sample_element(0, 1, true) );
+            ynode->get_rwrest_json_sample_element(0, 2, true) );
         }
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "json_sample",
           "JSON Sample",
-          ynode->get_rwrest_json_sample_element(0, 1, false) );
+          ynode->get_rwrest_json_sample_element(0, 2, false) );
         // ATTN: Need to differentiate between POST/PUT/GET?
         // ATTN: Keys only deep example?
 
         if (ynode->is_config()) {
-          pbmodel->output_doc_field( os, indent, chapter,
+          pbmodel->output_doc_field( file_type, os, indent, chapter,
             "xml_config_sample",
             "XML Config Sample",
-            ynode->get_xml_sample_element(0, 1, true, true) );
+            ynode->get_xml_sample_element(0, 2, true, true) );
         }
-        pbmodel->output_doc_field( os, indent, chapter,
+        pbmodel->output_doc_field( file_type, os, indent, chapter,
           "xml_sample",
           "XML Sample",
-          ynode->get_xml_sample_element(0, 1, false, true) );
+          ynode->get_xml_sample_element(0, 2, false, true) );
         // ATTN: Need to differentiate between POST/PUT/GET?
 
         /*
@@ -4041,7 +4071,7 @@ void PbMessage::output_doc_message(
   for (auto fi = field_list_.begin(); fi != field_list_.end(); ++fi) {
     PbMessage* field_pbmsg = (*fi)->get_field_pbmsg();
     if (field_pbmsg) {
-      field_pbmsg->output_doc_message( os, indent, doc_style,
+      field_pbmsg->output_doc_message( file_type, os, indent, doc_style,
         chapter + "." + std::to_string(sub_chapter)),
       ++sub_chapter;
     }

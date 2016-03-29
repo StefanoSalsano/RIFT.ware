@@ -22,6 +22,7 @@ rift_python_install_tree(FILES
     rift/vcs/tasklets.py
     rift/vcs/vcs.py
     rift/vcs/vms.py
+    rift/vcs/mano_vms.py
     rift/vcs/yang_model.py
     rift/vcs/component.py
     COMPONENT ravcs-1.0)
@@ -35,8 +36,8 @@ rift_python_install_tree(FILES
     rift/vcs/compiler/transforms.py
     COMPONENT ravcs-1.0)
 
-rift_pytest(utest_python_vcs
-  TEST_ARGS setup.py test
+rift_py3test(utest_python_vcs
+  TEST_ARGS ${CMAKE_CURRENT_SOURCE_DIR}/setup.py test
   TEST_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS log_test_yang
   )

@@ -36,9 +36,8 @@ ConfdDomStats::ConfdDomStats(
 ConfdDomStats::~ConfdDomStats()
 {
   if (dom_params_.n_callbacks) {
-    if (dom_params_.callbacks) {
-      RW_FREE (dom_params_.callbacks);
-    }
+    RW_ASSERT (dom_params_.callbacks);
+    RW_FREE (dom_params_.callbacks);
     dom_params_.n_callbacks = 0;
   }
 

@@ -25,6 +25,14 @@
 
 __BEGIN_DECLS
 
+#ifndef RW_CLI_MAX_ARGS
+/**
+ * Max number of arguments or words in a 
+ * CLI command supported by RW.CLI
+ */
+#define RW_CLI_MAX_ARGS 1024
+#endif
+
 /**
  * Used for returning the list of matches when a <TAB> key is pressed
  */
@@ -100,11 +108,12 @@ int rwcli_tab_complete_with_matches(const char* line,
 /**
  * Executes the given rw.command. rw.cli library parses the command as per the
  * yang model, converts it to xml and invokes the messaging hook.
- * @param[in]  cmd   command to be executed
+ * @param[in] argc Number of words in the command
+ * @param[in] argv 2D array containing command tokens 
  * @return
  *   Returns 0 on success.
  */
-int rwcli_exec_command(const char* cmd);
+int rwcli_exec_command(int argc, const char* const* argv);
 
 /**
  * RW.Shell needs to communicate with the uagent/confd to execute commands. On

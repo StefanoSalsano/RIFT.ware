@@ -22,6 +22,7 @@
 #include <protobuf-c/rift-protobuf-c.h>
 #include <rwlib.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include <rw-dts.pb-c.h>
 
 /*******************************************************************************
@@ -66,6 +67,9 @@ rwdts_xact_query_response_deinit(rwdts_xact_query_rsp_t *xact_rsp)
   int i;
 
   RW_ASSERT(xact_rsp);
+  if (!xact_rsp) {
+    return RW_STATUS_FAILURE;
+  }
   /* free keyspec */
   if (xact_rsp->rsp.ks) {
     rw_keyspec_path_free(xact_rsp->rsp.ks, NULL);
@@ -157,6 +161,9 @@ rwdts_alloc_single_query_result(rwdts_xact_t*      xact,
   rw_status_t rs;
 
   RW_ASSERT(matchks);
+  if (!matchks) {
+    return NULL;
+  }
 
   sqres = (RWDtsQuerySingleResult*)RW_MALLOC0(sizeof(RWDtsQuerySingleResult));
   RW_ASSERT(sqres);
@@ -228,6 +235,10 @@ rwdts_msg_reroot(rwdts_xact_t*       xact,
   RW_ASSERT(ks);
   RW_ASSERT(xquery);
   RW_ASSERT(qres);
+
+  if (!msg || !ks || !xquery || !qres) {
+    return RWDTS_RETURN_FAILURE;
+  }
 
   ProtobufCMessage* matchmsg = NULL;
   rw_keyspec_path_t*     matchks  = NULL;
@@ -455,6 +466,9 @@ rwdts_xact_get_result_pb_local(rwdts_xact_t*                xact,
                                uint32_t*                    n_result)
 {
   RW_ASSERT(xact);
+  if (!xact) {
+    return RW_STATUS_FAILURE;
+  }
   rwdts_xact_result_t *res = NULL;
 
   rw_status_t rw_status = rwdts_xact_get_result_pbraw(xact, NULL, 0, &res, NULL);
@@ -989,6 +1003,9 @@ rwdts_member_copy_rsp(rwdts_api_t* apih,
 
   RW_ASSERT_TYPE(apih, rwdts_api_t);
   RW_ASSERT(xact);
+  if (!xact) {
+    return RW_STATUS_FAILURE;
+  }
   
   if (src_rsp->ks) {
     if(rw_keyspec_path_has_wildcards(src_rsp->ks))
@@ -1101,6 +1118,9 @@ rwdts_member_send_response_int(rwdts_xact_t*                   xact,
                                rwdts_member_query_rsp_t*       rsp)
 {
   RW_ASSERT(rsp);
+  if (!rsp) {
+    return RW_STATUS_FAILURE;
+  }
   RW_ASSERT_TYPE(xact, rwdts_xact_t);
 
   rwdts_api_t *apih = xact->apih;
@@ -1145,7 +1165,6 @@ rwdts_member_send_response_int(rwdts_xact_t*                   xact,
     /* Let's not get more responses when we (every registration, mind you) are already done responding */
     RW_ASSERT(xquery->evtrsp != RWDTS_EVTRSP_NA);
     //RW_ASSERT(xquery->evtrsp != RWDTS_EVTRSP_NACK);
-//  RW_ASSERT(xquery->evtrsp != RWDTS_EVTRSP_ACK);
 
     /* Add the response(s) in rsp to xquery's xact_rsp_pending response accumulator */
     struct rwdts_tmp_split_rsp_s *split_rsp = RW_MALLOC0(sizeof(struct rwdts_tmp_split_rsp_s));
@@ -1230,6 +1249,9 @@ rwdts_xact_split_response_deinit(struct rwdts_tmp_split_rsp_s* split_rsp)
   int i;
 
   RW_ASSERT(split_rsp);
+  if (!split_rsp) {
+    return RW_STATUS_FAILURE;
+  }
   /* free keyspec */
   if (split_rsp->rsp.ks) {
     rw_keyspec_path_free(split_rsp->rsp.ks, NULL);
@@ -1374,6 +1396,9 @@ rwdts_xact_find_query_by_id(const rwdts_xact_t* xact,
                             uint32_t            queryidx)
 {
   RW_ASSERT(xact);
+  if (!xact) {
+    return NULL;
+  }
   rwdts_xact_query_t *query = NULL;
   HASH_FIND(hh, xact->queries, &(queryidx), sizeof(queryidx), query);
   return query;
@@ -1390,6 +1415,9 @@ rwdts_xact_add_query_internal(rwdts_xact_t*        xact,
 {
   RW_ASSERT_TYPE(xact, rwdts_xact_t);
   RW_ASSERT(query);
+  if (!query) {
+    return RW_STATUS_FAILURE;
+  }
 
   rwdts_xact_query_t *xquery = rwdts_xact_find_query_by_id(xact, query->queryidx);
 
@@ -1405,6 +1433,9 @@ rwdts_xact_add_query_internal(rwdts_xact_t*        xact,
   xquery = rwdts_xact_query_init_internal(xact, query_dup);
 
   RW_ASSERT(xquery);
+  if (!xquery) {
+    return RW_STATUS_FAILURE;
+  }
   rwdts_xact_query_ref(xquery, __PRETTY_FUNCTION__, __LINE__);
 
   if (query_out) {
@@ -1538,8 +1569,8 @@ rwdts_store_cache_obj(rwdts_xact_t* xact)
             uint8_t *payload;
             size_t  payload_len;
             payload = protobuf_c_message_serialize(NULL, newobj->msg, &payload_len);
-            rw_status_t rs = rwdts_kv_light_file_set_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len,
-                                                            (char *)payload, (int)payload_len);
+            rw_status_t rs = rwdts_kv_handle_file_set_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len,
+                                                             (char *)payload, (int)payload_len);
             RW_ASSERT(rs == RW_STATUS_SUCCESS);
           }
         }
@@ -1557,7 +1588,7 @@ rwdts_store_cache_obj(rwdts_xact_t* xact)
             HASH_DELETE(hh_data, (*obj_list_p), newobj);
             if ((reg->flags & RWDTS_FLAG_PUBLISHER) && (reg->flags & RWDTS_FLAG_FILE_DATASTORE)) {
               if (reg->kv_handle) {
-                rw_status_t rs = rwdts_kv_light_file_del_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len);
+                rw_status_t rs = rwdts_kv_handle_file_del_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len);
                 RW_ASSERT(rs == RW_STATUS_SUCCESS);
               }
             }
@@ -1596,8 +1627,8 @@ rwdts_store_cache_obj(rwdts_xact_t* xact)
               uint8_t *payload;
               size_t  payload_len;
               payload = protobuf_c_message_serialize(NULL, newobj->msg, &payload_len);
-              rw_status_t rs = rwdts_kv_light_file_set_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len,
-                                                              (char *)payload, (int)payload_len);
+              rw_status_t rs = rwdts_kv_handle_file_set_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len,
+                                                               (char *)payload, (int)payload_len);
               RW_ASSERT(rs == RW_STATUS_SUCCESS);
             }
           }
@@ -1694,6 +1725,9 @@ rwdts_xact_query_pend_response_deinit(rwdts_xact_query_pend_rsp_t *xact_rsp)
   int i;
 
   RW_ASSERT(xact_rsp);
+  if (!xact_rsp) {
+    return RW_STATUS_FAILURE;
+  }
 
   for (i = 0; i < xact_rsp->n_rsp; i++) {
     if (!xact_rsp->rsp[i]) {
@@ -1846,6 +1880,24 @@ rwdts_api_group_create(rwdts_api_t*          apih,
 }
 
 rw_status_t
+rwdts_api_group_create_new(rwdts_api_t*          apih,
+                           xact_init_callback    xact_init,
+                           xact_deinit_callback  xact_deinit,
+                           xact_event_callback   xact_event,
+                           void*                 ctx,
+                           rwdts_group_t**       group)
+{
+  rwdts_group_cbset_t ac_cbset = {
+    .xact_init = xact_init,
+    .xact_deinit = xact_deinit,
+    .xact_event = xact_event,
+    .ctx = ctx,
+  };
+  *group = rwdts_group_create(apih,&ac_cbset);
+  return (RW_STATUS_SUCCESS);
+}
+
+rw_status_t
 rwdts_api_group_create_gi(rwdts_api_t*          apih,
                           xact_init_callback    xact_init,
                           xact_deinit_callback  xact_deinit,
@@ -1882,6 +1934,9 @@ rwdts_xact_info_send_error_xpath(const rwdts_xact_info_t*  xact_info,
   rwdts_api_t*               apih = NULL;
 
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return(RW_STATUS_FAILURE);
+  }
   apih = xact_info->apih;
 
   RW_ASSERT_TYPE(apih, rwdts_api_t);
@@ -1926,6 +1981,9 @@ rwdts_xact_info_send_error_keyspec(const rwdts_xact_info_t* xact_info,
                                    const char *errstr)
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RW_STATUS_FAILURE;
+  }
   rwdts_match_info_t *queryh = NULL;
   if (xact_info->queryh) {
     queryh = (rwdts_match_info_t *)xact_info->queryh;
@@ -1956,6 +2014,9 @@ rwdts_xact_info_respond_xpath(const rwdts_xact_info_t* xact_info,
   rwdts_api_t*               apih = NULL;
 
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RW_STATUS_FAILURE;
+  }
   apih = xact_info->apih;
 
   RW_ASSERT_TYPE(apih, rwdts_api_t);
@@ -2002,6 +2063,9 @@ rwdts_xact_info_respond_keyspec(const rwdts_xact_info_t* xact_info,
   RW_ZERO_VARIABLE(&rsp);
 
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RW_STATUS_FAILURE;
+  }
 
   rsp.evtrsp = rwdts_xact_rsp_to_evtrsp(rsp_code);
   rsp.n_msgs = msg ? 1 : 0;

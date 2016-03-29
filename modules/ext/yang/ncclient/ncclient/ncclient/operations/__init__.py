@@ -22,6 +22,7 @@ from ncclient.operations.session import CloseSession, KillSession
 from ncclient.operations.lock import Lock, Unlock, LockContext
 # others...
 from ncclient.operations.flowmon import PoweroffMachine, RebootMachine
+from .subscribe import CreateSubscription, Notification
 
 __all__ = [
     'RPC',
@@ -42,4 +43,6 @@ __all__ = [
     'Unlock',
     'PoweroffMachine',
     'RebootMachine',
+    'CreateSubscription',
+    'Notification',
 ]

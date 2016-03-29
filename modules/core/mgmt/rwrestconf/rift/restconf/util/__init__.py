@@ -5,7 +5,6 @@
 # Creation Date: 7/10/2015
 # 
 
-
 from .schema import (
     collect_children,
     find_child_by_name,
@@ -14,6 +13,7 @@ from .schema import (
     load_multiple_schema_root,
     load_schema_root,    
     TargetType,
+    find_target_node,
 )
 
 from .util import (
@@ -26,6 +26,13 @@ from .xml import (
 
 from .web import (
     is_config,
+    is_schema_api,
     split_url,
+    split_stream_url,
+    get_username_and_password_from_auth_header,
 )
 
+from .watchdog_status import (
+    watchdog_mapping,
+    WatchdogStatus,
+)

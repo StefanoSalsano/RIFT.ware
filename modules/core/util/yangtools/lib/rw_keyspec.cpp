@@ -6516,7 +6516,7 @@ rw_status_t get_string_value (const ProtobufCFieldInfo *val,
 
     case PROTOBUF_C_TYPE_BYTES:
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
   }
 
   return RW_STATUS_SUCCESS;

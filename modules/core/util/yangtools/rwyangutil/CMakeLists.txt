@@ -25,9 +25,41 @@ if (NOT boost_system_path)
   message (FATAL_ERROR "Could not find library ${boost_system_path}")
 endif ()
 
-add_executable(rwyangutil rwyangutil.cc)
+set(
+  CXX_SOURCES
+    RwyangutilArgumentParser.cc
+    RwyangutilFileProtoOps.cc
+    rwyangutil_helpers.cc
+  )
+
+add_library(
+  rwyangutil_lib
+  SHARED
+    ${CXX_SOURCES}
+  )
+
+install(
+  TARGETS
+    rwyangutil_lib
+  LIBRARY
+  DESTINATION
+    usr/lib
+  COMPONENT
+    ${PKG_LONG_NAME}
+  )
+
+add_executable(
+  rwyangutil
+  rwyangutil.cc
+  )
 
 target_link_libraries(rwyangutil
+  rwyangutil_lib
+  ${boost_filesystem_path}
+  ${boost_system_path}
+)
+
+target_link_libraries(rwyangutil_lib
   ${boost_filesystem_path}
   ${boost_system_path}
 )
@@ -36,6 +68,15 @@ install(TARGETS rwyangutil
  DESTINATION usr/bin
  COMPONENT ${PKG_LONG_NAME})
 
-install(FILES rwyangutil.h DESTINATION usr/include COMPONENT ${PKG_LONG_NAME})
+install(
+  FILES
+    rwyangutil.h
+    RwyangutilArgumentParser.hpp
+    RwyangutilFileProtoOps.hpp
+  DESTINATION
+    usr/include
+  COMPONENT
+    ${PKG_LONG_NAME}
+  )
 
 add_subdirectory(test)

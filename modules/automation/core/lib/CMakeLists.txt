@@ -19,8 +19,9 @@ rift_python_install_tree(
 
 rift_python_install_tree(
   FILES
-    rift/auto/log_scraper.py
+    rift/auto/log.py
     rift/auto/xml_utils.py
+    rift/auto/descriptor.py
     rift/auto/proxy.py
     rift/auto/session.py
     rift/auto/test_summary.py
@@ -28,6 +29,8 @@ rift_python_install_tree(
     rift/auto/vm_utils.py
     rift/auto/os_utils.py
     rift/auto/ip_utils.py
+    rift/auto/json_utils.py
+    rift/auto/mano.py
     rift/auto/__init__.py
   COMPONENT RWAUTO)
 

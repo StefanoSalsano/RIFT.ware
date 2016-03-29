@@ -21,6 +21,17 @@ import time
 import uuid
 import datetime
 
+import gi
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwCloudYang', '1.0')
+gi.require_version('RwIwpYang', '1.0')
+gi.require_version('RwlogMgmtYang', '1.0')
+gi.require_version('RwNsmYang', '1.0')
+gi.require_version('RwNsmYang', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
+gi.require_version('RwConmanYang', '1.0')
+gi.require_version('RwVnfdYang', '1.0')
+
 from gi.repository import (
         NsdYang,
         NsrYang,
@@ -40,8 +51,8 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 RW_PING_PONG_PKG_INSTALL_DIR = os.path.join(
-    os.environ["RIFT_INSTALL"],
-    "usr/rift/mano/examples/ping_pong_ns"
+    os.environ["RIFT_ROOT"],
+    "images"
     )
 
 class PackageError(Exception):
@@ -235,9 +246,9 @@ class TestLaunchpadStartStop(object):
         cloud_account.account_type = "openstack"
         cloud_account.openstack.key = 'pluto'
         cloud_account.openstack.secret = 'mypasswd'
-        cloud_account.openstack.auth_url = 'http://10.66.4.xx:5000/v3/'
-        cloud_account.openstack.tenant = 'demo'
-        cloud_account.openstack.mgmt_network = 'private'
+        cloud_account.openstack.auth_url = 'http://10.96.4.2:5000/v3/'
+        cloud_account.openstack.tenant = 'mano1'
+        cloud_account.openstack.mgmt_network = 'private1'
 
         cloud_proxy.merge_config("/rw-cloud:cloud/account", cloud_account)
 

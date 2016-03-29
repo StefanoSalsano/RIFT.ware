@@ -377,7 +377,7 @@ rw_ip_addr_type_t rw_ip_addr_type(rw_ip_addr_t *rwip)
       type = rw_ipv6_addr_type(&rwip->u.v6.addr[0]);
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
   }
   

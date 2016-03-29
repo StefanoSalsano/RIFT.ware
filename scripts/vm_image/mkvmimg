@@ -135,12 +135,39 @@ setup() {
 	done
 
 	cp -L /etc/resolv.conf ${STAGING}/etc/
+
+	# set up the default console for openstack
+	cp $RIFTROOT/scripts/vm/etc/default/grub $STAGING/etc/default/grub
+}
+
+compress_qcow2() {
+	local dest
+	local src
+
+	announce $FUNCNAME
+
+	if ! [ -x "$(command -v virt-sparsify)" ]; then
+		echo "virt-sparsify is not installed, not compressing."
+	else
+		# save the big qcow
+		mv ${IMG_PREFIX}.qcow2 ${IMG_PREFIX}.orig.qcow2
+
+		src=${IMG_PREFIX}.orig.qcow2
+		dest=${IMG_PREFIX}.qcow2
+
+		# zero fill the free space and compress the qcow2
+		virt-sparsify --compress ${src} ${dest}
+
+		# we can safely remove the big qcow
+		rm -fv ${IMG_PREFIX}.orig.qcow2
+	fi
+
 }
 
 pack_qcow2() {
 	local bind_mp
 	local img_size
-	local sha
+	#local sha # we need global
 	local dest
 	local nbd_dev
 	local p_dev
@@ -308,21 +335,26 @@ yum_install() {
 	cmd /bin/yum --assumeyes --nogpgcheck install "$@" || die "yum '$@' failed"
 }
 
+
 pip_install() {
-	cmd /bin/pip2 install --use-wheel --no-index --trusted-host wheel.eng.riftio.com \
-		--find-links=http://wheel.eng.riftio.com/mirrors/wheelhouse "$@" || die "pip install '$@' failed"
+	cmd=$1
+	repo=$2
+	shift
+	shift
+	cmd $cmd install --use-wheel --no-index \
+		--find-links=https://wheel.riftio.com/mirrors/${repo}/ "$@" || die "$cmd install $@ from $repo failed"
+}
+
+pip2_install() { 
+	pip_install /bin/pip2 wheelhouse "$@"
 }
 
 pip3_install() {
-	cmd /bin/python3-pip install --use-wheel --no-index --trusted-host wheel.eng.riftio.com \
-		--find-links=http://wheel.eng.riftio.com/mirrors/python3_wheelhouse "$@" \
-		|| die "pip3 install '$@' failed"
+	pip_install /bin/python3-pip python3_wheelhouse "$@"
 }
 
 pip3_install_kilo_modules() {
-	cmd /bin/python3-pip install --use-wheel --no-index --trusted-host wheel.eng.riftio.com \
-		--find-links=http://wheel.eng.riftio.com/mirrors/python3_kilo_wheelhouse "$@" \
-		|| die "pip3 install '$@' failed"
+	pip_install /bin/python3-pip python3_kilo_wheelhouse "$@"
 }
 
 setup_fedora_repos() {
@@ -338,7 +370,10 @@ setup_fedora_repos() {
 	yum_install python3 python3-pip
 	cat  $STAGING/bin/python3-pip
 	ls -ld $STAGING/bin/*pip*
-	cmd python3-pip install --upgrade --use-wheel --no-index --find-links=http://wheel.eng.riftio.com/mirrors/python3_wheelhouse pip==7.1.2 || die 'pip3 upgrade failed'
+	# the default version of pip is so old that it can't use a https server that has multiple servers
+    cmd curl https://wheel.riftio.com/mirrors/python3_wheelhouse/pip-7.1.2-py2.py3-none-any.whl -o pip-7.1.2-py2.py3-none-any.whl
+    cmd /bin/python3-pip install pip-7.1.2-py2.py3-none-any.whl 
+
 	perl -i -p -e 's/1\.4\.[0-9]/7.1.2/g;' $STAGING/bin/python3-pip
 
 	yum_install yum-utils
@@ -350,10 +385,11 @@ config_rw_repos() {
 	announce $FUNCNAME
 
 	# release(stable) is the default in the riftware.repo
+	# we never want to leave these enabled in production
 	if [[ "$RW_REPO" = "nightly" ]]; then
-		cmd yum-config-manager --enable RIFT.ware-nightly
+		YUM_OPTS="--enablerepo=RIFT.ware-nightly,RIFT.ware-testing"
 	elif [[ "$RW_REPO" = "testing" ]]; then
-		cmd yum-config-manager --enable RIFT.ware-testing
+		YUM_OPTS="--enablerepo=RIFT.ware-testing"
 	fi
 
 	cmd yum clean all
@@ -371,13 +407,16 @@ install_kernel() {
 
 setup_usr_rift() {
 	announce $FUNCNAME
-	yum_install rift_scripts
-	cmd adduser -m -s /bin/bash -U rift 
+
+	# RIFT-11697
+	#yum_install $YUM_OPTS rift_scripts
+
+	cmd adduser -m -s /bin/bash -U rift
 	echo "rift:rift" | cmd chpasswd
 
 	rm -rf $STAGING/home/rift/scripts
-	ln -s /usr/rift/scripts $STAGING/home/rift/scripts
-	yum_install riftware-base
+	#ln -s /usr/rift/scripts $STAGING/home/rift/scripts
+	yum_install $YUM_OPTS riftware-base
 
 
 }
@@ -393,13 +432,7 @@ setup_access() {
 	cp $RIFTROOT/scripts/vm/root/.ssh/* $STAGING/root/.ssh/
 	chmod 600 $STAGING/root/.ssh/*
 
-    perl -i -p -e  's/#PasswordAuthentication yes/PasswordAuthentication yes/;
-    				s/#PermitEmptyPasswords no/PermitEmptyPasswords no/;
-    				s/PasswordAuthentication no/#PasswordAuthentication no/;' ${STAGING}/etc/ssh/sshd_config
-        cat <<EOF >>${STAGING}/etc/ssh/sshd_config
-Match User root
-        PasswordAuthentication no
-EOF
+    perl -i -p -e  's/PasswordAuthentication yes/PasswordAuthentication no/;' ${STAGING}/etc/ssh/sshd_config
 	if [ -e ${STAGING}/etc/selinux/config ]; then
 			sed -i 's,^\(SELINUX=\).*,\1permissive,' ${STAGING}/etc/selinux/config || die "sed failed"
 	fi
@@ -415,6 +448,7 @@ output_images() {
 		case ${output_type} in
 			qcow2)
 				pack_qcow2
+				compress_qcow2
 				;;
 			disk-image)
 				pack_image
@@ -432,7 +466,7 @@ RIFTROOT=$(dirname $(dirname $(dirname $(realpath $0))))
 BUILDDIR="${RIFTROOT}/.build/vm"
 
 #SEED_URL=http://download.fedoraproject.org/pub/fedora/linux/releases/20/Images/x86_64/
-SEED_URL=http://sharedfiles/common/vm
+SEED_URL=http://repo.riftio.com/releases/4.0/vm_images
 SEED=Fedora-x86_64-20-20131211.1-sda.qcow2
 SEED_PATH=""
 FEDORA_REL=20
@@ -591,7 +625,7 @@ fi
 IMG_PREFIX="${IMG_PREFIX}-${sha}"
 
 
-announce "BUILIDING $IMG_PREFIX "
+announce "BUILDING $IMG_PREFIX "
 
 
 #check_build_area  -- we cannot be under $RIFT_ROOT unless we are also in .build
@@ -618,23 +652,29 @@ fi
 setup_fedora_repos
 install_kernel
 
+cmd df -h /
 for mode in $MODES; do
 	announce "installing $mode"
 	basename="$VM_DIR/$mode"
 	if [ -s $basename.setup.sh ]; then
 		source $basename.setup.sh
+		cmd df -h /
 	fi
 	if [ -s $basename.rpms ]; then
 		yum_install $(cat $basename.rpms)
+		cmd df -h /
 	fi
 	if [ -s $basename.pip3 ]; then
 		pip3_install $(cat $basename.pip3)
+		cmd df -h /
 	fi
 	if [ -s $basename.kilo ]; then
 		pip3_install_kilo_modules $(cat $basename.kilo)
+		cmd df -h /
 	fi
 	if [ -s $basename.config.sh ]; then
 		source $basename.config.sh
+		cmd df -h /
 	fi
 done
 

@@ -56,6 +56,11 @@ module vlr
         type string;
       }
 
+      leaf res-id {
+        description "Identifier for resmgr id mapping";
+        type yang:uuid;
+      }
+
       leaf short-name {
         description "Short name for VLR for UI";
         type string;

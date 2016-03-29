@@ -19,10 +19,10 @@ import PhysicalNetworkFunction from './PhysicalNetworkFunction'
 import DescriptorModelFactory from '../DescriptorModelFactory'
 import DescriptorModelMetaFactory from '../DescriptorModelMetaFactory'
 
-const indexAsInteger = d => 1 + parseInt(d.model['member-vnf-index'], 10);
+const indexAsInteger = d => 1 + (parseInt(d.model['member-vnf-index'], 10) || 0);
 
 const suffixAsInteger = function (field) {
-	return (d) => 1 + parseInt(String(d.model[field]).split('').reverse().join(''), 10) || 0;
+	return (d) => 1 + (parseInt(String(d.model[field]).split('').reverse().join(''), 10) || 0);
 };
 
 const toBiggestValue = (newIndex, curIndex) => Math.max(newIndex, curIndex);
@@ -53,7 +53,11 @@ export default class NetworkService extends DescriptorModel {
 
 	set constituentVnfd(obj) {
 		const updateNextVnfdIndex = (cvnfd) => {
-			cvnfd.model['member-vnf-index'] = this.constituentVnfd.map(indexAsInteger).reduce(toBiggestValue, this.constituentVnfd.length);
+			const items = this.constituentVnfd;
+			const length = items.length;
+			// the default value is set to an instance count but we want it to be a sequence no
+			cvnfd.model['member-vnf-index'] = 0;
+			cvnfd.model['member-vnf-index'] = items.map(indexAsInteger).reduce(toBiggestValue, length);
 		};
 		this.updateModelList('constituent-vnfd', obj, ConstituentVnfd, updateNextVnfdIndex);
 	}
@@ -165,7 +169,7 @@ export default class NetworkService extends DescriptorModel {
 
 	removeAnyConnectionsForConnector(cpc) {
 		// todo need to also remove connection points from related ForwardingGraph paths
-		this.vld.map(vld => DescriptorModelFactory.newVirtualLink(vld)).forEach(vldc => vldc.removeVnfdConnectionPointRefKey(cpc.key));
+		this.vld.forEach(vldc => vldc.removeVnfdConnectionPointRefKey(cpc.key));
 	}
 
 	createConstituentVnfdForVnfd(vnfdRef) {

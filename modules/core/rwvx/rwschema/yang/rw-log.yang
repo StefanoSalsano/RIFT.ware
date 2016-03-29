@@ -796,70 +796,64 @@ module rw-log
       }
     }
 
-    choice mode {
-      case console {
-        container console {
-          choice method {
-            case on {
-              description "Enable console Logging";
-              leaf on {
-                type empty;
-              }
-            }
-            case off {
-              description "Disable console Logging";
-              leaf off {
-                type empty;
-              }
-            }
+    container console {
+      choice method {
+        case on {
+          description "Enable console Logging";
+          leaf on {
+            type empty;
           }
-          uses vnf-identifiation;
-          uses config-filter-options;
+        }
+        case off {
+          description "Disable console Logging";
+          leaf off {
+            type empty;
+          }
         }
       }
+      uses vnf-identifiation;
+      uses config-filter-options;
+    }
 
-      case sink {
-        list sink {
-          rwcli:new-mode "sink";
-          key "name";
-          leaf  name {
-            description "name of syslog sink";
-            rwpb:field-inline "true";
-            rwpb:field-string-max 64;
+    list sink {
+      rwcli:new-mode "sink";
+      key "name";
+      leaf  name {
+        description "name of syslog sink";
+        rwpb:field-inline "true";
+        rwpb:field-string-max 64;
+        type string;
+      }
+      choice method {
+        case syslog {
+          leaf server-address {
+            description "Server IP address";
+            type rwt:ip-address;
+            rwpb:field-string-max 46;
+          }
+          leaf port {
+            description "Server port";
+            type uint32;
+          }
+        }
+        case file {
+          description "local file - used internally for
+              debugging/tracing";
+          leaf filename {
             type string;
           }
-          choice method {
-            case syslog {
-              leaf server-address {
-                description "Server IP address";
-                type rwt:ip-address;
-                rwpb:field-string-max 46;
-              }
-              leaf port {
-                description "Server port";
-                type uint32;
-              }
-            }
-            case file {
-              description "local file - used internally for
-                  debugging/tracing";
-              leaf filename {
-                type string;
-              }
-            }
-            case pcap-file {
-              description "binary file pcap format - used internally for
-                  debugging/tracing";
-              leaf pcap-file {
-                type string;
-              }
-            }
+        }
+        case pcap-file {
+          description "binary file pcap format - used internally for
+              debugging/tracing";
+          leaf pcap-file {
+            type string;
           }
-          uses vnf-identifiation;
-          uses config-filter-options;
-        } // list sink
+        }
       }
-    }
+      uses vnf-identifiation;
+      uses config-filter-options;
+    } // list sink
  }
 
   container ev_template {

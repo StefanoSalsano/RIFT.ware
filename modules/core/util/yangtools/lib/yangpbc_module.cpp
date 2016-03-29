@@ -1131,6 +1131,7 @@ void PbModule::output_gi_c(
 }
 
 bool PbModule::output_doc(
+  const doc_file_t file_type,
   std::ostream& os,
   unsigned indent,
   PbMessage::doc_t doc_style,
@@ -1141,7 +1142,7 @@ bool PbModule::output_doc(
   }
 
   std::string str_chapter = std::to_string(chapter);
-  pbmodel_->output_doc_heading( os, indent, doc_style,
+  pbmodel_->output_doc_heading(file_type, os, indent, doc_style,
     str_chapter, std::string("module ") + get_ymod()->get_name() );
 
   switch (doc_style) {
@@ -1159,22 +1160,22 @@ bool PbModule::output_doc(
 
   if (has_data_module_messages()) {
     data_module_pbmsg_->output_doc_message(
-      os, indent, doc_style,
+      file_type, os, indent, doc_style,
       str_chapter + std::to_string(sub_chapter++) );
   }
 
   if (has_rpc_messages()) {
     rpci_module_pbmsg_->output_doc_message(
-      os, indent, doc_style,
+      file_type, os, indent, doc_style,
       str_chapter + std::to_string(sub_chapter++) );
     rpco_module_pbmsg_->output_doc_message(
-      os, indent, doc_style,
+      file_type, os, indent, doc_style,
       str_chapter + std::to_string(sub_chapter++) );
   }
 
   if (has_notif_module_messages()) {
     notif_module_pbmsg_->output_doc_message(
-      os, indent, doc_style,
+      file_type, os, indent, doc_style,
       str_chapter + std::to_string(sub_chapter++) );
   }
 

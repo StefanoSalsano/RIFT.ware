@@ -7,6 +7,9 @@
 
 cmake_minimum_required(VERSION 2.8)
 
+set(subdirs cal_module_test)
+rift_add_subdirs(SUBDIR_LIST ${subdirs})
+
 ##
 # Unit test target
 ##

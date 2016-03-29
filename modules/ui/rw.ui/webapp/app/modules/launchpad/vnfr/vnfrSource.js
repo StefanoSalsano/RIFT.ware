@@ -30,14 +30,14 @@ export default {
           }
           console.log(nsr_id)
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER,
             type: 'POST',
             beforeSend: Utils.addAuthorizationStub,
             data: {
               url: API_SERVER + ':' + NODE_PORT + '/launchpad/nsr/' + nsr_id + '/vnfr?api_server=' + API_SERVER,
             },
             success: function(data) {
-              var url = 'ws://' + window.location.hostname + ':' + data.port + data.socketPath;
+              var url = Utils.webSocketProtocol() + '//' + window.location.hostname + ':' + data.port + data.socketPath;
               var ws = new WebSocket(url);
               resolve(ws);
             }

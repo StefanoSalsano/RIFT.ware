@@ -6,19 +6,19 @@
  * Copyright (C) 2009 Steve Frécinaux
  * Copyright (C) 2010-2014 Garrett Regier
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -101,8 +101,8 @@ typedef struct _SearchPath {
 struct _PeasEnginePrivate {
   LoaderInfo loaders[PEAS_UTILS_N_LOADERS];
 
-  GList *search_paths;
-  GList *plugin_list;
+  GQueue search_paths;
+  GQueue plugin_list;
 
   guint in_dispose : 1;
   guint use_nonglobal_loaders : 1;
@@ -125,6 +125,47 @@ static void peas_engine_unload_plugin_real (PeasEngine     *engine,
                                             PeasPluginInfo *info);
 
 static void
+plugin_info_add_sorted (GQueue         *plugin_list,
+                        PeasPluginInfo *info)
+{
+  guint i;
+  GList *furthest_dep = NULL;
+  const gchar **dependencies;
+
+  dependencies = peas_plugin_info_get_dependencies (info);
+
+  for (i = 0; dependencies[i] != NULL; ++i)
+    {
+      GList *pos = furthest_dep != NULL ? furthest_dep : plugin_list->head;
+
+      for (; pos != NULL; pos = pos->next)
+        {
+          if (strcmp (dependencies[i],
+                      peas_plugin_info_get_module_name (pos->data)) == 0)
+            {
+              furthest_dep = pos;
+              break;
+            }
+        }
+    }
+
+  /* GLib changed only accepts NULL for
+   * g_queue_insert_after() at version 2.44
+   */
+  if (furthest_dep == NULL)
+    {
+      g_queue_push_head (plugin_list, info);
+      return;
+    }
+
+  g_debug ("Adding '%s' after '%s' due to dependencies",
+           peas_plugin_info_get_module_name (info),
+           peas_plugin_info_get_module_name (furthest_dep->data));
+
+  g_queue_insert_after (plugin_list, furthest_dep, info);
+}
+
+static gboolean
 load_plugin_info (PeasEngine  *engine,
                   const gchar *filename,
                   const gchar *module_dir,
@@ -141,34 +182,33 @@ load_plugin_info (PeasEngine  *engine,
   if (info == NULL)
     {
       g_warning ("Error loading '%s'", filename);
-      return;
+      return FALSE;
     }
 
-  /* If a plugin with this name has already been loaded
-   * drop this one (user plugins override system plugins) */
   module_name = peas_plugin_info_get_module_name (info);
   if (peas_engine_get_plugin_info (engine, module_name) != NULL)
     {
       _peas_plugin_info_unref (info);
+      return FALSE;
     }
-  else
-    {
-      priv->plugin_list = g_list_prepend (priv->plugin_list, info);
 
-      g_object_notify_by_pspec (G_OBJECT (engine),
-                                properties[PROP_PLUGIN_LIST]);
-    }
+  plugin_info_add_sorted (&priv->plugin_list, info);
+  g_object_notify_by_pspec (G_OBJECT (engine),
+                            properties[PROP_PLUGIN_LIST]);
+
+  return TRUE;
 }
 
-static void
-load_dir_real (PeasEngine  *engine,
-               const gchar *module_dir,
-               const gchar *data_dir,
-               guint        recursions)
+static gboolean
+load_file_dir_real (PeasEngine  *engine,
+                    const gchar *module_dir,
+                    const gchar *data_dir,
+                    guint        recursions)
 {
-  GError *error = NULL;
   GDir *d;
   const gchar *dirent;
+  GError *error = NULL;
+  gboolean found = FALSE;
 
   g_debug ("Loading %s/*.plugin...", module_dir);
 
@@ -178,7 +218,7 @@ load_dir_real (PeasEngine  *engine,
     {
       g_debug ("%s", error->message);
       g_error_free (error);
-      return;
+      return FALSE;
     }
 
   while ((dirent = g_dir_read_name (d)))
@@ -188,17 +228,116 @@ load_dir_real (PeasEngine  *engine,
       if (g_file_test (filename, G_FILE_TEST_IS_DIR))
         {
           if (recursions > 0)
-            load_dir_real (engine, filename, data_dir, recursions - 1);
+            {
+              found |= load_file_dir_real (engine, filename,
+                                           data_dir, recursions - 1);
+            }
         }
       else if (g_str_has_suffix (dirent, ".plugin"))
         {
-          load_plugin_info (engine, filename, module_dir, data_dir);
+          found |= load_plugin_info (engine, filename,
+                                     module_dir, data_dir);
         }
 
       g_free (filename);
     }
 
   g_dir_close (d);
+
+  return found;
+}
+
+static gboolean
+load_resource_dir_real (PeasEngine  *engine,
+                        const gchar *module_dir,
+                        const gchar *data_dir,
+                        guint        recursions)
+{
+  guint i;
+  const gchar *module_path;
+  gchar **children;
+  GError *error = NULL;
+  gboolean found = FALSE;
+
+  g_debug ("Loading %s/*.plugin...", module_dir);
+
+  module_path = module_dir + strlen ("resource://");
+  children = g_resources_enumerate_children (module_path,
+                                             G_RESOURCE_LOOKUP_FLAGS_NONE,
+                                             &error);
+
+  if (error != NULL)
+    {
+      g_debug ("%s", error->message);
+      g_error_free (error);
+      return FALSE;
+    }
+
+  for (i = 0; children[i] != NULL; ++i)
+    {
+      gboolean is_dir;
+      gchar *child;
+
+      is_dir = g_str_has_suffix (children[i], "/");
+
+      if (is_dir && recursions == 0)
+        continue;
+
+      if (!is_dir && !g_str_has_suffix (children[i], ".plugin"))
+        continue;
+
+      child = g_build_path ("/", module_dir, children[i], NULL);
+
+      if (is_dir)
+        {
+          found |= load_resource_dir_real (engine, child,
+                                           data_dir, recursions - 1);
+        }
+      else
+        {
+          found |= load_plugin_info (engine, child, module_dir, data_dir);
+        }
+
+      g_free (child);
+    }
+
+  g_strfreev (children);
+
+  return found;
+}
+
+static gboolean
+load_dir_real (PeasEngine *engine,
+               SearchPath *sp)
+{
+  if (!g_str_has_prefix (sp->module_dir, "resource://"))
+    return load_file_dir_real (engine, sp->module_dir, sp->data_dir, 1);
+
+  return load_resource_dir_real (engine, sp->module_dir, sp->data_dir, 1);
+}
+
+static void
+plugin_list_changed (PeasEngine *engine)
+{
+  PeasEnginePrivate *priv = GET_PRIV (engine);
+  GString *msg;
+  GList *pos;
+
+  if (g_getenv ("PEAS_DEBUG") == NULL)
+    return;
+
+  msg = g_string_new ("Plugins: ");
+
+  for (pos = priv->plugin_list.head; pos != NULL; pos = pos->next)
+    {
+      if (pos->prev != NULL)
+        g_string_append (msg, ", ");
+
+      g_string_append (msg, peas_plugin_info_get_module_name (pos->data));
+    }
+
+  g_debug ("%s", msg->str);
+  g_string_free (msg, TRUE);
 }
 
 /**
@@ -216,10 +355,11 @@ peas_engine_rescan_plugins (PeasEngine *engine)
 {
   PeasEnginePrivate *priv = GET_PRIV (engine);
   GList *item;
+  gboolean found = FALSE;
 
   g_return_if_fail (PEAS_IS_ENGINE (engine));
 
-  if (priv->search_paths == NULL)
+  if (priv->search_paths.length == 0)
     {
       g_debug ("No search paths where provided");
       return;
@@ -228,18 +368,18 @@ peas_engine_rescan_plugins (PeasEngine *engine)
   g_object_freeze_notify (G_OBJECT (engine));
 
   /* Go and read everything from the provided search paths */
-  for (item = priv->search_paths; item != NULL; item = item->next)
-    {
-      SearchPath *sp = (SearchPath *) item->data;
-      load_dir_real (engine, sp->module_dir, sp->data_dir, 1);
-    }
+  for (item = priv->search_paths.head; item != NULL; item = item->next)
+    found |= load_dir_real (engine, (SearchPath *) item->data);
+
+  if (found)
+    plugin_list_changed (engine);
 
   g_object_thaw_notify (G_OBJECT (engine));
 }
 
 static void
 peas_engine_insert_search_path (PeasEngine  *engine,
-                                gint         position,
+                                gboolean     prepend,
                                 const gchar *module_dir,
                                 const gchar *data_dir)
 {
@@ -253,10 +393,16 @@ peas_engine_insert_search_path (PeasEngine  *engine,
   sp->module_dir = g_strdup (module_dir);
   sp->data_dir = g_strdup (data_dir ? data_dir : module_dir);
 
-  priv->search_paths = g_list_insert (priv->search_paths, sp, position);
+  if (prepend)
+    g_queue_push_head (&priv->search_paths, sp);
+  else
+    g_queue_push_tail (&priv->search_paths, sp);
 
   g_object_freeze_notify (G_OBJECT (engine));
-  load_dir_real (engine, sp->module_dir, sp->data_dir, 1);
+
+  if (load_dir_real (engine, sp))
+    plugin_list_changed (engine);
+
   g_object_thaw_notify (G_OBJECT (engine));
 }
 
@@ -288,7 +434,7 @@ peas_engine_add_search_path (PeasEngine  *engine,
                              const gchar *module_dir,
                              const gchar *data_dir)
 {
-  peas_engine_insert_search_path (engine, -1, module_dir, data_dir);
+  peas_engine_insert_search_path (engine, FALSE, module_dir, data_dir);
 }
 
 /**
@@ -309,7 +455,7 @@ peas_engine_prepend_search_path (PeasEngine  *engine,
                                  const gchar *module_dir,
                                  const gchar *data_dir)
 {
-  peas_engine_insert_search_path (engine, 0, module_dir, data_dir);
+  peas_engine_insert_search_path (engine, TRUE, module_dir, data_dir);
 }
 
 static void
@@ -325,8 +471,17 @@ peas_engine_init (PeasEngine *engine)
 {
   PeasEnginePrivate *priv = GET_PRIV (engine);
 
-  /* Set the default engine here and not in constructor() to make sure
-   * that if a plugin is loaded and calls peas_engine_get_default()
+  /* Don't need to use atomics as peas_engine_shutdown()
+   * is private API and as such is not multithread-safe
+   */
+  if (shutdown)
+    {
+      g_error ("libpeas cannot create a plugin engine "
+               "as it has been shutdown.");
+    }
+
+  /* Set the default engine here to make sure that if a
+   * plugin is loaded and calls peas_engine_get_default()
    * that this engine is returned and not another.
    *
    * While peas_engine_get_default() is not thread-safe
@@ -342,8 +497,11 @@ peas_engine_init (PeasEngine *engine)
 
   priv->in_dispose = FALSE;
 
+  g_queue_init (&priv->search_paths);
+  g_queue_init (&priv->plugin_list);
+
   /* The C plugin loader is always enabled */
-  priv->loaders[peas_utils_get_loader_id ("C")].enabled = TRUE;
+  priv->loaders[PEAS_UTILS_C_LOADER_ID].enabled = TRUE;
 }
 
 /**
@@ -370,32 +528,6 @@ peas_engine_garbage_collect (PeasEngine *engine)
       if (loader_info->loader != NULL)
         peas_plugin_loader_garbage_collect (loader_info->loader);
     }
-}
-
-static GObject *
-peas_engine_constructor (GType                  type,
-                         guint                  n_construct_params,
-                         GObjectConstructParam *construct_params)
-{
-  /* We don't support calling PeasEngine API without module support */
-  if (!g_module_supported ())
-    {
-      g_error ("libpeas is not able to create the "
-               "plugins engine as modules are not supported.");
-    }
-
-  /* Don't need to use atomics as peas_engine_shutdown()
-   * is private API and as such is not multithread-safe
-   */
-  if (shutdown)
-    {
-      g_error ("libpeas cannot create a plugin engine "
-               "as it has been shutdown.");
-    }
-
-  return G_OBJECT_CLASS (peas_engine_parent_class)->constructor (type,
-                                                                 n_construct_params,
-                                                                 construct_params);
 }
 
 static void
@@ -462,7 +594,7 @@ peas_engine_dispose (GObject *object)
   priv->in_dispose = TRUE;
 
   /* First unload all the plugins */
-  for (item = priv->plugin_list; item; item = item->next)
+  for (item = priv->plugin_list.tail; item != NULL; item = item->prev)
     {
       PeasPluginInfo *info = PEAS_PLUGIN_INFO (item->data);
 
@@ -489,11 +621,15 @@ peas_engine_finalize (GObject *object)
   GList *item;
 
   /* free the infos */
-  g_list_free_full (priv->plugin_list,
-                    (GDestroyNotify) _peas_plugin_info_unref);
+  for (item = priv->plugin_list.head; item != NULL; item = item->next)
+    {
+      PeasPluginInfo *info = (PeasPluginInfo *) item->data;
+
+      _peas_plugin_info_unref (info);
+    }
 
   /* free the search path list */
-  for (item = priv->search_paths; item; item = item->next)
+  for (item = priv->search_paths.head; item != NULL; item = item->next)
     {
       SearchPath *sp = (SearchPath *) item->data;
 
@@ -502,7 +638,8 @@ peas_engine_finalize (GObject *object)
       g_slice_free (SearchPath, sp);
     }
 
-  g_list_free (priv->search_paths);
+  g_queue_clear (&priv->search_paths);
+  g_queue_clear (&priv->plugin_list);
 
   G_OBJECT_CLASS (peas_engine_parent_class)->finalize (object);
 }
@@ -513,7 +650,6 @@ peas_engine_class_init (PeasEngineClass *klass)
   GType the_type = G_TYPE_FROM_CLASS (klass);
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
-  object_class->constructor = peas_engine_constructor;
   object_class->set_property = peas_engine_set_property;
   object_class->get_property = peas_engine_get_property;
   object_class->dispose = peas_engine_dispose;
@@ -529,8 +665,7 @@ peas_engine_class_init (PeasEngineClass *klass)
    *
    * This will be modified when peas_engine_rescan_plugins() is called.
    *
-   * Note that the list belongs to the engine and should not be modified
-   * or freed.
+   * Note: the list belongs to the engine and should not be modified or freed.
    */
   properties[PROP_PLUGIN_LIST] =
     g_param_spec_pointer ("plugin-list",
@@ -599,7 +734,7 @@ peas_engine_class_init (PeasEngineClass *klass)
    * g_signal_connect_after().
    */
   signals[LOAD_PLUGIN] =
-    g_signal_new ("load-plugin",
+    g_signal_new (I_("load-plugin"),
                   the_type,
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (PeasEngineClass, load_plugin),
@@ -624,7 +759,7 @@ peas_engine_class_init (PeasEngineClass *klass)
    * use g_signal_connect_after().
    */
   signals[UNLOAD_PLUGIN] =
-    g_signal_new ("unload-plugin",
+    g_signal_new (I_("unload-plugin"),
                   the_type,
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (PeasEngineClass, unload_plugin),
@@ -636,73 +771,64 @@ peas_engine_class_init (PeasEngineClass *klass)
 
   g_object_class_install_properties (object_class, N_PROPERTIES, properties);
 
+  /* We don't support calling PeasEngine API without module support */
+  if (!g_module_supported ())
+    {
+      g_error ("libpeas is not able to create the "
+               "plugins engine as modules are not supported.");
+    }
+
   /* We are doing some global initialization here as there is currently no
    * global init function for libpeas. */
   peas_debug_init ();
 
-  /* The C plugin loader is always enabled */
-  loaders[peas_utils_get_loader_id ("C")].enabled = TRUE;
-}
-
-static PeasObjectModule *
-load_module (const gchar *module_name,
-             const gchar *module_dir)
-{
-  PeasObjectModule *module;
-
-  /* Bind loaders globally, binding
-   * locally can break the plugin loaders
+  /* This cannot be done as a compile-time
+   * assert, but is critical for correct behavior
    */
-  module = peas_object_module_new_full (module_name, module_dir,
-                                        TRUE, FALSE);
+  g_assert (g_strcmp0 (peas_utils_get_loader_from_id (PEAS_UTILS_C_LOADER_ID),
+                       "c") == 0);
 
-  if (!g_type_module_use (G_TYPE_MODULE (module)))
-    g_clear_object (&module);
-
-  return module;
+  /* The C plugin loader is always enabled */
+  loaders[PEAS_UTILS_C_LOADER_ID].enabled = TRUE;
 }
 
 static PeasObjectModule *
 get_plugin_loader_module (gint loader_id)
 {
   GlobalLoaderInfo *global_loader_info = &loaders[loader_id];
-  gint i, j;
-  const gchar *loader_name;
-  gchar *module_name, *module_dir;
+  const gchar *loader_name, *module_name;
+  gchar *module_dir;
 
   if (global_loader_info->module != NULL)
     return global_loader_info->module;
 
   loader_name = peas_utils_get_loader_from_id (loader_id);
-  module_name = g_strconcat (loader_name, "loader", NULL);
-  module_dir = peas_dirs_get_plugin_loaders_dir ();
+  module_name = peas_utils_get_loader_module_from_id (loader_id);
+  module_dir = peas_dirs_get_plugin_loader_dir (NULL);
 
-  /* Remove '.'s from the module name */
-  for (i = 0, j = 0; module_name[i] != '\0'; ++i)
+  /* Bind loaders globally, binding
+   * locally can break the plugin loaders
+   */
+  global_loader_info->module = peas_object_module_new_full (module_name,
+                                                            module_dir,
+                                                            TRUE, FALSE);
+
+  if (!g_type_module_use (G_TYPE_MODULE (global_loader_info->module))) {
+     g_clear_object (&global_loader_info->module);
+     g_free (module_dir);
+     module_dir = peas_dirs_get_plugin_loader_dir (loader_name);
+     global_loader_info->module = peas_object_module_new_full (module_name,
+                                                            module_dir,
+                                                            TRUE, FALSE);
+  }
+
+  if (!g_type_module_use (G_TYPE_MODULE (global_loader_info->module)))
     {
-      if (module_name[i] != '.')
-        module_name[j++] = module_name[i];
-    }
-
-  module_name[j] = '\0';
-
-  global_loader_info->module = load_module (module_name, module_dir);
-
-  if (global_loader_info->module == NULL)
-    {
-      gchar *tmp = module_dir;
-
-      module_dir = g_build_filename (module_dir, loader_name, NULL);
-      global_loader_info->module = load_module (module_name, module_dir);
-
-      g_free (tmp);
+      g_warning ("Could not load plugin loader '%s'", loader_name);
+      g_clear_object (&global_loader_info->module);
     }
 
   g_free (module_dir);
-  g_free (module_name);
-
-  if (global_loader_info->module == NULL)
-    g_warning ("Could not load plugin loader '%s'", loader_name);
 
   return global_loader_info->module;
 }
@@ -712,7 +838,7 @@ create_plugin_loader (gint loader_id)
 {
   PeasPluginLoader *loader;
 
-  if (peas_utils_get_loader_id ("C") == loader_id)
+  if (loader_id == PEAS_UTILS_C_LOADER_ID)
     {
       loader = peas_plugin_loader_c_new ();
     }
@@ -828,9 +954,9 @@ get_plugin_loader (PeasEngine *engine,
  *
  * Enable a loader, enables a loader for plugins.
  * The C plugin loader is always enabled. The other plugin
- * loaders are: lua5.1 and python and python3.
+ * loaders are: lua5.1, python and python3.
  *
- * For instance, the following code will enable python plugins
+ * For instance, the following code will enable Python 2 plugins
  * to be loaded:
  * |[
  * peas_engine_enable_loader (engine, "python");
@@ -866,6 +992,9 @@ peas_engine_enable_loader (PeasEngine  *engine,
 
   g_mutex_lock (&loaders_lock);
 
+  /* Don't check if the loader failed
+   * as we want to warn multiple times
+   */
   if (loaders[loader_id].enabled)
     {
       loader_info->enabled = TRUE;
@@ -894,6 +1023,7 @@ peas_engine_enable_loader (PeasEngine  *engine,
                      peas_utils_get_loader_from_id (loader_ids[i]));
 
           loader_info->failed = TRUE;
+          loaders[loader_id].failed = TRUE;
           g_mutex_unlock (&loaders_lock);
           return;
         }
@@ -925,14 +1055,7 @@ peas_engine_get_plugin_list (PeasEngine *engine)
 
   g_return_val_if_fail (PEAS_IS_ENGINE (engine), NULL);
 
-  return priv->plugin_list;
-}
-
-static gint
-compare_plugin_info_and_name (PeasPluginInfo *info,
-                              const gchar    *module_name)
-{
-  return strcmp (peas_plugin_info_get_module_name (info), module_name);
+  return priv->plugin_list.head;
 }
 
 /**
@@ -956,11 +1079,16 @@ peas_engine_get_plugin_info (PeasEngine  *engine,
   g_return_val_if_fail (PEAS_IS_ENGINE (engine), NULL);
   g_return_val_if_fail (plugin_name != NULL, NULL);
 
-  l = g_list_find_custom (priv->plugin_list,
-                          plugin_name,
-                          (GCompareFunc) compare_plugin_info_and_name);
+  for (l = priv->plugin_list.head; l != NULL; l = l->next)
+    {
+      PeasPluginInfo *info = (PeasPluginInfo *) l->data;
+      const gchar *module_name = peas_plugin_info_get_module_name (info);
 
-  return l == NULL ? NULL : (PeasPluginInfo *) l->data;
+      if (strcmp (module_name, plugin_name) == 0)
+        return info;
+    }
+
+  return NULL;
 }
 
 static void
@@ -1093,7 +1221,7 @@ peas_engine_unload_plugin_real (PeasEngine     *engine,
 
   /* First unload all the dependant plugins */
   module_name = peas_plugin_info_get_module_name (info);
-  for (item = priv->plugin_list; item; item = item->next)
+  for (item = priv->plugin_list.tail; item != NULL; item = item->prev)
     {
       PeasPluginInfo *other_info = PEAS_PLUGIN_INFO (item->data);
 
@@ -1347,7 +1475,7 @@ peas_engine_get_loaded_plugins (PeasEngine *engine)
 
   array = g_array_new (TRUE, FALSE, sizeof (gchar *));
 
-  for (pl = priv->plugin_list; pl; pl = pl->next)
+  for (pl = priv->plugin_list.head; pl != NULL; pl = pl->next)
     {
       PeasPluginInfo *info = (PeasPluginInfo *) pl->data;
       gchar *module_name;
@@ -1372,8 +1500,11 @@ string_in_strv (const gchar  *needle,
     return FALSE;
 
   for (i = 0; haystack[i] != NULL; i++)
-    if (strcmp (haystack[i], needle) == 0)
-      return TRUE;
+    {
+      if (strcmp (haystack[i], needle) == 0)
+        return TRUE;
+    }
+
   return FALSE;
 }
 
@@ -1398,7 +1529,7 @@ peas_engine_set_loaded_plugins (PeasEngine   *engine,
 
   g_return_if_fail (PEAS_IS_ENGINE (engine));
 
-  for (pl = priv->plugin_list; pl; pl = pl->next)
+  for (pl = priv->plugin_list.head; pl != NULL; pl = pl->next)
     {
       PeasPluginInfo *info = (PeasPluginInfo *) pl->data;
       const gchar *module_name;
@@ -1526,6 +1657,7 @@ peas_engine_shutdown (void)
       /* Don't bother unloading the
        * module as it is always resident
        */
+      loader_info->enabled = FALSE;
       loader_info->failed = TRUE;
     }
 

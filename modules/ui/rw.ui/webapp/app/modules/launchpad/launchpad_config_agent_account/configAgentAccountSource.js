@@ -29,7 +29,7 @@ var createConfigAgentAccountSource = {
       remote: function(state, configAgentAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/launchpad/config-agent-account?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/launchpad/config-agent-account?api_server=' + API_SERVER,
             type:'POST',
             beforeSend: Utils.addAuthorizationStub,
             data: JSON.stringify(configAgentAccount),
@@ -73,7 +73,7 @@ var createConfigAgentAccountSource = {
       remote: function(state, configAgentAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/launchpad/config-agent-account/' + configAgentAccount.name + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/launchpad/config-agent-account/' + configAgentAccount.name + '?api_server=' + API_SERVER,
             type:'PUT',
             beforeSend: Utils.addAuthorizationStub,
             data: JSON.stringify(configAgentAccount),
@@ -109,7 +109,7 @@ var createConfigAgentAccountSource = {
       remote: function(state, configAgentAccount, cb) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/launchpad/config-agent-account/' + configAgentAccount + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/launchpad/config-agent-account/' + configAgentAccount + '?api_server=' + API_SERVER,
             type:'DELETE',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -140,7 +140,7 @@ var createConfigAgentAccountSource = {
       remote: function(state, configAgentAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/launchpad/config-agent-account/' + configAgentAccount + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/launchpad/config-agent-account/' + configAgentAccount + '?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -167,7 +167,7 @@ var createConfigAgentAccountSource = {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/launchpad/config-agent-account?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/launchpad/config-agent-account?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(configAgentAccounts) {

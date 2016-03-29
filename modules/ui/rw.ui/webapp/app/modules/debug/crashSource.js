@@ -16,7 +16,7 @@ var crashSource = {
       remote: function(state) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/crash-details?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/crash-details?api_server=' + API_SERVER,
             type:'GET',
             beforeSend: Utils.addAuthorizationStub,
             contentType: "application/json",

@@ -25,13 +25,14 @@ class Result(Enum):
     Commit_Failed = 8
 
 def _check_exception(error_text):
-    if ("session close" in error_text) or ("Not connected" in error_text) or ("Capabilities changed" in error_text) or ("Not connected to NETCONF server" in error_text):
+    if ("session close" in error_text) or ("Not connected" in error_text) or ("Capabilities changed" in error_text) or ("capabilities-changed" in error_text) or ("Not connected to NETCONF server" in error_text):
         result = Result.Upgrade_Performed
     else:
         result = Result.Unknown_Error
     return result
 
 def _check_netconf_response(netconf_response, commit_response):
+
     if netconf_response.ok:
         netconf_result = Result.OK
         if "data-exists" in netconf_response.xml:
@@ -40,7 +41,7 @@ def _check_netconf_response(netconf_response, commit_response):
             netconf_result = Result.Rpc_Error
     else:
         if "resource-denied" in netconf_response.error.tag:
-            return Result.Upgrade_In_Progress
+            return Result.Upgrade_Performed
         else:
             return Result.Operation_Failed
 
@@ -56,6 +57,19 @@ class ConnectionManager(object):
         self._netconf_ip = netconf_ip 
         self._netconf_port = netconf_port
         self._connections = {}
+
+    def is_logged_in(self, encoded_username_and_password):
+        return encoded_username_and_password in self._connections.keys()
+
+    def logout(self, encoded_username_and_password):
+        if not self.is_logged_in(encoded_username_and_password):
+            raise ValueError("User is not logged in")
+        
+        auth_decoded = base64.decodestring(bytes(encoded_username_and_password, "utf-8")).decode("utf-8")
+        username, password = auth_decoded.split(":",2)
+        self._log.info("logging out user: %s", username)
+
+        del self._connections[encoded_username_and_password]
 
     @asyncio.coroutine
     def get_connection(self, encoded_username_and_password):
@@ -76,7 +90,7 @@ class ConnectionManager(object):
 
         wrappers = list()
         
-        #self._log.debug("starting new connection with confd for %s" % username)
+        self._log.debug("starting new connection with confd for %s" % username)
         for _ in range(NCCLIENT_WORKER_COUNT):
             new_wrapper = NetconfWrapper(self._log, self._loop, self._netconf_ip, self._netconf_port, username, password)
             yield from new_wrapper.connect()
@@ -102,6 +116,22 @@ class NetconfWrapper(object):
         self._username = username
         self._password = password
 
+    def set_notification_callback(self, notification_cbk):
+        """Sets the notification callback for the Netconf session.
+
+        Arguments:
+            notification_cbk - Callback that will he invoked when a Notification
+                               message is recevied on the session.
+        """
+        self._netconf.register_notification_callback(notification_cbk)
+
+    @asyncio.coroutine
+    def close(self):
+        """Closes the Netconf session.
+        """
+        if self._netconf.connected:
+            yield from self._netconf.close_session()
+
     @asyncio.coroutine
     def connect(self):
         while True:
@@ -116,10 +146,10 @@ class NetconfWrapper(object):
                     look_for_keys=False,
                     hostkey_verify=False
                 )
-                #self._log.info("Connected to confd")
+                self._log.info("Connected to confd")
                 break
             except ncclient.transport.errors.SSHError as e:
-                #self._log.error("Failed to connect to confd")
+                self._log.error("Failed to connect to confd")
                 yield from asyncio.sleep(2, loop=self._loop)
 
     @asyncio.coroutine
@@ -130,12 +160,12 @@ class NetconfWrapper(object):
         try:
             netconf_response = yield from self._netconf.get(('subtree',xml))
         except Exception as e:
-            #self._log.error("ncclient query failed: %s" % e)
+            self._log.error("ncclient query failed: %s" % e)
             error_text = str(e)
             error_code = _check_exception(error_text)
             return error_code, error_text
 
-        #self._log.debug("netconf get response: %s", netconf_response.xml)
+        self._log.debug("netconf get response: %s", netconf_response.xml)
         result = _check_netconf_response(netconf_response, None)
 
         if result == Result.OK:
@@ -155,12 +185,12 @@ class NetconfWrapper(object):
                 source="running",
                 filter=('subtree',xml))
         except Exception as e:
-            #self._log.error("ncclient query failed: %s" % e)
+            self._log.error("ncclient query failed: %s" % e)
             error_text = str(e)
             error_code = _check_exception(error_text)
             return error_code, error_text
 
-        #self._log.debug("netconf get config response: %s", netconf_response.xml)
+        self._log.debug("netconf get config response: %s", netconf_response.xml)
         result = _check_netconf_response(netconf_response, None)
 
         if result == Result.OK:
@@ -179,7 +209,7 @@ class NetconfWrapper(object):
             target="running",
             config=xml)
 
-        #self._log.debug("netconf delete response: %s", netconf_response.xml)
+        self._log.debug("netconf delete response: %s", netconf_response.xml)
 
         # ATTN: uncomment when candidate is the target
         commit_response = None
@@ -198,7 +228,7 @@ class NetconfWrapper(object):
         netconf_response = yield from self._netconf.edit_config(
             target="running",
             config=xml)
-        #self._log.debug("netconf put response: %s", netconf_response.xml)
+        self._log.debug("netconf put response: %s", netconf_response.xml)
 
         # ATTN: uncomment when candidate is the target
         commit_response = None
@@ -214,23 +244,42 @@ class NetconfWrapper(object):
         if not self._netconf.connected:
             yield from self.connect()
 
+
         if is_operation:
             netconf_response = yield from self._netconf.dispatch(lxml.etree.fromstring(xml))
-            #self._log.debug("netconf post-rpc response: %s", netconf_response.xml)
+            self._log.debug("netconf post-rpc response: %s", netconf_response.xml)
             commit_response = None
         else:
             netconf_response = yield from self._netconf.edit_config(
                 target="running",
                 config=xml)
+        # ATTN: uncomment when candidate is the target
+        commit_response = None
+        #commit_response = yield from self._netconf.commit()
+        #self._log.debug("netconf post-config commit netconf_response: %s", commit_response.xml)
 
-            # ATTN: uncomment when candidate is the target
-            commit_response = None
-            #commit_response = yield from self._netconf.commit()
-            #self._log.debug("netconf post-config commit netconf_response: %s", commit_response.xml)
-
-            #self._log.debug("netconf post-config response: %s", netconf_response.xml)
+        
 
         result = _check_netconf_response(netconf_response, None)
 
         return result, netconf_response.xml
 
+    @asyncio.coroutine
+    def create_subscription(self, stream, filter, start_time, stop_time):
+        """Creates a netconf notification subcription.
+
+        Arguments:
+            stream - stream-name for which a subscrption is needed
+            filter - a subtree/xpath filter string to filter the notifications
+            start-time - Start time for the notification replay
+            stop-time  - End time for the notification replay
+
+        Returns: Status result of the operation and the response XML
+        """
+        if not self._netconf.connected:
+            yield from self.connect()
+
+        netconf_response = yield from self._netconf.create_subscription(
+                                  stream, filter, start_time, stop_time)
+        result = _check_netconf_response(netconf_response, None)
+        return result, netconf_response.xml

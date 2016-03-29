@@ -16,6 +16,8 @@
 #include <sys/resource.h>
 #include "rwmsg_int.h"
 #include "rwmsg_broker.h"
+#include "rwvcs_rwzk.h"
+#include "rwtasklet.h"
 
 
 /* Call in mainq thread, in a mainq callback or not */
@@ -45,21 +47,22 @@ rwmsg_bool_t rwmsg_broker_destroy(rwmsg_broker_t *bro) {
     rw_status_t rs;
     char rwzk_path[999];
     char rwzk_LOCK[999];
+    rwtasklet_info_t *ti = bro->rwtasklet_info;
 
-    RW_ASSERT(bro->closure);
-    sprintf(rwzk_path, "/sys-%u/rwmsg/broker/inst-%u", bro->sysid, bro->bro_instid);
-    rs = rwcal_rwzk_unregister_watcher(bro->rwcal, rwzk_path, bro->closure);
-    RW_ASSERT(rs == RW_STATUS_SUCCESS);
-    rwcal_closure_free(&bro->closure);
-    bro->closure = NULL;
-
-    rs = rwcal_rwzk_delete(bro->rwcal, rwzk_path, NULL);
-    RW_ASSERT(rs == RW_STATUS_SUCCESS);
-
-    if (zero) { /* all the brokers are gone */
-      sprintf(rwzk_LOCK, "/sys/rwmsg/broker-lock/lock-%u", bro->sysid);
-      rs = rwcal_rwzk_delete(bro->rwcal, rwzk_LOCK, NULL);
+    if (ti) {
+      RW_ASSERT(bro->closure);
+      sprintf(rwzk_path, "/sys-%u/rwmsg/broker/inst-%u", bro->sysid, bro->bro_instid);
+      rs = rwvcs_rwzk_watcher_stop(ti->rwvcs, rwzk_path, &bro->closure);
       RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+      rs = rwvcs_rwzk_delete_path(ti->rwvcs, rwzk_path);
+      RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+      if (zero) { /* all the brokers are gone */
+        sprintf(rwzk_LOCK, "/sys/rwmsg/broker-lock/lock-%u", bro->sysid);
+        rs = rwvcs_rwzk_delete_path(ti->rwvcs, rwzk_LOCK);
+        RW_ASSERT(rs == RW_STATUS_SUCCESS);
+      }
     }
     bro->rwcal = NULL;
   }
@@ -317,22 +320,23 @@ static void rwmsg_broker_data_watcher_f(void *ctx) {
   if (bro->halted) {
     return;
   }
+  rwtasklet_info_t *ti = bro->rwtasklet_info;
 
   sprintf(rwzk_LOCK, "/sys/rwmsg/broker-lock/lock-%u", bro->sysid);
-  RW_ASSERT(rwcal_rwzk_exists(rwcal, rwzk_LOCK));
-  rs = rwcal_rwzk_lock(rwcal, rwzk_LOCK, &tv);
+  RW_ASSERT(rwvcs_rwzk_exists(ti->rwvcs, rwzk_LOCK));
+  rs = rwvcs_rwzk_lock_path(ti->rwvcs, rwzk_LOCK, &tv);
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
 
   sprintf(my_rwzk_path, "/sys-%u/rwmsg/broker/inst-%u", bro->sysid, bro->bro_instid);
   sprintf(rwzk_path, "/sys-%u/rwmsg/broker", bro->sysid);
-  rs = rwcal_rwzk_get_children(rwcal, rwzk_path, &children, NULL);
+  rs = rwvcs_rwzk_get_children(ti->rwvcs, rwzk_path, &children);
   RW_ASSERT(rs == RW_STATUS_SUCCESS || rs == RW_STATUS_NOTFOUND);
   if (children) {
     int i=0;
     while (children[i] != NULL) {
       sprintf(rwzk_path, "/sys-%u/rwmsg/broker/%s", bro->sysid, children[i]);
       if (strcmp(rwzk_path, my_rwzk_path)) {
-        rs = rwcal_rwzk_get(rwcal, rwzk_path, &rwzk_get_data, NULL);
+        rs = rwvcs_rwzk_get(ti->rwvcs, rwzk_path, &rwzk_get_data);
 
         rwmsg_broker_connect_to_peer(bro, rwzk_get_data);
       }
@@ -342,32 +346,10 @@ static void rwmsg_broker_data_watcher_f(void *ctx) {
     free(children);
   }
 
-  rs = rwcal_rwzk_unlock(rwcal, rwzk_LOCK);
+  rs = rwvcs_rwzk_unlock_path(ti->rwvcs, rwzk_LOCK);
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
   free(rwzk_get_data);
   return;
-}
-
-#define RWCAL_RET_UD_IDX(ud, type, idx) ((type *)rwcal_get_userdata_idx(ud, idx))
-static rw_status_t rwmsg_broker_data_watcher(rwcal_module_ptr_t rwcal, void *ud, int len) {
-  rwmsg_broker_t *bro = RWCAL_RET_UD_IDX(ud, rwmsg_broker_t, 0);
-  RW_ASSERT(len == 1);
-  rw_status_t rs = RW_STATUS_FAILURE;
-
-  if (bro->rwcal != rwcal) {
-    return rs;
-  }
-
-  RWMSG_TRACE(bro->ep, INFO, "rwmsg_broker_data_watcher called%s", "");
-
-  rwmsg_endpoint_t *ep = bro->ep;
-  RW_ASSERT_TYPE(ep, rwmsg_endpoint_t);
-  rwsched_dispatch_queue_t rwq = rwsched_dispatch_get_main_queue(ep->rwsched);
-  rwsched_dispatch_async_f(bro->tinfo, rwq, bro, rwmsg_broker_data_watcher_f);
-
-  rs = RW_STATUS_SUCCESS;
-
-  return rs;
 }
 
 rwmsg_broker_t *rwmsg_broker_create(uint32_t sysid,
@@ -377,7 +359,9 @@ rwmsg_broker_t *rwmsg_broker_create(uint32_t sysid,
                                     rwsched_tasklet_ptr_t tinfo,
                                     rwcal_module_ptr_t rwcal,
                                     uint32_t use_mainq,
-                                    rwmsg_endpoint_t *ep) {
+                                    rwmsg_endpoint_t *ep,
+                                    rwtasklet_info_t *rwtasklet_info)
+{
   rwmsg_broker_t *bro;
 
   RW_ASSERT(rws);
@@ -392,6 +376,7 @@ rwmsg_broker_t *rwmsg_broker_create(uint32_t sysid,
 
   bro->ep = ep; 
   ck_pr_inc_32(&ep->refct);
+  bro->rwtasklet_info = rwtasklet_info;
 
   /* By definition... */
   rwmsg_endpoint_set_property_int(bro->ep, "/rwmsg/broker/enable", 1);
@@ -497,93 +482,98 @@ rwmsg_broker_t *rwmsg_broker_create(uint32_t sysid,
       bro->rwcal = rwcal;
       bro->sysid = sysid;
       bro->bro_instid = bro_instid;
+      rwtasklet_info_t *ti = bro->rwtasklet_info;
 
 #if 1
-      char ** children = NULL;;
-      char *rwzk_get_data;
-      sprintf(rwzk_LOCK, "/sys/rwmsg/broker-lock/lock-%u", bro->sysid);
-      if (!rwcal_rwzk_exists(rwcal, rwzk_LOCK)) {
-        rs = rwcal_rwzk_create(rwcal, rwzk_LOCK, NULL);
+      if (ti) {
+        char ** children = NULL;;
+        char *rwzk_get_data;
+        sprintf(rwzk_LOCK, "/sys/rwmsg/broker-lock/lock-%u", bro->sysid);
+        if (!rwvcs_rwzk_exists(ti->rwvcs, rwzk_LOCK)) {
+          rs = rwvcs_rwzk_create(ti->rwvcs, rwzk_LOCK);
+          RW_ASSERT(rs == RW_STATUS_SUCCESS);
+        }
+        RW_ASSERT(rwvcs_rwzk_exists(ti->rwvcs, rwzk_LOCK));
+        rs = rwvcs_rwzk_lock_path(ti->rwvcs, rwzk_LOCK, &tv);
+        RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+        sprintf(my_rwzk_path, "/sys-%u/rwmsg/broker/inst-%u", bro->sysid, bro->bro_instid);
+        if (rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path)) {
+          RWMSG_TRACE(bro->ep, ERROR, "ERROR: Entry for this broker already exist in RWZK (zookeeper/zake) - /sys-%u/rwmsg/broker/inst-%u\n"
+                          "ERROR: Check whether a previous instance of zookeeper is already running?\n",
+                          bro->sysid, bro->bro_instid);
+          RW_ASSERT(!rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path));
+        }
+        RW_ASSERT(!rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path));
+
+        rs = rwvcs_rwzk_create(ti->rwvcs, my_rwzk_path);
+        RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+        if (ext_ip_address) {
+          sprintf(rwzk_set_data, ":%u:tcp://%s:%u", 0, ext_ip_address, port);
+        }
+        else {
+          sprintf(rwzk_set_data, ":%u:%s", 0, brouri);
+        }
+        RWMSG_TRACE(bro->ep, DEBUG, "rwzk_set_data=[%s]", rwzk_set_data);
+        rs = rwvcs_rwzk_set(ti->rwvcs, my_rwzk_path, rwzk_set_data);
+        RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+        sprintf(rwzk_path, "/sys-%u/rwmsg/broker", bro->sysid);
+        rs = rwvcs_rwzk_get_children(ti->rwvcs, rwzk_path, &children);
+        RW_ASSERT(rs == RW_STATUS_SUCCESS || rs == RW_STATUS_NOTFOUND);
+        if (children) {
+          int i=0;
+          while (children[i] != NULL) {
+            sprintf(rwzk_path, "/sys-%u/rwmsg/broker/%s", bro->sysid, children[i]);
+            if (strcmp(rwzk_path, my_rwzk_path)) {
+              rs = rwvcs_rwzk_get(ti->rwvcs, rwzk_path, &rwzk_get_data);
+              RW_ASSERT(rs == RW_STATUS_SUCCESS);
+              char *p = rwzk_get_data;
+              char *pcount_b = strchr(p, ':');
+              RW_ASSERT(pcount_b);
+              pcount_b++;
+              p = pcount_b;
+              char *pcount_e = strchr(p, ':');
+              RW_ASSERT(pcount_e);
+              *pcount_e = '\0';
+              pcount_e++;
+              p = pcount_e;
+              int count = atoi(pcount_b+1);
+
+              char *pnum = strrchr(p, ':');
+              RW_ASSERT(pnum);
+              pnum++;
+              RW_ASSERT(pnum);
+
+              sprintf(rwzk_path, "/sys-%u/rwmsg/broker/%s", bro->sysid, children[i]);
+              rs = rwvcs_rwzk_get(ti->rwvcs, rwzk_path, &rwzk_get_data);
+
+              rwmsg_broker_connect_to_peer(bro, rwzk_get_data);
+
+              count++;
+              sprintf(rwzk_set_data, ":%u:%s", count, pcount_e);
+              rs = rwvcs_rwzk_set(ti->rwvcs, rwzk_path, rwzk_set_data);
+              RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+            }
+            free(children[i]);
+            i++;
+          }
+          free(children);
+        }
+#endif
+        bro->closure = rwvcs_rwzk_watcher_start(
+            ti->rwvcs, 
+            rwzk_path, 
+            bro->tinfo,
+            rwsched_dispatch_get_main_queue(bro->ep->rwsched),
+            &rwmsg_broker_data_watcher_f, 
+            (void *)bro);
+        RW_ASSERT(bro->closure);
+        rs = rwvcs_rwzk_unlock_path(ti->rwvcs, rwzk_LOCK);
         RW_ASSERT(rs == RW_STATUS_SUCCESS);
       }
-      RW_ASSERT(rwcal_rwzk_exists(rwcal, rwzk_LOCK));
-      rs = rwcal_rwzk_lock(rwcal, rwzk_LOCK, &tv);
-      RW_ASSERT(rs == RW_STATUS_SUCCESS);
-
-      sprintf(my_rwzk_path, "/sys-%u/rwmsg/broker/inst-%u", bro->sysid, bro->bro_instid);
-      if (rwcal_rwzk_exists(rwcal, my_rwzk_path)) {
-        RWMSG_TRACE(bro->ep, ERROR, "ERROR: Entry for this broker already exist in RWZK (zookeeper/zake) - /sys-%u/rwmsg/broker/inst-%u\n"
-                        "ERROR: Check whether a previous instance of zookeeper is already running?\n",
-                        bro->sysid, bro->bro_instid);
-        RW_ASSERT(!rwcal_rwzk_exists(rwcal, my_rwzk_path));
-      }
-      RW_ASSERT(!rwcal_rwzk_exists(rwcal, my_rwzk_path));
-
-      rs = rwcal_rwzk_create(rwcal, my_rwzk_path, NULL);
-      RW_ASSERT(rs == RW_STATUS_SUCCESS);
-
-      if (ext_ip_address) {
-        sprintf(rwzk_set_data, ":%u:tcp://%s:%u", 0, ext_ip_address, port);
-      }
-      else {
-        sprintf(rwzk_set_data, ":%u:%s", 0, brouri);
-      }
-      RWMSG_TRACE(bro->ep, DEBUG, "rwzk_set_data=[%s]", rwzk_set_data);
-      rs = rwcal_rwzk_set(rwcal, my_rwzk_path, rwzk_set_data, NULL);
-      RW_ASSERT(rs == RW_STATUS_SUCCESS);
-
-      sprintf(rwzk_path, "/sys-%u/rwmsg/broker", bro->sysid);
-      rs = rwcal_rwzk_get_children(rwcal, rwzk_path, &children, NULL);
-      RW_ASSERT(rs == RW_STATUS_SUCCESS || rs == RW_STATUS_NOTFOUND);
-      if (children) {
-        int i=0;
-        while (children[i] != NULL) {
-          sprintf(rwzk_path, "/sys-%u/rwmsg/broker/%s", bro->sysid, children[i]);
-          if (strcmp(rwzk_path, my_rwzk_path)) {
-            rs = rwcal_rwzk_get(rwcal, rwzk_path, &rwzk_get_data, NULL);
-            RW_ASSERT(rs == RW_STATUS_SUCCESS);
-            char *p = rwzk_get_data;
-            char *pcount_b = strchr(p, ':');
-            RW_ASSERT(pcount_b);
-            pcount_b++;
-            p = pcount_b;
-            char *pcount_e = strchr(p, ':');
-            RW_ASSERT(pcount_e);
-            *pcount_e = '\0';
-            pcount_e++;
-            p = pcount_e;
-            int count = atoi(pcount_b+1);
-
-            char *pnum = strrchr(p, ':');
-            RW_ASSERT(pnum);
-            pnum++;
-            RW_ASSERT(pnum);
-
-            sprintf(rwzk_path, "/sys-%u/rwmsg/broker/%s", bro->sysid, children[i]);
-            rs = rwcal_rwzk_get(rwcal, rwzk_path, &rwzk_get_data, NULL);
-
-            rwmsg_broker_connect_to_peer(bro, rwzk_get_data);
-
-            count++;
-            sprintf(rwzk_set_data, ":%u:%s", count, pcount_e);
-            rs = rwcal_rwzk_set(rwcal, rwzk_path, rwzk_set_data, NULL);
-            RW_ASSERT(rs == RW_STATUS_SUCCESS);
-
-          }
-          free(children[i]);
-          i++;
-        }
-        free(children);
-      }
-#endif
-
-      bro->closure = rwcal_closure_alloc(rwcal, &rwmsg_broker_data_watcher, (void *)bro);
-      RW_ASSERT(bro->closure);
-
-      rs = rwcal_rwzk_register_watcher(rwcal, rwzk_path, bro->closure);
-      RW_ASSERT(rs == RW_STATUS_SUCCESS);
-      rs = rwcal_rwzk_unlock(rwcal, rwzk_LOCK);
-      RW_ASSERT(rs == RW_STATUS_SUCCESS);
     }
 
     if (!rwmsg_broker_g.abroker) {

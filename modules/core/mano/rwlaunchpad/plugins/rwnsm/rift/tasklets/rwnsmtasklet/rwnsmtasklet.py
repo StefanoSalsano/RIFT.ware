@@ -13,6 +13,13 @@ from enum import Enum
 from collections import deque
 from collections import defaultdict
 
+import gi
+gi.require_version('RwNsrYang', '1.0')
+gi.require_version('RwVnfrYang', '1.0')
+gi.require_version('RwNsmYang', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwVlrYang', '1.0')
 from gi.repository import (
     RwNsrYang,
     NsrYang,
@@ -52,13 +59,6 @@ class NetworkServiceRecordState(Enum):
     TERMINATED = 111
     FAILED = 112
 
-
-class ConfigAgentState(Enum):
-    """ Config Agent Status """
-    INIT=0
-    CONFIGURING = 1
-    CONFIGURED = 2
-    FAILED = 3
 
 class NetworkServiceRecordError(Exception):
     """ Network Service Record Error """
@@ -494,12 +494,17 @@ class VirtualNetworkFunctionRecord(object):
         self._const_vnfd = const_vnfd
         self._cloud_account_name = cloud_account_name
 
-        self._config_agent = False
-        self._config_status = ConfigAgentState.CONFIGURING
+        try:
+            self._config_type = const_vnfd.vnf_configuration.config_type
+        except:
+            self._config_type = 'none'
+        self._config_status = NsrYang.ConfigStates.INIT
         self._mon_params = {}
         self._state = VnfRecordState.INIT
         self._vnfr_id = str(uuid.uuid4())
         self._vnfr = self.vnfr_msg
+        self._log.debug("Set VNFR {} config type to {}".
+                        format(self.name, self._config_type))
 
     @property
     def id(self):
@@ -557,14 +562,18 @@ class VirtualNetworkFunctionRecord(object):
         return (VirtualNetworkFunctionRecord.XPATH + "[vnfr:id = '{}']").format(vnfr.id)
 
     @property
+    def config_type(self):
+        return self._config_type
+
+    @property
     def config_status(self):
         self._log.debug("Map VNFR {} config status {} ({})".
-                        format(self.name, self._config_status, self._config_agent))
-        if not self._config_agent:
+                        format(self.name, self._config_status, self._config_type))
+        if self._config_type == 'none':
             return 'config_not_needed'
-        if self._config_status == ConfigAgentState.CONFIGURED:
+        if self._config_status == NsrYang.ConfigStates.CONFIGURED:
             return 'configured'
-        if self._config_status == ConfigAgentState.FAILED:
+        if self._config_status == NsrYang.ConfigStates.FAILED:
             return 'failed'
         return 'configuring'
 
@@ -608,7 +617,7 @@ class VirtualNetworkFunctionRecord(object):
     def update_vnfm(self):
         self._vnfr = self.vnfr_msg
         # Publish only after VNFM has the VNFR created
-        if self._config_status != ConfigAgentState.INIT:
+        if self._config_status != NsrYang.ConfigStates.INIT:
             self._log.debug("Send an update to VNFM for VNFR {} with {}".
                             format(self.name, self.vnfr))
             yield from self._dts.query_update(self.xpath,
@@ -616,19 +625,25 @@ class VirtualNetworkFunctionRecord(object):
                                               self.vnfr)
 
     @asyncio.coroutine
-    def set_config_status(self, status, agent=False):
-        self._log.debug("Update VNFR {} from {} ({}) to {} ({})".
+    def set_config_status(self, status):
+        self._log.debug("Update VNFR {} from {} ({}) to {}".
                         format(self.name, self._config_status,
-                               self._config_agent, status, agent))
-        if self._config_status != status or self._config_agent != agent:
+                               self._config_type, status))
+        if self._config_status == NsrYang.ConfigStates.CONFIGURED:
+            self._log.error("Updating already configured VNFR {}".
+                            format(self.name))
+
+        if self._config_status != status:
             self._config_status = status
-            self._config_agent = agent
-            self._log.debug("Updated VNFR {} status to {} ({})".
-                            format(self.name, status, agent))
+            self._log.debug("Updated VNFR {} status to {}".
+                            format(self.name, status))
             yield from self.update_vnfm()
 
     def is_configured(self):
-        if self._config_status == ConfigAgentState.CONFIGURED:
+        if self._config_type == 'none':
+            return True
+
+        if self._config_status == NsrYang.ConfigStates.CONFIGURED:
             return True
         return False
 
@@ -784,8 +799,8 @@ class NetworkServiceStatus(object):
                             "VNF_INIT_PHASE": "vnf_init_phase",
                             "VNFFG_INIT_PHASE": "vnffg_init_phase",
                             "RUNNING": "running",
+                            "TERMINATE_RCVD": "terminate_rcvd",
                             "TERMINATE": "terminate",
-                            "TERMINATE_RCVD": "vl_terminate_phase",
                             "VL_TERMINATE_PHASE": "vl_terminate_phase",
                             "VNF_TERMINATE_PHASE": "vnf_terminate_phase",
                             "VNFFG_TERMINATE_PHASE": "vnffg_terminate_phase",
@@ -837,7 +852,7 @@ class NetworkServiceRecord(object):
         self._create_time = int(time.time())
         self._op_status = NetworkServiceStatus(dts, log, loop)
         self._mon_params = defaultdict(NsrYang.YangData_Nsr_NsInstanceOpdata_Nsr_VnfMonitoringParam)
-        self._config_status = ConfigAgentState.CONFIGURING
+        self._config_status = NsrYang.ConfigStates.CONFIGURING
         self._config_update = None
         self._job_id = 0
 
@@ -970,14 +985,14 @@ class NetworkServiceRecord(object):
             yield from self.invoke_config_agent_plugins('notify_instantiate_vl', self.id, vlr, xact)
 
     @asyncio.coroutine
-    def create(self):
+    def create(self, xact):
         """ Create this network service"""
         yield from self.invoke_config_agent_plugins('notify_create_nsr', self.id, self._nsd)
         # Create virtual links  for all the external vnf
         # connection points in this NS
         yield from self.create_vls()
         # Create VNFs in this network service
-        yield from self.create_vnfs()
+        yield from self.create_vnfs(xact)
         # Create VNFFG for network service
         yield from self.create_vnffgs()
 
@@ -1019,19 +1034,20 @@ class NetworkServiceRecord(object):
             yield from self.invoke_config_agent_plugins('notify_create_vls', self.id, vld, vlr)
 
     def is_vnfr_config_agent_managed(self, vnfr):
-        if vnfr._config_agent:
-            return True
+        if vnfr.config_type == 'none':
+            return False
+
         for agent in self._config_agent_plugins:
             try:
                 if agent.is_vnfr_managed(vnfr.id):
                     return True
             except Exception as e:
-                self._log.info("Check if VNFR {} is config agent managed: {}".
+                self._log.debug("Check if VNFR {} is config agent managed: {}".
                                format(vnfr.name, e))
         return False
 
     @asyncio.coroutine
-    def create_vnfs(self):
+    def create_vnfs(self, xact):
         """
         This function creates VNFs for every VNF in the NSD
         associated with this NSR
@@ -1044,7 +1060,7 @@ class NetworkServiceRecord(object):
         @asyncio.coroutine
         def fetch_vnfd(vnfd_ref):
             """  Fetch vnfd for the passed vnfd ref """
-            return (yield from self._nsm.get_vnfd(vnfd_ref))
+            return (yield from self._nsm.get_vnfd(vnfd_ref, xact))
 
         for const_vnfd in self.nsd.msg.constituent_vnfd:
             vnfd = None
@@ -1081,15 +1097,10 @@ class NetworkServiceRecord(object):
             yield from self.invoke_config_agent_plugins('notify_create_vnfr',
                                                         self.id,
                                                         vnfr)
-            if self.is_vnfr_config_agent_managed(vnfr):
-                self._log.debug("VNFR %s is in configuring state" % vnfr.name)
-                yield from vnfr.set_config_status(ConfigAgentState.INIT, agent=True)
-            else:
-                self._log.debug("VNFR %s is not config agent" % vnfr.name)
-                yield from vnfr.set_config_status(ConfigAgentState.INIT)
+            yield from vnfr.set_config_status(NsrYang.ConfigStates.INIT)
 
             self._log.debug("Added VNFR %s to NSM VNFR list with id %s",
-                            vnfr,
+                            vnfr.name,
                             vnfr.id)
 
     def create_param_pools(self):
@@ -1248,7 +1259,7 @@ class NetworkServiceRecord(object):
         self.substitute_input_parameters(self._nsd._nsd, self._nsr_cfg_msg)
 
         # Create the record
-        yield from self.create()
+        yield from self.create(xact)
 
         # Publish the NSR to DTS
         yield from self.publish()
@@ -1359,32 +1370,36 @@ class NetworkServiceRecord(object):
     @asyncio.coroutine
     def get_vnfr_config_status(self, vnfr):
         if vnfr.is_configured():
-            return ConfigAgentState.CONFIGURED
+            return NsrYang.ConfigStates.CONFIGURED
 
-        # Check if config agent has finished configuring
-        status = ConfigAgentState.CONFIGURED
-        for agent in self._config_agent_plugins:
-            try:
-                rc = yield from agent.get_status(vnfr.id)
-                #self._log.debug("config status for VNF {} is {}".
-                #                format(vnfr.id, rc))
-                if rc == 'configuring':
-                    status = ConfigAgentState.CONFIGURING
-                    break
-                elif rc == 'failed':
-                    status = ConfigAgentState.FAILED
-                    break
+        if self.is_vnfr_config_agent_managed(vnfr):
+            # Check if config agent has finished configuring
+            status = NsrYang.ConfigStates.CONFIGURED
+            for agent in self._config_agent_plugins:
+                try:
+                    rc = yield from agent.get_status(vnfr.id)
+                    if rc == 'configuring':
+                        status = NsrYang.ConfigStates.CONFIGURING
+                        break
+                    elif rc == 'failed':
+                        status == NsrYang.ConfigStates.FAILED
+                        break
 
-            except Exception as e:
-                self._log.debug("Error in checking config state for VNF %s, e=%s" % (vnfr.name, e))
-                status = ConfigAgentState.CONFIGURING
+                except Exception as e:
+                    self._log.debug("Exception in is_vnfr_config_agent_managed for {}: {}".
+                                    format(vnfr.name, e))
+                    status = NsrYang.ConfigStates.CONFIGURING
+            yield from vnfr.set_config_status(status)
+        else:
+            # Rift Configuration Manager
+            status = vnfr._config_status
 
-        yield from vnfr.set_config_status(status, True)
-        if status == ConfigAgentState.CONFIGURED:
-            # Re-apply initial config
-            self._log.debug("VNF active. Apply initial config for vnfr {}".format(vnfr.name))
-            yield from self.invoke_config_agent_plugins('apply_initial_config',
-                                                        vnfr.name, vnfr)
+        if status in [NsrYang.ConfigStates.CONFIGURED, NsrYang.ConfigStates.FAILED]:
+            if self.is_vnfr_config_agent_managed(vnfr):
+                # Re-apply initial config
+                self._log.debug("VNF active. Apply initial config for vnfr {}".format(vnfr.name))
+                yield from self.invoke_config_agent_plugins('apply_initial_config',
+                                                            vnfr.id, vnfr)
 
         return status
 
@@ -1393,27 +1408,24 @@ class NetworkServiceRecord(object):
         ''' Check if all VNFRs are configured '''
         self._log.debug("Check all VNFRs are configured for ns %s" % self.name)
 
-        if self._config_status == ConfigAgentState.CONFIGURED:
-            return ConfigAgentState.CONFIGURED
+        if self._config_status in  [NsrYang.ConfigStates.CONFIGURED,  NsrYang.ConfigStates.FAILED]:
+            return
 
         # Handle reload scenarios
         for vnfr in self._vnfrs.values():
             if self.is_vnfr_config_agent_managed(vnfr):
-                yield from vnfr.set_config_status(ConfigAgentState.CONFIGURING, True)
-            else:
-                # Set non config agent managed to configured
-                vnfr._config_status = ConfigAgentState.CONFIGURED
+                yield from vnfr.set_config_status(NsrYang.ConfigStates.CONFIGURING)
 
-        recheck = True
-        while recheck:
+        while True:
+            config_status =  NsrYang.ConfigStates.CONFIGURED
             for vnfr in self._vnfrs.values():
                 config_status = yield from self.get_vnfr_config_status(vnfr)
-                self._log.debug("config status for VNF {} is {}".
-                                format(vnfr.name, config_status))
-                if config_status !=  ConfigAgentState.CONFIGURED:
+                if config_status ==  NsrYang.ConfigStates.CONFIGURING:
                     break
             self._config_status = config_status
-            if config_status in [ConfigAgentState.CONFIGURED, ConfigAgentState.FAILED]:
+            if config_status in [NsrYang.ConfigStates.CONFIGURED, NsrYang.ConfigStates.FAILED]:
+                self._log.debug("Publish config status for NS {}: {}".
+                                format(self.name, config_status))
                 yield from self.publish()
                 return
             else:
@@ -1471,10 +1483,10 @@ class NetworkServiceRecord(object):
 
         self._log.debug("Terminating network service id %s", self.id)
 
-        # Move the state to VNF_TERMINATE_PHASE
+        # Move the state to TERMINATE
         self.set_state(NetworkServiceRecordState.TERMINATE)
-        event_descr = "Terminate rcvd for NS Id:%s" % self.id
-        self.record_event("terminate-rcvd", event_descr)
+        event_descr = "Terminate being processed for NS Id:%s" % self.id
+        self.record_event("terminate", event_descr)
 
         # Move the state to VNF_TERMINATE_PHASE
         self._log.debug("Terminating VNFFGs in NS ID: %s",self.id)
@@ -1520,9 +1532,9 @@ class NetworkServiceRecord(object):
     def map_config_status(self):
         self._log.debug("Config status for ns {} is {}".
                         format(self.name, self._config_status))
-        if self._config_status == ConfigAgentState.CONFIGURING:
+        if self._config_status == NsrYang.ConfigStates.CONFIGURING:
             return 'configuring'
-        if self._config_status == ConfigAgentState.FAILED:
+        if self._config_status == NsrYang.ConfigStates.FAILED:
             return 'failed'
         return 'configured'
 
@@ -1756,17 +1768,20 @@ class NsdDtsHandler(object):
             """Apply the  configuration"""
             self._log.debug("Got nsd apply cfg (xact:%s) (action:%s)",
                             xact, action)
-            if action == rwdts.AppconfAction.INSTALL and xact.id is None:
-                self._log.debug("No xact handle.  Skipping apply config")
-                return RwTypes.RwStatus.SUCCESS
+            # Create/Update an NSD record
+            for cfg in self._regh.get_xact_elements(xact):
+                # Only interested in those NSD cfgs whose ID was received in prepare callback
+                if cfg.id in acg.scratch['nsds']:
+                    self._nsm.update_nsd(cfg)
 
+            del acg._scratch['nsds'][:]
             return RwTypes.RwStatus.SUCCESS
 
         @asyncio.coroutine
         def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
             """ Prepare callback from DTS for NSD config """
 
-            self._log.info("NSD config received nsd id %s, msg %s",
+            self._log.info("Got nsd prepare - config received nsd id %s, msg %s",
                            msg.id, msg)
 
             fref = ProtobufC.FieldReference.alloc()
@@ -1781,12 +1796,15 @@ class NsdDtsHandler(object):
                     raise NetworkServiceDescriptorRefCountExists(err)
                 self._nsm.delete_nsd(msg.id)
             else:
+                # Handle actual adds/updates in apply_callback,
+                # just check if NSD in use in prepare_callback
                 if self._nsm.nsd_in_use(msg.id):
                     self._log.debug("Cannot modify an NSD in use - %s", msg.id)
                     err = "Cannot modify an NSD in use - %s" % msg.id
                     raise NetworkServiceDescriptorRefCountExists(err)
-                # Create/Update an NSD record
-                self._nsm.update_nsd(msg)
+
+                # Add this NSD to scratch to create/update in apply callback
+                acg._scratch['nsds'].append(msg.id)
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
@@ -1797,6 +1815,8 @@ class NsdDtsHandler(object):
 
         acg_hdl = rift.tasklets.AppConfGroup.Handler(on_apply=on_apply)
         with self._dts.appconf_group_create(handler=acg_hdl) as acg:
+            # Need a list in scratch to store NSDs to create/update later
+            acg._scratch['nsds'] = list()
             self._regh = acg.register(
                 xpath=NsdDtsHandler.XPATH,
                 flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
@@ -1814,7 +1834,7 @@ class VnfdDtsHandler(object):
         self._nsm = nsm
         self._regh = None
 
-    @asyncio.coroutine
+    @property
     def regh(self):
         """ DTS registration handle """
         return self._regh
@@ -1823,26 +1843,42 @@ class VnfdDtsHandler(object):
     def register(self):
         """ Register for VNFD configuration"""
 
+        @asyncio.coroutine
         def on_apply(dts, acg, xact, action, scratch):
             """Apply the  configuration"""
-            self._log.debug("Got VNFD apply (xact: %s) (action: %s)(scr: %s)",
+            self._log.debug("Got NSM VNFD apply (xact: %s) (action: %s)(scr: %s)",
                             xact, action, scratch)
+
+            # Create/Update a VNFD record
+            for cfg in self._regh.get_xact_elements(xact):
+                # Only interested in those VNFD cfgs whose ID was received in prepare callback
+                if cfg.id in acg.scratch['vnfds']:
+                    self._nsm.update_vnfd(cfg)
+
+            for cfg in self._regh.elements:
+                if cfg.id in acg.scratch['deleted_vnfds']:
+                    yield from self._nsm.delete_vnfd(cfg.id)
+
+            del acg._scratch['vnfds'][:]
+            del acg._scratch['deleted_vnfds'][:]
 
         @asyncio.coroutine
         def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
             """ on prepare callback """
-            self._log.debug("Got on prepare for VNFD (path: %s) (action: %s)",
-                            ks_path.to_xpath(RwNsmYang.get_schema()), msg)
+            self._log.debug("Got on prepare for VNFD (path: %s) (action: %s) (msg: %s)",
+                            ks_path.to_xpath(RwNsmYang.get_schema()), xact_info.query_action, msg)
             # RIFT-10161
             fref = ProtobufC.FieldReference.alloc()
             fref.goto_whole_message(msg.to_pbcm())
 
+            # Handle deletes in prepare_callback, but adds/updates in apply_callback
             if fref.is_field_deleted():
-                self._log.debug("Deleting VNFD with id %s", msg.id)
-                # ATTN -- Need to handle deletes
-                # yield from self._nsm.delete_vnfd(msg.id)
+                self._log.debug("Adding msg to deleted field")
+                acg._scratch['deleted_vnfds'].append(msg.id)
             else:
-                yield from self._nsm.update_vnfd(msg)
+                # Add this VNFD to scratch to create/update in apply callback
+                acg._scratch['vnfds'].append(msg.id)
+
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
         self._log.debug(
@@ -1851,6 +1887,9 @@ class VnfdDtsHandler(object):
             )
         acg_hdl = rift.tasklets.AppConfGroup.Handler(on_apply=on_apply)
         with self._dts.appconf_group_create(handler=acg_hdl) as acg:
+            # Need a list in scratch to store VNFDs to create/update later
+            acg._scratch['vnfds'] = list()
+            acg._scratch['deleted_vnfds'] = list()
             self._regh = acg.register(
                 xpath=VnfdDtsHandler.XPATH,
                 flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
@@ -1909,11 +1948,10 @@ class NsrDtsHandler(object):
                 return nsr
 
             @asyncio.coroutine
-            def begin_instantiation(nsr):
+            def begin_instantiation(nsr, xact):
                 """ Begin instantiation """
                 self._log.info("Beginning NS instantiation: %s", nsr.id)
-                with self._dts.transaction() as xact:
-                    yield from self._nsm.instantiate_ns(nsr.id, xact)
+                yield from self._nsm.instantiate_ns(nsr.id, xact)
 
             if action == rwdts.AppconfAction.INSTALL and xact.id is None:
                 self._log.debug("No xact handle.  Skipping apply config")
@@ -1925,11 +1963,11 @@ class NsrDtsHandler(object):
 
                 if fref.is_field_deleted():
                     self._log.error("Ignoring delete in apply - msg:%s", msg)
-                    continue
+                    continue 
 
                 if msg.id not in self._nsm.nsrs:
                     nsr = handle_create_nsr()
-                    self._loop.create_task(begin_instantiation(nsr))
+                    self._loop.create_task(begin_instantiation(nsr, xact))
 
             return RwTypes.RwStatus.SUCCESS
 
@@ -1943,18 +1981,31 @@ class NsrDtsHandler(object):
                 xact, xact_info, xpath, msg)
 
             @asyncio.coroutine
+            def delete_instantiation(ns_id):
+                """ Delete instantiation """
+                with self._dts.transaction() as xact:
+                    yield from self._nsm.terminate_ns(ns_id, xact)
+
             def handle_delete_nsr():
                 """ Handle delete NSR requests """
                 self._log.info("Delete req for  NSR Id: %s received", msg.id)
                 # Terminate the NSR instance
-                yield from self._nsm.terminate_ns(msg.id, xact_info.xact)
+                nsr = self._nsm.get_ns_by_nsr_id(msg.id)
+
+                nsr.set_state(NetworkServiceRecordState.TERMINATE_RCVD)
+                event_descr = "Terminate rcvd for NS Id:%s" % msg.id
+                nsr.record_event("terminate-rcvd", event_descr)
+
+                self._loop.create_task(delete_instantiation(msg.id))
+
 
             fref = ProtobufC.FieldReference.alloc()
             fref.goto_whole_message(msg.to_pbcm())
 
             if fref.is_field_deleted():
+                self._log.info("Delete NSR received in prepare to terminate NS:%s", msg.id)
                 try:
-                    yield from handle_delete_nsr()
+                    handle_delete_nsr()
                 except Exception:
                     self._log.exception("Failed to terminate NS:%s", msg.id)
 
@@ -1978,6 +2029,68 @@ class NsrDtsHandler(object):
             self._regh = acg.register(xpath=NsrDtsHandler.XPATH,
                                       flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
                                       on_prepare=on_prepare)
+
+
+class NsrOpDataDtsHandler(object):
+    """ The network service op data DTS handler """
+    XPATH = "D,/nsr:ns-instance-opdata/nsr:nsr"
+
+    def __init__(self, dts, log, loop, nsm):
+        self._dts = dts
+        self._log = log
+        self._loop = loop
+        self._nsm = nsm
+        self._regh = None
+
+    @property
+    def regh(self):
+        """ Return the registration handle"""
+        return self._regh
+
+    @property
+    def nsm(self):
+        """ Return the NS manager instance """
+        return self._nsm
+
+    @asyncio.coroutine
+    def register(self):
+        """ Register for Nsr op data publisher registration"""
+        self._log.debug("Registering Nsr op data path %s as publisher",
+                        NsrOpDataDtsHandler.XPATH)
+
+        hdl = rift.tasklets.DTS.RegistrationHandler()
+        handlers = rift.tasklets.Group.Handler()
+        with self._dts.group_create(handler=handlers) as group:
+            self._regh = group.register(xpath=NsrOpDataDtsHandler.XPATH,
+                                        handler=hdl,
+                                        flags=rwdts.Flag.PUBLISHER | rwdts.Flag.NO_PREP_READ| rwdts.Flag.FILE_DATASTORE)
+
+    @asyncio.coroutine
+    def create(self, xact, path, msg):
+        """
+        Create an NS record in DTS with the path and message
+        """
+        self._log.debug("Creating NSR xact = %s, %s:%s", xact, path, msg)
+        self.regh.create_element(path, msg)
+        self._log.debug("Created NSR xact = %s, %s:%s", xact, path, msg)
+
+    @asyncio.coroutine
+    def update(self, xact, path, msg, flags=rwdts.Flag.REPLACE):
+        """
+        Update an NS record in DTS with the path and message
+        """
+        self._log.debug("Updating NSR xact = %s, %s:%s regh = %s", xact, path, msg, self.regh)
+        self.regh.update_element(path, msg, flags)
+        self._log.debug("Updated NSR xact = %s, %s:%s", xact, path, msg)
+
+    @asyncio.coroutine
+    def delete(self, xact, path):
+        """
+        Update an NS record in DTS with the path and message
+        """
+        self._log.debug("Deleting NSR xact:%s, path:%s", xact, path)
+        self.regh.delete_element(path)
+        self._log.debug("Deleted NSR xact:%s, path:%s", xact, path)
 
 
 class VnfrDtsHandler(object):
@@ -2445,14 +2558,17 @@ class NsManager(object):
         self._vnfds = {}
         self._vnfrs = {}
 
-        self._so_obj = conman.ROServiceOrchConfig(log, loop, dts)
+        self._so_obj = conman.ROServiceOrchConfig(log, loop, dts, self)
 
-        self._dts_handlers = [NsdDtsHandler(dts, log, loop, self),
+        self._nsd_dts_handler = NsdDtsHandler(dts, log, loop, self)
+        self._vnfd_dts_handler = VnfdDtsHandler(dts, log, loop, self)
+
+        self._dts_handlers = [self._nsd_dts_handler,
                               VnfrDtsHandler(dts, log, loop, self),
                               NsMonitorDtsHandler(dts, log, loop, self),
                               NsdRefCountDtsHandler(dts, log, loop, self),
                               NsrDtsHandler(dts, log, loop, self),
-                              VnfdDtsHandler(dts, log, loop, self),
+                              self._vnfd_dts_handler,
                               NsManagerRPCHandler(dts, log, loop, self),
                               self._so_obj]
 
@@ -2707,16 +2823,24 @@ class NsManager(object):
 
         del self._nsds[nsd_id]
 
+    def get_vnfd_config(self, xact):
+        vnfd_dts_reg = self._vnfd_dts_handler.regh
+        for cfg in vnfd_dts_reg.get_xact_elements(xact):
+            self.create_vnfd(cfg)
+
     @asyncio.coroutine
-    def get_vnfd(self, vnfd_id):
+    def get_vnfd(self, vnfd_id, xact):
         """ Get virtual network function descriptor for the passed vnfd_id"""
         if vnfd_id not in self._vnfds:
             self._log.error("Cannot find VNFD id:%s", vnfd_id)
-            raise VnfDescriptorError("Cannot find VNFD id:%s", vnfd_id)
+            self.get_vnfd_config(xact)
+
+            if vnfd_id not in self._vnfds:
+                self._log.error("Cannot find VNFD id:%s", vnfd_id)
+                raise VnfDescriptorError("Cannot find VNFD id:%s", vnfd_id)
 
         return self._vnfds[vnfd_id]
 
-    @asyncio.coroutine
     def create_vnfd(self, vnfd):
         """ Create a virtual network function descriptor """
         self._log.debug("Create virtual network function descriptor - %s", vnfd)
@@ -2727,13 +2851,17 @@ class NsManager(object):
         self._vnfds[vnfd.id] = vnfd
         return self._vnfds[vnfd.id]
 
-    @asyncio.coroutine
     def update_vnfd(self, vnfd):
         """ Update the virtual network function descriptor """
         self._log.debug("Update virtual network function descriptor- %s", vnfd)
+
+        # Hack to remove duplicates from leaf-lists - to be fixed by RIFT-6511
+        for ivld in vnfd.internal_vld:
+            ivld.internal_connection_point_ref = list(set(ivld.internal_connection_point_ref))
+
         if vnfd.id not in self._vnfds:
             self._log.debug("No VNFD found - creating VNFD id = %s", vnfd.id)
-            yield from self.create_vnfd(vnfd)
+            self.create_vnfd(vnfd)
         else:
             self._log.debug("Updating VNFD id = %s, vnfd = %s", vnfd.id, vnfd)
             self._vnfds[vnfd.id] = vnfd
@@ -2889,35 +3017,6 @@ class NsmRecordsPublisherProxy(object):
         return (yield from self._vlr_pub_hdlr.delete(xact, path))
 
 
-class ConfigAccountHandler(object):
-    def __init__(self, dts, log, log_hdl, loop):
-        self._log = log
-        self._log_hdl = log_hdl
-        self._dts = dts
-        self._loop = loop
-
-        self._log.debug("creating config account handler")
-        self.config_agent_handler = rift.mano.config_agent.ConfigAgentSubscriber(
-            self._dts, self._log, self._log_hdl,
-            rift.mano.config_agent.ConfigAgentCallbacks(
-                on_add_apply=self.on_config_account_added,
-                on_delete_apply=self.on_config_account_deleted,
-            )
-        )
-
-    def on_config_account_deleted(self, account_name):
-        self._log.debug("config account deleted")
-        self._log.debug(account_name)
-
-    def on_config_account_added(self, account):
-        self._log.debug("config account added")
-        self._log.debug(account.as_dict())
-
-    @asyncio.coroutine
-    def register(self):
-        self.config_agent_handler.register()
-
-
 class NsmTasklet(rift.tasklets.Tasklet):
     """
     The network service manager  tasklet
@@ -2952,6 +3051,13 @@ class NsmTasklet(rift.tasklets.Tasklet):
                                       self.on_dts_state_change)
 
         self.log.debug("Created DTS Api GI Object: %s", self._dts)
+
+    def stop(self):
+      try:
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in NSM stop:", sys.exc_info()[0])
+         raise
 
     def on_instance_started(self):
         """ Task instance started callback """

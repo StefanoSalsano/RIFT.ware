@@ -19,6 +19,7 @@
 #include "rwcli_schema.hpp"
 #include "rwut.h"
 #include <poll.h>
+#include "rwyangutil.h"
 
 namespace fs = boost::filesystem;
 using namespace rw_yang;
@@ -50,6 +51,10 @@ public:
   }
 
   SchemaTestFixture() {
+    // dynamic schema paths
+    rift_root_ = fs::path(getenv("RIFT_INSTALL"));
+    latest_path_ = rift_root_ / std::string(LATEST_NORTHBOUND_VER_DIR);
+
     schema_path_ = fs::path(getenv("RIFT_INSTALL")) / fs::path(TEST_SCHEMA_PATH);
     yang_path_   = schema_path_ / "yang";
     ver_path_    = schema_path_ / "version";
@@ -65,10 +70,15 @@ public:
   }
 
   virtual void SetUp() {
-    // Constructors are preferred
+    // Setup the schema directory.
+    auto ret = std::system("rwyangutil --create-schema-dir test_northbound_listing.txt");
+    ASSERT_EQ (ret, 0);
+
   }
 
   virtual void TearDown(){
+    auto ret = std::system("rwyangutil --remove-schema-dir");
+    ASSERT_EQ (ret, 0);
   }
 
   void copy_yang_file(const std::string& filename) {
@@ -87,6 +97,13 @@ public:
     fs::copy_file(src_file, dest_file, fs::copy_option::fail_if_exists);
   }
 
+  void copy_yang_to_path(const std::string& filename, const fs::path& dest_path) {
+    fs::path src_file = test_yang_src_path_ / filename;
+    fs::path dest_file = dest_path / filename;
+    dest_file.replace_extension("yang");
+    fs::copy_file(src_file, dest_file, fs::copy_option::fail_if_exists);
+  }
+
   void create_version_link(const std::string& ver_dir) {
     fs::path src = ver_path_ / ver_dir;
     fs::path link = ver_path_ / "confd_yang";
@@ -96,6 +113,8 @@ public:
   fs::path schema_path_;
   fs::path yang_path_;
   fs::path ver_path_;
+  fs::path rift_root_;
+  fs::path latest_path_;
 
   fs::path test_yang_src_path_;
 };
@@ -149,7 +168,7 @@ TEST_F(SchemaTestFixture, ChangeSetAdd) {
 
   SchemaManager mgr(TEST_SCHEMA_PATH);
 
-  copy_yang_file("schema1");
+  copy_yang_to_path("schema1", latest_path_);
 
   // Check if an event is present, poll and return immediately
   struct pollfd fds[1] = {
@@ -174,9 +193,9 @@ TEST_F(SchemaTestFixture, ChangeSetAddMultiple) {
 
   SchemaManager mgr(TEST_SCHEMA_PATH);
 
-  copy_yang_file("schema1");
-  copy_yang_file("schema2");
-  copy_yang_file("schema3");
+  copy_yang_to_path("schema1", latest_path_);
+  copy_yang_to_path("schema2", latest_path_);
+  copy_yang_to_path("schema3", latest_path_);
 
   // Check if an event is present, poll and return immediately
   struct pollfd fds[1] = {
@@ -200,85 +219,3 @@ TEST_F(SchemaTestFixture, ChangeSetAddMultiple) {
   }
 }
 
-TEST_F(SchemaTestFixture, StampedSchema)
-{
-  TEST_DESCRIPTION("Copy a schema, create new version, stamp it and link it");
-
-  SchemaManager mgr(TEST_SCHEMA_PATH);
-
-  const char* ver = "00000001";
-  const char* filename = "schema1";
-
-  // Stamping is not required, create symbolic link is sufficent to check
-  copy_yang_file(filename);
-  fs::create_directory(ver_path_ / ver);
-  copy_yang_to_ver(filename, ver);
-  create_version_link(ver);
-
-  // Check if an event is present, poll and return immediately
-  struct pollfd fds[1] = {
-    {mgr.updater_->get_handle(), POLLIN, 0}
-  };
-
-  int poll_ret = poll(fds, 1, 0);
-  ASSERT_EQ(poll_ret, 1);
-  mgr.updater_->check_for_updates();
-
-  InotifySchemaUpdater *updater = static_cast<InotifySchemaUpdater*>(
-                                      mgr.updater_.get());
-  EXPECT_TRUE(updater->changeset_.schema_files_.empty()); 
-  ASSERT_EQ(1, mgr.schema_table_.size());
-
-  auto it = mgr.schema_table_.find(filename);
-  EXPECT_NE(it, mgr.schema_table_.end());
-  EXPECT_STREQ(it->second.name_.c_str(), "schema1");
-}
-
-TEST_F(SchemaTestFixture, StampedSchemaMultiple)
-{
-  TEST_DESCRIPTION("Copy multiple schema, create new version, stamp it and link it");
-
-  SchemaManager mgr(TEST_SCHEMA_PATH);
-
-  const char* ver = "00000001";
-  std::vector<std::string> test_schemas = { "schema1", "schema2", "schema3" };
-
-  fs::create_directory(ver_path_ / ver);
-  for (auto schema: test_schemas) {
-    // Stamping is not required, create symbolic link is sufficent to check
-    copy_yang_file(schema);
-    copy_yang_to_ver(schema, ver);
-  }
-  create_version_link(ver);
-
-  // Check if an event is present, poll and return immediately
-  struct pollfd fds[1] = {
-    {mgr.updater_->get_handle(), POLLIN, 0}
-  };
-
-  int poll_ret = poll(fds, 1, 0);
-  ASSERT_EQ(poll_ret, 1);
-  mgr.updater_->check_for_updates();
-
-  InotifySchemaUpdater *updater = static_cast<InotifySchemaUpdater*>(
-                                      mgr.updater_.get());
-  EXPECT_TRUE(updater->changeset_.schema_files_.empty()); 
-  ASSERT_EQ(3, mgr.schema_table_.size());
-
-  for (auto schema: test_schemas) {
-    auto it = mgr.schema_table_.find(schema);
-    EXPECT_NE(it, mgr.schema_table_.end());
-    EXPECT_EQ(it->second.name_, schema);
-  }
-
-  // Create a new instance of SchemaManager and make sure it loads the schema1,
-  // schema2, schema3 during startup.
-  SchemaManager mgr_2(TEST_SCHEMA_PATH);
-  ASSERT_EQ(3, mgr_2.schema_table_.size());
-
-  for (auto schema: test_schemas) {
-    auto it = mgr_2.schema_table_.find(schema);
-    EXPECT_NE(it, mgr_2.schema_table_.end());
-    EXPECT_EQ(it->second.name_, schema);
-  }
-}

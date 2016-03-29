@@ -5,19 +5,19 @@
  * Copyright (C) 2002-2008 Paolo Maggi
  * Copyright (C) 2009 Steve Frécinaux
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -118,6 +118,11 @@ peas_extension_base_class_init (PeasExtensionBaseClass *klass)
   object_class->get_property = peas_extension_base_get_property;
   object_class->set_property = peas_extension_base_set_property;
 
+  /**
+   * PeasExtensionBase:plugin-info:
+   *
+   * The #PeasPluginInfo related to the current plugin.
+   */
   properties[PROP_PLUGIN_INFO] =
     g_param_spec_boxed ("plugin-info",
                         "Plugin Information",
@@ -127,6 +132,15 @@ peas_extension_base_class_init (PeasExtensionBaseClass *klass)
                         G_PARAM_CONSTRUCT_ONLY |
                         G_PARAM_STATIC_STRINGS);
 
+  /**
+   * PeasExtensionBase:data-dir:
+   *
+   * The The full path of the directory where the plugin
+   * should look for its data files.
+   *
+   * Note: This is the same path as that returned by
+   * peas_plugin_info_get_data_dir().
+   */
   properties[PROP_DATA_DIR] =
     g_param_spec_string ("data-dir",
                          "Data Directory",

@@ -18,6 +18,8 @@
 #include <rwvcs_manifest.h>
 #include <rwvcs_rwzk.h>
 
+#include <google/coredumper.h>
+
 #include "rwdts_int.h"
 
 #include "rwmain.h"
@@ -26,7 +28,7 @@
 #define CHECK_DTS_FREQUENCY 100
 
 struct wait_on_dts_cls {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   uint16_t attempts;
 };
 
@@ -43,7 +45,7 @@ static rw_component_type component_type_str_to_enum(const char * type)
   else if (!strcmp(type, "rwtasklet"))
     return RWVCS_TYPES_COMPONENT_TYPE_RWTASKLET;
   else {
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWVCS_TYPES_COMPONENT_TYPE_RWCOLLECTION;
   }
 }
@@ -60,7 +62,7 @@ static rw_component_type component_type_str_to_enum(const char * type)
  *                    rwmain instance is passed.
  */
 static void schedule_next(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     rwsched_CFRunLoopTimerCallBack next,
     uint16_t frequency,
     void * ctx)
@@ -134,13 +136,13 @@ static rwtasklet_info_ptr_t get_rwmain_tasklet_info(
 
   info = (rwtasklet_info_ptr_t)malloc(sizeof(struct rwtasklet_info_s));
   if (!info) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
   instance_name = to_instance_name(component_name, instance_id);
   if (!instance_name) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
@@ -191,7 +193,7 @@ static void rwmain_dts_handle_state_change(rwdts_api_t*  apih,
 {
 }
 
-static struct rwmain * rwmain_alloc(
+struct rwmain_gi * rwmain_alloc(
     rwvx_instance_ptr_t rwvx,
     const char * component_name,
     uint32_t instance_id,
@@ -204,16 +206,16 @@ static struct rwmain * rwmain_alloc(
   int r;
   rwtasklet_info_ptr_t info = NULL;
   rwdts_api_t * dts = NULL;
-  struct rwmain * rwmain = NULL;
+  struct rwmain_gi * rwmain = NULL;
   char * instance_name = NULL;
 
 
-  rwmain = (struct rwmain *)malloc(sizeof(struct rwmain));
+  rwmain = (struct rwmain_gi *)malloc(sizeof(struct rwmain_gi));
   if (!rwmain) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
-  bzero(rwmain, sizeof(struct rwmain));
+  bzero(rwmain, sizeof(struct rwmain_gi));
 
   /* If the component name wasn't specified on the command line, pull it
    * from the manifest init-phase.
@@ -227,7 +229,7 @@ static struct rwmain * rwmain_alloc(
         cn,
         sizeof(cn));
     if (status != RW_STATUS_SUCCESS) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
 
@@ -237,7 +239,7 @@ static struct rwmain * rwmain_alloc(
   }
 
   if (!rwmain->component_name) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
@@ -257,7 +259,7 @@ static struct rwmain * rwmain_alloc(
     } else {
       status = rwvcs_rwzk_next_instance_id(rwvx->rwvcs, &rwmain->instance_id, NULL);
       if (status != RW_STATUS_SUCCESS) {
-        RW_ASSERT(0);
+        RW_CRASH();
         goto err;
       }
     }
@@ -275,7 +277,7 @@ static struct rwmain * rwmain_alloc(
         ctype,
         sizeof(ctype));
     if (status != RW_STATUS_SUCCESS) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
     rwmain->component_type = component_type_str_to_enum(ctype);
@@ -285,8 +287,17 @@ static struct rwmain * rwmain_alloc(
     rwmain->vm_instance_id = vm_instance_id;
   else if (rwmain->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM)
     rwmain->vm_instance_id = rwmain->instance_id;
-  else
-    RW_ASSERT(0);
+  else {
+    int vm_instance_id;
+    status = rwvcs_variable_evaluate_int(
+        rwvx->rwvcs,
+        "$vm_instance_id",
+        &vm_instance_id);
+    if (status == RW_STATUS_SUCCESS) {
+      rwmain->vm_instance_id = (uint32_t)vm_instance_id;
+    }
+  }
+  RW_ASSERT(rwmain->vm_instance_id);
 
   info = get_rwmain_tasklet_info(
       rwvx,
@@ -294,14 +305,15 @@ static struct rwmain * rwmain_alloc(
       rwmain->instance_id,
       rwmain->vm_instance_id);
   if (!info) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
-  // 10 hz with tolerance 64
-  rwmain->rwproc_heartbeat = rwproc_heartbeat_alloc(10, 640);
+  // 10 hz with tolerance 600
+  // TODO: Must take from YANG. These are currently defined as the defaults in rw-base.yang
+  rwmain->rwproc_heartbeat = rwproc_heartbeat_alloc(10, 600);
   if (!rwmain->rwproc_heartbeat) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
@@ -310,8 +322,19 @@ static struct rwmain * rwmain_alloc(
   if (parent_id) {
     rwmain->parent_id = strdup(parent_id);
     if (!rwmain->parent_id) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
+    }
+  }
+  else {
+    char ctype[64];
+    status = rwvcs_variable_evaluate_str(
+        rwvx->rwvcs,
+        "$parent_id",
+        ctype,
+        sizeof(ctype));
+    if (status == RW_STATUS_SUCCESS) {
+      rwmain->parent_id = strdup(ctype);
     }
   }
 
@@ -319,19 +342,19 @@ static struct rwmain * rwmain_alloc(
   if (rwvx->rwvcs->pb_rwmanifest->init_phase->settings->rwvcs->collapse_each_rwvm) {
     r = asprintf(&rwmain->vm_ip_address, "127.%u.%u.1", rwmain->instance_id / 256, rwmain->instance_id % 256);
     if (r == -1) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
   } else if (vm_ip_address) {
     rwmain->vm_ip_address = strdup(vm_ip_address);
     if (!rwmain->vm_ip_address) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
     char *variable[0];
     r = asprintf(&variable[0], "vm_ip_address = '%s'", vm_ip_address);
     if (r == -1) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
     status = rwvcs_variable_list_evaluate(
@@ -339,7 +362,7 @@ static struct rwmain * rwmain_alloc(
         1,
         variable);
     if (status != RW_STATUS_SUCCESS) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
     free(variable[0]);
@@ -352,13 +375,13 @@ static struct rwmain * rwmain_alloc(
         buf,
         sizeof(buf));
     if (status != RW_STATUS_SUCCESS) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
 
     rwmain->vm_ip_address = strdup(buf);
     if (!rwmain->vm_ip_address) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
   }
@@ -366,7 +389,7 @@ static struct rwmain * rwmain_alloc(
 
   rwvx->rwvcs->identity.vm_ip_address = strdup(rwmain->vm_ip_address);
   if (!rwvx->rwvcs->identity.vm_ip_address) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
   rwvx->rwvcs->identity.rwvm_instance_id = rwmain->vm_instance_id;
@@ -381,7 +404,7 @@ static struct rwmain * rwmain_alloc(
       NULL);
 
   if (!dts) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
@@ -417,7 +440,7 @@ static struct rwmain * rwmain_alloc(
                VCS_INSTANCE_XPATH_FMT,
                instance_name);
   if (r == -1) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
   VCS_GET(rwmain)->instance_name = instance_name;
@@ -449,7 +472,7 @@ done:
   return rwmain;
 }
 
-rw_status_t process_init_phase(struct rwmain * rwmain)
+rw_status_t process_init_phase(struct rwmain_gi * rwmain)
 {
   rw_status_t status;
   rwvcs_instance_ptr_t rwvcs;
@@ -502,12 +525,12 @@ rw_status_t process_init_phase(struct rwmain * rwmain)
   return RW_STATUS_SUCCESS;
 }
 
-static void init_phase(rwsched_CFRunLoopTimerRef timer, void * ctx)
+void init_phase(rwsched_CFRunLoopTimerRef timer, void * ctx)
 {
   rw_status_t status;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
 
-  rwmain = (struct rwmain *)ctx;
+  rwmain = (struct rwmain_gi *)ctx;
 
   rwmain_setup_cputime_monitor(rwmain);
 
@@ -520,9 +543,11 @@ static void init_phase(rwsched_CFRunLoopTimerRef timer, void * ctx)
   status = rwmain_setup_dts_rpcs(rwmain);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-  rwsched_tasklet_CFRunLoopTimerRelease(
-    rwmain->rwvx->rwsched_tasklet,
-    timer);
+  if (timer) {
+    rwsched_tasklet_CFRunLoopTimerRelease(
+        rwmain->rwvx->rwsched_tasklet,
+        timer);
+  }
 }
 
 /*
@@ -535,13 +560,13 @@ static void init_phase(rwsched_CFRunLoopTimerRef timer, void * ctx)
 static void on_op_inventory_update(rwdts_xact_t * xact, rwdts_xact_status_t* xact_status, void * ud)
 {
   //rw_status_t status;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
   vcs_manifest_op_inventory * ret_op_inventory;
   vcs_manifest_inventory * inventory;
 
 
-  rwmain = (struct rwmain *)ud;
+  rwmain = (struct rwmain_gi *)ud;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
 
@@ -592,14 +617,14 @@ done:
  * configuration from DTS.  Calls on_op_inventory_update to handle the response
  * after which the init_phase will be scheduled.
  */
-static void request_op_inventory_update(rwsched_CFRunLoopTimerRef timer, void * ctx)
+void request_op_inventory_update(rwsched_CFRunLoopTimerRef timer, void * ctx)
 {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   vcs_manifest_component query_msg;
   rw_keyspec_path_t * query_key;
   rwdts_xact_t * query_xact;
 
-  rwmain = (struct rwmain *)ctx;
+  rwmain = (struct rwmain_gi *)ctx;
 
 
   // The uagent will only publish the 2nd level right now no mater what we request.
@@ -638,13 +663,13 @@ static void request_op_inventory_update(rwsched_CFRunLoopTimerRef timer, void * 
 static void on_inventory_update(rwdts_xact_t * xact, rwdts_xact_status_t* xact_status, void * ud)
 {
   //rw_status_t status;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
   vcs_manifest_inventory * ret_inventory;
   vcs_manifest_inventory * inventory;
 
 
-  rwmain = (struct rwmain *)ud;
+  rwmain = (struct rwmain_gi *)ud;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
 
@@ -687,7 +712,7 @@ static void on_inventory_update(rwdts_xact_t * xact, rwdts_xact_status_t* xact_s
   }
 
 done:
-  schedule_next(rwmain, request_op_inventory_update, 0, NULL);
+  schedule_next(rwmain, init_phase, 0, NULL);
 }
 
 /*
@@ -697,12 +722,12 @@ done:
  */
 static void request_inventory_update(rwsched_CFRunLoopTimerRef timer, void * ctx)
 {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   vcs_manifest_component query_msg;
   rw_keyspec_path_t * query_key;
   rwdts_xact_t * query_xact;
 
-  rwmain = (struct rwmain *)ctx;
+  rwmain = (struct rwmain_gi *)ctx;
 
 
   // The uagent will only publish the 2nd level right now no mater what we request.
@@ -782,6 +807,7 @@ static void usage() {
   printf("  -p,--parent [NAME]          Parent's instance-name.\n");
   printf("  -a,--ip_address [ADDRESS]   VM IP address.\n");
   printf("  -v,--vm_instance [ID]       VM instance id.\n");
+  printf("  -C,--core_test              Coredumper test.\n");
   printf("  -h, --help                  This screen.\n");
   printf("\n");
   printf("ENVIRONMENT VARIABLES\n");
@@ -790,11 +816,89 @@ static void usage() {
   return;
 }
 
-struct rwmain * rwmain_setup(int argc, char ** argv, char ** envp)
+#define RW_SIGCT (64)
+static struct rwmain_sigjazz {
+  char corefname[1024];
+  struct sigaction oact[RW_SIGCT];
+  int maxcore;
+} rwmain_sigjazz = {
+  .maxcore = 1024,  /* MB */
+  .corefname = "core"
+};
+  
+static void rwmain_sigaction_dump(int sig, siginfo_t *sinfo, void *uctx_in) {
+  ucontext_t *uctx = (ucontext_t *)uctx_in;
+  uctx = uctx;
+
+  int rval = 0;
+
+  write(STDOUT_FILENO, "\n", 1);
+  write(STDOUT_FILENO, "\nWriting ", 9);
+  write(STDOUT_FILENO, rwmain_sigjazz.corefname, strlen(rwmain_sigjazz.corefname));
+  write(STDOUT_FILENO, "\n", 1);
+  write(STDOUT_FILENO, "\n", 1);
+
+  const int maxcore = rwmain_sigjazz.maxcore * 1024 * 1024;
+
+  rval = WriteCoreDumpLimitedByPriority(rwmain_sigjazz.corefname, maxcore);
+  if (rval) {
+    write(STDOUT_FILENO, "\n", 1);
+    write(STDOUT_FILENO, "WriteCoredumpLimited failed\n", strlen("WriteCoredumpLimited failed\n"));
+    write(STDOUT_FILENO, "\n", 1);
+  }
+  if (sig == SIGUSR1) {
+    return;
+  }
+  if (!rval) {
+    _exit(1);
+  }
+  raise(sig);
+}
+
+static void rwmain_sigaction_setup(void) {
+
+  /* This needs to be under RIFT_INSTALL or whatever, however the
+     existing core file scanner assumes cwd or a global /var/rift
+     place */
+  sprintf(rwmain_sigjazz.corefname, "core.%d", getpid());
+  static int sigs[] = {
+    SIGSEGV,
+    SIGBUS,
+    SIGUSR1,
+    SIGFPE,
+    SIGABRT,
+    SIGILL,
+    SIGSYS,
+    SIGXCPU,
+    SIGXFSZ,
+    -1
+  };
+  int i=0;
+  int sig;
+  uint64_t seen = 0;
+  while ((sig = sigs[i++]) >= 0) {
+    assert(sig < 64);
+    assert(!(seen & (1<<sig)));
+    seen = (seen | (1<<sig));
+    struct sigaction sa = {
+      .sa_sigaction = rwmain_sigaction_dump,
+      .sa_flags = ( ((sig == SIGUSR1 || sig == SIGUSR2) ? 0 : SA_RESETHAND) | SA_RESTART | SA_SIGINFO )
+    };
+    sigaction(sig, &sa, NULL);
+  }
+}
+
+void rwmain_sigaction_test(void) {  
+  int *ptr = NULL;
+  *ptr = 5;
+}
+
+
+struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
 {
   rw_status_t status;
   rwvx_instance_ptr_t rwvx;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   struct wait_on_dts_cls * cls;
 
   char * manifest = NULL;
@@ -804,6 +908,8 @@ struct rwmain * rwmain_setup(int argc, char ** argv, char ** envp)
   char * ip_address = NULL;
   uint32_t instance_id = 0;
   uint32_t vm_instance_id = 0;
+
+  rwmain_sigaction_setup();
 
   // We need to reset optind here and after processing the command line options
   // as successive calls to getopt_long will leave optind=1. So, reset here as
@@ -823,14 +929,19 @@ struct rwmain * rwmain_setup(int argc, char ** argv, char ** envp)
       {"ip_address",    required_argument,  0, 'a'},
       {"vm_instance",   required_argument,  0, 'v'},
       {"help",          no_argument,        0, 'h'},
+      {"core_test",     no_argument,        0, 'C'},
       {0,               0,                  0,  0},
     };
 
-    c = getopt_long(argc, argv, "m:n:i:t:p:a:v:h", long_options, NULL);
+    c = getopt_long(argc, argv, "m:n:i:t:p:a:v:hC", long_options, NULL);
     if (c == -1)
       break;
 
     switch (c) {
+      case 'C':
+	rwmain_sigaction_test();
+	break;
+
       case 'm':
         manifest = strdup(optarg);
         RW_ASSERT(manifest);
@@ -966,7 +1077,7 @@ struct rwmain * rwmain_setup(int argc, char ** argv, char ** envp)
     core_limit = rlimit.rlim_max;
     RW_ASSERT(getrlimit(RLIMIT_FSIZE, &rlimit) == 0);
     file_limit = rlimit.rlim_max;
-    rwmain_trace_crit(
+    rwmain_trace_crit_info(
         rwmain,
         "getrlimit(RLIMIT_CORE)=%u getrlimit(RLIMIT_FSIZE)=%u get_current_dir_name()=%s",
         core_limit, file_limit, get_current_dir_name());

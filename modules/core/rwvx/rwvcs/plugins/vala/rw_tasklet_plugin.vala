@@ -81,7 +81,7 @@ namespace RwTaskletPlugin {
 
      public abstract InstanceHandle
      instance_alloc(ComponentHandle h_component,
-		    RwTasklet.Info tasklet_info,
+		    owned RwTasklet.Info tasklet_info,
 		    _RWExecURL instance_url);
 
      public abstract void

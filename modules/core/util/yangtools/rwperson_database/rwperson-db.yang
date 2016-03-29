@@ -40,6 +40,8 @@ module rwperson-db
     rwpb:msg-new Person;
 
     leaf name { 
+      description
+        "This is the person's name.";
       type string; 
     }
 

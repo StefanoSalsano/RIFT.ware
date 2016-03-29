@@ -89,12 +89,15 @@ typedef RWPB_T_MSG(RwBase_ComponentInfo)  rw_component_info;
 typedef RWPB_T_MSG(RwBase_CollectionInfo) rw_collection_info;
 typedef RWPB_T_MSG(RwBase_VmInfo)         rw_vm_info;
 typedef RWPB_T_MSG(RwBase_ProcInfo)       rw_proc_info;
+typedef RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN)  rw_vcs_instance_childn;
+typedef RwBase__YangEnum__AdminCommand__E rw_admin_command;
 
 
 #define rw_component_info__init(x)        RWPB_F_MSG_INIT(RwBase_ComponentInfo, x);
 #define rw_collection_info__init(x)       RWPB_F_MSG_INIT(RwBase_CollectionInfo, x);
 #define rw_vm_info__init(x)               RWPB_F_MSG_INIT(RwBase_VmInfo, x);
 #define rw_proc_info__init(x)             RWPB_F_MSG_INIT(RwBase_ProcInfo, x);
+#define rw_vcsinstance_childn__init(x)    RWPB_F_MSG_INIT(RwBase_VcsInstance_Instance_ChildN, x);
 
 
 /* rw-vcs.yang */
@@ -102,6 +105,8 @@ typedef RWPB_T_MSG(RwVcs_output_Vstop)    vcs_rpc_stop_output;
 typedef RWPB_T_MSG(RwVcs_input_Vstop)     vcs_rpc_stop_input;
 typedef RWPB_T_MSG(RwVcs_output_Vstart)   vcs_rpc_start_output;
 typedef RWPB_T_MSG(RwVcs_input_Vstart)    vcs_rpc_start_input;
+typedef RWPB_T_MSG(RwVcs_output_Vcrash)   vcs_rpc_crash_output;
+typedef RWPB_T_MSG(RwVcs_input_Vcrash)     vcs_rpc_crash_input;
 
 #define vcs_rpc_stop_output__init(x)      RWPB_F_MSG_INIT(RwVcs_output_Vstop, x)
 #define vcs_rpc_stop_input__init(x)       RWPB_F_MSG_INIT(RwVcs_input_Vstop, x)
@@ -113,6 +118,7 @@ typedef RWPB_T_MSG(RwVcs_input_Vstart)    vcs_rpc_start_input;
 #define protobuf_free(x)        protobuf_c_message_free_unpacked(NULL, &(x)->base)
 #define protobuf_free_stack(x)  protobuf_c_message_free_unpacked_usebody(NULL, &(x).base)
 
+typedef RwvcsTypes__YangEnum__RecoveryType__E vcs_recovery_type;
 #define RWVCS_RWZK_TIMEOUT_S 90
 
 __END_DECLS

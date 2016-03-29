@@ -7,6 +7,10 @@ import asyncio
 import collections
 import time
 
+import gi
+gi.require_version('RwVnfrYang', '1.0')
+gi.require_version('RwNsrYang', '1.0')
+gi.require_version('RwDts', '1.0')
 from gi.repository import (
         RwVnfrYang,
         RwNsrYang,

@@ -205,11 +205,19 @@ void rwmsg_broker_acceptor_negotiating_socket_event(void *ud) {
     goto bail;
   }
 
+  RWMSG_TRACE(neg->bro->ep, INFO, "handshake .chanid=%u .pid=%u .pri=%u .chtype=%u .instid=%u",
+         handshake.chanid,
+         handshake.pid,
+         handshake.pri,
+         handshake.chtype,
+         handshake.instid);
+
   struct rwmsg_broker_channel_acceptor_key_s key;
   RW_ZERO_VARIABLE(&key);
   key.chanid = handshake.chanid;
   key.pid = handshake.pid;
   key.ipv4 = neg->addr.sin_addr.s_addr;
+  key.instid = handshake.instid;
 
   rwmsg_broker_channel_t *bch = NULL;
   HASH_FIND(hh, acc->bch_hash, &key, sizeof(key), bch);
@@ -237,7 +245,7 @@ void rwmsg_broker_acceptor_negotiating_socket_event(void *ud) {
     RW_ASSERT(bch->rwq);
     rwmsg_channel_bind_rwsched_queue(&bch->ch, bch->rwq);
 
-    RWMSG_TRACE(neg->bro->ep, INFO, "broker acceptor new broker channel chdesc='%s' .chanid=%lu .pid=%u ip=%s", 
+    RWMSG_TRACE(neg->bro->ep, INFO, "broker acceptor new broker channel chdesc='%s' .chanid=%u .pid=%u ip=%s", 
 	    chdesc,
 	    handshake.chanid,
 	    handshake.pid,
@@ -277,7 +285,7 @@ void rwmsg_broker_acceptor_negotiating_socket_event(void *ud) {
   
   RWMSG_TRACE(bch->ch.ep, NOTICE,
 	      "broker-instance [%d] broker_acceptor_negotiating_socket_event accepted and attached fd=%d to bch=%p from handshake"
-	      " chanid=%lu chtyp=%u(%s) pid=%u pri=%u from addr %s port %u", 
+	      " chanid=%u chtyp=%u(%s) pid=%u pri=%u from addr %s port %u", 
 	      bch->bro->bro_instid,
 	      neg->sk,
 	      bch,
@@ -471,7 +479,7 @@ static void rwmsg_broker_acceptor_deinit_finish(rwmsg_broker_t *bro) {
       rwmsg_broker_clichan_halt((rwmsg_broker_clichan_t*)bch);
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     }
     HASH_DELETE(hh, acc->bch_hash, bch);
@@ -496,7 +504,7 @@ void rwmsg_broker_acceptor_halt_bch_and_remove_from_hash_f(void *ctx) {
     rwmsg_broker_clichan_halt((rwmsg_broker_clichan_t*)bch);
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
 

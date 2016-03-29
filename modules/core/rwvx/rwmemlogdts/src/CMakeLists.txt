@@ -33,6 +33,7 @@ add_dependencies(
   rwmemlogdts
   rwmemlog
   rwdtsproto
+  rwdts_yang.headers
   rwgeneric_yang.headers
   rwschema_yang.headers
   rwlog_event_auto

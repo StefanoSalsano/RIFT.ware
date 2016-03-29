@@ -20,6 +20,7 @@ var CardHeader = React.createClass({
       <h3>
         {this.props.title}
       </h3>
+      {this.props.extras}
     </header>
     )
   }
@@ -27,7 +28,6 @@ var CardHeader = React.createClass({
  CardHeader.defaultProps = {
   title: ' Loading...'
  }
-
 
 
 var dashboardCard = React.createClass({
@@ -50,7 +50,9 @@ var dashboardCard = React.createClass({
         cardClassContentBody += ' ' + this.props.className + '-body';
       }
     if (this.props.showHeader) {
-      hasHeader = <CardHeader className={this.props.className} title={this.props.title}/>;
+      hasHeader = <CardHeader className={this.props.className}
+        title={this.props.title}
+        extras={this.props.headerExtras} />;
     };
     return (
         <div className={cardClassWrapper} style={{display: this.props.isHidden ? 'none':'flex'}}>
@@ -68,16 +70,5 @@ var dashboardCard = React.createClass({
       )
   }
 })
-
-
-// class DashboardCard extends React.Component {
-//   constructor(props) {
-//     super(props)
-//   }
-//   render() {
-
-//   }
-// }
-
 
 export default dashboardCard;

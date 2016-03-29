@@ -65,6 +65,7 @@ export default class VirtualLink extends DescriptorModel {
 	}
 
 	addConnectionPoint(cp) {
+		this.parent.removeAnyConnectionsForConnector(cp);
 		const cpRef = cp.toVnfdConnectionPointRef();
 		this.connection = this.connection.concat(cpRef);
 	}

@@ -37,5 +37,6 @@
 #include "rwuagent_nb_req_confd_dp.cpp"
 #include "rwuagent_nb_req_confd_rpc.cpp"
 
-#include "rwuagent_confd_startup.cpp"
-#include "rwuagent_show_logs.cpp"
+#include "rwuagent_mgmt_system.cpp"
+#include "rwuagent_confd_mgmt_system.cpp"
+#include "rwuagent_confd_log.cpp"

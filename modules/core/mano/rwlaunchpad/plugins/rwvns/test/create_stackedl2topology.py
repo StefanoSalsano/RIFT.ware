@@ -5,6 +5,8 @@
 #
 
 
+import gi
+gi.require_version('RwYang', '1.0')
 from gi.repository import IetfL2TopologyYang as l2Tl
 from gi.repository import RwTopologyYang as RwTl
 from gi.repository import RwYang
@@ -43,7 +45,7 @@ class MyL2Network(object):
                 return node
 
     def get_tp(self, node, tp_name):
-        _tp_id = "urn:Rift:Lab:" + node.node_id + "_" + tp_name
+        _tp_id = node.node_id + "_" + tp_name
         for tp in node.termination_point :
             if (tp.tp_id == _tp_id):
                 return tp
@@ -66,7 +68,7 @@ class MyL2Network(object):
     def create_tp(self, node, cfg_tp):
         logging.debug("    Creating termination point %s %s", node.l2_node_attributes.name, cfg_tp)
         tp = node.termination_point.add()
-        tp.tp_id = ("urn:Rift:Lab:{}_{}").format(node.node_id, cfg_tp)
+        tp.tp_id = ("{}_{}").format(node.node_id, cfg_tp)
         # L2 TP augmentation
         tp.l2_termination_point_attributes.description = cfg_tp
         tp.l2_termination_point_attributes.maximum_frame_size = 1500
@@ -235,8 +237,6 @@ if __name__ == "__main__":
     status = subprocess.call("sed -i '/xml version/d' " + xml_formatted_file, shell=True)
     status = subprocess.call("sed -i '/root xmlns/d' " + xml_formatted_file, shell=True)
     status = subprocess.call("sed -i '/\/root/d' " + xml_formatted_file, shell=True)
-    #adjust_xml_file(xml_formatted_file, "/tmp/stacked_top3.xml", "<lnk:source>", "</lnk:destination>")
-    #adjust_xml_file("/tmp/stacked_top3.xml", "/tmp/stacked_top4.xml", "<nd:network-types>", "</nd:network-types>")
 
     logging.info ("Converting to JSON")
     # Convert set of topologies to JSON

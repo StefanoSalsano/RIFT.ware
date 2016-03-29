@@ -8,9 +8,11 @@
 @import 'variables';
 .DetailsPanel {
 	@extend .panel;
-	border-left: 1px solid $panel-border-color;
+	border-top: 1px solid mix($panel-border-color, white, 80%);
+	//border-left: 1px solid $panel-border-color;
+	background-color: ($panel-bg-color-contrast);
 	position: absolute;
-	top: 109px;
+	top: 111px;
 	right: 0;
 	bottom: 0;
 	width: 300px;
@@ -19,7 +21,10 @@
 	.DetailsPanelBody {
 		@extend .panel-body;
 		position: absolute;
-		overflow: scroll;
+		overflow: hidden;
+		&:hover {
+			overflow: auto;
+		}
 		-ms-overflow-style: -ms-autohiding-scrollbar;
 		bottom: 0;
 		top: 0;

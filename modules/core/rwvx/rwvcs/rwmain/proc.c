@@ -37,8 +37,9 @@ static void rwproc_on_io_ready(
 
 
 struct rwmain_proc * rwmain_proc_alloc(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * instance_name,
+    bool is_rwproc,
     pid_t pid,
     int pipe_fd)
 {
@@ -50,7 +51,7 @@ struct rwmain_proc * rwmain_proc_alloc(
 
   rp = (struct rwmain_proc *)malloc(sizeof(struct rwmain_proc));
   if (!rp) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
   bzero(rp, sizeof(struct rwmain_proc));
@@ -58,8 +59,9 @@ struct rwmain_proc * rwmain_proc_alloc(
   rp->rwmain = rwmain;
   rp->pid = pid;
   rp->instance_name = strdup(instance_name);
+  rp->is_rwproc = is_rwproc;
   if (!rp->instance_name) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
@@ -101,13 +103,13 @@ struct rwmain_proc * rwmain_proc_alloc(
   /* Make sure the pipe hasn't already closed */
   r = fcntl(pipe_fd, F_SETFL, O_NONBLOCK);
   if (r) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
   r = read(pipe_fd, NULL, 0);
   if (r != 0 && errno == EBADF) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
@@ -185,6 +187,10 @@ void rwmain_proc_free(struct rwmain_proc * rp)
   free(rp);
 }
 
+void restart_process(
+    rwmain_gi_t * rwmain,
+    char *instance_name);
+
 static void rwproc_on_io_ready(
     rwsched_CFSocketRef sock,
     CFSocketCallBackType type,
@@ -208,22 +214,24 @@ static void rwproc_on_io_ready(
       rp->instance_name,
       rp->pid);
 
-  status = rwvcs_rwzk_update_state(
-      rp->rwmain->rwvx->rwvcs,
-      rp->instance_name,
-      RW_BASE_STATE_TYPE_CRASHED);
-  if (status != RW_STATUS_SUCCESS && status != RW_STATUS_NOTFOUND) {
-    rwmain_trace_crit(
-        rp->rwmain,
-        "Failed to update %s state to CRASHED",
-        rp->instance_name);
-  }
-
   status = RW_SKLIST_REMOVE_BY_KEY(&(rp->rwmain->procs), &rp->instance_name, &junk);
   if (status != RW_STATUS_SUCCESS)
     rwmain_trace_crit(rp->rwmain, "Failed to remove %s from rwmain procs", rp->instance_name);
 
+  if (rp->is_rwproc) {
+    restart_process(rp->rwmain, rp->instance_name);
+  } else {
+    status = rwvcs_rwzk_update_state(
+        rp->rwmain->rwvx->rwvcs,
+        rp->instance_name,
+        RW_BASE_STATE_TYPE_CRASHED);
+    if (status != RW_STATUS_SUCCESS && status != RW_STATUS_NOTFOUND) {
+      rwmain_trace_crit(
+          rp->rwmain,
+          "Failed to update %s state to CRASHED",
+          rp->instance_name);
+    }
+  }
+
   rwmain_proc_free(rp);
 }
-
-

@@ -120,7 +120,6 @@ log4j.appender.ZLOG.File=""" + to_java_compatible_path(  # NOQA
         classpath,
         #'-Dlog4j.debug',
         '-Dzookeeper.log.dir="%s"' % (install_dir,),
-        '-Dzookeeper.root.logger="INFO,CONSOLE"',
         '-Dlog4j.configuration=file:%s' % log4j_path,
         '-Dcom.sun.management.jmxremote',
         '-Dcom.sun.management.jmxremote.local.only=false',
@@ -547,7 +546,7 @@ class Kazoo(ZkClient):
                 port_base += 1
 
         print("KazooClient connecting to %s" % (connection_str))
-        self._client_context = kazoo.client.KazooClient(connection_str, timeout)
+        self._client_context = kazoo.client.KazooClient(connection_str, timeout=120)
         self._client_context.add_listener(self.my_listener)
         self._client_context.start(timeout)
 

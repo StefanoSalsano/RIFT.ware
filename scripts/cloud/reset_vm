@@ -229,6 +229,11 @@ if [ -n "$2" ]; then
     chown -R $2 $1/.install $1/.artifacts
 fi
 
+#remove data store db files
+log "removing data store persistant files"
+rm -rf .install/*db
+
+
 if [ -f /usr/rift/etc/fix_this_vm ]; then
     /usr/rift/etc/fix_this_vm || exit 1
 fi

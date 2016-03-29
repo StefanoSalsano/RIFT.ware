@@ -62,58 +62,61 @@ export default class DeletionManager {
 
 		const selected = SelectionManager.getSelections();
 
+		const canvasPanelDiv = document.getElementById('canvasPanelDiv');
+
+		if (!canvasPanelDiv) {
+			return
+		}
+
 		// get a valid list of items to potentially remove via the cut event handler
 		const removeElementList = selected.filter(d => d).filter(onlyUnique).reduce((r, uid) => {
-			const elements = Array.from(document.querySelectorAll('[data-uid="' + uid + '"]'));
+			const elements = Array.from(canvasPanelDiv.querySelectorAll('[data-uid="' + uid + '"]'));
 			return r.concat(elements);
 		}, []).filter(d => d);
 
 		if (removeElementList.length === 0 && selected.length > 0) {
 			// something was selected but we did not find any dom elements with data-uid!
 			console.error(`No valid DescriptorModel instance found on element. Did you forget to put data-uid={m.uid}`,
-				selected.map(uid => Array.from(document.querySelectorAll(`[data-uid="${uid}"]`))));
+				selected.map(uid => Array.from(canvasPanelDiv.querySelectorAll(`[data-uid="${uid}"]`))));
 		}
-
-		// proactively update the UI for visual transitions
-		d3.selectAll(removeElementList).classed('-with-animations deleteItemAnimation', true).transition().each('end', function () {
-			d3.select(this);
-		});
 
 		SelectionManager.removeOutline();
 
-		// give time for the delete animation to play out
-		setTimeout(() => {
+		// now actually update the model
+		const invokedEventAlreadyMap = {};
+		const failedToRemoveList = removeElementList.map(element => {
 
-			// now actually update the model
-			const invokedEventAlreadyMap = {};
-			const failedToRemoveList = removeElementList.map(removedElement => {
+			const uid = UID.from(element);
 
-				const uid = UID.from(removedElement);
+			if (invokedEventAlreadyMap[uid]) {
+				return
+			}
 
-				if (invokedEventAlreadyMap[uid]) {
-					return
+			try {
+				// https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/dispatchEvent
+				// false means event.preventDefault() was called by one of the handlers
+				const deleteEvent = createDeleteEvent(event, uid);
+				const preventDefault = (false === element.dispatchEvent(deleteEvent));
+				if (preventDefault) {
+					console.log('cut event was cancelled', element);
+					//d3.select(element).classed('-with-animations deleteItemAnimation', false).style({opacity: null});
+					return element;
 				}
 
-				try {
-					const cancelled = !removedElement.dispatchEvent(createDeleteEvent(event, uid));
-					if (cancelled) {
-						d3.select(removedElement).classed('-with-animations deleteItemAnimation', false).style({opacity: null});
-						return removedElement;
-					}
+			} catch (error) {
+				console.warn(`Exception caught dispatching 'cut' event: ${error}`,
+					selected.map(uid => Array.from(canvasPanelDiv.querySelectorAll(`[data-uid="${uid}"]`)))
+				);
+				return element;
+			} finally {
+				invokedEventAlreadyMap[uid] = true;
+			}
 
-				} catch (error) {
-					console.warn(`Exception caught dispatching 'cut' event: ${error}`,
-						selected.map(uid => Array.from(document.querySelectorAll(`[data-uid="${uid}"]`))));
-					return removedElement;
-				}
+		}).filter(d => d).filter(onlyUnique);
 
-			}).filter(d => d).filter(onlyUnique);
-
-			SelectionManager.clearSelectionAndRemoveOutline();
-			failedToRemoveList.forEach(d => SelectionManager.addSelection(d));
-			SelectionManager.refreshOutline();
-
-		}, 230);
+		SelectionManager.clearSelectionAndRemoveOutline();
+		failedToRemoveList.forEach(d => SelectionManager.addSelection(d));
+		SelectionManager.refreshOutline();
 
 	}
 

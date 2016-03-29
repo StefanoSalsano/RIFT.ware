@@ -14,7 +14,8 @@ class About extends React.Component {
   constructor(props) {
     super(props)
     var self = this;
-
+    this.state = aboutStore.getState();
+    aboutStore.getCatalog();
     aboutStore.listen(function(data) {
       if (data.aboutList) {
         self.setState({
@@ -26,6 +27,11 @@ class About extends React.Component {
           createTime:data.createTime
         })
       }
+      if (data.descriptorCount) {
+        self.setState({
+          descriptorCount: data.descriptorCount
+        });
+      }
     });
     aboutStore.get();
     setTimeout(function(){
@@ -34,6 +40,12 @@ class About extends React.Component {
       }
     }, 200)
   }
+  loadComposer = () => {
+  let API_SERVER = rw.getSearchParams(window.location).api_server;
+  let auth = window.sessionStorage.getItem("auth");
+  let mgmtDomainName = window.location.hash.split('/')[2];
+  window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=' + window.location.protocol + '//' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + mgmtDomainName + '&auth=' + auth);
+};
   render() {
     let self = this;
     let refPage = window.sessionStorage.getItem('refPage') || '{}';
@@ -43,7 +55,16 @@ class About extends React.Component {
       onClick: function() {
         window.location.hash = refPage.hash || '#/'
       }
+    },{
+      name: 'CATALOG(' + self.state.descriptorCount + ')',
+      onClick: self.loadComposer
     }];
+    let mgmtDomainName = window.location.hash.split('/')[2];
+    navItems.push({
+        name: 'ACCOUNTS',
+        href: '#/launchpad/' + mgmtDomainName + '/cloud-account/dashboard',
+        onClick: this.componentWillUnmount
+      })
     // If in the mission control, create an uptime table;
     var uptime = null;
     let loc = window.location.hash.split('/');

@@ -12,13 +12,13 @@
 import DescriptorModel from '../DescriptorModel'
 
 /**
- * This class creates the identity of a ConnectionPoint on a VNFD. Visually
- * this class represents an svg:Path between the parent VLD and ConnectionPoint.
+ * This class creates the identity of a VirtualNetworkFunctionConnectionPoint on a VNFD. Visually
+ * this class represents an svg:Path between the parent VLD and VirtualNetworkFunctionConnectionPoint.
  *
- *     VNFD.ConnectionPoint ====path==== VLD
+ *     VNFD.VirtualNetworkFunctionConnectionPoint ====path==== VLD
  *
  * The VNFD is referenced by nsd.constituent-vnfd.member-vnf-index.
- * The ConnectionPoint is referenced by vnfd.connection-point.name.
+ * The VirtualNetworkFunctionConnectionPoint is referenced by vnfd.connection-point.name.
  */
 export default class VnfdConnectionPointRef extends DescriptorModel {
 

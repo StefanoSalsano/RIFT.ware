@@ -7,19 +7,19 @@
  * Copyright (C) 2007-2009 Paolo Maggi, Paolo Borelli, Steve Frécinaux
  * Copyright (C) 2010 Garrett Regier
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -613,7 +613,7 @@ peas_gtk_plugin_manager_view_query_tooltip (GtkWidget  *widget,
   gboolean is_row;
   GtkTreeIter iter;
   PeasPluginInfo *info;
-  gchar *to_bold, *message;
+  gchar *to_bold, *error_msg, *message;
   GError *error = NULL;
 
   is_row = gtk_tree_view_get_tooltip_context (GTK_TREE_VIEW (widget),
@@ -633,20 +633,23 @@ peas_gtk_plugin_manager_view_query_tooltip (GtkWidget  *widget,
   /* Avoid having markup in a translated string */
   to_bold = g_strdup_printf (_("The plugin '%s' could not be loaded"),
                              peas_plugin_info_get_name (info));
-  message = g_markup_printf_escaped ("<b>%s</b>\n%s%s",
-                                     to_bold,
-                                     _("An error occurred: "),
-                                     error->message);
+
+  /* Keep separate because some translations do special things
+   * for the ':' and might accidentally not keep the space after it
+   */
+  error_msg = g_strdup_printf (_("An error occurred: %s"), error->message);
+
+  message = g_strconcat ("<b>", to_bold, "</b>\n", error_msg, NULL);
 
   gtk_tooltip_set_markup (tooltip, message);
 
   g_free (message);
+  g_free (error_msg);
   g_free (to_bold);
   g_error_free (error);
 
   return TRUE;
 }
-
 
 static void
 peas_gtk_plugin_manager_view_row_activated (GtkTreeView       *tree_view,
@@ -656,6 +659,7 @@ peas_gtk_plugin_manager_view_row_activated (GtkTreeView       *tree_view,
   PeasGtkPluginManagerView *view = PEAS_GTK_PLUGIN_MANAGER_VIEW (tree_view);
   PeasGtkPluginManagerViewPrivate *priv = GET_PRIV (view);
   GtkTreeIter iter;
+  GtkTreeViewClass *tree_view_class;
 
   if (!gtk_tree_model_get_iter (gtk_tree_view_get_model (tree_view), &iter, path))
     return;
@@ -664,6 +668,10 @@ peas_gtk_plugin_manager_view_row_activated (GtkTreeView       *tree_view,
 
   if (peas_gtk_plugin_manager_store_can_enable (priv->store, &iter))
     toggle_enabled (view, &iter);
+
+  tree_view_class = GTK_TREE_VIEW_CLASS (peas_gtk_plugin_manager_view_parent_class);
+  if (tree_view_class->row_activated != NULL)
+    tree_view_class->row_activated (tree_view, path, column);
 }
 
 static void
@@ -814,7 +822,7 @@ peas_gtk_plugin_manager_view_class_init (PeasGtkPluginManagerViewClass *klass)
    * connect to this signal and add your menuitems to the @menu.
    */
   signals[POPULATE_POPUP] =
-    g_signal_new ("populate-popup",
+    g_signal_new (I_("populate-popup"),
                   the_type,
                   G_SIGNAL_RUN_LAST,
                   G_STRUCT_OFFSET (PeasGtkPluginManagerViewClass, populate_popup),

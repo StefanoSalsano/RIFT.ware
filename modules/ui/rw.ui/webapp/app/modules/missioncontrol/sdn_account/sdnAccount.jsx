@@ -7,16 +7,17 @@
 import React from 'react/addons';
 import AppHeader from '../../components/header/header.jsx';
 import AppHeaderActions from '../../components/header/headerActions.js';
-var SdnAccountStore = require('./createSdnAccountStore')
-var SdnAccountActions = require('./createSdnAccountActions')
+import Button from '../../components/button/rw.button.js';
+
 class SdnAccount extends React.Component {
     constructor(props) {
         super(props);
-        this.state = SdnAccountStore.getState();
-        SdnAccountStore.listen(this.storeListener);
-        if (props.edit) {
-            SdnAccountStore.getSdnAccount(window.location.hash.split('/')[4])
-        }
+        this.props.store.resetState();
+        this.state = this.props.store.getState();
+        this.props.store.listen(this.storeListener);
+        this.state.actions = this.props.actions;
+        this.state.store = this.props.store;
+
     }
     storeListener = (state) => {
         this.setState(state);
@@ -33,38 +34,33 @@ class SdnAccount extends React.Component {
                 for (var i = 0; i < params.length; i++) {
                     var param = params[i].ref;
                     if (typeof(self.state.sdn[type]) == 'undefined' || typeof(self.state.sdn[type][param]) == 'undefined' || self.state.sdn[type][param] == "") {
-
                         AppHeaderActions.validateError("Please fill all account details");
                         return;
                     }
                 }
             }
         }
-        SdnAccountActions.validateReset();
-        SdnAccountStore.create(self.state.sdn).then(function() {
+        this.state.actions.validateReset();
+        this.state.store.create(self.state.sdn).then(function() {
             let loc = window.location.hash.split('/');
             loc.pop();
             loc.push('dashboard');
             window.location.hash = loc.join('/');
         });
     }
-    update() {
+    update = () => {
         var self = this;
 
         if (self.state.sdn.name == "") {
-            console.log('pop')
+            AppHeaderActions.validateError("Please give the cloud account a name");
             return;
         }
-        SdnAccountStore.update(self.state.sdn).then(function() {
-            SdnAccountStore.unlisten(self.storeListener);
+        this.state.store.update(self.state.sdn).then(function() {
+            this.state.store.unlisten(self.storeListener);
             self.cancel();
         });
     }
-    // cancel() {
-    //     let loc = window.location.hash.split('/');
-    //     loc.pop();
-    //     window.location.hash = loc.join('/');
-    // }
+
     cancel() {
         let loc = window.location.hash.split('/');
         // hack to restore MC redirects from create cloud account page
@@ -97,13 +93,13 @@ class SdnAccount extends React.Component {
     handleNameChange(event) {
         var temp = this.state.sdn;
         temp.name = event.target.value;
-        SdnAccountStore.updateName(temp);
+        this.state.store.updateName(temp);
     }
     handleAccountChange(node, event) {
         var temp = {};
         temp.name = this.state.sdn.name;
         temp['account-type'] = event.target.value;
-        SdnAccountStore.updateAccount(temp);
+        this.state.store.updateAccount(temp);
     }
     handleParamChange(node, event) {
             var temp = this.state.sdn;
@@ -114,7 +110,18 @@ class SdnAccount extends React.Component {
             this.setState({
                 sdn: temp
             });
+    }
+    preventDefault = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    evaluateSubmit = (e) => {
+        if (e.keyCode == 13) {
+            this.update(e);
+            e.preventDefault();
+            e.stopPropagation();
         }
+    }
         // openCreate() {
         //   window.location.hash = window.location.hash + 'management-domain/create'
         // }
@@ -122,8 +129,8 @@ class SdnAccount extends React.Component {
         // This section builds elements that only show up on the create page.
         var name = <label>Name <input type="text" onChange={this.handleNameChange.bind(this)} style={{'text-align':'left'}} /></label>
         var buttons = [
-            <a role="button" onClick={this.cancel} class="cancel">Cancel</a>,
-            <a role="button" onClick={this.create.bind(this)} className="save">Save</a>
+            <a onClick={this.cancel} class="cancel">Cancel</a>,
+            <Button role="button" onClick={this.create.bind(this)} className="save" label="Save" type="submit" />
         ]
         var title = "Add SDN Account"
         // This section builds elements that only show up in the edit page.
@@ -131,9 +138,9 @@ class SdnAccount extends React.Component {
             title = "Edit SDN Account";
             name = <label>{this.state.sdn.name}</label>
             buttons = [
-                <a role="button" ng-click="create.delete(create.sdn)" className="delete">Remove Account</a>,
-                <a role="button" onClick={this.cancel} class="cancel">Cancel</a>,
-                <a role="button" onClick={this.update.bind(this)} className="update">Update</a>
+                <a ng-click="create.delete(create.sdn)" className="delete">Remove Account</a>,
+                <a onClick={this.cancel} class="cancel">Cancel</a>,
+                <Button role="button" onClick={this.update.bind(this)} className="update" label="Update" type="submit"/>
             ]
             let selectAccount = null;
             let params = null;
@@ -193,8 +200,8 @@ class SdnAccount extends React.Component {
 
         var html = (
             <div>
-          <div className="app-body create">
-              <screen-loader store={SdnAccountStore}></screen-loader>
+          <form className="app-body create" onSubmit={this.preventDefault} onKeyDown={this.evaluateSubmit}>
+              <screen-loader store={this.state.store}></screen-loader>
               <h2 className="create-management-domain-header name-input">
                    {name}
               </h2>
@@ -205,7 +212,7 @@ class SdnAccount extends React.Component {
               <div className="form-actions">
                   {buttons}
               </div>
-          </div>
+          </form>
         </div>
         )
         return html;

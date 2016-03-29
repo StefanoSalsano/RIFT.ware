@@ -712,5 +712,8 @@ class AssignNetconfHostToRiftCli(SystemTransform):
 
         cli_proc.netconf_host = host
 
+        #Pass the correct northbound schema listing to rwcli.
+        cli_proc.schema_listing = sysinfo.northbound_listing
+       
 
 # vim: sw=4 et

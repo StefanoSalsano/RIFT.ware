@@ -31,6 +31,34 @@ static const char* NETCONF_NS_PREFIX = "xc";
 
 
 /*****************************************************************************/
+/**
+ * A predicate to check if the string needs to be put
+ * inside quotes. The default case for which it is done
+ * is when the passed word has a space(' ') or a tab ('\t')
+ * present in it.
+ */
+bool is_to_be_cooked(const std::string& word)
+{
+  if (word.find_first_of(" \t\r\n\v\f\"'") == std::string::npos) {
+    return false;
+  }
+  return true;
+}
+
+bool escape_quotes(std::string& str)
+{
+  bool ret = false;
+  size_t pos = 0;
+  size_t start = 0;
+
+  while ((pos = str.find_first_of("\"\\", start)) != std::string::npos) {
+    str.insert(pos, "\\");
+    start = pos + 2;
+    ret = true;
+  }
+
+  return ret;
+}
 
 bool ParseFlags::is_good(flag_t v)
 {
@@ -441,13 +469,13 @@ rw_yang_stmt_type_t ParseNode::get_stmt_type() const
 void ParseNode::set_mode(const char* display)
 {
   UNUSED(display);
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void ParseNode::set_cli_print_hook(const char* api)
 {
   UNUSED(api);
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 ParseNode* ParseNode::mode_enter_top()
@@ -472,8 +500,11 @@ void ParseNode::value_set(const std::string& value)
   value_ = value;
 }
 
-bool ParseNode::value_is_match(const std::string& value) const
+bool ParseNode::value_is_match(
+                const std::string& value,
+                bool check_prefix) const
 {
+  (void)check_prefix;
   const char* token_text = token_text_get();
   const char* value_text = value.c_str();
   size_t i;
@@ -580,23 +611,32 @@ void ParseNode::get_completions(
   completions_t* completions,
   const std::string& value)
 {
+  // Create a token_set with the list of visible items. If there is conflicting
+  // token, then the token_set.count(token) will return more than 1.
+  std::multiset<std::string> token_set;
+  for (ParseNode* child : visible_) {
+    token_set.insert(child->token_text_get());
+  }
+
   // Only the visible children are possible completions
   for (vis_iter_t vi = visible_.begin(); vi != visible_.end(); ++vi) {
     ParseNode* child = *vi;
 
+    bool prefix_required = (token_set.count(child->token_text_get()) > 1);
+
     if (child->is_keyword()) {
-      if(child->value_is_match(value)) {
-        completions->push_back(child);
+      if(child->value_is_match(value, prefix_required)) {
+        completions->emplace_back(child, prefix_required);
       }
     } else {
       // Value node...
       if (value.length() == 0) {
         // Until the user enters something, all values are matches.
-        completions->push_back(child);
-      } else if(child->value_is_match(value)) {
+        completions->emplace_back(child);
+      } else if(child->value_is_match(value, prefix_required)) {
         // Value node...
         // ATTN: Continue to assume that all values are matches?
-        completions->push_back(child);
+        completions->emplace_back(child);
         // ATTN: Stop looking for matches, or only continue to look for keyword matches?
       }
     }
@@ -1241,9 +1281,37 @@ const char* ParseNodeYang::help_full_get() const
  * matches.  If a parsed value, then the underlying yang model must
  * parse the value to determine if it is good.
  */
-bool ParseNodeYang::value_is_match(const std::string& value) const
+bool ParseNodeYang::value_is_match(
+        const std::string& value, 
+        bool check_prefix) const
 {
-  return yangnode_->matches_prefix(value.c_str());
+  // The value may contain yang module prefix - ns_prefix:keyword
+  // Split the prefix and find a match
+  std::string keyword;
+
+  size_t pos = value.find(':');
+  if (pos != std::string::npos) {
+    std::string ns_prefix = value.substr(0, pos);
+    const char* ynode_prefix = yangnode_->get_prefix();
+    if (strncmp(ynode_prefix, ns_prefix.c_str(), ns_prefix.size()) != 0) {
+      // Prefix starts_with match failed
+      return false;
+    }
+    keyword = value.substr(pos+1, std::string::npos);
+  } else {
+    if (check_prefix) {
+      // The value doesn't have ':', but check_prefix is set, which means that
+      // the token has a conflict and has to match the prefix instead of the
+      // keyword.
+      const char* ynode_prefix = yangnode_->get_prefix();
+      if (strncmp(ynode_prefix, value.c_str(), value.size()) == 0) {
+        return true;
+      }
+      return false;
+    }
+    keyword = value;
+  }
+  return yangnode_->matches_prefix(keyword.c_str());
 }
 
 /**
@@ -1323,7 +1391,7 @@ void ParseNodeYang::next(ParseLineResult* plr)
         return;
 
       case RW_YANG_STMT_TYPE_RPCIO:
-        RW_ASSERT(0);
+        RW_CRASH();
         break;
 
       case RW_YANG_STMT_TYPE_LIST:
@@ -1742,27 +1810,30 @@ void ParseNodeYang::get_completions(
 
   // Specialized completion for handling leaf-list nodes
   if (get_stmt_type() == RW_YANG_STMT_TYPE_LEAF_LIST) {
-    // For leaf list show the parent node completions too
-    ParseNode* parent = parent_;
-    bool found = false;
+    // For leaf list show the parent node completions too.
+    // Show the completions only when there is atleast one value
+    // provided in the leaf list.
 
     if (children_.size() > 0 && 
         children_.front()->flags_.is_set(ParseFlags::VISITED)) {
-      // Show the completions only when there is atleast one value
-      // provided in the leaf list, 
-      for (vis_iter_t vi = parent->visible_.begin();
-           vi != parent->visible_.end(); ++vi) {
-        ParseNode* child = *vi;
+      // Create a token_set with the list of visible items. If there is conflicting
+      // token, then the token_set.count(token) will return more than 1.
+      std::multiset<std::string> token_set;
+      for (ParseNode* child : visible_) {
+        token_set.insert(child->token_text_get());
+      }
+  
+      for (ParseNode* child : parent_->visible_) {
         if (child == this) {
           // exclude this node, already completed
           continue;
         }
 
+        bool check_prefix = (token_set.count(child->token_text_get()) > 1);
         // Not expecting values
         RW_ASSERT(child->is_keyword());
-        if (child->value_is_match(value)) {
-          completions->push_back(child);
-          found = true;
+        if (child->value_is_match(value, check_prefix)) {
+          completions->emplace_back(child, check_prefix);
         }
       }
     }
@@ -1989,8 +2060,11 @@ rw_yang_leaf_type_t ParseNodeValue::get_leaf_type() const
  * matches.  If a parsed value, then the underlying yang model must
  * parse the value to determine if it is good.
  */
-bool ParseNodeValue::value_is_match(const std::string& value) const
+bool ParseNodeValue::value_is_match(
+        const std::string& value,
+        bool check_prefix) const
 {
+  (void)check_prefix;
   rw_status_t rs = yangvalue_->parse_partial(value.c_str());
   return rs == RW_STATUS_SUCCESS;
 }
@@ -2715,8 +2789,10 @@ void ParseNodeBehavior::fill_children (YangNode *yangnode)
     children_.push_back(std::move(conf_node));
 
     tmp = static_cast<ParseNodeBehavior*>(cli_.show_candidate_node_.get());
-    ptr_t cand_node(new ParseNodeBehavior(cli_, *tmp, this));
-    children_.push_back(std::move(cand_node));
+    if (tmp) {
+      ptr_t cand_node(new ParseNodeBehavior(cli_, *tmp, this));
+      children_.push_back(std::move(cand_node));
+    }
   }
 
   flags_.set(ParseFlags::C_FILLED);
@@ -2961,7 +3037,9 @@ void ParseNodeValueInternal::help_full_set(const char* str)
  * Attempt to match a string value to the node.
  * always true - for now
  */
-bool ParseNodeValueInternal::value_is_match(const std::string& value) const
+bool ParseNodeValueInternal::value_is_match(
+        const std::string& value,
+        bool check_prefix) const
 {
   // ATTN: this needs to change to correctly identify any issues in the values
   return true;
@@ -3172,7 +3250,7 @@ XMLNode * ModeState::update_xml_cfg  (XMLDocument *doc, rw_yang::ParseNode::ptr_
             break;
           }
           default:
-            RW_ASSERT(0);
+            RW_CRASH();
         }
 
         // once a leaf is reached and processed, indicate that the stack has to be popped
@@ -3328,7 +3406,7 @@ XMLNode *ModeState::merge_xml (XMLDocument *doc, XMLNode *parent_xml, ParseNode 
             break;
           }
           default:
-            RW_ASSERT(0);
+            RW_CRASH();
         }
 
         // once a leaf is reached and processed, indicate that the stack has to be popped
@@ -3571,7 +3649,7 @@ void ParseLineResult::parse_line_words()
 
     // Consume this CLI word only if it matches a single token
     if (completions_.size() == 1) {
-      parse_found = completions_[0];
+      parse_found = completions_[0].node_;
     } else {
       /* A substring was entered, but had a space before the next word,
          or was the last word with a space - check for an exact match
@@ -3581,8 +3659,8 @@ void ParseLineResult::parse_line_words()
       for (ParseNode::compl_iter_t it = completions_.begin();
            // completions that include both partial matches and exact matches?
            it != completions_.end(); ) {
-        if (!strcmp ((*it)->token_text_get(), word.c_str())) {
-          parse_found = *it;
+        if (!strcmp (it->node_->token_text_get(), word.c_str())) {
+          parse_found = it->node_;
           ++it;
         } else {
           // Remove the non-exact keyword from the list of completions
@@ -3601,6 +3679,10 @@ void ParseLineResult::parse_line_words()
       completions_.clear();
       success_ = false;
       return;
+    }
+
+    if (is_to_be_cooked(completed_value)) {
+      completed_value = "\"" + completed_value + "\"";
     }
 
     line_words_[i] = completed_value;
@@ -3910,30 +3992,6 @@ void BaseCli::add_behaviorals(void)
   config_node->set_is_sentence(true);
   config_node->set_callback (new CallbackBaseCli (this, &BaseCli::config_behavioral));
 
-  static const char *commit_node_help = "Commit the configuration";
-  commit_node_.reset(new ParseNodeFunctional(*this, "commit", NULL));
-  
-  ParseNodeFunctional* commit_node = static_cast<ParseNodeFunctional*>(
-                                        commit_node_.get());
-  commit_node->help_short_set(commit_node_help);
-  commit_node->help_full_set(commit_node_help);
-  commit_node->set_is_leafy(true);
-  commit_node->set_is_sentence(true);
-  commit_node->set_callback (new CallbackBaseCli (this, 
-                                  &BaseCli::commit_behavioral));
-
-  static const char *discard_node_help = "Discard the uncommitted configuration changes";
-  discard_node_.reset(new ParseNodeFunctional(*this, "rollback", NULL));
-  
-  ParseNodeFunctional* discard_node = static_cast<ParseNodeFunctional*>(
-                                        discard_node_.get());
-  discard_node->help_short_set(discard_node_help);
-  discard_node->help_full_set(discard_node_help);
-  discard_node->set_is_leafy(true);
-  discard_node->set_is_sentence(true);
-  discard_node->set_callback (new CallbackBaseCli (this, 
-                                    &BaseCli::discard_behavioral));
-
   static const char *show_config_node_help = "Show running configuration";
   show_config_node_.reset(new ParseNodeBehavior(*this, "config", NULL));
   ParseNodeBehavior* show_config_node = static_cast<ParseNodeBehavior*>(
@@ -3945,19 +4003,45 @@ void BaseCli::add_behaviorals(void)
   show_config_node->flags_.set(ParseFlags::GET_CONFIG);
   show_config_node->set_callback(new CallbackBaseCli(this, 
                                       &BaseCli::show_config));
+  if (has_candidate_store_) {
+    static const char *commit_node_help = "Commit the configuration";
+    commit_node_.reset(new ParseNodeFunctional(*this, "commit", NULL));
 
-  static const char *show_cand_node_help = "Show candidate configuration";
-  show_candidate_node_.reset(new ParseNodeBehavior(*this, 
-                                          "candidate-config", NULL));
-  ParseNodeBehavior* show_cand_node = static_cast<ParseNodeBehavior*>(
+    ParseNodeFunctional* commit_node = static_cast<ParseNodeFunctional*>(
+        commit_node_.get());
+    commit_node->help_short_set(commit_node_help);
+    commit_node->help_full_set(commit_node_help);
+    commit_node->set_is_leafy(true);
+    commit_node->set_is_sentence(true);
+    commit_node->set_callback (new CallbackBaseCli (this, 
+          &BaseCli::commit_behavioral));
+
+    static const char *discard_node_help = 
+              "Discard the uncommitted configuration changes";
+    discard_node_.reset(new ParseNodeFunctional(*this, "rollback", NULL));
+
+    ParseNodeFunctional* discard_node = static_cast<ParseNodeFunctional*>(
+                                          discard_node_.get());
+    discard_node->help_short_set(discard_node_help);
+    discard_node->help_full_set(discard_node_help);
+    discard_node->set_is_leafy(true);
+    discard_node->set_is_sentence(true);
+    discard_node->set_callback (new CallbackBaseCli (this, 
+                                          &BaseCli::discard_behavioral));
+
+    static const char *show_cand_node_help = "Show candidate configuration";
+    show_candidate_node_.reset(new ParseNodeBehavior(*this, 
+                                        "candidate-config", NULL));
+    ParseNodeBehavior* show_cand_node = static_cast<ParseNodeBehavior*>(
                                           show_candidate_node_.get());
-  show_cand_node->help_short_set(show_cand_node_help);
-  show_cand_node->help_full_set(show_cand_node_help);
-  show_cand_node->set_is_leafy(true);
-  show_cand_node->set_is_sentence(true);
-  show_cand_node->flags_.set(ParseFlags::GET_CONFIG);
-  show_cand_node->set_callback(new CallbackBaseCli(this, 
-                                      &BaseCli::show_candidate_config));
+    show_cand_node->help_short_set(show_cand_node_help);
+    show_cand_node->help_full_set(show_cand_node_help);
+    show_cand_node->set_is_leafy(true);
+    show_cand_node->set_is_sentence(true);
+    show_cand_node->flags_.set(ParseFlags::GET_CONFIG);
+    show_cand_node->set_callback(new CallbackBaseCli(this, 
+                                          &BaseCli::show_candidate_config));
+  }
   // derived classes could enhance some behaviorals before they are added to a
   // parse tree.
 
@@ -4225,26 +4309,36 @@ bool BaseCli::generate_help(const std::string& line_buffer)
   // If possible completions exist then display the help msg for them
   if (r.completions_.size() >= 1) {
     std::cout << std::endl;
+
     // std::cout << "Short Help:" << std::endl;
     for (ParseNode::compl_size_t i = 0; i != r.completions_.size(); i++) {
-      ParseNode* parse_node = r.completions_[i];
+      ParseCompletionEntry& entry = r.completions_[i];
+      ParseNode* parse_node = entry.node_;
 
       if (parse_node->flags_.is_set(ParseFlags::DEPRECATED)) {
         // Ignore deprecated nodes for completion
         continue;
       }
 
+      if ((r.last_word_.find(':') != std::string::npos) &&
+          (!entry.prefix_required_)) {
+        // Found a ':', display the node only if prefix is required
+        continue;
+      }
+
       if (parse_node->is_mode() && !parse_node->flags_.is_set (ParseFlags::HIDE_MODES)) {
         // Display a mode helpmsg for the completion
-        std::cout << std::setw(15) << std::left << parse_node->token_text_get() << std::right
+        std::string token_text = get_token_with_prefix(entry);
+        std::cout << std::setw(15) << std::left << token_text << std::right
                   << " - Enter "
-                  << parse_node->token_text_get()
+                  << token_text
                   << " mode: "
                   << parse_node->help_short_get()
                   << std::endl;
       } else if (parse_node->is_keyword()) {
         // Display a mode helpmsg for the completion
-        std::cout << std::setw(15) << std::left << parse_node->token_text_get() << std::right
+        std::string token_text = get_token_with_prefix(entry);
+        std::cout << std::setw(15) << std::left << token_text << std::right
                   << " - KEYWORD: "
                   << parse_node->help_short_get()
                   << std::endl;
@@ -4298,24 +4392,33 @@ std::vector<ParseMatch> BaseCli::generate_matches(const std::string& line_buffer
   // If possible completions exist then display the help msg for them
   if (r.completions_.size() >= 1) {
     for (ParseNode::compl_size_t i = 0; i != r.completions_.size(); i++) {
-      ParseNode* parse_node = r.completions_[i];
+      ParseCompletionEntry& entry = r.completions_[i];
+      ParseNode* parse_node = entry.node_;
 
       if (parse_node->flags_.is_set(ParseFlags::DEPRECATED)) {
         // Ignore deprecated nodes for completion
         continue;
       }
 
+      if ((r.last_word_.find(':') != std::string::npos) &&
+          (!entry.prefix_required_)) {
+        // Found a ':', display the node only if prefix is required
+        continue;
+      }
+
       if (parse_node->is_mode() && !parse_node->flags_.is_set (ParseFlags::HIDE_MODES)) {
         // Display a mode helpmsg for the completion
         std::stringstream disp;
-        disp << "Enter " << parse_node->token_text_get() << " mode: " 
+        std::string token_text = get_token_with_prefix(entry);
+        disp << "Enter " << token_text << " mode: " 
              << parse_node->help_short_get();
-        matches.emplace_back(parse_node->token_text_get(), disp.str());
+        matches.emplace_back(token_text, disp.str());
       } else if (parse_node->is_keyword()) {
         // Display a mode helpmsg for the completion
         std::stringstream disp;
+        std::string token_text = get_token_with_prefix(entry);
         disp << "KEYWORD: " << parse_node->help_short_get();
-        matches.emplace_back(parse_node->token_text_get(), disp.str());
+        matches.emplace_back(token_text, disp.str());
       } else {
         RW_ASSERT(parse_node->is_value());
         std::stringstream disp;
@@ -4365,18 +4468,23 @@ std::string BaseCli::tab_complete(const std::string& line_buffer)
 
   // If there is more than one completion, find the longest common prefix
   if (r.completions_.size() > 1) {
+    int count = 0;
     if (!r.line_ends_with_space_) {
-      ParseNode* parse_node = r.completions_[0];
-      std::string prefix = parse_node->token_text_get();
-      for (ParseNode::compl_size_t i = 1; i < r.completions_.size(); ++i) {
-        parse_node = r.completions_[i];
-
-        if (parse_node->flags_.is_set(ParseFlags::DEPRECATED)) {
+      std::string prefix;
+      for (ParseCompletionEntry& entry: r.completions_) {
+        if (entry.node_->flags_.is_set(ParseFlags::DEPRECATED)) {
           // Ignore deprecated nodes for completion
           continue;
         }
-
-        std::string completion = parse_node->token_text_get();
+        if ((r.last_word_.find(':') != std::string::npos) &&
+            (!entry.prefix_required_)) {
+          // Found a ':', display the node only if prefix is required
+          continue;
+        }
+        if (prefix.empty()) {
+          prefix = get_token_with_prefix(entry);
+        }
+        std::string completion = get_token_with_prefix(entry);
         size_t j = 0;
         for(; j < std::min(prefix.size(), completion.size()); ++j) {
           if (prefix[j] != completion[j]) {
@@ -4384,21 +4492,29 @@ std::string BaseCli::tab_complete(const std::string& line_buffer)
           }
         }
         prefix = prefix.substr(0, j);
+        count++;
       }
       linepath = r.completed_buffer_ + prefix;
-      // linepath = r.completed_buffer_ + r.last_word_;
     }
-    if (help_on_tab_) {
+    if (help_on_tab_ && (count > 1)) {
       generate_help(line_buffer);
+    }
+    if (count == 1 && !linepath.empty()) {
+      linepath += " ";
     }
     return linepath;
   }
 
   // If there is only one completion, then perform the completion
   RW_ASSERT(r.completions_.size() == 1);
-  ParseNode* parse_node = r.completions_[0];
+  ParseNode* parse_node = r.completions_[0].node_;
+  std::string string;
 
-  std::string string = parse_node->value_complete(r.last_word_);
+  if (r.completions_[0].prefix_required_) {
+    string = get_token_with_prefix(r.completions_[0]);
+  } else {
+    string = parse_node->value_complete(r.last_word_);
+  }
   if (string.length() > 0) {
     linepath = r.completed_buffer_ + string + " ";
   } else {
@@ -4410,13 +4526,32 @@ std::string BaseCli::tab_complete(const std::string& line_buffer)
   return linepath;
 }
 
+parse_result_t BaseCli::process_line_buffer(int argc, const char* const* argv, bool interactive)
+{
+  int count = argc;
+  std::string line_buffer;
+  line_buffer.reserve(128);
+
+  while (count--) {
+    line_buffer += " ";
+    std::string token(*argv);
+
+    if (escape_quotes(token) || is_to_be_cooked(token)) {
+      line_buffer += "\"" + token + "\"";
+    } else {
+      line_buffer += token;
+    }
+    argv++;
+  }
+  return parse_line_buffer(line_buffer, interactive);
+} 
+
 /**
  * Parse a whole line.
  */
 parse_result_t BaseCli::parse_line_buffer(const std::string& line_buffer,
                                           bool iterate)
 {
-
   uint8_t levels;
   parse_result_t ret = PARSE_LINE_RESULT_INVALID_INPUT, curr_ret=PARSE_LINE_RESULT_INVALID_INPUT  ;
   bool result_set = false;
@@ -4722,7 +4857,7 @@ bool BaseCli::discard_behavioral(const ParseLineResult& r)
 bool BaseCli::process_config(const ParseLineResult&r )
 {
   UNUSED (r);
-  RW_ASSERT(0);
+  RW_CRASH();
   return false;
 }
 /**
@@ -4779,7 +4914,21 @@ AppDataParseTokenBase BaseCli::app_data_register(
   return adpt;
 }
 
-
+std::string BaseCli::get_token_with_prefix(const ParseCompletionEntry& entry)
+{
+  std::string token_text;
+  if (entry.prefix_required_) {
+    const char* prefix = entry.node_->get_prefix();
+    if (prefix) {
+      token_text = prefix;
+      token_text += ":";
+    }
+    token_text += entry.node_->token_text_get();
+  } else {
+    token_text = entry.node_->token_text_get();
+  }
+  return token_text;
+}
 
 /*****************************************************************************/
 

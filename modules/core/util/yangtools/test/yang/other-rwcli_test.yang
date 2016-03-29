@@ -83,4 +83,16 @@ module other-rwcli_test
     }
   }
 
+  // Testing the idref
+  list network {
+    key "name";
+    leaf name { type string; }
+    leaf cidr { type string; }
+    list servers {
+      key "host";
+      leaf host { type string; }
+      leaf ip { type string; }
+    }
+  }
+
 } // module other-rwcli_test

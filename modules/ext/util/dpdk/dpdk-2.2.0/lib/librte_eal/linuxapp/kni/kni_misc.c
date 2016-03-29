@@ -883,26 +883,6 @@ kni_ioctl_create(struct net *net,
 	}
 
 	dev_net_set(net_dev, net);
-        /*
-#ifdef RTE_LIBRW_PIOT
-        {
-          pid_t pid = task_pid_vnr(current);
-          if ((int)pid <= 0){
-            printk(KERN_INFO "KNI: Creating kni... resolveing error with the current in a different namespace using 0x%x\n", dev_info.pid);
-            pid = dev_info.pid;
-          }
-          net = get_net_ns_by_pid(pid);
-          if (IS_ERR(net)) {
-            printk(KERN_INFO "KNI: Creating kni... failed no netnamepsace for pid 0x%x\n",
-                   pid);
-            free_netdev(net_dev);
-            return PTR_ERR(net);
-          }
-          dev_net_set(net_dev, net);
-          put_net(net);
-        }
-#endif
-        */
 	kni = netdev_priv(net_dev);
 
 	kni->net_dev = net_dev;
@@ -1050,16 +1030,6 @@ register_netdev:
 #endif
 #ifdef RTE_LIBRW_PIOT
         rtnl_lock();
-#if 0
-        if (dev_info.loopback) {
-          if (&init_net != dev_net(net_dev)) {
-            if (dev_net(net_dev)->loopback_dev){
-              printk(KERN_INFO "Setting the loopback device to %s\n", net_dev->name);
-              dev_net(net_dev)->loopback_dev = net_dev;
-            }
-          }
-        }
-#endif
         ret = netdev_rx_handler_register(net_dev, rw_fpath_kni_handle_frame,
 					 net_dev);
 	if (ret) {
@@ -1104,7 +1074,6 @@ register_netdev:
 	down_write(&knet->kni_list_lock);
 	list_add(&kni->list, &knet->kni_list_head);
 	up_write(&knet->kni_list_lock);
-
 	return 0;
 }
 

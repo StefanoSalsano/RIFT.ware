@@ -8,7 +8,7 @@ import './accountSidebar.scss';
 import DashboardCard from '../../components/dashboard_card/dashboard_card.jsx';
 import CloudAccountStore from '../launchpad_cloud_account/cloudAccountStore.js';
 import ConfigAgentAccountStore from '../launchpad_config_agent_account/configAgentAccountStore';
-import SdnAccountStore from '../../missioncontrol/sdn_account/createSdnAccountStore';
+import SdnAccountStore from '../launchpad_sdn_account/sdnAccountStore';
 
 export default class AccountSidebar extends React.Component{
     constructor(props) {

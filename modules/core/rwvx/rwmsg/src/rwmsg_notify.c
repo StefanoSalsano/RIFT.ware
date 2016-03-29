@@ -236,7 +236,7 @@ rw_status_t rwmsg_notify_init(rwmsg_endpoint_t *ep,
     }
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
  ret:
@@ -345,17 +345,19 @@ void rwmsg_notify_deinit(rwmsg_endpoint_t *ep,
       notify->rwsched.rwsource = NULL;
       RW_ASSERT(ep->rwsched == notify->rwsched.rwsched);
       if (notify->wantack) {
-	RWMSG_TRACE(ep, DEBUG, "setting cancel_handler_f on rwsrc=%p in notify=%p", rwsrc, notify);
+	//RWMSG_TRACE(ep, DEBUG, "setting cancel_handler_f on rwsrc=%p in notify=%p", rwsrc, notify);
 	rwsched_dispatch_source_set_cancel_handler_f(ep->taskletinfo, 
 						     rwsrc,
 						     rwmsg_notify_cancel_event);
       }
 
+      /*
       RWMSG_TRACE(ep, DEBUG, "notify=%p '%s' calling cancel, .wantack=%d, rwsrc=%p rwq=%p (mainq=%p)", 
 		  notify, notify->name, notify->wantack,
 		  rwsrc,
 		  notify->rwsched.rwqueue,
 		  rwsched_dispatch_get_main_queue(ep->rwsched));
+      */
       rwsched_dispatch_source_cancel(ep->taskletinfo, rwsrc);
 
       if (notify->wantack) {
@@ -381,16 +383,16 @@ void rwmsg_notify_deinit(rwmsg_endpoint_t *ep,
   case RWMSG_NOTIFY_INVALID:
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
   notify->theme = RWMSG_NOTIFY_INVALID;
   if (canack) {
-    RWMSG_TRACE(ep, DEBUG, "notify=%p deinit explicit canack setting", notify);
+    //RWMSG_TRACE(ep, DEBUG, "notify=%p deinit explicit canack setting", notify);
     notify->cancelack = TRUE;
   } else {
     RW_ASSERT(theme == RWMSG_NOTIFY_RWSCHED || theme == RWMSG_NOTIFY_RWSCHED_FD);
-    RWMSG_TRACE(ep, DEBUG, "notify=%p deinit deferred canack setting", notify);
+    //RWMSG_TRACE(ep, DEBUG, "notify=%p deinit deferred canack setting", notify);
   }
   return;
 }
@@ -403,7 +405,7 @@ int rwmsg_notify_getpollset(rwmsg_notify_t *notify,
   case RWMSG_NOTIFY_NONE:
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   case RWMSG_NOTIFY_EVENTFD:
     RW_ASSERT(pollset_len >= 1);
@@ -460,7 +462,7 @@ void rwmsg_notify_raise(rwmsg_notify_t *notify) {
   case RWMSG_NOTIFY_NONE:
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
 }
@@ -508,7 +510,7 @@ void rwmsg_notify_clear(rwmsg_notify_t *notify, uint32_t ct) {
     notify->rwsched.clearct += ct;
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
 }

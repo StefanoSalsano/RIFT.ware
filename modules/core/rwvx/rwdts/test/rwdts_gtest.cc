@@ -62,6 +62,7 @@
 #include <rwdts_redis.h>
 #include <sys/prctl.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include <rwdts_appconf_api.h>
 #include <rwdts_xpath.h>
 
@@ -1625,6 +1626,7 @@ typedef struct cb_track_s {
 
 struct tenv1 {
   rwsched_instance_ptr_t rwsched;
+  rwvx_instance_t *rwvx;
   int testno;
 
   struct tenv_info {
@@ -1700,6 +1702,11 @@ protected:
 
     tenv.rwsched = rwsched_instance_new();
     ASSERT_TRUE(tenv.rwsched);
+
+    tenv.rwvx = rwvx_instance_alloc();
+    ASSERT_TRUE(tenv.rwsched);
+    rw_status_t status = rwcal_rwzk_zake_init(tenv.rwvx->rwcal_module);
+    RW_ASSERT(RW_STATUS_SUCCESS == status);
 
     uint16_t redisport;
     const char *envport = getenv("RWDTS_REDIS_PORT");
@@ -1799,6 +1806,8 @@ protected:
         }
         ti->rwtasklet_info.rwmsg_endpoint = ti->ep;
         ti->rwtasklet_info.rwsched_instance = tenv.rwsched;
+        ti->rwtasklet_info.rwvx = tenv.rwvx;
+        ti->rwtasklet_info.rwvcs = tenv.rwvx->rwvcs;
         if (i== TASKLET_ROUTER_3) rout_id = 3;
         if (i== TASKLET_ROUTER_4) rout_id = 4;
         ti->dts = rwdts_router_init(ti->ep, rwsched_dispatch_get_main_queue(tenv.rwsched), 
@@ -1810,7 +1819,7 @@ protected:
         if (!ti->rwtasklet_info.rwlog_instance) {
          ti->rwtasklet_info.rwlog_instance =  rwlog_init("RW.DtsTests");
         }
-        rwmsg_broker_main(0, 1, 0, tenv.rwsched, ti->tasklet, NULL, TRUE/*mainq*/, &ti->bro);
+        rwmsg_broker_main(0, 1, 0, tenv.rwsched, ti->tasklet, NULL, TRUE/*mainq*/, NULL, &ti->bro);
         ASSERT_NE(ti->bro, (void*)NULL);
         break;
       case TASKLET_NONMEMBER:
@@ -3049,7 +3058,7 @@ static rwdts_member_rsp_code_t memberapi_test_precommit(const rwdts_xact_info_t*
 
   switch (s->member[ti->member_idx].treatment) {
   case TREATMENT_PRECOMMIT_NULL:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NOT_OK;
     break;
   case TREATMENT_PRECOMMIT_NACK:
@@ -3313,7 +3322,7 @@ static rwdts_member_rsp_code_t memberapi_test_prepare(const rwdts_xact_info_t* x
     return RWDTS_ACTION_ASYNC;
   }
   default: 
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }
@@ -3344,10 +3353,6 @@ static rwdts_member_rsp_code_t memberapi_test_prepare_multiple(const rwdts_xact_
 
   TSTPRN("tasklet[%d] member[%d] in memberapi_test_prepare_multiple \n", 
 	 ti->tasklet_idx, ti->member_idx);
-
-  if (!s->client.transactional) {
-    flags |= RWDTS_XACT_FLAG_NOTRAN ;
-  }
 
   apih = xact->apih;
   RW_ASSERT(apih);
@@ -3467,7 +3472,7 @@ static rwdts_member_rsp_code_t memberapi_test_anycast_prepare(const rwdts_xact_i
     return RWDTS_ACTION_OK;
 
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }
@@ -3607,7 +3612,7 @@ memberapi_test_audit_prep(const rwdts_xact_info_t* xact_info,
         change_every_iter = 1;
         break;
       default:
-        RW_ASSERT(0);
+        RW_CRASH();
     }
   }
 
@@ -4079,7 +4084,7 @@ static rwdts_member_rsp_code_t memberapi_test_append_prepare(const rwdts_xact_in
     return RWDTS_ACTION_OK;
 
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }
@@ -4248,7 +4253,7 @@ static rwdts_member_rsp_code_t memberapi_test_transreg_prepare(const rwdts_xact_
     return RWDTS_ACTION_OK;
 
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }
@@ -4311,7 +4316,7 @@ fprintf(stderr, "SHARED prepare in member %d\n", ti->member_idx);
     return RWDTS_ACTION_OK;
 
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }
@@ -4407,7 +4412,7 @@ memberapi_test_prepare_reroot(const rwdts_xact_info_t* xact_info,
     return RWDTS_ACTION_OK;
 
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }
@@ -4543,7 +4548,7 @@ memberapi_test_advice_prepare(const rwdts_xact_info_t* xact_info,
     return RWDTS_ACTION_OK;
   }
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }
@@ -4937,7 +4942,7 @@ static void rwdts_clnt_getnext_query_callback(rwdts_xact_t *xact, rwdts_xact_sta
   else 
     {
       printf("ASSERT not a read\n");
-      RW_ASSERT(0);
+      RW_CRASH();
     }
   if (xact_status->xact_done == FALSE)
     {
@@ -5660,7 +5665,7 @@ static void memberapi_client_start_f(void *ctx)
     ASSERT_TRUE(xact);
     // python world api. let us explictly un-ref simulating python app
     rwdts_xact_unref(xact, __PRETTY_FUNCTION__, __LINE__);
-    ASSERT_EQ(xact->ref_cnt,1);
+    ASSERT_EQ(xact->ref_cnt,2);
     char *xact_id_str;
     xact_id_str = rwdts_xact_get_id(xact);
     ASSERT_TRUE(xact_id_str);
@@ -5753,9 +5758,6 @@ static void memberapi_client_start_multiple_f(void *ctx)
   clnt_cb.cb = rwdts_clnt_query_callback_multiple;
   clnt_cb.ud = ctx;
   uint32_t flags = 0;
-  if (!s->client.transactional) {
-    flags |= RWDTS_XACT_FLAG_NOTRAN ;
-  }
   
   keyspec_entry.dompath.path001.key00.number = RW_STRDUP("0");
   keyspec_entry.dompath.path001.has_key00 = 1;
@@ -5820,9 +5822,6 @@ static void memberapi_client_anycast_start_f(void *ctx)
   RWPB_F_MSG_INIT(TestdtsRwBase_VcsResource_Vm_Cpu, cpu);
 
   uint32_t flags = 0;
-  if (!s->client.transactional) {
-    flags |= RWDTS_XACT_FLAG_NOTRAN ;
-  }
   flags |= RWDTS_FLAG_WAIT_RESPONSE;
   flags |= RWDTS_FLAG_TRACE;
 
@@ -5864,7 +5863,6 @@ static void memberapi_client_merge_start_f(void *ctx)
   RWPB_F_MSG_INIT(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext, nc);
 
   uint32_t flags = 0;
-  flags |= RWDTS_XACT_FLAG_NOTRAN ;
   if (s->stream_results) {
     flags |= RWDTS_FLAG_STREAM;
   } else {
@@ -5986,7 +5984,6 @@ static void memberapi_client_empty_start_f(void *ctx)
   ASSERT_TRUE(clnt_apih);
 
   uint32_t flags = 0;
-  flags |= RWDTS_XACT_FLAG_NOTRAN ;
   if (s->stream_results == TRUE) {
     flags |= RWDTS_FLAG_BLOCK_MERGE;
     flags |= RWDTS_FLAG_WAIT_RESPONSE;
@@ -6223,7 +6220,7 @@ rwdts_audit_done(rwdts_api_t*                apih,
       break;
 
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
   }
 
@@ -6255,7 +6252,6 @@ static void memberapi_client_publish_start_f(void *ctx)
   RWPB_F_MSG_INIT(DtsTest_data_Person_Phone, phone);
 
   uint32_t flags = 0;
-  flags |= RWDTS_XACT_FLAG_NOTRAN ;
   if (s->stream_results == TRUE) {
     flags |= RWDTS_FLAG_STREAM;
   } else {
@@ -6714,9 +6710,6 @@ static void memberapi_member_shared_reg_ready(rwdts_member_reg_handle_t regh,
   RWPB_F_MSG_INIT(TestdtsRwBase_TestdtsRwBase_data_Logging_Filter_Category, filter);
 
   uint32_t flags = 0;
-  if (!s->client.transactional) {
-    flags |= RWDTS_XACT_FLAG_NOTRAN ;
-  }
   flags |= RWDTS_FLAG_WAIT_RESPONSE;
 
   xact = rwdts_api_query_ks(clnt_apih,keyspec,RWDTS_QUERY_READ,flags,
@@ -7078,6 +7071,11 @@ static void memberapi_pub_sub_cache_kn_client_start_f(void *ctx)
     phone->has_type = TRUE;
     phone->type = DTS_TEST_PHONE_TYPE_MOBILE;
 
+    rw_keyspec_path_delete_binpath((rw_keyspec_path_t *)k_keyspec, NULL);
+
+    k_keyspec->dompath.path001.has_key00 = 1;
+    sprintf (k_keyspec->dompath.path001.key00.number, phone_num2);
+
     TSTPRN("Updating list element in  Member pub sub Cache notify ...\n");
     rw_yang_pb_schema_t* sch = (rw_yang_pb_schema_t*)RWPB_G_SCHEMA_YPBCSD(DtsTest);
     ASSERT_TRUE(sch != NULL);
@@ -7112,7 +7110,7 @@ static void memberapi_pub_sub_cache_kn_client_start_f(void *ctx)
     //
 
     uint32_t count = rwdts_member_data_get_count(NULL, regh);
-    EXPECT_EQ(1, count);
+    EXPECT_EQ(2, count);
 
 // Delete not supported in cache mode for now
     TSTPRN("Deleting list element in  Member pub sub Cache notify ...\n");
@@ -7423,6 +7421,10 @@ static rwdts_member_rsp_code_t memberapi_test_grp_event(rwdts_api_t *apih,
 							void *ctx,
 							void *scratch_in) {
   memberapi_test_grp_scratch_t *s = (memberapi_test_grp_scratch_t *)scratch_in;
+  if (!s) {
+    assert(!xact);
+    return RWDTS_ACTION_OK;
+  }
   assert(s->init);
   assert(!s->deinit);
   switch (evt) {
@@ -12095,7 +12097,6 @@ memberapi_pub_app_regready(rwdts_member_reg_handle_t regh,
  
      flags |= RWDTS_FLAG_WAIT_RESPONSE;
      flags |= RWDTS_XACT_FLAG_END; //xact_parent = NULL
-//     flags |= RWDTS_XACT_FLAG_NOTRAN; // debug changes
  
     rwdts_advise_query_proto_int(apih,
                                  keyspec,
@@ -15498,7 +15499,8 @@ static void multireg_dereg_path_f(void *ctx) {
   rwdts_api_t *apih = s->tenv->t[TASKLET_CLIENT].apih;
 
   rwdts_member_deregister_path(apih,
-                               (char *)"/L/RWDTS_GTEST/MEMBER/4");
+                               (char *)"/L/RWDTS_GTEST/MEMBER/4",
+                               RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
 
   double seconds = (RUNNING_ON_VALGRIND)?60:5;
   dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, seconds * NSEC_PER_SEC);
@@ -20471,9 +20473,6 @@ static void memberapi_redn_client_start_f(void *ctx)
   clnt_cb.cb = rwdts_clnt_redn_query_callback;
   clnt_cb.ud = ctx;
   uint32_t flags = 0;
-  if (!s->client.transactional) {
-    flags |= RWDTS_XACT_FLAG_NOTRAN ;
-  }
   flags |= RWDTS_FLAG_WAIT_RESPONSE;
 
   ASSERT_EQ(rwdts_api_get_ypbc_schema(clnt_apih), (rw_yang_pb_schema_t*)RWPB_G_SCHEMA_YPBCSD(DtsTest));
@@ -20711,7 +20710,7 @@ memberapi_redn_member_prepare(const rwdts_xact_info_t* xact_info,
     return RWDTS_ACTION_ASYNC;
   }
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     return RWDTS_ACTION_NA;
     break;
   }

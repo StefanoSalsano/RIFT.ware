@@ -127,17 +127,26 @@ void rwvcs_component_delete(
 {
   rw_status_t status;
 
-  if (component->rwcomponent_parent) {
-    status = rwvcs_rwzk_delete_child(
-      rwvcs,
-      component->rwcomponent_parent,
-      component->component_name,
-      component->instance_id);
+  if (component->has_recovery_action 
+      && (component->recovery_action == RWVCS_TYPES_RECOVERY_TYPE_RESTART)) {
+    component->state = RW_BASE_STATE_TYPE_TO_RECOVER;
+    status = rwvcs_rwzk_node_update(
+        rwvcs, 
+        component);
+  }
+  else {
+    if (component->rwcomponent_parent) {
+      status = rwvcs_rwzk_delete_child(
+        rwvcs,
+        component->rwcomponent_parent,
+        component->component_name,
+        component->instance_id);
+      RW_ASSERT(status == RW_STATUS_SUCCESS || RW_STATUS_NOTFOUND);
+    }
+
+    status = rwvcs_rwzk_delete_node(rwvcs, component->instance_name);
     RW_ASSERT(status == RW_STATUS_SUCCESS || RW_STATUS_NOTFOUND);
   }
-
-  status = rwvcs_rwzk_delete_node(rwvcs, component->instance_name);
-  RW_ASSERT(status == RW_STATUS_SUCCESS || RW_STATUS_NOTFOUND);
 }
 
 static void rwvcs_component_link_parent(

@@ -79,4 +79,8 @@ export default class RecordServicePath extends DescriptorModel {
 		return this.removeModelListItem('vnfdConnectionPointRef', child);
 	}
 
+	createClassifier() {
+		this.parent.createClassifierForRecordServicePath(this);
+	}
+
 }

@@ -239,28 +239,28 @@ static rw_status_t rwmsg_sockset_send_int(rwmsg_sockset_t *ss,
           }
 	  break;
 	case EFAULT:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case EMSGSIZE:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case EINVAL:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case EBADF:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case ENOTSUP:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case EFSM:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case ETERM:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	default:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	}
       }
@@ -351,29 +351,29 @@ rw_status_t rwmsg_sockset_recv_pri(rwmsg_sockset_t *ss,
 	  rs = RW_STATUS_BACKPRESSURE;
 	  break;
 	case EFAULT:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case EMSGSIZE:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case EINVAL:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case EBADF:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case ENOTSUP:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case EFSM:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	case ETERM:
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	default:
     RWMSG_TRACE(ss->ep, DEBUG, "rwmsg_sockset_recv_pri r=%d errno=%d '%s'", r, errno, strerror(errno));
-	  RW_ASSERT(0);
+	  RW_CRASH();
 	  break;
 	}
       }
@@ -692,17 +692,14 @@ rw_status_t rwmsg_sockset_attach_fd(rwmsg_sockset_t *ss, int fd, rwmsg_priority_
     }
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
 
   return rs;
 }
 
-void rwmsg_channelspecific_halt(rwmsg_channel_t *ch);
-void rwmsg_broker_acceptor_remove_bch_from_hash(void *ctx);
-
-static void rwmsg_ageout_timer_f(void *ctx) {
+void rwmsg_ageout_timer_f(void *ctx) {
   rwmsg_sockset_t *ss = (rwmsg_sockset_t*)ctx;
   RW_ASSERT(ss);
   RW_ASSERT_TYPE(ss, rwmsg_sockset_t);

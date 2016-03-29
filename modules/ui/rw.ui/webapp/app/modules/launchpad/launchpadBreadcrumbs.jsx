@@ -31,9 +31,9 @@ export default class LaunchpadBreadcrumbs extends React.Component {
         <span className="spacer"> | </span>
         {this.breadcrumbItem(url_base+'/topology', 'Topology', (this.props.current == 'topology' ))}
         <span className="spacer"> | </span>
-        {this.breadcrumbItem(url_base+'/topologyL2', 'Topology L2', (this.props.current == 'topologyL2' ))}
+        {this.breadcrumbItem(url_base+'/topologyL2', 'Topology L2', (this.props.current == 'socket' ))}
         <span className="spacer"> | </span>
-        {this.breadcrumbItem(url_base+'/topologyL2Vm', 'Topology L2Vm', (this.props.current == 'topologyL2Vm'))}
+        {this.breadcrumbItem(url_base+'/topologyL2Ajax', 'Topology L2Ajax', (this.props.current == 'ajax'))}
       </div>
     );
     return html;

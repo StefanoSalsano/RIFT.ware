@@ -22,6 +22,7 @@
 #include <protobuf-c/rift-protobuf-c.h>
 #include <rwlib.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include <rw-dts.pb-c.h>
 
 
@@ -294,42 +295,37 @@ rwdts_member_store_registration(rwdts_api_t *apih,
 
   for (i=0; i < rcvreg->n_registration; i++) {
     if (rcvreg->registration[i]->rtr_reg_id) {
-      RWPB_T_MSG(RwDts_data_RtrInitRegId_Member) store_data;
-      RWPB_F_MSG_INIT(RwDts_data_RtrInitRegId_Member,&store_data);
-      strncpy(store_data.name, rcvreg->name, sizeof(store_data.name));
-
-      store_data.n_registration = 1;
-      store_data.registration = RW_MALLOC0(sizeof(store_data.registration[0]));
+      RWPB_T_MSG(RwDts_data_RtrInitRegId_Member_Registration) store_data;
+      RWPB_F_MSG_INIT(RwDts_data_RtrInitRegId_Member_Registration,&store_data);
 
       RWPB_T_PATHENTRY(RwDts_data_RtrInitRegId_Member_Registration) path_entry = *(RWPB_G_PATHENTRY_VALUE(RwDts_data_RtrInitRegId_Member_Registration));
-      store_data.registration[0] = RW_MALLOC0(sizeof(RWPB_T_MSG(RwDts_data_RtrInitRegId_Member_Registration)));
-      RWPB_F_MSG_INIT(RwDts_data_RtrInitRegId_Member_Registration, store_data.registration[0]);
-      store_data.registration[0]->keystr = rcvreg->registration[i]->keystr;
-      store_data.registration[0]->has_keyspec = 1;
-      store_data.registration[0]->keyspec.len = rcvreg->registration[i]->keyspec.len;
-      store_data.registration[0]->keyspec.data = rcvreg->registration[i]->keyspec.data;
-      store_data.registration[0]->flags = rcvreg->registration[i]->flags;
-      store_data.registration[0]->has_flavor = rcvreg->registration[i]->has_flavor;
-      store_data.registration[0]->flavor = rcvreg->registration[i]->flavor;
-      store_data.registration[0]->has_index = rcvreg->registration[i]->has_index;
-      store_data.registration[0]->index = rcvreg->registration[i]->index;
-      store_data.registration[0]->has_start = rcvreg->registration[i]->has_start;
-      store_data.registration[0]->start = rcvreg->registration[i]->start;
-      store_data.registration[0]->has_stop = rcvreg->registration[i]->has_stop;
-      store_data.registration[0]->stop = rcvreg->registration[i]->stop;
+
+      store_data.keystr = rcvreg->registration[i]->keystr;
+      store_data.has_keyspec = 1;
+      store_data.keyspec.len = rcvreg->registration[i]->keyspec.len;
+      store_data.keyspec.data = rcvreg->registration[i]->keyspec.data;
+      store_data.flags = rcvreg->registration[i]->flags;
+      store_data.has_flavor = rcvreg->registration[i]->has_flavor;
+      store_data.flavor = rcvreg->registration[i]->flavor;
+      store_data.has_index = rcvreg->registration[i]->has_index;
+      store_data.index = rcvreg->registration[i]->index;
+      store_data.has_start = rcvreg->registration[i]->has_start;
+      store_data.start = rcvreg->registration[i]->start;
+      store_data.has_stop = rcvreg->registration[i]->has_stop;
+      store_data.stop = rcvreg->registration[i]->stop;
 
       RW_ASSERT(rcvreg->registration[i]->flavor);
       if (rcvreg->registration[i]->has_minikey) {
-        store_data.registration[0]->has_minikey = 1;
-        store_data.registration[0]->minikey.len = rcvreg->registration[i]->minikey.len;
-        store_data.registration[0]->minikey.data = rcvreg->registration[i]->minikey.data;
+        store_data.has_minikey = 1;
+        store_data.minikey.len = rcvreg->registration[i]->minikey.len;
+        store_data.minikey.data = rcvreg->registration[i]->minikey.data;
       }
 
       if (rcvreg->registration[i]->has_descriptor) {
-        strcpy(store_data.registration[0]->descriptor, rcvreg->registration[i]->descriptor);
+        strcpy(store_data.descriptor, rcvreg->registration[i]->descriptor);
       }
-      store_data.registration[0]->rtr_reg_id = rcvreg->registration[i]->rtr_reg_id;
-      store_data.registration[0]->rtr_id = rcvreg->rtr_id;
+      store_data.rtr_reg_id = rcvreg->registration[i]->rtr_reg_id;
+      store_data.rtr_id = rcvreg->rtr_id;
 
       path_entry.has_key00 = TRUE;
       path_entry.key00.rtr_reg_id = rcvreg->registration[i]->rtr_reg_id;
@@ -342,10 +338,6 @@ rwdts_member_store_registration(rwdts_api_t *apih,
                                                   &store_data.base,
                                                   NULL);
       RW_ASSERT(rs == RW_STATUS_SUCCESS);
-      RW_FREE(store_data.registration[0]);
-      store_data.registration[0] = NULL;
-      RW_FREE(store_data.registration);
-      store_data.registration = NULL;
 
     }
   }
@@ -555,20 +547,21 @@ rwdts_member_reg_advise_cb(rwdts_xact_t* xact,
                 reg->kv_handle = rwdts_kv_allocate_handle(BK_DB);
                 rw_status_t res;
                 char *val, *key;
-                size_t val_len = 0, key_len = 0;
-                void *cursor = NULL;
+                int val_len = 0, key_len = 0;
+                void *cursor = NULL, *out_cursor= NULL;
+                char *installdir = getenv("INSTALLDIR");
                 char *db_name = rwdts_get_file_dbname(strdup(apih->client_path));
-                snprintf(reg->kv_handle->file_name, 255, "%s%s%u%s", "/tmp/", db_name, reg->reg_id,".db");
-                res = rwdts_kv_light_open_db(reg->kv_handle, reg->kv_handle->file_name, NULL, NULL);
+                snprintf(reg->kv_handle->file_name, 255, "%s%s%s%u%s", installdir, "/", db_name, reg->reg_id,".db");
+                res = rwdts_kv_handle_open_db(reg->kv_handle, reg->kv_handle->file_name, NULL, NULL);
                 free(db_name);
                 if (res == RW_STATUS_SUCCESS) {
-                  cursor = rwdts_kv_light_file_get_cursor(reg->kv_handle);
+                  cursor = rwdts_kv_handle_file_get_cursor(reg->kv_handle);
                   RW_ASSERT(cursor);
                   rw_keyspec_path_t **keyspecs = NULL;
                   ProtobufCMessage **msgs = NULL;
                   uint32_t key_count = 0, i;
-                  while ((res = rwdts_kv_light_file_getnext(reg->kv_handle, &cursor, (uint8_t **)&key, &key_len,
-                                                            (uint8_t **)&val, &val_len)) == RW_STATUS_SUCCESS) {
+                  while ((res = rwdts_kv_handle_file_getnext(reg->kv_handle, cursor, (char **)&key, &key_len,
+                                                             (char **)&val, &val_len, &out_cursor)) == RW_STATUS_SUCCESS) {
                     ProtobufCBinaryData bin_key;
                     bin_key.len = key_len;
                     bin_key.data = (uint8_t *)key;
@@ -585,8 +578,9 @@ rwdts_member_reg_advise_cb(rwdts_xact_t* xact,
                     keyspecs[key_count-1] = keyspec;
                     msgs = realloc(msgs, (key_count * sizeof(*msgs[0])));
                     msgs[key_count-1] = msg;
+                    cursor = out_cursor; out_cursor = NULL;
                   }
-                  rwdts_kv_light_file_close(reg->kv_handle);
+                  rwdts_kv_handle_file_close(reg->kv_handle);
                   for (i = 0; i < key_count; i++) {
                     rwdts_member_reg_handle_create_element_keyspec((rwdts_member_reg_handle_t)reg,
                                                                    keyspecs[i],
@@ -606,6 +600,11 @@ rwdts_member_reg_advise_cb(rwdts_xact_t* xact,
                   reg->kv_handle = NULL;
                 }
               }
+            }
+            if (reg->group.group && reg->group.group->cb.xact_event) {
+              reg->group.group->cb.xact_event(apih, reg->group.group, NULL,
+                                              RWDTS_MEMBER_EVENT_INSTALL,
+                                              reg->group.group->cb.ctx, NULL);
             }
           }
           if (reg->flags & RWDTS_FLAG_SUBSCRIBER) {
@@ -1117,6 +1116,7 @@ rwdts_send_registrations_to_router(void* ud)
     flags |= RWDTS_FLAG_ADVISE;
     flags |= RWDTS_FLAG_WAIT_RESPONSE;
     flags |= RWDTS_XACT_FLAG_IMM_BOUNCE;
+    flags |= RWDTS_XACT_FLAG_REG;
     if (!xact) {
       flags |= RWDTS_XACT_FLAG_END;
       apih->stats.member_reg_advise_sent++;
@@ -1319,6 +1319,7 @@ rwdts_update_registrations_to_router(void* ud)
     flags |= RWDTS_FLAG_ADVISE;
     flags |= RWDTS_FLAG_WAIT_RESPONSE;
     flags |= RWDTS_XACT_FLAG_IMM_BOUNCE;
+    flags |= RWDTS_XACT_FLAG_REG;
     if (!xact) {
       flags |= RWDTS_XACT_FLAG_END;
       apih->stats.member_reg_advise_sent++;
@@ -1636,7 +1637,7 @@ rwdts_member_registration_deinit(rwdts_member_registration_t *reg)
   rwdts_deinit_commit_serial_list(&reg->committed_serials);
 
   if (reg->kv_handle) {
-    rwdts_kv_light_file_remove(reg->kv_handle);
+    //rwdts_kv_handle_file_remove(reg->kv_handle);
     RW_FREE(reg->kv_handle);
     reg->kv_handle = NULL;
   }
@@ -1675,6 +1676,10 @@ rwdts_member_register_int(rwdts_xact_t*   xact,
   RW_ASSERT(keyspec);
   RW_ASSERT(cb);
   RW_ASSERT(desc);
+
+  if ((apih == NULL) || (keyspec == NULL) || (cb == NULL) || (desc == NULL)) {
+    return NULL;
+  }
 
   rwdts_member_registration_t*   reg;
 
@@ -1720,6 +1725,7 @@ rwdts_member_register_int(rwdts_xact_t*   xact,
   {
     apih->reg_cache_ct++;
   }
+  if (flags & RWDTS_FLAG_SUBSCRIBER) rwdts_journal_set_mode(reg, RWDTS_JOURNAL_IN_USE);
   struct rwdts_tmp_reg_data_s* tmp_reg = RW_MALLOC0(sizeof(struct rwdts_tmp_reg_data_s));
   tmp_reg->xact = xact;
   tmp_reg->apih = apih;
@@ -1751,6 +1757,11 @@ rwdts_member_update_registration_int(rwdts_xact_t*   xact,
   RW_ASSERT(desc);
   RW_ASSERT(shard_detail);
 
+  if ((apih == NULL) || (keyspec == NULL) || (cb == NULL) 
+       || (desc == NULL) || (shard_detail == NULL)) {
+    return NULL;
+  }
+
   rwdts_member_registration_t*   reg = (rwdts_member_registration_t*) reg_handle;
   RwSchemaCategory category = rw_keyspec_path_get_category((rw_keyspec_path_t*)keyspec);
 
@@ -1763,7 +1774,6 @@ rwdts_member_update_registration_int(rwdts_xact_t*   xact,
   reg->desc    = desc;
   memcpy(&reg->cb, cb, sizeof(reg->cb));
   //reg->reg_state   = RWDTS_REG_INIT; // TBD ok?
-  RW_ASSERT(shard_detail);
   reg->shard_flavor = shard_detail->shard_flavor;
   reg->params = shard_detail->params;
   reg->has_index = shard_detail->has_index;
@@ -1925,6 +1935,10 @@ rwdts_shard_add_member_registration(rwdts_shard_tab_t*              shtab,
   RW_ASSERT(shtab);
   RW_ASSERT(msgpath);
   RW_ASSERT(regdet);
+
+  if (!(shtab&&msgpath&&regdet)) {
+    return RW_STATUS_FAILURE;
+  }
 
   for (midx=0; midx<shtab->member_len; midx++) {
     if (0==strcmp(msgpath, shtab->member[midx].msgpath)) {
@@ -2600,7 +2614,7 @@ rwdts_member_registration_delete(rwdts_member_registration_t *reg)
 
 
   if (reg->kv_handle) {
-    rwdts_kv_light_file_remove(reg->kv_handle);
+    //rwdts_kv_handle_file_remove(reg->kv_handle);
     RW_FREE(reg->kv_handle);
     reg->kv_handle = NULL;
   }
@@ -2845,8 +2859,10 @@ rwdts_send_deregister_path(void* ud)
   rwdts_api_dereg_path_info_t* dereg = NULL, *tmp_dereg = NULL;
   HASH_ITER(hh_dereg, apih->path_dereg, dereg, tmp_dereg) {
     strcpy(member_p->name, dereg->path);
-    member_p->all_regs = TRUE;
-    member_p->has_all_regs = TRUE;
+    //member_p->all_regs = TRUE;
+    //member_p->has_all_regs = TRUE;
+    member_p->has_recovery_action = true;
+    member_p->recovery_action = dereg->recovery_action;
 
     RWPB_T_PATHSPEC(RwDts_data_RtrInitRegKeyspec_Member) *dts_ks = NULL;
 
@@ -2888,7 +2904,8 @@ rwdts_send_deregister_path(void* ud)
 
 rw_status_t
 rwdts_member_deregister_path(rwdts_api_t *apih,
-                             char* path)
+                             char* path,
+                             vcs_recovery_type recovery_action)
 {
 
   rwdts_api_dereg_path_info_t *dereg_path = NULL;
@@ -2897,6 +2914,7 @@ rwdts_member_deregister_path(rwdts_api_t *apih,
 
   dereg_path->path = RW_STRDUP(path);
   dereg_path->apih = apih;
+  dereg_path->recovery_action = recovery_action;
   HASH_ADD_KEYPTR(hh_dereg, apih->path_dereg, dereg_path->path, strlen(dereg_path->path), dereg_path);
 
   rwdts_send_deregister_path(apih);
@@ -3040,6 +3058,9 @@ rwdts_group_register_xpath_int(rwdts_group_t*                  group,
   rwdts_api_t *apih = group->apih;
   RW_ASSERT_TYPE(apih, rwdts_api_t);
 
+  if ((xpath == NULL) || (reg_handle == NULL)) {
+    return RW_STATUS_FAILURE;
+  }
   RW_ASSERT(xpath);
   RW_ASSERT(reg_handle);
 
@@ -3198,6 +3219,9 @@ rwdts_api_member_register_keyspec_shard_int(rwdts_api_t*                  apih,
   RW_ASSERT_TYPE(apih, rwdts_api_t);
   RW_ASSERT(keyspec);
   RW_ASSERT(reg_handle);
+  if ((keyspec == NULL) || (reg_handle == NULL)) {
+    return RW_STATUS_FAILURE;
+  }
   *reg_handle = NULL;
 
   rwdts_member_event_cb_t cb = {
@@ -3219,7 +3243,6 @@ rwdts_api_member_register_keyspec_shard_int(rwdts_api_t*                  apih,
   }
 
   RW_ASSERT(keyspec != NULL);
-
   rw_keyspec_path_get_new_print_buffer((rw_keyspec_path_t*)keyspec, NULL ,
                               schema,
                               &ks_str);
@@ -3398,6 +3421,10 @@ rwdts_api_member_register_xpath_int(rwdts_api_t*                     apih,
   RW_ASSERT(xpath);
   RW_ASSERT(reg_handle);
 
+  if ((xpath == NULL) || (reg_handle == NULL)) {
+    return RW_STATUS_FAILURE;
+  }
+
   *reg_handle = NULL;
 
   /* Find the schema  */
@@ -3574,6 +3601,9 @@ rwdts_member_handle_prepare(const rwdts_xact_info_t* xact_info,
                             void*                    get_next_key)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_member_reg_t *memb_reg = ((rwdts_member_registration_t*)xact_info->regh)->memb_reg;
   rwdts_member_registration_t *reg = (rwdts_member_registration_t*)(xact_info->regh);
   rw_keyspec_path_t *local_ks = NULL;
@@ -3595,6 +3625,9 @@ rwdts_member_handle_precommit(const rwdts_xact_info_t*      xact_info,
                               const rwdts_commit_record_t** crec)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_member_reg_t *memb_reg = ((rwdts_member_registration_t*)xact_info->regh)->memb_reg;
 
   if (memb_reg->precommit) {
@@ -3609,6 +3642,9 @@ rwdts_member_handle_commit(const rwdts_xact_info_t*      xact_info,
                            const rwdts_commit_record_t** crec)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_member_reg_t *memb_reg = ((rwdts_member_registration_t*)xact_info->regh)->memb_reg;
 
   if (memb_reg->commit) {
@@ -3623,6 +3659,9 @@ rwdts_member_handle_abort(const rwdts_xact_info_t*      xact_info,
                           const rwdts_commit_record_t** crec)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_member_reg_t *memb_reg = ((rwdts_member_registration_t*)xact_info->regh)->memb_reg;
 
   if (memb_reg->abort) {
@@ -3652,6 +3691,9 @@ rwdts_member_handle_solicit_advise_ks(const rwdts_xact_info_t* xact_info,
                                       void*                    getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rw_status_t  rs;
   rwdts_api_t* apih = (rwdts_api_t*)xact_info->ud;
   int          i;
@@ -3754,6 +3796,9 @@ rwdts_member_handle_solicit_advise_ks(const rwdts_xact_info_t* xact_info,
                                        out_ks,
                                        &out_msg.base);
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
+  if (rs != RW_STATUS_SUCCESS) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
 
   if (adv_arg->n_reg_id) {
@@ -3890,6 +3935,9 @@ rwdts_member_reg_handle_update_pub_serial(rwdts_member_registration_t* reg,
 
   RW_ASSERT_TYPE(reg, rwdts_member_registration_t);
   RW_ASSERT(ps);
+  if (!ps) {
+    return RW_STATUS_FAILURE;
+  }
   rwdts_pub_identifier_t pub_id;
 
   pub_id.member_id =  ps->id.member_id;
@@ -3917,6 +3965,9 @@ rwdts_pub_serial_init(rwdts_member_registration_t* reg,
 {
   RW_ASSERT_TYPE(reg, rwdts_member_registration_t);
   RW_ASSERT(pub_id);
+  if (!pub_id) {
+    return NULL;
+  }
   rwdts_pub_serial_t *pub_serial = NULL;
 
   HASH_FIND(hh,
@@ -4141,6 +4192,9 @@ rwdts_member_reg_add_registration(rwdts_registration_args_t*    arg,
                                   rwdts_member_registration_t** reg)
 {
   RW_ASSERT(reg);
+  if (reg == NULL) {
+    return RW_STATUS_FAILURE;
+  }
 
   *reg = (rwdts_member_registration_t*)
          rwdts_member_register_int(arg->xact,
@@ -4201,7 +4255,7 @@ member_member_reg_handle_advise_solicit_rpc_cb(rwdts_xact_t*           xact,
 }
 
 
-static rw_status_t
+rw_status_t
 rwdts_member_reg_handle_solicit_advise(rwdts_member_reg_handle_t  regh)
 {
   rwdts_xact_t *xact;
@@ -4434,6 +4488,9 @@ rwdts_member_reg_solicit_rsp(rwdts_member_registration_t*        reg,
 
   rwdts_query_result_t *qrslt = rwdts_xact_query_result(xact, 0);
   RW_ASSERT(qrslt);
+  if (!qrslt) {
+    return RW_STATUS_FAILURE;
+  }
 
   RWPB_T_MSG(RwDts_output_SolicitAdvise)* rpc_out;
  
@@ -4621,7 +4678,7 @@ rwdts_member_reg_run(rwdts_member_registration_t*        reg,
       break;
 
     case RW_DTS_REGISTRATION_STATE_RECONCILE:
-      RW_ASSERT(0); // ATTN - implement this
+      RW_CRASH(); // ATTN - implement this
       break;
 
     case RW_DTS_REGISTRATION_STATE_REG_READY:

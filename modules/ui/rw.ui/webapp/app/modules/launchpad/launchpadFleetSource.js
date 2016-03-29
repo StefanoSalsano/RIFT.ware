@@ -38,7 +38,7 @@ module.exports = {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -57,7 +57,7 @@ module.exports = {
         console.log(id)
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr/' + id + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr/' + id + '?api_server=' + API_SERVER,
             type: 'DELETE',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -79,14 +79,14 @@ module.exports = {
             return resolve(false);
           }
            $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER ,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER ,
             type: 'POST',
             beforeSend: Utils.addAuthorizationStub,
             data: {
               url: HOST + ':' + NODE_PORT + '/launchpad/nsr?api_server=' + API_SERVER
             },
             success: function(data, textStatus, jqXHR) {
-              var url = 'ws://' + window.location.hostname + ':' + data.port + data.socketPath;
+              var url = Utils.webSocketProtocol() + '//' + window.location.hostname + ':' + data.port + data.socketPath;
               var ws = new WebSocket(url);
               resolve(ws);
             }
@@ -106,7 +106,7 @@ module.exports = {
       remote: function(state, id, status) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr/' + id + '/admin-status?api_server=' + API_SERVER ,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr/' + id + '/admin-status?api_server=' + API_SERVER ,
             type:'PUT',
             beforeSend: Utils.addAuthorizationStub,
             data: {
@@ -127,7 +127,7 @@ module.exports = {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/config?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/config?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {

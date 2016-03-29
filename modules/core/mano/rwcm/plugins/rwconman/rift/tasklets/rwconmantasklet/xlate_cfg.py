@@ -26,10 +26,95 @@ import netaddr
 from inspect import getsourcefile
 import os.path
 
+xlate_dict = None
+
+def xlate_cp_list(line, cp_list):
+    for cp_string in cp_list:
+        match = re.search(cp_string, line)
+        if match is not None:
+            # resolve IP address using Connection Point dictionary
+            resolved_ip = xlate_dict[match.group(1)]
+            if resolved_ip is None:
+                print("No matching CP found: ", match.group(1))
+                exit(2)
+            else:
+                line = line[:match.start()] + resolved_ip + line[match.end():]
+    return line
+
+def xlate_colon_list(line, colon_list):
+    for ucp_string in colon_list:
+        #print("Searching :", ucp_string)
+        match = re.search(ucp_string, line)
+        if match is not None:
+            #print("match :", match.group())
+            # resolve IP address using Connection Point dictionary for specified member (unique) index
+            ucp_str_list = match.group(1).split(':')
+            #print("matched = {}, split list = {}".format(match.group(1), ucp_str_list))
+            if len(ucp_str_list) != 2:
+                print("Invalid TAG in the configuration: ", match.group(1))
+                exit(2)
+
+            # Unique Connection Point translation to IP
+            if ucp_string.startswith('<rw_unique_index:'):
+                member_vnf_index = int(ucp_str_list[0])
+                resolved_ip = xlate_dict[member_vnf_index][ucp_str_list[1]]
+                #print("member_vnf_index = {}, resolved_ip = {}", member_vnf_index, resolved_ip)
+                if resolved_ip is None:
+                    print("For Unique index ({}), No matching CP found: {}", ucp_str_list[0], ucp_str_list[1])
+                    exit(2)
+                else:
+                    line = line[:match.start()] + resolved_ip + line[match.end():]
+
+            # Traslate given CP address & mask into netaddr
+            if ucp_string.startswith('<rw_connection_point:masklen'):
+                resolved_ip = xlate_dict[ucp_str_list[0]]
+                masklen = ucp_str_list[1]
+                if resolved_ip is None:
+                    print("No matching CP found: ", ucp_str_list[0])
+                    exit(2)
+                if int(masklen) <= 0:
+                    print("Invalid mask length: ", masklen)
+                    exit(2)
+                else:
+                    # Generate netaddr
+                    ip_str = resolved_ip + '/' + masklen
+                    #print("ip_str:", ip_str)
+                    ip = netaddr.IPNetwork(ip_str)
+                    
+                    if ucp_string.startswith('<rw_connection_point:masklen_broadcast'):
+                        # Traslate given CP address & mask into broadcast address
+                        addr = ip.broadcast
+                    if ucp_string.startswith('<rw_connection_point:masklen_network'):
+                        # Traslate given CP address & mask into network address
+                        addr = ip.network
+                        
+                    line = line[:match.start()] + str(addr) + line[match.end():]
+    return line
+
+def xlate_cp_to_tuple_list(line, cp_to_tuple_list):
+    for cp_string in cp_to_tuple_list:
+        match = re.search(cp_string, line)
+        if match is not None:
+            # resolve IP address using Connection Point dictionary
+            resolved_ip = xlate_dict[match.group(1)]
+            if resolved_ip is None:
+                print("No matching CP found: ", match.group(1))
+                exit(2)
+            else:
+                line = line[:match.start()] + match.group(1) + ':'  + resolved_ip + line[match.end():]
+    return line
+
+def xlate_str_list(line, str_list):
+    for replace_tag in str_list:
+        replace_string = replace_tag[1:-1]
+        line = line.replace(replace_tag, xlate_dict[replace_string])
+    return line
+
+    
 def main(argv=sys.argv[1:]):
     cfg_template = None
     cfg_file = None
-    xlate_dict = None
+    global xlate_dict
     try:
         opts, args = getopt.getopt(argv,"i:o:x:")
     except getopt.GetoptError:
@@ -64,91 +149,22 @@ def main(argv=sys.argv[1:]):
                                 if line.startswith("#"):
                                     # Skip comment lines
                                     continue
-                                #print("Line : ", line)
+                                #print("1.Line : ", line)
                                 # For each Connection Point translation to IP
-                                for cp_string in xlate_tags['xlate_cp_list']:
-                                    match = re.search(cp_string, line)
-                                    if match is not None:
-                                        # resolve IP address using Connection Point dictionary
-                                        resolved_ip = xlate_dict[match.group(1)]
-                                        if resolved_ip is None:
-                                            print("No matching CP found: ", match.group(1))
-                                            exit(2)
-                                        else:
-                                            line = line[:match.start()] + resolved_ip + line[match.end():]
-                                            #print("1.write line: ", line)
-
+                                line = xlate_cp_list(line, xlate_tags['xlate_cp_list'])
+                                #print("2.Line : ", line)
+                                
                                 # For each colon(:) separated tag, i.e. 2 inputs in a tag.
-                                for ucp_string in xlate_tags['xlate_colon_list']:
-                                    #print("Searching :", ucp_string)
-                                    match = re.search(ucp_string, line)
-                                    if match is not None:
-                                        #print("match :", match.group())
-                                        # resolve IP address using Connection Point dictionary for specified member (unique) index
-                                        ucp_str_list = match.group(1).split(':')
-                                        #print("matched = {}, split list = {}".format(match.group(1), ucp_str_list))
-                                        if len(ucp_str_list) != 2:
-                                            print("Invalid TAG in the configuration: ", match.group(1))
-                                            exit(2)
-
-                                        # Unique Connection Point translation to IP
-                                        if ucp_string.startswith('<rw_unique_index:'):
-                                            member_vnf_index = int(ucp_str_list[0])
-                                            resolved_ip = xlate_dict[member_vnf_index][ucp_str_list[1]]
-                                            #print("member_vnf_index = {}, resolved_ip = {}", member_vnf_index, resolved_ip)
-                                            if resolved_ip is None:
-                                                print("For Unique index ({}), No matching CP found: {}", ucp_str_list[0], ucp_str_list[1])
-                                                exit(2)
-                                            else:
-                                                line = line[:match.start()] + resolved_ip + line[match.end():]
-                                                #print("1.write line: ", line)
-
-                                        # Traslate given CP address & mask into netaddr
-                                        if ucp_string.startswith('<rw_connection_point:masklen'):
-                                            resolved_ip = xlate_dict[ucp_str_list[0]]
-                                            masklen = ucp_str_list[1]
-                                            if resolved_ip is None:
-                                                print("No matching CP found: ", ucp_str_list[0])
-                                                exit(2)
-                                            if int(masklen) <= 0:
-                                                print("Invalid mask length: ", masklen)
-                                                exit(2)
-                                            else:
-                                                # Generate netaddr
-                                                ip_str = resolved_ip + '/' + masklen
-                                                #print("ip_str:", ip_str)
-                                                ip = netaddr.IPNetwork(ip_str)
-                                                
-                                                if ucp_string.startswith('<rw_connection_point:masklen_broadcast'):
-                                                    # Traslate given CP address & mask into broadcast address
-                                                    addr = ip.broadcast
-                                                if ucp_string.startswith('<rw_connection_point:masklen_network'):
-                                                    # Traslate given CP address & mask into network address
-                                                    addr = ip.network
-                                                    
-                                                #print("2.write line: ", line)
-                                                line = line[:match.start()] + str(addr) + line[match.end():]
-                                                #print("3.write line: ", line)
+                                line = xlate_colon_list(line, xlate_tags['xlate_colon_list'])
+                                #print("3.Line : ", line)
 
                                 # For each connection point to tuple replacement
-                                for cp_string in xlate_tags['xlate_cp_to_tuple_list']:
-                                    match = re.search(cp_string, line)
-                                    if match is not None:
-                                        # resolve IP address using Connection Point dictionary
-                                        resolved_ip = xlate_dict[match.group(1)]
-                                        if resolved_ip is None:
-                                            print("No matching CP found: ", match.group(1))
-                                            exit(2)
-                                        else:
-                                            #print("2.write line: ", line)
-                                            line = line[:match.start()] + match.group(1) + ':'  + resolved_ip + line[match.end():]
-                                            #print("3.write line: ", line)
+                                line = xlate_cp_to_tuple_list(line, xlate_tags['xlate_cp_to_tuple_list'])
+                                #print("4.Line : ", line)
 
                                 # For each direct replacement (currently only management IP address for ping/pong)
-                                for replace_tag in xlate_tags['xlate_str_list']:
-                                    replace_string = replace_tag[1:-1]
-                                    line = line.replace(replace_tag, xlate_dict[replace_string])
-                                    #print("4.write line: ", line)
+                                line = xlate_str_list(line, xlate_tags['xlate_str_list'])
+                                #print("5.Line : ", line)
 
                                 # Finally write the modified line to the new config file
                                 w.write(line)

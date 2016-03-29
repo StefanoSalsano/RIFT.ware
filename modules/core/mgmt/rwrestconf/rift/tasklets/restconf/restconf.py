@@ -9,9 +9,17 @@ import asyncio
 from enum import Enum
 import itertools
 import sys
+import socket
 
 import ncclient.asyncio_manager
 import tornado
+import gi
+
+gi.require_version('RwDynSchema', '1.0')
+gi.require_version('RwRestconfYang', '1.0')
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwMgmtSchemaYang', '1.0')
+gi.require_version('IetfRestconfMonitoringYang', '1.0')
 
 from gi.repository import (
     RwDts,
@@ -19,6 +27,7 @@ from gi.repository import (
     RwRestconfYang,
     RwYang,
     RwMgmtSchemaYang,
+    IetfRestconfMonitoringYang,
 )
 import rift.tasklets
 import gi.repository.RwTypes as rwtypes
@@ -31,7 +40,17 @@ from rift.restconf import (
     XmlToJsonTranslator,
     Statistics,
     load_schema_root,
+    StateProvider,
+    LogoutHandler,
+    WatchdogStatus,
+    watchdog_mapping,
 )
+
+from rift.watchdog import (
+    WatchdogConnector,
+)
+
+import rift.restconf.webserver.event_source as event_source
 
 class SchemaState(Enum):
     working = 'working'
@@ -40,14 +59,15 @@ class SchemaState(Enum):
     initializing = 'initializing'
     error = 'error'
 
-def dyn_schema_callback(instance, numel, module_names, fxs_filenames, so_filenames, yang_filenames):
+def dyn_schema_callback(instance, numel, modules):
     instance._schema_state = SchemaState.waiting
-    for module_name, so_filename in zip(module_names, so_filenames):
-        instance._pending_modules[module_name] = so_filename
+    for module in modules:
+        instance._pending_modules[module.module_name] = module.so_filename
 
     if not instance._initialized:
         instance._initialized = True
-        instance._initialise_composite_and_start()
+        instance._initialize_composite()
+        instance._start_server()
     
 def _load_schema(schema_name):
     yang_model = RwYang.Model.create_libncx()
@@ -60,6 +80,10 @@ if sys.version_info < (3,4,4):
     asyncio.ensure_future = asyncio.async
 
 class RestconfTasklet(rift.tasklets.Tasklet):
+    NETCONF_SERVER_IP = "127.0.0.1"
+    NETCONF_SERVER_PORT = "2022"
+    RESTCONF_PORT = "8888"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._server = None
@@ -68,19 +92,23 @@ class RestconfTasklet(rift.tasklets.Tasklet):
         """Tasklet entry point"""
         super(RestconfTasklet, self).start()
 
-        self._tasklet_name = "RwRestconf"
-        self._dynamic_schema_publish="D,/rw-mgmt-schema:rw-mgmt-schema-state/rw-mgmt-schema:listening-apps[name='%s']" % self._tasklet_name
         self._initialized = False
+        self._tasklet_name = "RwRestconf"
+        self.get_stats = 0
+        self.schema_name = "rw-restconf"#
         self._schema_state = SchemaState.initializing
+
+        self._watchdog_connector = WatchdogConnector(self._log, self._tasklet_name, watchdog_mapping, self.loop)
+        self._dynamic_schema_publish="D,/rw-mgmt-schema:rw-mgmt-schema-state/rw-mgmt-schema:listening-apps[name='%s']" % self._tasklet_name
         self._dynamic_schema_response = RwMgmtSchemaYang.YangData_RwMgmtSchema_RwMgmtSchemaState_ListeningApps()
+        self._dynamic_schema_response.app_type = "nb_interface"
         self._dynamic_schema_response.name = self._tasklet_name
         self._dynamic_schema_response.state = self._schema_state.value
-        self._dynamic_schema_response.app_type = "nb_interface"
+        self._manifest = self.tasklet_info.get_pb_manifest()
         self._pending_modules = dict()
-        self.get_stats = 0
-
-        manifest = self.tasklet_info.get_pb_manifest()
-        self.schema_name = "rw-restconf"#manifest.bootstrap_phase.rwbaseschema.schema_name
+        self._ssl_cert = self._manifest.bootstrap_phase.rwsecurity.cert
+        self._ssl_key = self._manifest.bootstrap_phase.rwsecurity.key
+        self._stats_pb = RwRestconfYang.Restconfstats()
 
         self._dts = rift.tasklets.DTS(
             self.tasklet_info,
@@ -88,6 +116,12 @@ class RestconfTasklet(rift.tasklets.Tasklet):
             self.loop,
             self.on_dts_state_change)
 
+    def stop(self):
+      try:
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in LP stop:", sys.exc_info()[0])
+         raise
 
     @asyncio.coroutine
     def on_dts_state_change(self, state):
@@ -119,6 +153,8 @@ class RestconfTasklet(rift.tasklets.Tasklet):
     @asyncio.coroutine
     def init(self):
         self._configuration = Configuration()
+        self._configuration.use_https = self._manifest.bootstrap_phase.rwsecurity.use_ssl
+
         self._statistics = Statistics()
         self._messages = {}
 
@@ -135,12 +171,18 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                 raise KeyError("No stashed configuration found with transaction id [{}]".format(xact.id))
 
             toggles = self._messages[xact.id]
-            timing_value = toggles.log_timing
 
-            self._configuration.log_timing = timing_value
+            if toggles.has_field("log_timing"):
+                self._configuration.log_timing = toggles.log_timing
+
+            if toggles.has_field("use_https"):
+                self._configuration.use_https = toggles.use_https
 
             del self._messages[xact.id]
             
+            if self._initialized:
+                self._start_server()
+
         with self._dts.appconf_group_create(
                 handler=rift.tasklets.AppConfGroup.Handler(
                     on_apply=on_apply)) as acg:
@@ -165,6 +207,7 @@ class RestconfTasklet(rift.tasklets.Tasklet):
 
         @asyncio.coroutine
         def load_modules_prepare(xact_info, action, path, msg):
+
             if msg.state != "loading_nb_interfaces":
                 xact_info.respond_xpath(RwDts.XactRspCode.ACK, path.create_string())
                 return
@@ -172,6 +215,8 @@ class RestconfTasklet(rift.tasklets.Tasklet):
             self._schema_state = SchemaState.working
 
             module_name = msg.name
+
+
             so_filename = self._pending_modules[module_name]
 
             del self._pending_modules[module_name]
@@ -196,40 +241,55 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                 handler=rift.tasklets.DTS.RegistrationHandler(
                     on_prepare=load_modules_prepare))
 
-        msg = RwRestconfYang.Restconfstats()
-
         def on_copy(shard, key, ctx):
-            nonlocal msg
-            msg.get_req = self._statistics.get_req
-            msg.put_req = self._statistics.put_req
-            msg.post_req = self._statistics.post_req
-            msg.del_req = self._statistics.del_req
-            msg.get_200_rsp = self._statistics.get_200_rsp
-            msg.get_404_rsp = self._statistics.get_404_rsp
-            msg.get_204_rsp = self._statistics.get_204_rsp
-            msg.get_500_rsp = self._statistics.get_500_rsp
-            msg.put_200_rsp = self._statistics.put_200_rsp
-            msg.put_404_rsp = self._statistics.put_404_rsp
-            msg.put_500_rsp = self._statistics.put_500_rsp
-            msg.post_200_rsp = self._statistics.post_200_rsp
-            msg.post_404_rsp = self._statistics.post_404_rsp
-            msg.post_500_rsp = self._statistics.post_500_rsp
-            msg.del_405_rsp = self._statistics.del_405_rsp
-            msg.del_404_rsp = self._statistics.del_404_rsp
-            msg.del_500_rsp = self._statistics.del_500_rsp
-            msg.del_200_rsp = self._statistics.del_200_rsp
-            msg.put_409_rsp = self._statistics.put_409_rsp
-            msg.put_405_rsp = self._statistics.put_405_rsp
-            msg.put_201_rsp = self._statistics.put_201_rsp
-            msg.post_409_rsp = self._statistics.post_409_rsp
-            msg.post_405_rsp = self._statistics.post_405_rsp
-            msg.post_201_rsp = self._statistics.post_201_rsp
+            self._stats_pb.get_req = self._statistics.get_req
+            self._stats_pb.put_req = self._statistics.put_req
+            self._stats_pb.post_req = self._statistics.post_req
+            self._stats_pb.del_req = self._statistics.del_req
+            self._stats_pb.get_200_rsp = self._statistics.get_200_rsp
+            self._stats_pb.get_404_rsp = self._statistics.get_404_rsp
+            self._stats_pb.get_204_rsp = self._statistics.get_204_rsp
+            self._stats_pb.get_500_rsp = self._statistics.get_500_rsp
+            self._stats_pb.put_200_rsp = self._statistics.put_200_rsp
+            self._stats_pb.put_404_rsp = self._statistics.put_404_rsp
+            self._stats_pb.put_500_rsp = self._statistics.put_500_rsp
+            self._stats_pb.post_200_rsp = self._statistics.post_200_rsp
+            self._stats_pb.post_404_rsp = self._statistics.post_404_rsp
+            self._stats_pb.post_500_rsp = self._statistics.post_500_rsp
+            self._stats_pb.del_405_rsp = self._statistics.del_405_rsp
+            self._stats_pb.del_404_rsp = self._statistics.del_404_rsp
+            self._stats_pb.del_500_rsp = self._statistics.del_500_rsp
+            self._stats_pb.del_200_rsp = self._statistics.del_200_rsp
+            self._stats_pb.put_409_rsp = self._statistics.put_409_rsp
+            self._stats_pb.put_405_rsp = self._statistics.put_405_rsp
+            self._stats_pb.put_201_rsp = self._statistics.put_201_rsp
+            self._stats_pb.post_409_rsp = self._statistics.post_409_rsp
+            self._stats_pb.post_405_rsp = self._statistics.post_405_rsp
+            self._stats_pb.post_201_rsp = self._statistics.post_201_rsp
+
+            evtsrc = self._stats_pb.eventsource_statistics
+            evtsrc.websocket_stream_open = self._statistics.websocket_stream_open
+            evtsrc.websocket_stream_close = self._statistics.websocket_stream_close
+            evtsrc.websocket_events = self._statistics.websocket_events
+            evtsrc.http_stream_open = self._statistics.http_stream_open
+            evtsrc.http_stream_close = self._statistics.http_stream_close
+            evtsrc.http_events = self._statistics.http_events
   
-            return rwtypes.RwStatus.SUCCESS, msg.to_pbcm()
+            return rwtypes.RwStatus.SUCCESS, self._stats_pb.to_pbcm()
 
         @asyncio.coroutine
         def get_prepare(xact_info, action, ks_path, msg):
              xact_info.respond_xpath(rwdts.XactRspCode.NA, xpath="D,/rw-restconf:rwrestconf-statistics")
+
+        @asyncio.coroutine
+        def get_restconf_state(xact_info, action, ks_path, msg):
+            """Provides the RestConf state to the DTS.
+
+            Invoked when UAgent requests DTS to provide the restconf-state.
+            """
+            xpath = "D,/rcmon:restconf-state"
+            restconf_state = yield from self._state_provider.get_state()
+            xact_info.respond_xpath(RwDts.XactRspCode.ACK, xpath, restconf_state)
   
         reg = yield from self._dts.register(
                   flags=RwDts.Flag.PUBLISHER|RwDts.Flag.NO_PREP_READ,
@@ -237,28 +297,59 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                   handler=rift.tasklets.DTS.RegistrationHandler(on_prepare=get_prepare))
 
         shard = yield from reg.shard_init(flags=RwDts.Flag.PUBLISHER)
-        shard.appdata_register_queue_key(copy=on_copy) 
+        shard.appdata_register_queue_key(copy=on_copy)
 
+        # Register with DTS for providing restconf-state operational data
+        yield from self._dts.register(
+                        flags=RwDts.Flag.PUBLISHER,
+                        xpath="D,/rcmon:restconf-state",
+                        handler=rift.tasklets.DTS.RegistrationHandler(
+                        on_prepare=get_restconf_state))         
+       
         self._schema = RwRestconfYang.get_schema()
-        
-        self._dynamic_schema_registration = RwDynSchema.rwdynschema_instance_register(self._dts.handle, dyn_schema_callback, "RwRestconf", self)
+
+        self._dynamic_schema_registration = RwDynSchema.rwdynschema_instance_register(
+            self._dts.handle,
+            dyn_schema_callback,
+            "RwRestconf",
+            RwDynSchema.RwdynschemaAppType.NORTHBOUND,
+            self)
     
     @asyncio.coroutine
     def run(self):
         self._schema_state = SchemaState.ready
-
-    def _initialise_composite_and_start(self):
+        yield from self._watchdog_connector.connect()
+        
+    def _initialize_composite(self):
         for module_name, so_filename in self._pending_modules.items():
             new_schema = RwYang.Model.load_and_merge_schema(self._schema, so_filename, module_name)
             self._schema = new_schema
+        self._pending_modules.clear()
 
         yang_model = RwYang.Model.create_libncx()
         yang_model.load_schema_ypbc(self._schema)    
         self._schema_root = yang_model.get_root_node()
 
-        self._netconf_connection_manager = ConnectionManager(self._log, self.loop, "127.0.0.1", "2022")
+    def _start_server(self):
+        if self._server is not None:
+            self._server.stop()
+        self._netconf_connection_manager = ConnectionManager(
+                                              self._log,
+                                              self.loop, 
+                                              self.NETCONF_SERVER_IP,
+                                              self.NETCONF_SERVER_PORT)
         self._confd_url_converter = ConfdRestTranslator(self._schema_root)
-        self._xml_to_json_translator = XmlToJsonTranslator(self._schema_root)
+        self._xml_to_json_translator = XmlToJsonTranslator(self._schema_root, self._log)
+
+        webhost = "{}:{}".format(
+                        socket.gethostbyname(socket.getfqdn()),
+                        self.RESTCONF_PORT)
+        self._state_provider = StateProvider(
+                                  self._log,
+                                  self.loop,
+                                  self.NETCONF_SERVER_IP, 
+                                  self.NETCONF_SERVER_PORT,
+                                  webhost)
 
         http_handler_arguments = {
             "logger" : self._log,
@@ -269,16 +360,50 @@ class RestconfTasklet(rift.tasklets.Tasklet):
             "asyncio_loop" : self.loop,
             "configuration" : self._configuration,
             "statistics" : self._statistics,
+            "watchdog_connector" : self._watchdog_connector
         }
+        stream_handler_args = {
+            "logger" : self._log,
+            "loop" : self.loop,
+            "netconf_ip" : self.NETCONF_SERVER_IP,
+            "netconf_port" : self.NETCONF_SERVER_PORT, 
+            "statistics" : self._statistics,
+            "xml_to_json_translator" : self._xml_to_json_translator,
+        }
+        logout_handler_arguments = {
+            "logger" : self._log,
+            "netconf_connection_manager" : self._netconf_connection_manager,
+            "asyncio_loop" : self.loop,
+        }
+
         application = tornado.web.Application([
-            (r"/api/(.*)", HttpHandler, http_handler_arguments),
+            (r"/api/config/(.*)", HttpHandler, http_handler_arguments),            
+            (r"/api/logout", LogoutHandler, logout_handler_arguments),            
+            (r"/api/operational/(.*)", HttpHandler, http_handler_arguments),            
+            (r"/api/operations/(.*)", HttpHandler, http_handler_arguments),            
+            (r"/api/running/(.*)", HttpHandler, http_handler_arguments),            
+            (r"/api/schema/(.*)", HttpHandler, http_handler_arguments),
+            (r"/streams/(.*)", event_source.HttpStreamHandler, stream_handler_args),
+            (r"/ws_streams/(.*)", event_source.WebSocketStreamHandler, stream_handler_args),
         ], compress_response=True)
 
+
         io_loop = rift.tasklets.tornado.TaskletAsyncIOLoop(asyncio_loop=self.loop)
-        self._server = tornado.httpserver.HTTPServer(
+        if self._configuration.use_https:
+            ssl_options = {
+                "certfile" : self._ssl_cert,
+                "keyfile" : self._ssl_key,
+            }
+            self._server = tornado.httpserver.HTTPServer(
                 application,
                 io_loop=io_loop,
-                )
+                ssl_options=ssl_options,
+            )
+        else:
+            self._server = tornado.httpserver.HTTPServer(
+                application,
+                io_loop=io_loop,
+            )
 
-        self._server.listen("8888")
+        self._server.listen(self.RESTCONF_PORT)
         

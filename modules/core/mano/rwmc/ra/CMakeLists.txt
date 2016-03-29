@@ -15,6 +15,7 @@ install(
     mission_control_negative_cloud_account_systest
     mission_control_negative_mgmt_domain_systest
     mission_control_negative_vmpool_systest
+    mission_control_reload_systest
   DESTINATION usr/rift/systemtest/mission_control
   COMPONENT ${PKG_LONG_NAME})
 
@@ -35,6 +36,7 @@ install(
     racfg/mission_control_systest_cloudsim.racfg
     racfg/mission_control_systest_openstack.racfg
     racfg/mission_control_delete_systest_cloudsim.racfg
+    racfg/mission_control_reload_systest_openstack.racfg
     racfg/mission_control_systest_cloudsim_negative.racfg
     racfg/mission_control_systest_openstack_negative.racfg
   DESTINATION

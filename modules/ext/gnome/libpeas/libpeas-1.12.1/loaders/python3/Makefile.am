@@ -10,7 +10,6 @@ AM_CPPFLAGS = \
 	$(DISABLE_DEPRECATED)		\
 	$(PYGOBJECT_CFLAGS)		\
 	$(PYTHON3_CFLAGS)		\
-	-DPEAS_PYEXECDIR=\""$(PYTHON3_PYEXECDIR)"\" \
 	-DPEAS_LOCALEDIR=\""$(prefix)/$(DATADIRNAME)/locale"\"
 
 loader_LTLIBRARIES = libpython3loader.la
@@ -18,7 +17,9 @@ loader_LTLIBRARIES = libpython3loader.la
 libpython3loader_la_SOURCES = \
 	$(top_srcdir)/loaders/python/peas-plugin-loader-python.c	\
 	$(top_srcdir)/loaders/python/peas-plugin-loader-python.h	\
-	peas-plugin-loader-python3-resources.c
+	$(top_srcdir)/loaders/python/peas-python-internal.c 		\
+	$(top_srcdir)/loaders/python/peas-python-internal.h 		\
+	peas-python3-resources.c
 
 libpython3loader_la_LDFLAGS = \
 	$(LOADER_LIBTOOL_FLAGS)		\
@@ -31,15 +32,27 @@ libpython3loader_la_LIBADD = \
 	$(PYGOBJECT_LIBS)			\
 	$(PYTHON3_LIBS)
 
-loader_resources_deps = $(shell $(GLIB_COMPILE_RESOURCES) --sourcedir=$(srcdir) --generate-dependencies $(srcdir)/peas-plugin-loader-python3.gresource.xml)
-peas-plugin-loader-python3-resources.c: $(srcdir)/peas-plugin-loader-python3.gresource.xml $(loader_resources_deps)
-	$(AM_V_GEN) $(GLIB_COMPILE_RESOURCES) --internal --target=$@ --sourcedir=$(srcdir) --generate-source $(srcdir)/peas-plugin-loader-python3.gresource.xml
+peas-python3-internal.pyc: $(srcdir)/../python/peas-python-internal.py
+	$(AM_V_GEN) $(PYTHON3_BIN) $(srcdir)/../python/peas-python-compile.py $< $@
 
-EXTRA_DIST = \
-	peas-plugin-loader-python3.gresource.xml		\
-	$(loader_resources_deps)
+all-local: peas-python3-internal.pyc
 
-CLEANFILES = peas-plugin-loader-python3-resources.c
+loader_resources_deps = $(shell $(GLIB_COMPILE_RESOURCES) --sourcedir="$(srcdir)" --generate-dependencies "$(srcdir)/peas-python3.gresource.xml")
+loader_resources_c_deps = $(srcdir)/peas-python3.gresource.xml $(loader_resources_deps)
+
+peas-python3-resources.c: $(loader_resources_c_deps)
+	$(AM_V_GEN) $(GLIB_COMPILE_RESOURCES)		\
+	--target="$@"					\
+	--sourcedir="$(srcdir)"				\
+	--generate-source				\
+	--internal					\
+	"$(srcdir)/peas-python3.gresource.xml"
+
+EXTRA_DIST = $(loader_resources_c_deps)
+
+CLEANFILES = \
+	peas-python3-internal.pyc	\
+	peas-python3-resources.c
 
 gcov_sources = $(libpython3loader_la_SOURCES)
 include $(top_srcdir)/Makefile.gcov

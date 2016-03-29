@@ -94,10 +94,8 @@ local function load_properties(info)
 end
 
 local function find_constructor(info)
-   local name = info.name:gsub('([%d%l])(%u)', '%1_%2'):lower()
-   local ctor = gi[info.namespace][name]
-
-   -- Check that return value conforms to info type.
+   -- Check that ctor exists and return value conforms to info type.
+   local ctor = gi[info.namespace][core.uncamel(info.name)]
    if ctor then
       local ret = ctor.return_type.interface
       for walk in function(_, c) return c.parent end, nil, info do
@@ -349,7 +347,7 @@ function class.class_mt:derive(typename, ifaces)
    }
 
    -- Create the name to register with the GType system.
-   g_typename = typename:gsub('%.', '') .. core.id
+   local g_typename = typename:gsub('%.', '') .. core.id
 
    -- Register new type with GType system.
    local gtype = register_static(self._gtype, g_typename, type_info, {})
@@ -434,7 +432,7 @@ function class.derived_mt:__newindex(name, target)
 	 override = self._override
       end
       local guard, vfunc = core.marshal.callback(
-	 class_struct[name].typeinfo.interface, target)
+	 class_struct[name].callable, target)
       override[name] = vfunc
       self._guard[container.name .. ':' .. name] = guard
    else

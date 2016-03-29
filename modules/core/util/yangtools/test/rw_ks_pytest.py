@@ -16,6 +16,12 @@ import unittest
 import sys
 import os
 import xmlrunner
+import gi
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwKeyspec', '1.0')
+gi.require_version('RwpersonDbYang', '1.0')
+gi.require_version('RwFpathDYang', '1.0')
+gi.require_version('TestAugmentA1Yang', '1.0')
 from gi.repository import RwYang
 from gi.repository import RwKeyspec
 from gi.repository import RwpersonDbYang

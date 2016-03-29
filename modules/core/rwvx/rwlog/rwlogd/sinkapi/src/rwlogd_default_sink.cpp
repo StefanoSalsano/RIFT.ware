@@ -162,7 +162,7 @@ rw_status_t rwlogd_default_sink::add_log_to_ring(uint8_t *buffer)
   position = position; /* supress unused variable compilation warning */
   if(((rwlog_hdr_t *)buffer)->magic!=RWLOG_MAGIC)
   {
-     RWLOG_ASSERT(0);
+     RW_CRASH_MESSAGE("add_log_to_ring:bad buffer magic");
      return RW_STATUS_FAILURE;
   }
   RWLOG_DEBUG_PRINT("add_log_to_ring @ %d C%d S%d\n",
@@ -214,7 +214,6 @@ rwlog_status_t rwlogd_default_sink::match_category_severity(uint8_t *log_hdr,
   if((log_cat < 0) ||
      (log_cat>filter.filter_hdr_.num_categories)) 
   { 
-    RWLOG_ASSERT(0); 
     return RWLOG_FILTER_DROP;
   }
   if ((filter_cat != RW_LOG_LOG_CATEGORY_ALL) &&
@@ -473,7 +472,6 @@ int rwlogd_default_sink::showlog_get_string(uint8_t *proto,
   ProtobufCMessage *arrivingmsg = rwlogd_sink_data::get_unpacked_proto(proto);
   if(!arrivingmsg)
   {
-    RWLOG_ASSERT(0);
     return 0;
     //GTEST
   }

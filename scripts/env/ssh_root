@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# 
+# (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
+#
+
 term=""
 if [ "$1" == "-n" ]; then
     term="-n"

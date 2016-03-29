@@ -31,7 +31,7 @@ static void rwlogd_start_report_cores(rwlogd_instance_ptr_t instance) {
   }
 }
 static void rwlogd_check_report_cores(rwlogd_instance_ptr_t instance) {
-  RW_ASSERT(0);			/* disabled for the moment */
+  RW_CRASH();			/* disabled for the moment */
   if (instance->core_monitor_script_child) {
     int status = 0;
     if (instance->core_monitor_script_child == waitpid(instance->core_monitor_script_child, &status, WNOHANG)) {
@@ -52,17 +52,8 @@ static void rwlogd_start_reader_thread(rwlogd_instance_ptr_t rwlogd_instance_dat
 static void rwlogd_load_base_schema(void *arg) 
 {
   rwlogd_instance_ptr_t inst = (rwlogd_instance_ptr_t)arg;
-  const char* schema = NULL;
-  struct rwvcs_instance_s* vcs_inst = (struct rwvcs_instance_s*)(inst->rwtasklet_info->rwvcs);
-  if (vcs_inst) {
-    schema = vcs_inst->pb_rwmanifest->bootstrap_phase->rwbaseschema->schema_name;
-  }
-  if(!schema) {
-    schema = "rw-composite";
-  }
-  schema = "rwlog-mgmt";
 
-  rwlogd_sink_load_schema(inst->rwlogd_info, schema);
+  rwlogd_sink_load_schema(inst->rwlogd_info, "rwlog-mgmt");
 
   /* Base schema is loaded; change dynamic schema state to ready */
   inst->dynschema_app_state = RW_MGMT_SCHEMA_APPLICATION_STATE_READY;
@@ -81,6 +72,7 @@ void rwlogd_start(rwlogd_instance_ptr_t rwlogd_instance,char *rwlog_filename,cha
                     RWLOG_FILE,
                     rwlog_get_systemId());
   RW_ASSERT(r);
+  if (!r) { return; }
   }
   else {
     rwlogd_instance->rwlogd_info->rwlog_filename = RW_STRDUP(rwlog_filename);
@@ -323,7 +315,13 @@ static rw_status_t rwlogd_send_logs_to_peer(rwlogd_instance_ptr_t instance,uint8
     return status;
   }
   RW_ASSERT(peer_node);
+  if (!peer_node) {
+    return RW_STATUS_FAILURE;
+  }
   RW_ASSERT(peer_node->rwtasklet_instance_id == peer_rwlogd_instance);
+  if (peer_node->rwtasklet_instance_id != peer_rwlogd_instance) {
+    return RW_STATUS_FAILURE;
+  }
   if(peer_node->current_size + size < sizeof(peer_node->log_buffer)) {
     memcpy(&peer_node->log_buffer[peer_node->current_size],rcvd_buf,size);
     peer_node->current_size += size;
@@ -480,7 +478,7 @@ void rwlogd_rx_loop(void  *data)
     {
       /* Open the file incase its not been opened already */   
       if(rwlogd_instance_data->file_status.fd < 0) {
-        rwlogd_instance_data->file_status.fd  = open(rwlogd_instance_data->rwlog_filename, O_RDONLY, 0);
+        rwlogd_instance_data->file_status.fd  = open(rwlogd_instance_data->rwlog_filename, O_RDONLY|O_CLOEXEC, 0);
         if(rwlogd_instance_data->file_status.fd > 0) {
           int r = fstat(rwlogd_instance_data->file_status.fd, &file_stats); /* now we know it'll be *our* file */
           if(r == 0)  {
@@ -537,7 +535,7 @@ rotate:
 
   if (rwlogd_instance_data->file_status.fd < 0)
   {
-    fd = open(rwlogd_instance_data->rwlog_filename, O_RDONLY, 0);
+    fd = open(rwlogd_instance_data->rwlog_filename, O_RDONLY|O_CLOEXEC, 0);
     if (fd < 0)
     {
       /* This will happen until someone, anyone writes the first event.  Not an error. */

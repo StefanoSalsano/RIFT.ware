@@ -30,8 +30,8 @@ module rw-dts
     prefix "rwpb";
   }
 
-  import rw-yang-types {
-    prefix "rwt";
+  import rwvcs-types {
+    prefix "rwvcstypes";
   }
 
   import rw-notify-ext {
@@ -1550,6 +1550,10 @@ module rw-dts
         type empty;
       }
 
+      leaf recovery-action {
+        type rwvcstypes:recovery-type;
+      }
+
       leaf transactional-reg {
         type boolean;
       }
@@ -1893,6 +1897,114 @@ module rw-dts
         leaf-list running-serials {
           type uint64;
           description "A list of serials  of ongoing transactions";
+        }
+      }
+    }
+  }
+
+  typedef journal-mode {
+    type enumeration {
+      enum journal-disabled;
+      enum journal-in-use;
+      enum journal-live;
+    }
+  }
+
+  typedef xact-done-evt {
+    type enumeration {
+      enum xact-evt-undef;
+      enum xact-evt-prepare;
+      enum xact-query-rsp;
+      enum xact-evt-precommit;
+      enum xact-evt-commit;
+      enum xact-evt-commit-rsp;
+      enum xact-evt-abort;
+      enum xact-evt-abort-rsp;
+      enum xact-evt-end;
+      enum xact-evt-unk;
+    }
+  }
+  container journal-info {
+    config false;
+    list subs {
+      key path;
+      leaf path {
+        type string;
+      }
+      list reg-info {
+        key id;
+        leaf id {
+          type uint32;
+          description "Key is reg-id";
+        }
+        leaf keystr {
+          type string;
+        }
+        leaf journal-mode {
+          type journal-mode;
+        }
+        list pub-list {
+          key "member-id router-id pub-id";
+          leaf member-id {
+            type uint64;
+          }
+          leaf router-id {
+            type uint64;
+          }
+          leaf pub-id {
+            type uint64;
+          }
+          leaf least-inflt-serial {
+            type uint64;
+          }
+          leaf least-done-serial {
+            type uint64;
+          }
+          list inflt-query {
+            key "xact-id query-idx";
+            leaf xact-id {
+              type string;
+            }
+            leaf query-idx {
+              type uint32;
+            }
+            leaf query-action {
+              type query-action;
+            }
+            leaf query-keystr {
+              type string;
+            }
+            leaf corrid {
+              type uint64;
+            }
+            leaf serial {
+              type uint64;
+            }
+          }
+          list done-q {
+            key "xact-id query-idx";
+            leaf xact-id {
+              type string;
+            }
+            leaf query-idx {
+              type uint32;
+            }
+            leaf query-action {
+              type query-action;
+            }
+            leaf query-keystr {
+              type string;
+            }
+            leaf corrid {
+              type uint64;
+            }
+            leaf serial {
+              type uint64;
+            }
+            leaf done-event {
+              type xact-done-evt;
+            }
+          }
         }
       }
     }

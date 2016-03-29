@@ -33,9 +33,10 @@ struct rwmsg_broker_acceptor_s {
   rwmsg_broker_channel_t *bch_hash;
 };
 struct rwmsg_broker_channel_acceptor_key_s {
-  uint64_t chanid;
+  uint32_t chanid;
   uint32_t pid;
   uint32_t ipv4;
+  uint32_t instid;
 };
 
 rw_status_t rwmsg_broker_acceptor_init(rwmsg_broker_acceptor_t *acc,
@@ -319,12 +320,15 @@ uint32_t rwmsg_peer_clichan_recv(rwmsg_broker_clichan_t *cc);
 void rwmsg_peer_clichan_sockset_event_send(rwmsg_sockset_t *ss, rwmsg_priority_t pri, void *ud);
 void rwmsg_peer_clichan_release(rwmsg_broker_clichan_t *cc);
 
+typedef struct rwtasklet_info_s rwtasklet_info_t;
+
 struct rwmsg_broker_s {
   /* Base endpoint structure; ep and/or rwmsg_global include index of
      all locally connected clients in localpathtab and an index of all
      local path+payt+methno -> brosrvchan bindings in localdesttab */
   rwmsg_endpoint_t *ep;
   rwsched_tasklet_ptr_t tinfo;
+  rwtasklet_info_t *rwtasklet_info;
   rwcal_module_ptr_t rwcal;
   uint32_t sysid;
   uint32_t bro_instid;
@@ -378,7 +382,8 @@ rwmsg_broker_t *rwmsg_broker_create(uint32_t sysid,
                                     rwsched_tasklet_ptr_t tinfo,
                                     rwcal_module_ptr_t rwcal,
                                     uint32_t usemainq,
-                                    rwmsg_endpoint_t *ep);
+                                    rwmsg_endpoint_t *ep,
+                                    rwtasklet_info_t *rwtasklet_info);
 rwmsg_bool_t rwmsg_broker_halt(rwmsg_broker_t *bro);
 rwmsg_bool_t rwmsg_broker_destroy(rwmsg_broker_t *bro);
 rwmsg_bool_t rwmsg_broker_halt_sync(rwmsg_broker_t *bro);
@@ -390,7 +395,8 @@ void rwmsg_broker_main(uint32_t sid,
 		       rwsched_instance_ptr_t rws,
 		       rwsched_tasklet_ptr_t tinfo,
 		       rwcal_module_ptr_t rwcal,
-		       uint32_t usemainq,
+           uint32_t usemainq,
+           rwtasklet_info_t *rwtasklet_info,
 		       rwmsg_broker_t **bro_out);
 
 void rwmsg_broker_bcast_pausecli(rwmsg_broker_channel_t *bch);

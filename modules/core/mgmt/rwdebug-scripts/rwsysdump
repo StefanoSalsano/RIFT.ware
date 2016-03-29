@@ -26,6 +26,11 @@ VMINFO_FILE="${SYSDUMP_DIR}/vminfo.txt"
 LOG_DIR="${SYSDUMP_DIR}/logs"
 CONFD_LOG_DIR="${LOG_DIR}/confd"
 COREDUMP_DIR="${SYSDUMP_DIR}/core_dump"
+DUMP_TO_STDOUT=0
+
+if [[ $1 ]] && [[ $1 == "--stdout" ]]; then
+  DUMP_TO_STDOUT=1
+fi
 
 # copy a file if it exists, preserving permissions
 do_safe_cp()
@@ -55,30 +60,51 @@ do_safe_cp_zip()
 exec_command()
 {
   local command_name="$*"
-  echo "==================================================" >> ${VMINFO_FILE}
-  echo "Result of '${command_name}':"  >> ${VMINFO_FILE}
-  echo "" >> ${VMINFO_FILE}
-  echo "`${command_name} 2>&1`" >> ${VMINFO_FILE}
-  echo "" >> ${VMINFO_FILE}
-  echo "--------------------------------------------------" >> ${VMINFO_FILE}
-  echo "" >> ${VMINFO_FILE}
+  echo "=================================================="
+  echo "Result of '${command_name}':"
+  echo ""
+  echo "`${command_name} 2>&1`"
+  echo ""
+  echo "--------------------------------------------------"
+  echo ""
 }
 
 fetch_confd_logs()
 {
-  confd_wss=`find ${RIFT_HOME_DIR}/*confd* -maxdepth 0 -type d`
-  for confd_ws in ${confd_wss}; do
-    base_confd_ws=`basename ${confd_ws}`
-    confd_logs=`find ${confd_ws} -name '*.log*' -o -name '*.trace*'`
-    for log in ${confd_logs}; do
-      mkdir -p ${CONFD_LOG_DIR}/${base_confd_ws}
-      do_safe_cp ${log} ${CONFD_LOG_DIR}/${base_confd_ws}
+  if [ ${DUMP_TO_STDOUT} -eq 0 ]; then
+    confd_wss=`find ${RIFT_HOME_DIR}/*confd* -maxdepth 0 -type d`
+    for confd_ws in ${confd_wss}; do
+      base_confd_ws=`basename ${confd_ws}`
+      confd_logs=`find ${confd_ws} -name '*.log*' -o -name '*.trace*'`
+      for log in ${confd_logs}; do
+        mkdir -p ${CONFD_LOG_DIR}/${base_confd_ws}
+        do_safe_cp ${log} ${CONFD_LOG_DIR}/${base_confd_ws}
+      done
     done
+  fi
+}
+
+display_core_bts()
+{
+  #ATTN: Core files are expected to be written to ${RIFT_HOME_DIR} ?
+  core_files=`find ${RIFT_HOME_DIR} -maxdepth 1 -name '*core*' | grep -E '[0-9]$'`
+  for core in ${core_files}; do
+    if [ -e "${core}.txt" ]; then
+      cat ${core}.txt
+    else
+      exe_name=`file ${core} | tr "'" ' ' | cut -d ' ' -f 14`
+      gdb `which ${exe_name}` --core ${core} --batch --quiet -ex "thread apply all bt" -ex "quit"
+    fi
   done
 }
 
 fetch_core_files()
 {
+  if [ ${DUMP_TO_STDOUT} -eq 1 ]; then
+    display_core_bts
+    return
+  fi
+
   #ATTN: Core files are expected to be written to ${RIFT_HOME_DIR} ?
   core_files=`find ${RIFT_HOME_DIR} -maxdepth 1 -name '*core*' | grep -E '[0-9]$'`
   for core in ${core_files}; do
@@ -96,25 +122,27 @@ fetch_core_files()
 
 fetch_var_log()
 {
-  journalctl --since "10 days ago" > ${LOG_DIR}/journalctl_messages
-  gzip ${LOG_DIR}/journalctl_messages
-  if [ $? == 0 ]; then
-    rm -rf ${LOG_DIR}/journalctl_messages
-  fi
-  do_safe_cp /var/log/rift/rift.log ${LOG_DIR}
+  if [ ${DUMP_TO_STDOUT} -eq 0 ]; then
+    journalctl --since "10 days ago" > ${LOG_DIR}/journalctl_messages
+    gzip ${LOG_DIR}/journalctl_messages
+    if [ $? == 0 ]; then
+      rm -rf ${LOG_DIR}/journalctl_messages
+    fi
+    do_safe_cp /var/log/rift/rift.log ${LOG_DIR}
+ fi
 }
 
 fetch_schema_listing()
 {
-  echo "==================================================" >> ${VMINFO_FILE}
-  echo "" >> ${VMINFO_FILE}
-  echo "SCHEMA LISTING : " >> ${VMINFO_FILE}
-  find ${RIFT_HOME_DIR}/var/rift -type d >> ${VMINFO_FILE}
-  echo "--------------------------------------------------" >> ${VMINFO_FILE}
-  echo "" >> ${VMINFO_FILE}
-  find ${RIFT_HOME_DIR}/var/rift/schema -exec ls -l {} \; >> ${VMINFO_FILE}
-  echo "--------------------------------------------------" >> ${VMINFO_FILE}
-  echo "" >> ${VMINFO_FILE}
+  echo "=================================================="
+  echo ""
+  echo "SCHEMA LISTING : "
+  find ${RIFT_HOME_DIR}/var/rift -type d
+  echo "--------------------------------------------------"
+  echo "" 
+  find ${RIFT_HOME_DIR}/var/rift/schema -exec ls -l {} \;
+  echo "--------------------------------------------------"
+  echo ""
 }
 
 fetch_system_info()
@@ -135,33 +163,49 @@ fetch_system_info()
   exec_command "tail -${NUM_LOG_LINES} /var/log/messages"
 }
 
-main()
+create_dirs()
 {
   mkdir ${SYSDUMP_DIR}
   mkdir -p ${LOG_DIR}
   mkdir -p ${COREDUMP_DIR}
   mkdir -p ${CONFD_LOG_DIR}
+}
+
+setup_out_fds()
+{
+  if [ ${DUMP_TO_STDOUT} -eq 0 ]
+  then
+    create_dirs
+    exec 1> ${VMINFO_FILE}
+  fi
+}
+
+main()
+{
+  setup_out_fds
 
   # Vminfo header
-  echo "==================================================" >> ${VMINFO_FILE}
-  echo "System information:" >> ${VMINFO_FILE}
-  echo ""  >> ${VMINFO_FILE}
-  echo "Hostname: "`uname -n` >> ${VMINFO_FILE}
-  echo "Date:     ${DATE_STR}" >> ${VMINFO_FILE}
+  echo "=================================================="
+  echo "System information:"
+  echo ""
+  echo "Hostname: "`uname -n`
+  echo "Date:     ${DATE_STR}"
   UPTIME_STRING=`cat /proc/uptime | awk '{fs=$1; d=int(fs/86400); fs=fs-d*86400; h=int(fs/3600); fs=fs-h*3600; m=int(fs/60); fs=fs-m*60; s=int(fs); fs=fs-s; print d "d " h "h " m "m " s "s\n"}'`
-  echo "Uptime:   ${UPTIME_STRING}" >> ${VMINFO_FILE}
-  echo "" >> ${VMINFO_FILE}
+  echo "Uptime:   ${UPTIME_STRING}"
+  echo ""
 
   fetch_system_info
   fetch_var_log
   fetch_confd_logs
   fetch_core_files
 
-  ## zip the sysdump dir
-  tar cpfz ${SYSDUMP_DIR}.tar.gz ${SYSDUMP_DIR}
-  if [ $? -eq 0 ]
-  then
-    rm -rf ${SYSDUMP_DIR}
+  if [ ${DUMP_TO_STDOUT} -eq 0 ]; then
+    ## zip the sysdump dir
+    tar cpfz ${SYSDUMP_DIR}.tar.gz -C ${RIFT_HOME_DIR} `basename ${SYSDUMP_DIR}`
+    if [ $? -eq 0 ]
+    then
+      rm -rf ${SYSDUMP_DIR}
+    fi
   fi
 }
 

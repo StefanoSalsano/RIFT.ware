@@ -32,14 +32,6 @@ while :; do
 done
 
 cd ${RIFT_INSTALL}
-schema_dir=./var/rift/schema
-file_proto_yutil=./usr/bin/rwyangutil
-
-#make sure that the file protocol util exists
-if [ ! -f ${file_proto_yutil} ]; then
-  echo "File protocol utility ${file_proto_yutil} does not exists"
-  exit 1
-fi
 
 confd_orig=${PWD}
 echo "Current rw_confd directory " ${confd_orig}
@@ -79,19 +71,13 @@ rw_confd_cleanup() {
 }
 trap rw_confd_cleanup EXIT
 
-if [[ ! -L ./var/rift/schema/version/confd_yang ]]; then
-  echo "Creating confd_yang link farm"
-  ln -s ../../../../usr/data/yang ./var/rift/schema/version/confd_yang
-fi
-
-
 if [ -d ./${confd_dir} ]; then
   echo "Confd workspace directory ${confd_dir} exists."
 else
   if mkdir -p ./${confd_dir} \
     && find ./usr/local/confd -not -type d -not -path '*/var/confd/webui/*' -exec cp --parents -al '{}' "./${confd_dir}" \; \
     && mkdir -p ./${confd_dir}/usr/data \
-    && ln -s ../../../var/rift/schema/version/confd_yang ./${confd_dir}/usr/data/confd_yang; then
+    && ln -s ../../../var/rift/schema/version/latest/northbound ./${confd_dir}/usr/data/confd_yang; then
 
     echo "Confd local: ${confd_local}"
     for d in state log rollback candidate; do
@@ -104,10 +90,14 @@ else
     echo "Could not create confd link farm ${confd_local}"
     exit 1
   fi
+
+  # Install the oper user aaa restrictions
+  echo ${confd_dir}/usr/local/confd/var/confd/cdb
+  cp -L usr/data/security/oper_user_restrictions.xml ${confd_dir}/usr/local/confd/var/confd/cdb/oper_user_restrictions.xml
 fi
 
 cd ./${confd_dir}
 
 cmd="./usr/local/confd/bin/confd --conf ${confd_orig}/etc/rw_confd.conf --smp 4 --start-phase0 --foreground $@"
 echo $cmd
-${cmd} < /dev/null
+exec ${cmd} < /dev/null

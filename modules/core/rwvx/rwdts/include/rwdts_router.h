@@ -49,6 +49,7 @@ typedef enum rwdts_router_comm_state_e {
   RWDTS_ROUTER_QUERY_NA,        /* got rsp, n/a */
   RWDTS_ROUTER_QUERY_NACK,        /* got rsp, nack */
   RWDTS_ROUTER_QUERY_INTERNAL,        /* got rsp, internal for router back pressure */
+  RWDTS_ROUTER_QUERY_QUEUED,      /* member is recovering queue this req */
   RWDTS_ROUTER_QUERY_ERR        /* no rsp / err rsp */
 } rwdts_router_comm_state_t;
 
@@ -60,11 +61,16 @@ typedef enum rwdts_router_xact_state_e {
   RWDTS_ROUTER_XACT_ABORT,
   RWDTS_ROUTER_XACT_SUBCOMMIT,  /* subx only */
   RWDTS_ROUTER_XACT_SUBABORT,        /* subx only */
+  RWDTS_ROUTER_XACT_QUEUED,
   RWDTS_ROUTER_XACT_DONE,
   RWDTS_ROUTER_XACT_TERM
 #define RWDTS_ROUTER_XACT_STATE_CT (RWDTS_ROUTER_XACT_TERM + 1)
 } rwdts_router_xact_state_t;
 
+typedef struct rwdts_router_queue_xact_s {
+  rwdts_router_t *dts;
+  rwdts_router_member_t *member;
+} rwdts_router_queue_xact_t;
 
 typedef struct rwdts_memb_router_registration_s {
   UT_hash_handle  hh_reg;         /*<  Hash by keyspec */
@@ -100,6 +106,8 @@ typedef struct router_member_stats_s {
    data structures. */
 struct rwdts_router_member_s {
   char *msgpath;
+  bool wait_restart;
+  bool to_recover;
   UT_hash_handle hh;                /* UTHASH by msgpath */
 
   /* heirarchical / in care of? */
@@ -108,6 +116,7 @@ struct rwdts_router_member_s {
   rwdts_memb_router_registration_t *registrations;
   rwdts_memb_router_registration_t *sub_registrations;
   rw_sklist_t trans_reglist;
+  rw_dl_t     queued_xacts;
   uint32_t reg_count;
   uint64_t client_idx;
   uint64_t router_idx;
@@ -133,6 +142,7 @@ struct rwdts_router_member_s {
   uint32_t flowq_ct;                /* count of pending entries */
   uint32_t flowq_off;                /* offset of first entry waiting for dequeue */
   router_member_stats_t stats;
+  rw_component_state    component_state;
 };
 
 /* See also grouping routerstats in data_rwdts.yang */
@@ -269,6 +279,7 @@ struct rwdts_router_xact_sing_req_s {
   int tracert_idx;                /* index into xres->dbg->tr->ent[] */
   rwmsg_request_t *req;                /* handle on our outstanding request */
   uint32_t credits; 
+  rwdts_router_xact_req_t *xreq;
 #if 0
   RWDtsQueryResult result;        /* Query-dest's result(s). */
 #endif
@@ -365,6 +376,34 @@ typedef struct rwdts_router_wait_blocks_s {
   }\
 }
 
+#define RWDTS_RTR_ADD_TR_ENT_ENDED(t_xact) { \
+  if (t_xact->dbg) {\
+    RWDtsTracerouteEnt ent;\
+    char xact_id_str[128];\
+    rwdts_traceroute_ent__init(&ent);\
+    ent.func = (char*) __PRETTY_FUNCTION__;\
+    ent.line = __LINE__;\
+    ent.event = RWDTS_EVT_PREPARE;\
+    ent.what = RWDTS_TRACEROUTE_WHAT_END_FLAG;\
+    ent.dstpath = t_xact->rwmsg_tab[0].client_path;\
+    ent.srcpath = (char*)t_xact->dts->rwmsgpath;\
+    if (t_xact->dbg->tr && t_xact->dbg->tr->print) {\
+      fprintf(stderr, "%s:%u: TYPE:%s, EVT:%s, DST:%s, SRC:%s\n", ent.func, ent.line,\
+              rwdts_print_ent_type(ent.what), rwdts_print_ent_event(ent.event),\
+              ent.dstpath, ent.srcpath);\
+    }\
+    rwdts_dbg_tracert_add_ent(t_xact->dbg->tr, &ent);\
+    RWDTS_TRACE_EVENT_REQ(t_xact->dts->rwtaskletinfo->rwlog_instance, RwDtsApiLog_notif_TraceReq,rwdts_xact_id_str(&t_xact->id,xact_id_str,128),ent);\
+  }\
+}
+
+typedef struct rwdts_router_queued_xact_s {
+  rwdts_router_xact_t   *xact;
+  rwdts_router_member_t *member;
+  rw_dl_element_t       queued_xact_element;
+  rw_dl_element_t       queued_member_element;
+} rwdts_router_queued_xact_t;
+
 /* Transaction.  There are the request block(s), each with query(s);
    the result(s), the destination */
 struct rwdts_router_xact_s {
@@ -379,6 +418,7 @@ struct rwdts_router_xact_s {
   rwmemlog_buffer_t *rwml_buffer;
 
   rwdts_router_t *dts;
+  rw_dl_t        queued_members;
 
   struct rwdts_router_xact_rwmsg_ent_s {
     rwmsg_request_client_id_t rwmsg_cliid; /* Who is it from?  Tricky - this means there can be only one DTS API bound per RWMsg Clichan. */
@@ -500,6 +540,30 @@ typedef struct rwdts_router_peer_reg_s {
   char           *peer_rwmsgpath;
 } rwdts_router_peer_reg_t;
 
+typedef union rwdts_router_queue_closure_u {
+  RWDtsXactResult_Closure execute_clo;
+  RWDtsStatus_Closure status_clo;
+} rwdts_router_queue_closure_t;
+typedef void (*rwdts_router_msg_queued_execute_fptr) (RWDtsQueryRouter_Service *,
+                                                      const RWDtsXact *,
+                                                      void *,
+                                                      RWDtsXactResult_Closure ,
+                                                      rwmsg_request_t *);
+typedef void (*rwdts_router_msg_queued_general_fptr) (RWDtsQueryRouter_Service *,
+                                                      const RWDtsXactID *,
+                                                      void *,
+                                                      RWDtsStatus_Closure,
+                                                      rwmsg_request_t *);
+typedef struct rwdts_router_queue_msg_s rwdts_router_queue_msg_t;
+struct rwdts_router_queue_msg_s {
+  RWDtsQueryRouter_Service *mysrv;
+  ProtobufCMessage         *input;
+  rwdts_router_queue_closure_t clo;
+  rwmsg_request_t *rwreq;
+  rwdts_router_queue_msg_t *next_msg;
+  void   *fn;
+};
+
 struct rwdts_router_s {
   rwmsg_endpoint_t *ep;
   rwsched_instance_ptr_t rwsched;
@@ -537,6 +601,8 @@ struct rwdts_router_s {
   rwcal_closure_ptr_t closure;
   int data_watcher_cb_count;
   int pend_peer_table;
+  rwdts_router_queue_msg_t *queued_msgs;
+  rwdts_router_queue_msg_t *queued_msgs_tail;
 
   /* The router will itself eventually be a member, with member apih;
      registration and dts status queries will themselves be dts
@@ -553,6 +619,7 @@ struct rwdts_router_s {
   rwdts_member_reg_handle_t local_regkeyh;
   rwdts_member_reg_handle_t peer_regkeyh;
   rwdts_member_reg_handle_t init_memb;
+  rwdts_member_reg_handle_t publish_state_regh;
   rw_keyspec_instance_t ksi;
   rwdts_router_stats_t stats;
   RWPB_T_MSG(RwDts_data_Dts_Member_PayloadStats) payload_stats;
@@ -673,6 +740,9 @@ rwdts_router_remove_all_regs_for_gtest(rwdts_router_t *dts,
 
 void
 rwdts_shard_del(rwdts_shard_t** parent);
+
+void rwdts_router_replay_queued_msgs(rwdts_router_t *dts);
+void rwdts_router_process_queued_xact_f(void *ctx);
 __END_DECLS
 
 

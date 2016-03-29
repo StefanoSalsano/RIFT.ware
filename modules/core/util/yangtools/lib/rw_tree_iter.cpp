@@ -1036,7 +1036,7 @@ rw_tree_walker_status_t find_child (RwSchemaTreeIterator* key_iter,
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
 
   if (key.type != RW_YLIB_DATA_TYPE_KS_PATH) {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   // The tag of the key has to match the tag of the sub message. Getting to the

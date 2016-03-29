@@ -16,6 +16,10 @@ import logging
 import os
 import sys
 import unittest
+import gi
+gi.require_version('RwGenericYang', '1.0')
+gi.require_version('RwLogYang', '1.0')
+
 from gi.repository import RwGenericYang
 from gi.repository import RwLogYang
 import xmlrunner

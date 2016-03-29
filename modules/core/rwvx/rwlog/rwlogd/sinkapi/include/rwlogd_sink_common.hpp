@@ -15,6 +15,7 @@
 #include "yangncx.hpp"
 #include "rwlogd_utils.h"
 #include "rwlogd_filters.hpp"
+#include "rwdynschema.h"
 /*******************************************************************************
         Class: rwlogd_sink_data 
         ========================
@@ -165,10 +166,7 @@ class rwlogd_sink_data{
   // Yang model 
   static void load_log_yang_modules(const char* schema_name);
   rw_status_t dynamic_schema_update(const size_t batch_size,
-                                    char ** module_name,
-                                    char ** fxs_filename,
-                                    char ** so_filename,
-                                    char ** yang_filename);
+                                    rwdynschema_module_t *modules);
 
   static void get_category_name_list();
   rw_status_t update_category_list();
@@ -338,7 +336,7 @@ class rwlogd_rt_sink_conn :public rwlogd_sink{
  public:
   rwlogd_rt_sink_conn() { }
   virtual ~rwlogd_rt_sink_conn() { }
-  virtual int post_evlog(uint8_t *proto , rwlog_hdr_t *hdr) {RW_ASSERT(0);return -1;}
+ virtual int post_evlog(uint8_t *proto , rwlog_hdr_t *hdr) {RW_CRASH();return -1;}
   virtual void rwlog_dump_info(int verbose)
   {
     printf("Type : Real-time-sink\n");
@@ -416,11 +414,7 @@ extern "C"  {
   extern  rw_status_t
   rwlogd_handle_dynamic_schema_update(rwlogd_instance_ptr_t instance,
                                       const uint64_t batch_size,
-                                      char ** module_name,
-                                      char ** fxs_filename,
-                                      char ** so_filename,
-                                      char ** yang_filename);
-
+                                      rwdynschema_module_t *modules);
 
   extern rw_status_t rwlogd_sink_apply_next_call_filter(rwlogd_instance_ptr_t instance, 
                                                         char *sink_name,

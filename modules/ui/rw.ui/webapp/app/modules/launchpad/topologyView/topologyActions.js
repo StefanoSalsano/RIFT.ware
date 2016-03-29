@@ -10,6 +10,9 @@ export default alt.generateActions(
    'openNSRTopologySocketSuccess',
    'openNSRTopologySocketError',
    'openNSRTopologySocketLoading',
+   'getNSRTopologySuccess',
+   'getNSRTopologyError',
+   'getNSRTopologyLoading',
    'getRawLoading',
    'getRawSuccess',
    'getRawError'

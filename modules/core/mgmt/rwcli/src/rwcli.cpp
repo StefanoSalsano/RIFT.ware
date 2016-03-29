@@ -276,25 +276,33 @@ void RwCliParser::enhance_behaviorals()
 
   show_node_->add_descendent(cfg_keyword);
 
-  ParseNodeFunctional *cand_keyword = new ParseNodeFunctional (*this, 
+  if (has_candidate_store_) {
+    ParseNodeFunctional *cand_keyword = new ParseNodeFunctional (*this, 
                                         "candidate-config", show_node_.get());
-  help = "Show the candidate configuration";
-  cand_keyword->help_short_set (help);
-  cand_keyword->help_full_set (help);
-  cand_keyword->set_cli_print_hook("rwcli_plugin:config_writer");
-  cand_keyword->set_callback(new CallbackBaseCli(this, 
+    help = "Show the candidate configuration";
+    cand_keyword->help_short_set (help);
+    cand_keyword->help_full_set (help);
+    cand_keyword->set_cli_print_hook("rwcli_plugin:config_writer");
+    cand_keyword->set_callback(new CallbackBaseCli(this, 
                                     &BaseCli::show_candidate_config));
-  show_node_->add_descendent(cand_keyword);
+    show_node_->add_descendent(cand_keyword);
+  }
 
   ParseNodeFunctional *commit_node = static_cast<ParseNodeFunctional*>(
                                           commit_node_.get());
-  commit_node->set_cli_print_hook("rwcli_plugin:default_print");
+  if (commit_node) {
+    commit_node->set_cli_print_hook("rwcli_plugin:default_print");
+  }
 
   ParseNodeFunctional *discard_node = static_cast<ParseNodeFunctional*>(
                                           discard_node_.get());
-  discard_node->set_cli_print_hook("rwcli_plugin:default_print");
+  if (discard_node) {
+    discard_node->set_cli_print_hook("rwcli_plugin:default_print");
+  }
 
-  show_candidate_node_->set_cli_print_hook("rwcli_plugin:config_writer");
+  if (show_candidate_node_) {
+    show_candidate_node_->set_cli_print_hook("rwcli_plugin:config_writer");
+  }
 }
 
 bool RwCliParser::show_config(const ParseLineResult& r)
@@ -360,7 +368,7 @@ void RwCliParser::handle_parse_error (const parse_result_t result,
 {
   switch (result) {
     case PARSE_LINE_RESULT_SUCCESS:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     case PARSE_LINE_RESULT_INVALID_INPUT:
       rw_cli.err_stream
@@ -388,7 +396,7 @@ void RwCliParser::handle_parse_error (const parse_result_t result,
           << std::endl << std::endl;
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
   }
          
 }
@@ -733,6 +741,7 @@ RwCLI::RwCLI(bool no_editline, const char * schema_listing)
   // Create a RwCliParser instance
   parser = new RwCliParser( *(schema_mgr_->model_), *this );
   RW_ASSERT(parser);
+  parser->has_candidate_store_ = has_candidate_store_;
   parser->add_builtins();
   parser->setprompt();
   parser->add_behaviorals();
@@ -1036,7 +1045,7 @@ bool RwCLI::handle_built_in_commands(ParseLineResult* r){
 
     if (r->line_words_[0] == "quit" ) {
       RW_BCLI_ARGC_CHECK(r,1);
-      RW_ASSERT(0);
+      RW_CRASH();
       return true;
     }
 
@@ -1745,7 +1754,7 @@ bool RwCLI::load_config_xml(const ParseLineResult& r)
   if (rs != RW_STATUS_SUCCESS) {
     std::cerr << "Error: failed to execute the command" << std::endl;
     infile.close();
-    delete buf;
+    delete[] buf;
     return false;
   }
 
@@ -1758,7 +1767,7 @@ bool RwCLI::load_config_xml(const ParseLineResult& r)
   }
 
   infile.close();
-  delete buf;
+  delete[] buf;
 
   return true;
 }
@@ -2009,10 +2018,10 @@ int rwcli_tab_complete_with_matches(const char* line, rwcli_complete_matches_t *
   return res.size();
 }
 
-int rwcli_exec_command(const char* cmd)
+int rwcli_exec_command(int argc, const char* const* cmd)
 {
   const bool interactive = true;
-  rwcli_zsh_instance->parser->parse_line_buffer(cmd, interactive);
+  rwcli_zsh_instance->parser->process_line_buffer(argc, cmd, interactive);
 
   return 0;
 }

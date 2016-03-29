@@ -5,7 +5,13 @@
 
 import asyncio
 import logging
+import sys
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwIwpYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     RwIwpYang,
@@ -530,6 +536,13 @@ class IwpTasklet(rift.tasklets.Tasklet):
 
     def on_instance_started(self):
         self.log.debug("Got instance started callback")
+
+    def stop(self):
+      try:
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in IWP stop:", sys.exc_info()[0])
+         raise
 
     @asyncio.coroutine
     def init(self):

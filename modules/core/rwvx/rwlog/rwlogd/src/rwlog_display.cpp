@@ -48,7 +48,7 @@ rwlogd_fetch_logs_cb(rwdts_xact_t *xact, rwdts_xact_status_t* xact_status, void 
     case RWDTS_XACT_FAILURE:
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     }
   }
@@ -61,6 +61,9 @@ rwlogd_fetch_logs_cb(rwdts_xact_t *xact, rwdts_xact_status_t* xact_status, void 
 #endif
 
   RW_ASSERT(userdata->queryh);
+  if (!userdata->queryh) {
+    return;
+  }
   rwdts_query_handle_t cb_queryh = (rwdts_query_handle_t)userdata->queryh;
   userdata->queryh = NULL;
   RW_ASSERT_TYPE(cb_queryh, rwdts_match_info_t);
@@ -107,6 +110,9 @@ rwlogd_fetch_logs_from_other_rwlogd(const rwdts_xact_info_t* xact_info,
   rwlogd_fetch_ud *ud = (rwlogd_fetch_ud *)RW_MALLOC0(sizeof(rwlogd_fetch_ud));
 
   RW_ASSERT(ud);
+  if (!ud) {
+    return RW_STATUS_FAILURE;
+  }
 
   ud->log_input = protobuf_c_message_duplicate(NULL,
                                            msg,

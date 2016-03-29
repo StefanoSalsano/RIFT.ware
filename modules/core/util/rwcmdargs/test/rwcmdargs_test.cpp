@@ -43,6 +43,18 @@ int main(int argc, char** argv)
     exit(1);
   }
 
+  const char* xsd_path = getenv("RIFT_XSD_PATH");
+  char* cwd = get_current_dir_name();
+
+  std::string new_xsd_path(cwd);
+  if (xsd_path) {
+    new_xsd_path += ":" + std::string(xsd_path);
+  }
+  free (cwd);
+  
+  size_t const overwrite_existing = 1;
+  setenv("RIFT_XSD_PATH", new_xsd_path.c_str(), overwrite_existing);
+
   g_argv = argv;
   g_argc = argc;
 

@@ -12,6 +12,7 @@ import tempfile
 import threading
 import uuid
 import xml.etree.ElementTree as ET
+import json
 
 import requests
 import tornado
@@ -19,6 +20,11 @@ import tornado.escape
 import tornado.ioloop
 import tornado.web
 import tornado.httputil
+
+import gi
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
 
 from gi.repository import (
         RwLaunchpadYang as rwlaunchpad,
@@ -106,107 +112,159 @@ class RequestHandler(tornado.web.RequestHandler):
         self.set_header('Access-Control-Allow-Methods', 'POST, GET, PUT, DELETE')
 
 
-def extract_package(log, filename, boundary, pkgfile):
-    """Extract tarball from multipart message on disk
-
-    The tarball contained in the message may be very large; Too large to
-    load into memory without possibly affecting the behavior of the
-    webserver. So the message is memory mapped and parsed in order to
-    extract just the tarball, and then to extract the contents of the
-    tarball.
+def boundary_search(fd, boundary):
+    """
+    Use the Boyer-Moore-Horpool algorithm to find matches to a message boundary
+    in a file-like object.
 
     Arguments:
-        filename - The name of a file that contains a multipart message
+        fd       - a file-like object to search
+        boundary - a string defining a message boundary
+
+    Returns:
+        An array of indices corresponding to matches in the file
+
+    """
+    # It is easier to work with a search pattern that is reversed with this
+    # algorithm
+    needle = ''.join(reversed(boundary)).encode()
+
+    # Create a lookup to efficiently determine how far we can skip through the
+    # file based upon the characters in the pattern.
+    lookup = dict()
+    for i, c in enumerate(needle[1:], start=1):
+        if c not in lookup:
+            lookup[c] = i
+
+    blength = len(boundary)
+    indices = list()
+
+    # A buffer that same length as the pattern is used to read characters from
+    # the file. Note that characters are added from the left to make for a
+    # straight forward comparison with the reversed orientation of the needle.
+    buffer = collections.deque(maxlen=blength)
+    buffer.extendleft(fd.read(blength))
+
+    # Iterate through the file and construct an array of the indices where
+    # matches to the boundary occur.
+    index = 0
+    while True:
+        tail = buffer[0]
+
+        # If the "tail" of the buffer matches the first character in the
+        # needle, perform a character by character check.
+        if tail == needle[0]:
+            for x, y in zip(buffer, needle):
+                if x != y:
+                    break
+
+            else:
+                # Success! Record the index of the of beginning of the match
+                indices.append(index)
+
+        # Determine how far to skip based upon the "tail" character
+        skip = lookup.get(tail, blength)
+        chunk = fd.read(skip)
+
+        if chunk == b'':
+            break
+
+        # Push the chunk into the buffer and update the index
+        buffer.extendleft(chunk)
+        index += skip
+
+    return indices
+
+
+def extract_package(log, fd, boundary, pkgfile):
+    """Extract tarball from multipart message on disk
+
+    Arguments:
+        fd       - A file object that the package can be read from
         boundary - a string defining the boundary of different parts in the
                     multipart message.
 
     """
     log.debug("extracting archive from data")
 
-    # Modify the boundary
-    boundary = ('--' + boundary).encode('utf-8')
+    # Find the indices of the message boundaries
+    boundaries = boundary_search(fd, boundary)
+    if not boundaries:
+        raise UnreadablePackageError()
 
-    log.debug('package: {}'.format(filename))
+    # check that the message has a terminal boundary
+    fd.seek(boundaries[-1])
+    terminal = fd.read(len(boundary) + 2)
+    if terminal != boundary.encode() + b'--':
+        raise OnboardError(OnboardMissingTerminalBoundary())
 
-    # create a memory map of the message on disk
-    with open(filename, 'r+b') as fp:
-        mapped = mmap.mmap(fp.fileno(), 0)
+    log.debug("search for part containing archive")
+    # find the part of the message that contains the descriptor
+    for alpha, bravo in zip(boundaries[:-1], boundaries[1:]):
+        # Move to the beginning of the message part (and trim the
+        # boundary)
+        fd.seek(alpha)
+        fd.readline()
 
-        # check that the message has a terminal boundary
-        terminal = mapped.rfind(boundary + b'--')
-        if terminal == -1:
-            raise OnboardError(OnboardMissingTerminalBoundary())
+        # Extract the headers from the beginning of the message
+        headers = tornado.httputil.HTTPHeaders()
+        while fd.tell() < bravo:
+            line = fd.readline()
+            if not line.strip():
+                break
 
-        # iterate through the file and identifying the indices of the
-        # boundaries
-        log.debug("identifying boundaries")
-        boundaries = [mapped.find(boundary, 0)]
-        while boundaries[-1] < terminal:
-            boundaries.append(mapped.find(boundary, boundaries[-1] + 1))
+            headers.parse_line(line.decode('utf-8'))
 
-        log.debug("search for part containing archive")
-        # find the part of the message that contains the descriptor
-        for alpha, bravo in zip(boundaries[:-1], boundaries[1:]):
-            # Move to the beginning of the message part (and trim the
-            # boundary)
-            mapped.seek(alpha)
-            mapped.readline()
+        else:
+            raise UnreadableHeadersError()
 
-            # Extract the headers from the beginning of the message
-            headers = tornado.httputil.HTTPHeaders()
-            while mapped.tell() < bravo:
-                line = mapped.readline()
-                if not line.strip():
-                    break
-
-                headers.parse_line(line.decode('utf-8'))
-
-            else:
-                raise UnreadableHeadersError()
-
-            # extract the content disposition and options
+        # extract the content disposition and options or move on to the next
+        # part of the message.
+        try:
             content_disposition = headers['content-disposition']
             disposition, options = tornado.httputil._parse_header(content_disposition)
+        except KeyError:
+            continue
 
-            # If this is not form-data, it is not what we are looking for
-            if disposition != 'form-data':
-                continue
+        # If this is not form-data, it is not what we are looking for
+        if disposition != 'form-data':
+            continue
 
-            # If there is no descriptor in the options, this data does not
-            # represent a descriptor archive.
-            if options.get('name', '') != 'descriptor':
-                continue
+        # If there is no descriptor in the options, this data does not
+        # represent a descriptor archive.
+        if options.get('name', '') != 'descriptor':
+            continue
 
-            # Write the archive section to disk
-            with open(pkgfile + ".partial", 'wb') as tp:
-                log.debug("writing archive ({}) to filesystem".format(pkgfile))
+        # Write the archive section to disk
+        with open(pkgfile + ".partial", 'wb') as tp:
+            log.debug("writing archive ({}) to filesystem".format(pkgfile))
 
-                remaining = bravo - mapped.tell()
-                while remaining > 0:
-                    length = min(remaining, 1024)
-                    tp.write(mapped.read(length))
-                    remaining -= length
+            remaining = bravo - fd.tell()
+            while remaining > 0:
+                length = min(remaining, 1024)
+                tp.write(fd.read(length))
+                remaining -= length
 
-                tp.flush()
+            tp.flush()
 
-                log.debug("finished writing archive")
-
-            # If the data contains a end-of-feed and carriage-return
-            # characters, this can cause gzip to issue warning or errors. Here,
-            # we check the last to bytes of the data and remove them if they
-            # corresponding to '\r\n'.
-            with open(pkgfile + ".partial", "rb+") as tp:
+        # If the data contains a end-of-feed and carriage-return
+        # characters, this can cause gzip to issue warning or errors. Here,
+        # we check the last to bytes of the data and remove them if they
+        # corresponding to '\r\n'.
+        with open(pkgfile + ".partial", "rb+") as tp:
+            tp.seek(-2, 2)
+            if tp.read(2) == "\r\n":
                 tp.seek(-2, 2)
-                if tp.read(2) == "\r\n":
-                    tp.seek(-2, 2)
-                    tp.truncate()
+                tp.truncate()
 
-            # Strip the "partial" suffix from the basename
-            shutil.move(pkgfile + ".partial", pkgfile)
+            log.debug("finished writing archive")
 
-            return
+        # Strip the "upload" suffix from the basename
+        shutil.move(pkgfile + ".partial", pkgfile)
 
-        raise UnreadablePackageError()
+        return
+
+    raise UnreadablePackageError()
 
 
 @tornado.web.stream_request_body
@@ -369,6 +427,7 @@ class UploadHandler(StreamingUploadHandler):
                 self.package_name,
                 self.boundary,
                 self.transaction_id,
+                auth=self.request.headers.get('authorization', None),
                 )
 
         self.set_status(200)
@@ -418,6 +477,7 @@ class UpdateHandler(StreamingUploadHandler):
                 self.package_name,
                 self.boundary,
                 self.transaction_id,
+                auth=self.request.headers.get('authorization', None),
                 )
 
         self.set_status(200)
@@ -519,10 +579,11 @@ class UpdateStateHandler(StateHandler):
 
 
 class UpdatePackage(threading.Thread):
-    def __init__(self, log, app, accounts, filename, boundary, pkg_id):
+    def __init__(self, log, app, accounts, filename, boundary, pkg_id, auth, use_ssl , ssl_cert, ssl_key):
         super().__init__()
         self.app = app
         self.log = log
+        self.auth = auth
         self.pkg_id = pkg_id
         self.accounts = accounts
         self.filename = filename
@@ -535,6 +596,9 @@ class UpdatePackage(threading.Thread):
                 self.updates_dir,
                 self.pkg_id,
                 )
+        self.use_ssl = use_ssl
+        self.ssl_cert = ssl_cert
+        self.ssl_key = ssl_key
 
         # Get the IO loop from the import main thred
         self.io_loop = tornado.ioloop.IOLoop.current()
@@ -612,15 +676,18 @@ class UpdatePackage(threading.Thread):
                 descriptor_ids.add(desc.id)
 
             for filename in arch.vnfds:
-                # Read the XML from file
+                # Read the XML/JSON from file
                 filepath = os.path.join(self.pkg_dir, filename)
                 with open(filepath) as fp:
                     data = fp.read()
 
-                # Construct the VNFD descriptor object from the XML data. We
+                # Construct the VNFD descriptor object from the XML/JSON data. We
                 # use this to determine the ID of the VNFD, which is a
                 # necessary part of the URL.
-                vnfd = converter.from_xml_string(data)
+                if 'xml' in filename:
+                    vnfd = converter.from_xml_string(data)
+                elif 'json' in filename:
+                    vnfd = converter.from_json_string(data)
 
                 if vnfd.id not in descriptor_ids:
                     raise UpdateError(UpdateNewDescriptor(filename))
@@ -634,7 +701,7 @@ class UpdatePackage(threading.Thread):
                 descriptor_ids.add(desc.id)
 
             for filename in arch.nsds:
-                # Read the XML from file
+                # Read the XML/JSON from file
                 filepath = os.path.join(self.pkg_dir, filename)
                 with open(filepath) as fp:
                     data = fp.read()
@@ -642,7 +709,10 @@ class UpdatePackage(threading.Thread):
                 # Construct the NSD descriptor object from the XML data. We use
                 # this to determine the ID of the NSD, which is a necessary
                 # part of the URL.
-                vnfd = converter.from_xml_string(data)
+                if 'xml' in filename:
+                    vnfd = converter.from_xml_string(data)
+                elif 'json' in filename:
+                    vnfd = converter.from_json_string(data)
 
                 if vnfd.id not in descriptor_ids:
                     raise UpdateError(UpdateNewDescriptor(filename))
@@ -735,32 +805,59 @@ class UpdatePackage(threading.Thread):
     def update_descriptors_vnfd(self, arch):
         converter = convert.VnfdYangConverter()
 
-        headers = {"content-type": "application/vnd.yang.data+xml"}
         auth = ('admin', 'admin')
 
         for filename in arch.vnfds:
-            # Read the XML from file
+            # Read the XML/JSON from file
             filepath = os.path.join(self.pkg_dir, filename)
             with open(filepath) as fp:
                 data = fp.read()
 
-            # Construct the VNFD descriptor object from the XML data. We use
+            # Construct the VNFD descriptor object from the XML/JSON data. We use
             # this to determine the ID of the VNFD, which is a necessary part
             # of the URL.
-            vnfd = converter.from_xml_string(data)
+            if 'xml' in filename:
+                vnfd = converter.from_xml_string(data)
 
-            # Remove the top-level element of the XML (the 'catalog' element)
-            tree = ET.fromstring(data)
-            data = ET.tostring(tree.getchildren()[0])
+                # Remove the top-level element of the XML (the 'catalog' element)
+                tree = ET.fromstring(data)
+                data = ET.tostring(tree.getchildren()[0])
+                headers = {"content-type": "application/vnd.yang.data+xml"}
+            elif 'json' in filename:
+                vnfd = converter.from_json_string(data)
+
+                # Remove the top-level element of the JSON (the 'catalog' element)
+                key = "vnfd:vnfd-catalog"
+                if key in data:
+                    newdict = json.loads(data)
+                    if (key in newdict):
+                        data = json.dumps(newdict[key])
+                headers = {"content-type": "application/vnd.yang.data+json"}
+
+            # Add authorization header if it has been specified
+            if self.auth is not None:
+                headers['authorization'] = self.auth
 
             # Send request to restconf
-            url = "http://127.0.0.1:8008/api/config/vnfd-catalog/vnfd/{}"
-            response = requests.put(
+            
+            if self.use_ssl:
+                url = "https://127.0.0.1:8008/api/config/vnfd-catalog/vnfd/{}"
+                response = requests.put(
                     url.format(vnfd.id),
                     data=data,
                     headers=headers,
                     auth=auth,
-                    )
+                    verify=False, 
+                    cert=(self.ssl_cert, self.ssl_key),
+                )
+            else:
+                url = "http://127.0.0.1:8008/api/config/vnfd-catalog/vnfd/{}"
+                response = requests.put(
+                    url.format(vnfd.id),
+                    data=data,
+                    headers=headers,
+                    auth=auth,
+                )
 
             if not response.ok:
                 self.log.error(response.text)
@@ -771,32 +868,59 @@ class UpdatePackage(threading.Thread):
     def update_descriptors_nsd(self, arch):
         converter = convert.NsdYangConverter()
 
-        headers = {"content-type": "application/vnd.yang.data+xml"}
         auth = ('admin', 'admin')
 
         for filename in arch.nsds:
-            # Read the XML from file
+            # Read the XML/JSON from file
             filepath = os.path.join(self.pkg_dir, filename)
             with open(filepath) as fp:
                 data = fp.read()
 
-            # Construct the NSD descriptor object from the XML data. We use
-            # this to determine the ID of the NSD, which is a necessary part of
-            # the URL.
-            nsd = converter.from_xml_string(data)
+            # Construct the NSD descriptor object from the XML/JSON data. We use
+            # this to determine the ID of the NSD, which is a necessary part
+            # of the URL.
+            if 'xml' in filename:
+                nsd = converter.from_xml_string(data)
 
-            # Remove the top-level element of the XML (the 'catalog' element)
-            tree = ET.fromstring(data)
-            data = ET.tostring(tree.getchildren()[0])
+                # Remove the top-level element of the XML (the 'catalog' element)
+                tree = ET.fromstring(data)
+                data = ET.tostring(tree.getchildren()[0])
+                headers = {"content-type": "application/vnd.yang.data+xml"}
+            elif 'json' in filename:
+                nsd = converter.from_json_string(data)
+
+                # Remove the top-level element of the JSON (the 'catalog' element)
+                key = "nsd:nsd-catalog"
+                if key in data:
+                    newdict = json.loads(data)
+                    if (key in newdict):
+                        data = json.dumps(newdict[key])
+                headers = {"content-type": "application/vnd.yang.data+json"}
+
+            # Add authorization header if it has been specified
+            if self.auth is not None:
+                headers['authorization'] = self.auth
 
             # Send request to restconf
-            url = "http://127.0.0.1:8008/api/config/nsd-catalog/nsd/{}"
-            response = requests.put(
+
+            if self.use_ssl:
+                url = "https://127.0.0.1:8008/api/config/nsd-catalog/nsd/{}"
+                response = requests.put(
                     url.format(nsd.id),
                     data=data,
                     headers=headers,
                     auth=auth,
-                    )
+                    verify=False, 
+                    cert=(self.ssl_cert, self.ssl_key),
+                )
+            else:
+                url = "http://127.0.0.1:8008/api/config/nsd-catalog/nsd/{}"
+                response = requests.put(
+                    url.format(nsd.id),
+                    data=data,
+                    headers=headers,
+                    auth=auth,
+                )
 
             if not response.ok:
                 self.log.error(response.text)
@@ -828,12 +952,16 @@ class UpdatePackage(threading.Thread):
         try:
             pkgpath = os.path.join(self.updates_dir, self.pkg_id)
             pkgfile = pkgpath + ".tar.gz"
-            extract_package(
-                    self.log,
-                    self.filename,
-                    self.boundary,
-                    pkgfile,
-                    )
+            with open(self.filename, 'r+b') as fp:
+                # A memory mapped representation of the file is used to reduce
+                # the memory footprint of the running application.
+                mapped = mmap.mmap(fp.fileno(), 0)
+                extract_package(
+                        self.log,
+                        mapped,
+                        self.boundary,
+                        pkgfile,
+                        )
 
             # Process the package archive
             tar = tarfile.open(pkgfile, mode="r:gz")
@@ -855,15 +983,19 @@ class UpdatePackage(threading.Thread):
 
 
 class OnboardPackage(threading.Thread):
-    def __init__(self, log, app, accounts, filename, boundary, pkg_id):
+    def __init__(self, log, app, accounts, filename, boundary, pkg_id, auth, use_ssl, ssl_cert, ssl_key):
         super().__init__()
         self.app = app
         self.log = log
+        self.auth = auth
         self.pkg_id = pkg_id
         self.accounts = accounts
         self.filename = filename
         self.boundary = boundary
         self.io_loop = tornado.ioloop.IOLoop.current()
+        self.use_ssl = use_ssl
+        self.ssl_cert = ssl_cert
+        self.ssl_key = ssl_key
 
     def run(self):
         try:
@@ -948,11 +1080,13 @@ class OnboardPackage(threading.Thread):
 
         pkg_dir = os.path.join(os.environ['RIFT_ARTIFACTS'], "launchpad/packages", self.pkg_id)
 
-        def post(url, data):
-            headers = {"content-type": "application/vnd.yang.data+xml"}
+        def post(url, data, headers):
             auth = ('admin', 'admin')
 
-            response = requests.post(url, data=data, headers=headers, auth=auth)
+            if self.use_ssl:
+                response = requests.post(url, data=data, headers=headers, auth=auth, verify=False, cert=(self.ssl_cert, self.ssl_key))
+            else:
+                response = requests.post(url, data=data, headers=headers, auth=auth)
             if not response.ok:
                 self.log.error(response.text)
                 raise OnboardError(OnboardDescriptorError(filename))
@@ -972,6 +1106,22 @@ class OnboardPackage(threading.Thread):
 
             return data
 
+        json_toplevel_keys = ["vnfd:vnfd-catalog", "nsd:nsd-catalog"]
+
+        def prepare_json(filename):
+            # Read the uploaded JSON
+            with open(filename, 'r') as fp:
+                data = fp.read()
+            # Remove the top-level element of the JSON (the 'catalog' element)
+            for key in json_toplevel_keys:
+                if key in data:
+                    newdict = json.loads(data)
+                    if (key in newdict):
+                        newstr = json.dumps(newdict[key])
+                        return newstr
+
+            return data
+
         endpoints = (
                 ("vnfd-catalog", arch.vnfds),
                 ("pnfd-catalog", arch.pnfds),
@@ -980,15 +1130,27 @@ class OnboardPackage(threading.Thread):
                 ("vnffgd-catalog", arch.vnffgds),
                 )
 
-        url = "http://127.0.0.1:8008/api/config/{catalog}"
+        if self.use_ssl:
+            url = "https://127.0.0.1:8008/api/config/{catalog}"
+        else:
+            url = "http://127.0.0.1:8008/api/config/{catalog}"
 
         try:
             for catalog, filenames in endpoints:
                 for filename in filenames:
                     path = os.path.join(pkg_dir, filename)
-                    data = prepare_xml(path)
+                    if 'xml' in filename:
+                        data = prepare_xml(path)
+                        headers = {"content-type": "application/vnd.yang.data+xml"}
+                    elif 'json' in filename:
+                        data = prepare_json(path)
+                        headers = {"content-type": "application/vnd.yang.data+json"}
 
-                    post(url.format(catalog=catalog), data)
+                    # Add authorization header if it has been specified
+                    if self.auth is not None:
+                        headers['authorization'] = self.auth
+
+                    post(url.format(catalog=catalog), data, headers)
 
             self.log.message(OnboardDescriptorOnboard())
             self.log.debug("onboard complete")
@@ -1024,12 +1186,16 @@ class OnboardPackage(threading.Thread):
         try:
             pkgpath = os.path.join(packages, self.pkg_id)
             pkgfile = pkgpath + ".tar.gz"
-            extract_package(
-                    self.log,
-                    self.filename,
-                    self.boundary,
-                    pkgfile,
-                    )
+            with open(self.filename, 'r+b') as fp:
+                # A memory mapped representation of the file is used to reduce
+                # the memory footprint of the running application.
+                mapped = mmap.mmap(fp.fileno(), 0)
+                extract_package(
+                        self.log,
+                        mapped,
+                        self.boundary,
+                        pkgfile,
+                        )
 
             # Process the package archive
             tar = tarfile.open(pkgfile, mode="r:gz")
@@ -1115,6 +1281,11 @@ class UploaderApplication(tornado.web.Application):
         self.messages = collections.defaultdict(list)
         self.export_dir = os.path.join(os.environ['RIFT_ARTIFACTS'], 'launchpad/exports')
 
+        manifest = tasklet.tasklet_info.get_pb_manifest()
+        self.use_ssl = manifest.bootstrap_phase.rwsecurity.use_ssl
+        self.ssl_cert = manifest.bootstrap_phase.rwsecurity.cert
+        self.ssl_key = manifest.bootstrap_phase.rwsecurity.key
+
         attrs = dict(log=self.log, loop=self.loop)
 
         super(UploaderApplication, self).__init__([
@@ -1140,7 +1311,7 @@ class UploaderApplication(tornado.web.Application):
     def get_logger(self, transaction_id):
         return message.Logger(self.log, self.messages[transaction_id])
 
-    def onboard(self, package, boundary, transaction_id):
+    def onboard(self, package, boundary, transaction_id, auth=None):
         log = message.Logger(self.log, self.messages[transaction_id])
 
         pkg_id = str(uuid.uuid1())
@@ -1151,9 +1322,13 @@ class UploaderApplication(tornado.web.Application):
                 package,
                 boundary,
                 pkg_id,
+                auth,
+                self.use_ssl,
+                self.ssl_cert,
+                self.ssl_key,
                 ).start()
 
-    def update(self, package, boundary, transaction_id):
+    def update(self, package, boundary, transaction_id, auth=None):
         log = message.Logger(self.log, self.messages[transaction_id])
 
         pkg_id = str(uuid.uuid1())
@@ -1164,7 +1339,11 @@ class UploaderApplication(tornado.web.Application):
                 package,
                 boundary,
                 pkg_id,
-                ).start()
+                auth,
+                self.use_ssl,
+                self.ssl_cert,
+                self.ssl_key,
+                    ).start()
 
     @property
     def vnfd_catalog(self):

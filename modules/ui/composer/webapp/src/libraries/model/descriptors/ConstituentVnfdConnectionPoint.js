@@ -15,6 +15,7 @@ export default class ConstituentVnfdConnectionPoint extends ConnectionPoint {
 
 	constructor(model, parent) {
 		super(model, parent);
+		this.uid = parent.uid + this.key;
 	}
 
 }

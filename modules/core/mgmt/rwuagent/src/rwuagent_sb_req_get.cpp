@@ -92,10 +92,6 @@ void SbReqGet::async_dispatch_f(void* cb_data)
       get->start_dts_xact_int();
       break;
 
-    case async_dispatch_t::DTS_SSD:
-      get->start_xact_show_support_details();
-      break;
-
     case async_dispatch_t::DTS_CCB:
       get->commit_cb (get->dts_xact());
       break;
@@ -112,7 +108,7 @@ void SbReqGet::start_dts_xact_int()
   xact_ = rwdts_api_query_ks(dts_->api(),
                              query_ks_.get(),
                              RWDTS_QUERY_READ,
-                             RWDTS_XACT_FLAG_NOTRAN|RWDTS_FLAG_WAIT_RESPONSE|dts_flags_,
+                             RWDTS_FLAG_WAIT_RESPONSE|dts_flags_,
                              dts_get_event_cb,
                              this,
                              0);
@@ -137,10 +133,11 @@ StartStatus SbReqGet::start_xact_int()
 
   // check if the first child of root is uagent - if so, handle locally.
   node = rsp_dom_->get_root_node()->get_first_element();
+
   if (node->get_name_space() == uagent_yang_ns) {
     ::async_execute(
         instance_->rwsched_tasklet(),
-        rwsched_dispatch_get_main_queue(instance_->rwsched()),
+        nbreq_->get_execution_q(),
         this,
         [](void* ctxt)-> void {
           auto* self = static_cast<SbReqGet*>(ctxt);
@@ -187,17 +184,6 @@ StartStatus SbReqGet::start_xact_uagent_get_request()
 
   XMLNode *node = rsp_dom_->get_root_node()->get_first_element();
   RW_ASSERT(node);
-
-  if ("system" == node->get_local_name()) {
-
-    ad_type_ = async_dispatch_t::DTS_SSD;
-    rwsched_dispatch_async_f(instance_->rwsched_tasklet(),
-                             rwsched_dispatch_get_main_queue(instance_->rwsched()),
-                             this,
-                             async_dispatch_f);
-
-    return StartStatus::Async;
-  }
 
   // The first node is state
   node = node->get_first_child();
@@ -263,74 +249,6 @@ StartStatus SbReqGet::start_xact_uagent_get_request()
   // a separate queue now. If i find any issues, i will make it async.
   done_with_success( std::move(rsp_dom_) );
   return StartStatus::Done;
-}
-
-StartStatus SbReqGet::start_xact_show_support_details()
-{
-  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "support details" );
-
-  xact_ = rwdts_api_xact_create(
-    dts_->api(),
-    RWDTS_XACT_FLAG_NOTRAN|RWDTS_FLAG_WAIT_RESPONSE|dts_flags_,
-    dts_get_event_cb,
-    this);
-
-  RW_ASSERT (xact_);
-  rwdts_xact_ref (xact_, __PRETTY_FUNCTION__, __LINE__); // always take a ref
-
-  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "xact dts created",
-    RWMEMLOG_ARG_PRINTF_INTPTR("dts xact=0x%" PRIXPTR, (intptr_t)xact_) );
-
-  /**********************************************************************
-   ************ CAUTION ** CAUTION  ** CAUTION  ** CAUTION  ** CAUTION **
-   ** Inform Automation team when this list is modified, so that tests **
-   ** are updated *******************************************************
-   ************ CAUTION ** CAUTION  ** CAUTION  ** CAUTION  ** CAUTION **
-   **********************************************************************/
-  const char *xpaths[] = {
-    "A,/rw-base:vcs/rw-base:info",
-    "A,/rw-base:vcs/rw-base:resources",
-    "D,/rwmsg:messaging/rwmsg:info",
-    "D,/rwdts:dts/rwdts:member",
-    "D,/rwdts:dts/rwdts:routers"
-  };
-  /**********************************************************************
-   ************ CAUTION ** CAUTION  ** CAUTION  ** CAUTION  ** CAUTION **
-   ** Inform Automation team when this list is modified, so that tests **
-   ** are updated *******************************************************
-   ************ CAUTION ** CAUTION  ** CAUTION  ** CAUTION  ** CAUTION **
-   **********************************************************************/
-
-  for (size_t i = 0; i < sizeof(xpaths)/sizeof(xpaths[0]);  i++) {
-    rw_keyspec_path_t *key;
-    auto rs = rwdts_api_keyspec_from_xpath(dts_->api(), xpaths[i], &key);
-    if (rs != RW_STATUS_SUCCESS) {
-      return done_with_error("Failed in xpath to ketspec");
-    }
-
-    rwdts_xact_block_t *blk = rwdts_xact_block_create(xact_);
-    RW_ASSERT(blk);
-
-    rs = rwdts_xact_block_add_query_ks(
-      blk,
-      key,
-      RWDTS_QUERY_READ,
-      RWDTS_XACT_FLAG_NOTRAN|RWDTS_FLAG_WAIT_RESPONSE|RWDTS_FLAG_BLOCK_MERGE,
-      0,
-      nullptr);
-    if (rs != RW_STATUS_SUCCESS) {
-      return done_with_error("Failed in add dts query block");
-    }
-
-    rs = rwdts_xact_block_execute(blk, dts_flags_, NULL, NULL, NULL);
-    RW_ASSERT(rs == RW_STATUS_SUCCESS);
-  }
-
-  rw_status_t rs = rwdts_xact_commit(xact_);
-  RW_ASSERT(RW_STATUS_SUCCESS == rs);
-
-  update_stats(RW_UAGENT_NETCONF_DTS_XACT_START);
-  return StartStatus::Async;
 }
 
 rw_yang_netconf_op_status_t SbReqGet::get_dom_refresh_period(
@@ -543,8 +461,9 @@ void SbReqGet::dts_get_event_cb(rwdts_xact_t *xact,
     RW_ASSERT (xact == get->dts_xact());
 
     get->set_async_dt(async_dispatch_t::DTS_CCB);
+
     rwsched_dispatch_async_f(get->instance()->rwsched_tasklet(),
-                             get->instance()->cc_dispatchq(),
+                             get->nbreq_->get_execution_q(),
                              get,
                              async_dispatch_f);
   }

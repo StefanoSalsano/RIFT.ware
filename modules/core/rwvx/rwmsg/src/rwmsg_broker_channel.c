@@ -38,11 +38,32 @@ void rwmsg_broker_channel_create(rwmsg_broker_channel_t *bch,
     bro->chanid_nxt++;
   } else {
     /* We don't avoid collisions with ancient channels after wrap */ 
-    RW_ASSERT(0);
+    RW_CRASH();
     abort();
   }
 
   memcpy(&bch->acc_key, key, sizeof(bch->acc_key));
+
+  rwmsg_broker_channel_t *b_ch, *tmp;
+  HASH_ITER(hh, bro->acc.bch_hash, b_ch, tmp) {
+    if (b_ch->acc_key.instid == key->instid
+        /*
+        && (key->instid == 113
+            || key->instid == 112)
+        */
+        && b_ch->ch.chantype == typ
+        && b_ch->acc_key.chanid != key->chanid) {
+      RWMSG_TRACE(b_ch->ch.ep, INFO, "%s %p - .instid=%u .chanid=%u!=key.chanid=%u\n",
+             b_ch->ch.rwtpfx,
+             b_ch,
+             b_ch->acc_key.instid,
+             b_ch->acc_key.chanid,
+             key->chanid);
+      //Halt the old channels
+      //rwmsg_channelspecific_halt(&b_ch->ch);
+    }
+  }
+
   HASH_ADD(hh, bro->acc.bch_hash, acc_key, sizeof(bch->acc_key), bch);
 
 

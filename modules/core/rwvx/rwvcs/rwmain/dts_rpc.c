@@ -21,7 +21,7 @@
  * @return        - true if the component_name and instance_id match the rwmain instance
  */
 static inline bool is_this_instance(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * id)
 {
   bool r = 0;
@@ -34,31 +34,21 @@ static inline bool is_this_instance(
   return r;
 }
 
-/*
- * Create a start action and pass it to rwvcs to start an instance of an component
- *
- * @param rwmain          - rwmaininstance
- * @param component_name  - name of the component to start
- * @param xact            - dts transaction
- * @param query           - dts query
- * @return                - RW_STATUS_SUCCESS on success, status from rwmain_action_run() otherwise
- */
-static rw_status_t start_component(
-    struct rwmain * rwmain,
+rw_status_t start_component(
+    struct rwmain_gi * rwmain,
     const char * component_name,
     const char * ip_addr,
+    rw_admin_command admin_command,
     const char * parent_instance,
-    rwdts_xact_t * xact,
-    rwdts_query_handle_t query,
     char ** instance_name,
     vcs_manifest_component *m_component)
 {
   int r;
   rw_status_t status;
-  uint32_t new_instance_id;
+  uint32_t new_instance_id=0;
   vcs_manifest_action action;
   vcs_manifest_action_start start;
-  char * tmp_instance_name;
+  char * tmp_instance_name = NULL;
 
   vcs_manifest_action__init(&action);
   vcs_manifest_action_start__init(&start);
@@ -119,19 +109,67 @@ static rw_status_t start_component(
     }
     start.has_config_ready = m_start->has_config_ready;
     start.config_ready = m_start->config_ready;
+    start.has_recovery_action = m_start->has_recovery_action;
+    start.recovery_action = m_start->recovery_action;
     if (ip_addr) {
       r = asprintf(&start.python_variable[i], "vm_ip_address = '%s'", ip_addr);
       RW_ASSERT(r != -1);
     }
     start.n_python_variable = m_start->n_python_variable+(ip_addr!=NULL);
   }
-  status = rwvcs_rwzk_next_instance_id(rwmain->rwvx->rwvcs, &new_instance_id, NULL);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-  r = asprintf(&start.instance_id, "%u", new_instance_id);
-  RW_ASSERT(r != -1);
+  if (admin_command == RW_BASE_ADMIN_COMMAND_RECOVER) {
+    RW_ASSERT(parent_instance);
+    rw_component_info component;
+    status = rwvcs_rwzk_lookup_component(
+        rwmain->rwvx->rwvcs,
+        parent_instance, 
+        &component);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    int num_children = component.n_rwcomponent_children;
+    char *child_name = NULL;
+    while (num_children 
+           && (child_name = component.rwcomponent_children[num_children - 1])) {
+      if (strstr(child_name, component_name)) {
+        rw_component_info child;
+        status = rwvcs_rwzk_lookup_component(
+            rwmain->rwvx->rwvcs,
+            child_name, 
+            &child);
+        RW_ASSERT(status == RW_STATUS_SUCCESS);
+        if (child.state == RW_BASE_STATE_TYPE_TO_RECOVER) {
+          tmp_instance_name = strdup (child_name);
+          r = asprintf(&start.instance_id, "%u", (unsigned int)child.instance_id);
+          RW_ASSERT(r != -1);
+          start.has_recovery_action = true;
+          start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_RESTART;
+          break;
+        }
+      }
+      num_children--;
+    }
+  }
+  else {
+    status = rwvcs_rwzk_next_instance_id(rwmain->rwvx->rwvcs, &new_instance_id, NULL);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-  tmp_instance_name = to_instance_name(component_name, new_instance_id);
+    r = asprintf(&start.instance_id, "%u", new_instance_id);
+    RW_ASSERT(r != -1);
+
+    tmp_instance_name = to_instance_name(component_name, new_instance_id);
+  }
+  if (!tmp_instance_name) {
+    rwmain_trace_crit(
+        rwmain,
+        "start_component: tmp_instance_name==null: component_name=%s, new_instance_id=%u, admin_command=%u, parent_instance=%s",
+        component_name,
+        new_instance_id,
+        admin_command,
+        parent_instance);
+    RW_CRASH();
+    RW_ASSERT(tmp_instance_name);
+  }
+
   action.start = &start;
 
   rw_status_t rs = rwvcs_instance_update_child_state(
@@ -150,11 +188,13 @@ static rw_status_t start_component(
   if (status != RW_STATUS_SUCCESS)
     goto done;
 
-  status = rwvcs_rwzk_add_child(
-      rwmain->rwvx->rwvcs,
-      parent_instance,
-      tmp_instance_name);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  if (admin_command != RW_BASE_ADMIN_COMMAND_RECOVER) {
+    status = rwvcs_rwzk_add_child(
+        rwmain->rwvx->rwvcs,
+        parent_instance,
+        tmp_instance_name);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+  }
 
   *instance_name = tmp_instance_name;
 
@@ -210,7 +250,7 @@ void send_start_request_response(
 }
 
 static void start_component_nd_send_rsp(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     struct dts_start_stop_closure * cls,
     vcs_manifest_component *m_component)
 {
@@ -225,9 +265,8 @@ static void start_component_nd_send_rsp(
         rwmain,
         cls->rpc_query,
         cls->ip_addr,
+        cls->admin_command,
         cls->instance_name,
-        cls->xact,
-        cls->query,
         &instance_name,
         m_component);
 
@@ -271,7 +310,7 @@ static void on_vstart_inventory_update(
     rwdts_xact_status_t* xact_status,
     void * ud)
 {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
   struct dts_start_stop_closure * cls;
 
@@ -376,9 +415,66 @@ done:
 static void on_vstart_component_lookup_new(
     rwdts_xact_t * xact,
     rwdts_xact_status_t* xact_status,
+    void * ud);
+
+static rw_status_t do_vstart_component_lookup(
+    struct rwmain_gi *rwmain,
+    struct dts_start_stop_closure * cls,
+    bool trace)
+{
+  rw_status_t status;
+  rwdts_xact_block_t *comp_blk;
+  rwdts_xact_t *comp_xact = NULL;
+
+  comp_xact = rwdts_api_xact_create(
+      rwmain->dts,
+      (trace ? RWDTS_FLAG_TRACE : RWDTS_FLAG_NONE),
+      on_vstart_component_lookup_new,
+      cls);
+  RW_ASSERT(comp_xact);
+
+  comp_blk = rwdts_xact_block_create(comp_xact);
+  RW_ASSERT(comp_blk);
+
+  RWPB_T_PATHSPEC(RwManifest_data_Manifest_OperationalInventory_Component) pathspec2;
+  pathspec2 = (*RWPB_G_PATHSPEC_VALUE(RwManifest_data_Manifest_OperationalInventory_Component));
+  pathspec2.dompath.path002.key00.component_name = strdup(cls->rpc_query);
+  pathspec2.dompath.path002.has_key00 = true;
+
+  status = rwdts_xact_block_add_query_ks(
+      comp_blk,
+      (rw_keyspec_path_t *)&pathspec2,
+      RWDTS_QUERY_READ,
+      (trace ? RWDTS_FLAG_TRACE : RWDTS_FLAG_NONE),
+      222222222222222,
+      NULL);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+
+  RWPB_T_PATHSPEC(RwManifest_data_Manifest_Inventory_Component) pathspec1;
+  pathspec1 = (*RWPB_G_PATHSPEC_VALUE(RwManifest_data_Manifest_Inventory_Component));
+  pathspec1.dompath.path002.key00.component_name = strdup(cls->rpc_query);
+  pathspec1.dompath.path002.has_key00 = true;
+
+  status = rwdts_xact_block_add_query_ks(
+      comp_blk,
+      (rw_keyspec_path_t *)&pathspec1,
+      RWDTS_QUERY_READ,
+      (trace ? RWDTS_FLAG_TRACE : RWDTS_FLAG_NONE),
+      111111111111111,
+      NULL);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+
+  status = rwdts_xact_block_execute(comp_blk, RWDTS_XACT_FLAG_END, NULL, 0, NULL); /* go! */
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  return status;
+}
+
+static void on_vstart_component_lookup_new(
+    rwdts_xact_t * xact,
+    rwdts_xact_status_t* xact_status,
     void * ud)
 {
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
   struct dts_start_stop_closure * cls = NULL;
   vcs_manifest_component * ret_component;
@@ -404,6 +500,16 @@ static void on_vstart_component_lookup_new(
   qrslt = rwdts_xact_query_result(xact, 111111111111111);  
   if (!qrslt)
     qrslt = rwdts_xact_query_result(xact, 222222222222222);
+
+  if (!qrslt) {
+    rw_status_t status;
+    status = do_vstart_component_lookup(
+        rwmain,
+        cls,
+        true);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    return;
+  }
   RW_ASSERT(qrslt);
 
   ret_component = (vcs_manifest_component*)(qrslt->message);
@@ -538,12 +644,12 @@ static rwdts_member_rsp_code_t on_vstart_new(
 {
   char * instance_name = NULL;
   rwdts_member_rsp_code_t dts_ret = RWDTS_ACTION_NA;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
   vcs_rpc_start_input * start_req;
 
   RW_ASSERT(xact_info);
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
 
@@ -559,7 +665,7 @@ static rwdts_member_rsp_code_t on_vstart_new(
   free(instance_name);
   instance_name = NULL;
 
-  send2dts_start_req(rwmain, xact_info, start_req->component_name);
+  send2dts_start_req(rwmain, xact_info, start_req);
 
   dts_ret = RWDTS_ACTION_ASYNC;
 
@@ -570,11 +676,70 @@ done:
   return dts_ret;
 }
 
+static void do_vcrash(void *ctx)
+{
+  struct rwmain_gi * rwmain = (struct rwmain_gi *)ctx;
+  RW_ASSERT_MESSAGE(0, "/R/%s/%d is vCRaShING \n", rwmain->component_name, rwmain->instance_id);
+}
+
+static rwdts_member_rsp_code_t on_vcrash(
+    const rwdts_xact_info_t * xact_info,
+    RWDtsQueryAction action,
+    const rw_keyspec_path_t * key,
+    const ProtobufCMessage * msg,
+    uint32_t credits,
+    void *getnext_ptr)
+{
+  rw_status_t status;
+  rwdts_member_rsp_code_t dts_ret = RWDTS_ACTION_OK;
+  struct rwmain_gi * rwmain;
+  rwvcs_instance_ptr_t rwvcs;
+  vcs_rpc_crash_input * crash_req;
+  rw_component_info target_info;
+  char * instance_name = NULL;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
+  rwvcs = rwmain->rwvx->rwvcs;
+  RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
+
+  crash_req = (vcs_rpc_crash_input *)msg;
+
+  rw_component_info__init(&target_info);
+
+  status = rwvcs_rwzk_lookup_component(rwvcs, crash_req->instance_name, &target_info);
+
+  if (status == RW_STATUS_NOTFOUND) {
+    dts_ret = RWDTS_ACTION_NA;
+    goto done;
+  }
+
+
+  instance_name = to_instance_name(rwmain->component_name, rwmain->instance_id);
+
+  if (!rwvcs_rwzk_responsible_for(rwvcs, instance_name, crash_req->instance_name)
+      && !is_this_instance(rwmain, crash_req->instance_name)) {
+    dts_ret = RWDTS_ACTION_NA;
+    goto done;
+  }
+
+  dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 4);
+  rwsched_dispatch_after_f(
+      rwmain->rwvx->rwsched_tasklet,
+      when,
+      rwsched_dispatch_get_main_queue(rwmain->rwvx->rwsched),
+      rwmain,
+      do_vcrash);
+
+done:
+  if (instance_name) {
+    RW_FREE(instance_name);
+  }
+  return dts_ret;
+}
+
 rwdts_member_rsp_code_t do_vstart(
     const rwdts_xact_info_t* xact_info,
-    struct rwmain * rwmain,
-    char *component_name,
-    char *ip_addr,
+    struct rwmain_gi * rwmain,
+    rw_vcs_instance_childn *child_n,
     char *parent_instance,
     char **child_instance)
 {
@@ -584,6 +749,9 @@ rwdts_member_rsp_code_t do_vstart(
   rwvcs_instance_ptr_t rwvcs;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
+  char *component_name = child_n->component_name;
+  char *ip_addr = child_n->ip_address;
+  rw_admin_command admin_command = child_n->has_admin_command? child_n->admin_command:0;
   RW_ASSERT(component_name);
   RW_ASSERT(parent_instance);
 
@@ -600,9 +768,8 @@ rwdts_member_rsp_code_t do_vstart(
         rwmain,
         component_name,
         ip_addr,
+        admin_command,
         parent_instance,
-        xact_info->xact, //NULL
-        xact_info->queryh, //NULL,
         &instance_name,
         m_component);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -611,9 +778,6 @@ rwdts_member_rsp_code_t do_vstart(
     dts_ret = RWDTS_ACTION_OK;
   } else {
     struct dts_start_stop_closure * cls = NULL;
-    rwdts_xact_block_t *comp_blk;
-    rwdts_xact_t *comp_xact = NULL;
-
     cls = (struct dts_start_stop_closure *)malloc(sizeof(struct dts_start_stop_closure));
     RW_ASSERT(cls);
 
@@ -629,41 +793,10 @@ rwdts_member_rsp_code_t do_vstart(
     else
       cls->ip_addr = NULL;
 
-    comp_xact = rwdts_api_xact_create(rwmain->dts, /*RWDTS_FLAG_TRACE |*/ RWDTS_XACT_FLAG_NOTRAN, on_vstart_component_lookup_new, cls);
-    RW_ASSERT(comp_xact);
-
-    comp_blk = rwdts_xact_block_create(comp_xact);
-    RW_ASSERT(comp_blk);
-
-    RWPB_T_PATHSPEC(RwManifest_data_Manifest_OperationalInventory_Component) pathspec2;
-    pathspec2 = (*RWPB_G_PATHSPEC_VALUE(RwManifest_data_Manifest_OperationalInventory_Component));
-    pathspec2.dompath.path002.key00.component_name = component_name;
-    pathspec2.dompath.path002.has_key00 = true;
-
-    status = rwdts_xact_block_add_query_ks(
-        comp_blk,
-        (rw_keyspec_path_t *)&pathspec2,
-        RWDTS_QUERY_READ,
-        RWDTS_FLAG_NONE,
-        222222222222222,
-        NULL);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-
-    RWPB_T_PATHSPEC(RwManifest_data_Manifest_Inventory_Component) pathspec1;
-    pathspec1 = (*RWPB_G_PATHSPEC_VALUE(RwManifest_data_Manifest_Inventory_Component));
-    pathspec1.dompath.path002.key00.component_name = component_name;
-    pathspec1.dompath.path002.has_key00 = true;
-
-    status = rwdts_xact_block_add_query_ks(
-        comp_blk,
-        (rw_keyspec_path_t *)&pathspec1,
-        RWDTS_QUERY_READ,
-        RWDTS_FLAG_NONE,
-        111111111111111,
-        NULL);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-
-    status = rwdts_xact_block_execute(comp_blk, RWDTS_XACT_FLAG_END, NULL, 0, NULL); /* go! */
+    status = do_vstart_component_lookup(
+        rwmain,
+        cls,
+        false);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
     dts_ret = RWDTS_ACTION_ASYNC;
   }
@@ -709,14 +842,14 @@ static rwdts_member_rsp_code_t on_vstop_new(
 {
   rw_status_t status;
   rwdts_member_rsp_code_t dts_ret = RWDTS_ACTION_NA;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   rwvcs_instance_ptr_t rwvcs;
   vcs_rpc_stop_input * stop_req;
   rw_component_info target_info;
   char * instance_name = NULL;
   rwdts_member_query_rsp_t rsp;
 
-  rwmain = (struct rwmain *)xact_info->ud;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
   rwvcs = rwmain->rwvx->rwvcs;
   RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
 
@@ -827,7 +960,7 @@ done:
 
 rwdts_member_rsp_code_t do_vstop(
     const rwdts_xact_info_t * xact_info,
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     char *stop_instance_name)
 {
   rw_status_t status;
@@ -872,7 +1005,8 @@ rwdts_member_rsp_code_t do_vstop(
     status = rwmain_stop_instance(rwmain, &target_info);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-    RWMAIN_DEREG_PATH_DTS(rwmain->dts, &target_info);
+    RWMAIN_DEREG_PATH_DTS(rwmain->dts, &target_info, 
+                          target_info.has_recovery_action? target_info.recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
 
     status = rwvcs_instance_delete_child(
       rwmain,
@@ -927,7 +1061,8 @@ rwdts_member_rsp_code_t do_vstop(
       status = rwmain_stop_instance(rwmain, &child);
       RW_ASSERT(status == RW_STATUS_SUCCESS);
     
-      RWMAIN_DEREG_PATH_DTS(rwmain->dts, &child);
+      RWMAIN_DEREG_PATH_DTS(rwmain->dts, &child, 
+                          child.has_recovery_action? child.recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
 
       status = rwvcs_instance_delete_child(
         rwmain,
@@ -949,7 +1084,8 @@ rwdts_member_rsp_code_t do_vstop(
     status = rwmain_stop_instance(rwmain, &target_info);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-    RWMAIN_DEREG_PATH_DTS(rwmain->dts, &target_info);
+    RWMAIN_DEREG_PATH_DTS(rwmain->dts, &target_info,
+                          target_info.has_recovery_action? target_info.recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
 
     status = rwvcs_instance_delete_instance(rwmain);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -972,10 +1108,10 @@ static rwdts_member_rsp_code_t on_tracing(
 {
   rw_status_t status;
   rwdts_member_rsp_code_t dts_ret = RWDTS_ACTION_OK;
-  struct rwmain * rwmain;
+  struct rwmain_gi * rwmain;
   RWPB_T_MSG(RwBase_input_Tracing) * input;
 
-  rwmain= (struct rwmain *)xact_info->ud;
+  rwmain= (struct rwmain_gi *)xact_info->ud;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
 
   input = (RWPB_T_MSG(RwBase_input_Tracing) *)msg;
@@ -1000,7 +1136,7 @@ done:
   return dts_ret;
 }
 
-rw_status_t rwmain_setup_dts_rpcs(struct rwmain * rwmain)
+rw_status_t rwmain_setup_dts_rpcs(struct rwmain_gi * rwmain)
 {
   rwdts_registration_t dts_registrations[] = {
     // RPC start
@@ -1022,6 +1158,17 @@ rw_status_t rwmain_setup_dts_rpcs(struct rwmain * rwmain)
       .callback = {
         .cb.prepare = &on_vstop_new,
       }
+    },
+
+    // RPC crash
+    {
+      .keyspec = (rw_keyspec_path_t *)RWPB_G_PATHSPEC_VALUE(RwVcs_input_Vcrash),
+      .desc = RWPB_G_MSG_PBCMD(RwVcs_input_Vcrash),
+      .flags = RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_SHARED,
+      .callback = {
+        .cb.prepare = &on_vcrash,
+
+       }
     },
 
     // RPC Tracing

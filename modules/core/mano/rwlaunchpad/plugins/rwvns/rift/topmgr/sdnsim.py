@@ -9,6 +9,9 @@ import logging
 import xml.etree.ElementTree as etree
 import json
 from gi.repository import RwTopologyYang as RwTl
+
+import gi
+gi.require_version('RwYang', '1.0')
 from gi.repository import RwYang
 
 

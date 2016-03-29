@@ -14,6 +14,10 @@ import logging
 import sys
 import traceback
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwTypes', '1.0')
+
 import gi.repository.ProtobufC
 import gi.repository.RwDts as rwdts
 import gi.repository.RwTypes as rwtypes
@@ -1228,7 +1232,7 @@ class AppConfGroup(object):
             self.on_validate = on_validate
             self.on_apply = on_apply
 
-            for f in ('on_init', 'on_deinit', 'on_validate', 'on_apply'):
+            for f in ('on_init', 'on_deinit', 'on_validate'):
                 ref = getattr(self, f)
                 if ref is None:
                     continue
@@ -1492,7 +1496,7 @@ class TaskScheduler(object):
             """
             try:
                 yield from coro(*args, **kwargs)
-            except Exception:
+            except Exception as e:
                 if exception_callback is not None:
                     exp_str = traceback.format_exc()
                     sys.stderr.write(exp_str)
@@ -1719,10 +1723,22 @@ class GroupEventAdapter(EventAdapter):
             exp_clbk = ExceptionRule.abort_xact(xact,
                     return_flag=rwdts.MemberRspCode.ACTION_NOT_OK)
 
-            ret = self.scheduler.exec_now(
-                    run_in_event_loop,
-                    exception_callback=exp_clbk)
-            return ret
+            if not asyncio.iscoroutinefunction(on_event):
+              ret = self.scheduler.exec_now(
+                      run_in_event_loop,
+                      exception_callback=exp_clbk)
+              return ret
+            else:
+              scratch = self.registration.scratch.setdefault(xact.id, {})
+              ret = self.scheduler.exec_now(
+                        on_event,
+                        self.dts,
+                        self.registration,
+                        xact,
+                        xact_event,
+                        scratch,
+                        exception_callback=exp_clbk)
+              return ret
 
         return wrapper if on_event is not None else None
 
@@ -1827,14 +1843,24 @@ class AppConfEventAdapter(EventAdapter):
 
             scratch = self.registration.scratch.setdefault(xact.id, {})
 
-            self.scheduler.exec_soon(
-                    on_apply,
-                    self.dts,
-                    self.registration,
-                    xact,
-                    action,
-                    scratch,
-                    exception_callback=exception_callback)
+            if not asyncio.iscoroutinefunction(on_apply):
+                self.scheduler.exec_soon(
+                        on_apply,
+                        self.dts,
+                        self.registration,
+                        xact,
+                        action,
+                        scratch,
+                        exception_callback=exception_callback)
+            else:
+                self.scheduler.schedule_task(
+                        on_apply,
+                        self.dts,
+                        self.registration,
+                        xact,
+                        action,
+                        scratch,
+                        exception_callback=exception_callback)
 
         return wrapper if on_apply is not None else None
 
@@ -1862,7 +1888,7 @@ class Group(object):
             self.on_deinit = on_deinit
             self.on_event = on_event
 
-            for f in ('on_init', 'on_deinit', 'on_event'):
+            for f in ('on_init', 'on_deinit'):
                 ref = getattr(self, f)
                 if ref is None:
                     continue
@@ -2159,6 +2185,7 @@ class DTS(object):
         @param schema           - yang schema to use (RwYangPb.Schema)
         @param loop             - loop being used by current tasklet
         @param on_state_change  - callback executed when the dts state changes.
+        @param dtsh             - wrap around existing dtsh
             This will be executed in the event loop context
             on_state_change(RwDtsState)
         """
@@ -2206,7 +2233,10 @@ class DTS(object):
 
         self._schema = schema
 
-        self._dts = rwdts.Api.new(
+        #self._dts = rwdts.Api.find_dtshandle(tasklet_info)
+        self._dts = None
+        if self._dts is None:
+            self._dts = rwdts.Api.new(
                 tasklet_info,
                 schema,
                 wrap_state_change(on_state_change),
@@ -2451,6 +2481,12 @@ class DTS(object):
         key, keylen = self._dts.ident_key_gi(xpath, index)
         return key, keylen
 
+    def deinit(self):
+        """
+        Initiate API deinit
+        """
+        self._dts.deinit()
+
     @contextlib.contextmanager
     def appconf_group_create(self, handler=None, xact=None):
         """
@@ -2539,7 +2575,7 @@ class DTS(object):
         status, group_reg_raw = self._dts.group_create(
                 adapter.on_init(),
                 adapter.on_deinit(),
-                adapter.on_event())
+                adapter.on_event(),)
 
         if status != rwtypes.RwStatus.SUCCESS:
             raise IOError('Failed to create an registration group')

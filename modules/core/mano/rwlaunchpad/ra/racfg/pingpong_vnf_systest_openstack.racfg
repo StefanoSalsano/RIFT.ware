@@ -3,7 +3,7 @@
   "commandline":"./pingpong_vnf_systest --cloud-type 'openstack' --cloud-host '10.66.4.115'",
   "test_description":"System test for ping and pong vnf (Openstack)",
   "run_as_root": false,
-  "status":"working",
+  "status":"broken",
   "keywords":["nightly","smoke","MANO","openstack"],
   "timelimit": 2200,
   "networks":[],

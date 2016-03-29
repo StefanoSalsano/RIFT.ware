@@ -25,4 +25,6 @@ rift_add_yang_target(
   COMPONENT ${PKG_LONG_NAME}
   LIBRARIES
     rwschema_yang_gen
+    rwmanifest_yang_gen
+    rw_vcs_yang_gen
 )

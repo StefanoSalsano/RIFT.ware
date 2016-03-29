@@ -131,7 +131,9 @@ rwmsgbroker__component__instance_start(RwTaskletPluginComponent *self,
                                          instance->rwtasklet_info->rwsched_tasklet_info,
                                          rwcal,
                                          rwtasklet_info_is_collapse_thread(instance->rwtasklet_info), /* mainq */
-                                         instance->rwtasklet_info->rwmsg_endpoint);
+                                         instance->rwtasklet_info->rwmsg_endpoint,
+                                         instance->rwtasklet_info);
+
   RW_ASSERT(instance->broker);
 
   rw_status_t rs;

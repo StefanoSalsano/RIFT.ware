@@ -15,7 +15,7 @@ export default function LayoutRow(props) {
 	const secondaryActionColumn = props.secondaryActionColumn ? props.secondaryActionColumn : <div className="layout-row-empty-cell"> </div>;
 
 	return (
-		<table className={ClassNames('layout-row', props.className)}>
+		<table {...props} className={ClassNames('layout-row', props.className)}>
 			<tbody>
 				<tr>
 					<th className="primary-action-column">

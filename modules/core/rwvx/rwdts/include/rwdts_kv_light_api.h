@@ -107,8 +107,8 @@ typedef rw_status_t (*rwdts_file_db_del_api_t) (void *instance, char *file_name,
 
 typedef void* (*rwdts_file_db_get_cursor_t) (void *instance, char *file_name);
 
-typedef rw_status_t (*rwdts_file_db_getnext_t) (void *instance, void **dbc, uint8_t **key, size_t *key_len,
-                                                uint8_t **val, size_t *val_len);
+typedef rw_status_t (*rwdts_file_db_getnext_t) (void *instance, void *cursor, char **key, int *key_len,
+                                          char **val, int *val_len, void** out_cursor);
 
 typedef rw_status_t (*rwdts_file_db_remove_t) (void *instance, const char *file_name);
 
@@ -145,22 +145,6 @@ typedef struct rwdts_db_fn_table {
   rwdts_file_db_close_t          rwdts_file_db_close;
 } rwdts_db_fn_table_t;
 
-typedef enum rwdts_avail_db {
-  REDIS_DB = 0,
-  BK_DB = 1,
-  MAX_DB
-} rwdts_avail_db_t;
-
-/*
- * API rwdts_kv_allocate_handle
- * Arguments: rwdts_avail_db_t db
- *
- * Returns : Void *
- *
- * API to allocate KV handle needed to connect to a DB type. Accepts DB type as
- * argument and returns KV handle. Currently only REDIS_DB db type is supported.
- * This is the first API to be used by the KV client */
-void* rwdts_kv_allocate_handle(rwdts_avail_db_t db);
 
 /*
  * rwdts_kv_light_db_connect
@@ -481,106 +465,6 @@ void rwdts_kv_light_api_xact_insert_abort(rwdts_kv_table_handle_t *tab_handle, i
 void rwdts_kv_light_table_xact_delete_abort(rwdts_kv_table_handle_t *tab_handle, int serial_num,
                                             void *key, int key_len, void *callbkfn, void *callbk_data);
 
-/*
- * rwdts_kv_light_file_set_keyval
- * Arguments: rwdts_kv_handle_t *handle
- *            char *key, int key_len,
- *            char *val, int val_len 
- *
- * Returns: rw_status_t
- *
- * API to set Key/Value pair in File-DB.
- */
-rw_status_t
-rwdts_kv_light_file_set_keyval(rwdts_kv_handle_t *handle,
-                               char *key, int key_len, char *val, int val_len);
-
-/*
- * rwdts_kv_light_file_get_keyval
- * Arguments: rwdts_kv_handle_t *handle
- *            char *key, int key_len,
- *            char **val, int *val_len 
- *
- * Returns: rw_status_t
- *
- * API to get Value details for a given key from File-DB.
- */
-rw_status_t
-rwdts_kv_light_file_get_keyval(rwdts_kv_handle_t *handle,
-                               char *key, int key_len, char **val, int *val_len);
-
-/*
- * rwdts_kv_light_file_del_keyval
- * Arguments: rwdts_kv_handle_t *handle
- *            char *key, int key_len,
- *
- * Returns: rw_status_t
- *
- * API to delete Key/Value pair from File-DB.
- */
-rw_status_t
-rwdts_kv_light_file_del_keyval(rwdts_kv_handle_t *handle,
-                               char *key, int key_len);
-
-/*
- * rwdts_kv_light_file_get_cursor
- * Arguments: rwdts_kv_handle_t *handle
- *
- * Returns: void*
- *
- * API to get the DB cursor handle.
- */
-void*
-rwdts_kv_light_file_get_cursor(rwdts_kv_handle_t *handle);
-
-/*
- * rwdts_kv_light_file_getnext
- * Arguments: rwdts_kv_handle_t *handle, void **dbc (DB cursor-handle),
- *            uint8_t **key, size_t *key_len, uint8_t **val, size_t *val_len
- *
- * Returns: rw_status_t
- *
- * API to get the next Key/Value pair from the DB cursor handle.
- */
-rw_status_t
-rwdts_kv_light_file_getnext(rwdts_kv_handle_t *handle, void **dbc, uint8_t **key,
-                            size_t *key_len, uint8_t **val, size_t *val_len);
-
-/*
- * rwdts_kv_light_file_remove
- * Arguments: rwdts_kv_handle_t *handle
- *
- * Returns: rw_status_t
- *
- * API to remove the file-DB.
- */
-rw_status_t
-rwdts_kv_light_file_remove(rwdts_kv_handle_t *handle);
-
-/*
- * rwdts_kv_light_open_db
- * Arguments: rwdts_kv_handle_t *handle, const char *file_name,
- *            const char *program_name, FILE *error_file_pointer
- *
- * Returns: rw_status_t
- *
- * API to create and open the file-db. Program_name and error_file_pointer is not used
- * for now and NULL have to supplied.
- */
-rw_status_t
-rwdts_kv_light_open_db(rwdts_kv_handle_t *kv_handle, const char *file_name,
-                       const char *program_name, FILE *error_file_pointer);
-
-/*
- * rwdts_kv_light_close_db
- * Arguments: rwdts_kv_handle_t *handle
- *
- * Returns: rw_status_t
- *
- * API to close the open file-db. 
- */
-rw_status_t
-rwdts_kv_light_file_close(rwdts_kv_handle_t *kv_handle);
 
 __END_DECLS
 

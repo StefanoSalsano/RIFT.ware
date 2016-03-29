@@ -2466,6 +2466,16 @@ public:
    */
   virtual YangNode* get_leafref_ref();
 
+  /*!
+   * For a leaf or leaf-list node, if the type is leafref, this will
+   * return the path of the referenced node as string.
+   * It will not try to stringify the referred node if that also is
+   * a leafref.
+   *
+   * @return Referred path as string.
+   */
+  virtual std::string get_leafref_path_str();
+
   /*
    * ATTN: Should the app-data API actually be just an access to get
    * the cache object?  And the the caller can make accesses to the
@@ -2954,6 +2964,7 @@ public:
   virtual YangExtensionIter extension_end();
 
   // for a enumeration, get the integer value specified in the YANG model
+  // for bits type, get the position value specified in the YANG model
   virtual int32_t get_integer_value() {return 0;};
 
   // ATTN: virtual YangModule* get_module() = 0;

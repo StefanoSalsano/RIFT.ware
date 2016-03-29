@@ -33,7 +33,8 @@ namespace fs = boost::filesystem;
 
 static const char* ROOT_DIR_NAME = "var/rift/schema";
 static const char* VERSION_DIR_NAME = "var/rift/schema/version";
-static const char* YANG_SYMLINK_NAME = "var/rift/schema/version/confd_yang";
+static const char* YANG_SYMLINK_NAME = "var/rift/schema/version/latest/northbound";
+static const char* LATEST_VERSION = "var/rift/schema/version/latest";
 
 // This is required only because we are copying ietf*yang files to
 // usr/data/yang but not creating its *.fxs files there
@@ -275,6 +276,7 @@ ConfdUpgradeMgr::ConfdUpgradeMgr(): version_(0)
   yang_root_ = rift_root_ + "/" + ROOT_DIR_NAME;
   yang_sl_ = rift_root_ + "/" + YANG_SYMLINK_NAME;
   ver_dir_ = rift_root_ + "/" + VERSION_DIR_NAME;
+  latest_ = rift_root_ + "/" + LATEST_VERSION;
 
   confd_addr_ = nullptr;
 }
@@ -292,6 +294,7 @@ ConfdUpgradeMgr::ConfdUpgradeMgr(uint32_t version, const struct sockaddr *addr,
   yang_root_ = rift_root_ + "/" + ROOT_DIR_NAME;
   yang_sl_ = rift_root_ + "/" + YANG_SYMLINK_NAME;
   ver_dir_ = rift_root_ + "/" + VERSION_DIR_NAME;
+  latest_ = rift_root_ + "/" + LATEST_VERSION;
 
   memcpy(&confd_addr_in_, addr, confd_addr_size_);
   confd_addr_ = (struct sockaddr *)&confd_addr_in_;
@@ -307,7 +310,7 @@ ConfdUpgradeMgr::~ConfdUpgradeMgr()
 uint32_t
 ConfdUpgradeMgr::get_max_version_linked()
 {
-  auto linked_name = FSHelper::get_sym_link_name(yang_sl_);
+  auto linked_name = FSHelper::get_sym_link_name(latest_);
   if (linked_name.length() == 0) {
     return 0;
   }
@@ -366,58 +369,12 @@ ConfdUpgradeMgr::set_log_cb(rw_confd_upgrade_log_cb cb, void *user_data)
 bool
 ConfdUpgradeMgr::start_upgrade()
 {
-  bool revert = false;
   std::ostringstream msg;
 
   if (!start_confd_upgrade()) {
     msg << "Error: Confd in-service upgrade failed" << "\n";
     RW_CONFD_MGR_ERROR_STRING(this, "Error: Confd in-service upgrade failed");
     send_progress_msg(msg);
-    revert = true;
-  }
-  //TODO: delete created directory if failed
-
-  if (!revert && !update_sym_link()) {
-    msg << "Error: Upgrading of sym link failed while confd upgrade"
-      << "\n";
-    RW_CONFD_MGR_ERROR_STRING(this, "Error: Upgrading of sym link failed while confd upgrade");
-    send_progress_msg(msg);
-    revert = true;
-  }
-
-  if (revert) {
-    std::ostringstream oss;
-    oss << ver_dir_ << "/" << std::setfill('0') << std::setw(8) << std::hex << (version_ + 1);
-
-    if (!FSHelper::remove_directory(oss.str())) {
-      std::string log_str = "Error: Exception occured while deleting "
-        + oss.str() + " after failed upgrade.";
-      RW_CONFD_MGR_ERROR_STRING(this, log_str.c_str());
-      send_progress_msg(msg);
-    }
-
-    return false;
-  }
-
-  return true;
-}
-
-bool
-ConfdUpgradeMgr::update_sym_link()
-{
-  std::stringstream oss;
-  oss << ver_dir_ << "/" << std::setfill('0') << std::setw(8) << std::hex << (version_ + 1);
-  const auto& dir_name = oss.str();
-
-  if (!fs::exists(dir_name)) {
-    return false;
-  }
-
-  if (!FSHelper::recreate_sym_link(yang_sl_, dir_name)) {
-    std::string log_str = "Error: Failed while updating sym link to "
-     + dir_name;
-    RW_CONFD_MGR_ERROR_STRING(this, log_str.c_str());
-    return false;
   }
 
   return true;
@@ -458,14 +415,13 @@ ConfdUpgradeMgr::start_confd_upgrade()
     return false;
   }
 
-  std::stringstream strm;
-  strm << ver_dir_ << "/" << std::setfill('0') << std::setw(8) << std::hex << (version_ + 1) << "/";
-  const auto& base_path = strm.str();
+  // ATTN: why do we need to change the confd load path at runtime?
+  const auto& base_path = yang_sl_;
 
-  const auto& path_1 = base_path + "fxs";
-  const auto& path_2 = base_path + "xml";
-  const auto& path_3 = base_path + "lib";
-  const auto& path_4 = base_path + "yang";
+  const auto& path_1 = base_path + "/fxs";
+  const auto& path_2 = base_path + "/xml";
+  const auto& path_3 = base_path + "/lib";
+  const auto& path_4 = base_path + "/yang";
   const auto& path_5 = rift_root_ + "/" + ADD_CONFD_LOAD_PATH;
 
   const char* load_paths[] = {

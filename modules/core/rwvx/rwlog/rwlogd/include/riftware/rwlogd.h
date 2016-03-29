@@ -16,7 +16,7 @@
 #include "rwlog-mgmt.pb-c.h"
 #include <uuid/uuid.h>
 #include "rw-mgmt-schema.pb-c.h"
-
+#include "rwdynschema.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -263,10 +263,7 @@ extern "C" {
   extern  rw_status_t
   rwlogd_handle_dynamic_schema_update(rwlogd_instance_ptr_t instance,
                                       const uint64_t batch_size,
-                                      char ** module_name,
-                                      char ** fxs_filename,
-                                      char ** so_filename,
-                                      char ** yang_filename);
+                                      rwdynschema_module_t *modules);
 
   extern rw_status_t rwlogd_sink_apply_next_call_filter(rwlogd_instance_ptr_t instance, 
                                                         char *sink_name,

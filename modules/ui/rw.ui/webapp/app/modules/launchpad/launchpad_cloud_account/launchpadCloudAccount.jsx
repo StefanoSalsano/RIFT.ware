@@ -6,7 +6,7 @@
 
 import React from 'react';
 import AppHeader from '../../components/header/header.jsx';
-import SdnAccountStore from '../../missioncontrol/sdn_account/createSdnAccountStore.js';
+import SdnAccountStore from '../launchpad_sdn_account/sdnAccountStore.js';
 import CloudAccount from '../../missioncontrol/cloud_account/cloudAccount.jsx';
 import CloudAccountStore from './cloudAccountStore';
 import CloudAccountActions from './cloudAccountActions';
@@ -18,17 +18,17 @@ export default class LaunchpadCloudAccount extends React.Component {
         this.state = CloudAccountStore.getState();
         this.state.sdnAccounts = [];
         SdnAccountStore.getSdnAccounts();
+        CloudAccountStore.getCatalog();
         CloudAccountStore.listen(this.updateState);
         SdnAccountStore.listen(this.updateSdnAccount);
         if(this.props.edit) {
-            CloudAccountStore.getCloudAccount(window.location.hash.split('/')[4])
+            CloudAccountStore.getCloudAccountByName(window.location.hash.split('/')[4])
         } else {
             this.state.isLoading = false;
         }
     }
     updateSdnAccount = (data) => {
         let sdns = data.sdnAccounts || [];
-        console.log(sdns);
         //[{"name":"test","account-type":"mock","mock":{"username":"test"}}]
         let toSend = [
             {
@@ -53,7 +53,7 @@ export default class LaunchpadCloudAccount extends React.Component {
       let API_SERVER = rw.getSearchParams(window.location).api_server;
       let auth = window.sessionStorage.getItem("auth");
       let mgmtDomainName = window.location.hash.split('/')[2];
-        window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=http://' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + mgmtDomainName + '&auth=' + auth);
+        window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=' + window.location.protocol + '//' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + mgmtDomainName + '&auth=' + auth);
     }
     render() {
         let html;
@@ -67,14 +67,13 @@ export default class LaunchpadCloudAccount extends React.Component {
                 name: 'DASHBOARD',
                 href: '#/launchpad/' + mgmtDomainName
             },{
-                name: 'CATALOG',
+                name: 'CATALOG(' + this.state.descriptorCount + ')',
                 'onClick': this.loadComposer
             },
             {
                 name: 'Accounts'
             }
         ];
-        console.log(navItems)
         if (this.props.isDashboard) {
             body = (<div>Edit or Create New Accounts</div>);
         } else {

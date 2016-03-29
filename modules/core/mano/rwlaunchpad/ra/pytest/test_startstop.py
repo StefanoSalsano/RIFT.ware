@@ -12,6 +12,8 @@
 
 import pytest
 
+import gi
+gi.require_version('RwMcYang', '1.0')
 from gi.repository import RwMcYang
 
 @pytest.fixture(scope='module')
@@ -25,9 +27,10 @@ def proxy(request, mgmt_session):
     return mgmt_session.proxy(RwMcYang)
 
 @pytest.mark.depends('launchpad')
-@pytest.mark.usefixtures('splat_launchpad')
 @pytest.mark.incremental
 class TestLaunchpadStartStop:
+
+    @pytest.mark.feature('mission-control')
     def test_stop_launchpad(self, proxy, mgmt_domain_name):
         '''Invoke stop launchpad RPC
 
@@ -49,6 +52,7 @@ class TestLaunchpadStartStop:
                 timeout=120,
                 fail_on=['crashed'])
 
+    @pytest.mark.feature('mission-control')
     def test_start_launchpad(self, proxy, mgmt_domain_name, launchpad_scraper):
         '''Invoke start launchpad RPC
 

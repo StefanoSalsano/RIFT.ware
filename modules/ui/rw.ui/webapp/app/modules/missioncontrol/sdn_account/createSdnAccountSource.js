@@ -28,7 +28,7 @@ var createSdnAccountSource = {
       remote: function(state, sdnAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/sdn-account?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/sdn-account?api_server=' + API_SERVER,
             type:'POST',
             beforeSend: Utils.addAuthorizationStub,
             dataType: "json",
@@ -73,7 +73,7 @@ var createSdnAccountSource = {
       remote: function(state, sdnAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/sdn-account/' + sdnAccount.name + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/sdn-account/' + sdnAccount.name + '?api_server=' + API_SERVER,
             type:'PUT',
             beforeSend: Utils.addAuthorizationStub,
             dataType: "json",
@@ -107,7 +107,7 @@ var createSdnAccountSource = {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/sdn-account/' + cloudAccount + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/sdn-account/' + cloudAccount + '?api_server=' + API_SERVER,
             type:'DELETE',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -135,7 +135,7 @@ var createSdnAccountSource = {
         console.log('requesting sdnAccount, ', sdnAccount)
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/sdn-account/' + sdnAccount + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/sdn-account/' + sdnAccount + '?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -163,7 +163,7 @@ var createSdnAccountSource = {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/sdn-account?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/sdn-account?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(sdnAccounts) {

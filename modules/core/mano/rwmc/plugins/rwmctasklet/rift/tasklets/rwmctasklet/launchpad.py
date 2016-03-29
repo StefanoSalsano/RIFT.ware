@@ -12,6 +12,13 @@ from datetime import timedelta
 
 from . import salt
 
+import gi
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwCloudYang', '1.0')
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
+gi.require_version('RwConmanYang', '1.0')
+gi.require_version('RwNsmYang', '1.0')
 from gi.repository import  RwYang, RwCloudYang, RwBaseYang, RwResourceMgrYang, RwConmanYang, RwNsmYang, RwLaunchpadYang
 
 

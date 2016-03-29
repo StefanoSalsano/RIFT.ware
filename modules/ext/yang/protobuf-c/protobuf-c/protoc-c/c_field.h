@@ -147,7 +147,7 @@ class FieldGenerator {
   virtual string GetGiReturnAnnotations() const = 0;
   virtual string GetGiGetterReturnType() const = 0;
   virtual string GetGiGetterParameterList() const = 0;
-  virtual string GetGiParameterAnnotations() const = 0;
+  virtual string GetGiSetterAnnotations() const = 0;
   virtual string GetGiSetterParameterList() const = 0;
   virtual void GenerateGiCGetterMethod(io::Printer* printer) const = 0;
   virtual void GenerateGiCSetterMethod(io::Printer* printer) const = 0;

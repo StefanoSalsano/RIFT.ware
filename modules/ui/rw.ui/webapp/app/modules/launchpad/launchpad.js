@@ -58,7 +58,7 @@ angular.module('launchpad', ['ui.router'])
     });
 
     $stateProvider.state('/launchpad/topology', {
-      url: '/launchpad/:management_domain/:lp/topology',
+      url: '/launchpad/:management_domain/:lp/compute-topology',
       replace: true,
       template: '<topology-view></topology-view>',
       controller: function(){},
@@ -74,6 +74,7 @@ angular.module('launchpad', ['ui.router'])
       controllerAs: 'lp',
       bindToController: true
     });
+
    // $stateProvider.state('/launchpad/cloud-account', {
    //    url:'/launchpad/:management_domain/cloud-account/dashboard',
    //    replace: true,
@@ -115,14 +116,6 @@ angular.module('launchpad', ['ui.router'])
       template:'<launchpad-cloud-account type="edit"></launchpad-cloud-account>',
       controller: function(){},
       controllerAs: 'create'
-    });
-    $stateProvider.state('/launchpad/topologyL2Vm', {
-      url: '/launchpad/:management_domain/:lp/topologyL2Vm',
-      replace: true,
-      template: '<topology-l2-view-vm></topology-l2-view-vm>',
-      controller: function() {},
-      controllerAs: 'lp',
-      bindToController: true
     });
     $stateProvider.state('/launchpad/sdn-account/dashboard', {
       url:'/launchpad/:management_domain/sdn-account/dashboard',
@@ -329,26 +322,8 @@ angular.module('launchpad', ['ui.router'])
       restrict: 'AE',
       controller: function($element) {
         function reactRender() {
-          console.log("launchpad.js directive on TopologyL2View");
           React.render(
-            React.createElement(TopologyL2View, {topologyType: 'single'})
-            ,
-            $element[0]
-          );
-        }
-        reactRender();
-      }
-    };
-  })
-
-  .directive('topologyL2ViewVm', function() {
-    return {
-      restrict: 'AE',
-      controller: function($element) {
-        function reactRender() {
-          console.log("launchpad.js directive on TopologyL2ViewVm");
-          React.render(
-            React.createElement(TopologyL2View, {topologyType: 'vm'})
+            React.createElement(TopologyL2View, null)
             ,
             $element[0]
           );
@@ -380,5 +355,119 @@ angular.module('launchpad', ['ui.router'])
     };
   })
 
+  .directive('lpAbout', function() {
+    return {
+      restrict: 'AE',
+      bindToController: true,
+      replace:true,
+      controllerAs: 'lpabout',
+      template: '<div></div>',
+      controller: function($element, $stateParams) {
+        var self = this;
+        //self.store = require('./launchpadFleetStore.js');
+        this.openLog = function() {
 
+          console.log('openLog')
+          self.store.getSysLogViewerURL('lp');
+        }
+        this.loadDashboard = function() {
+          window.location = '//' + window.location.hostname + ':8000/index.html?api_server=' + API_SERVER + '#/launchpad/' + $stateParams.management_domain;
+        }
+        this.openDebug = function() {
+          window.location = '//' + window.location.hostname + ':8000/index.html?api_server=' + API_SERVER + '#/launchpad/' + $stateParams.management_domain + "/lp-debug";
+        }
+        render();
+        function render() {
+          React.render(React.createElement(About, {}), $element[0]);
+        }
+      }
+    }
+  })
+  .directive('lpDebug', function() {
+    return {
+      restrict: 'AE',
+      bindToController: true,
+      replace:true,
+      controllerAs: 'lpdebug',
+      template: '<div></div>',
+      controller: function($element, $stateParams) {
 
+        this.openLog = function() {
+          var LaunchpadStore = require('./launchpadFleetStore.js')
+          console.log('openLog')
+          LaunchpadStore.getSysLogViewerURL('lp');
+        }
+        this.loadDashboard = function() {
+          window.location = '//' + window.location.hostname + ':8000/index.html?api_server=' + API_SERVER + '#/launchpad/' + $stateParams.management_domain;
+        }
+        this.openAbout = function() {
+          window.location = '//' + window.location.hostname + ':8000/index.html?api_server=' + API_SERVER + '#/launchpad/' + $stateParams.management_domain + "/lp-about";
+        }
+        render();
+        function render() {
+          React.render(React.createElement(CrashDetails, {}), $element[0]);
+        }
+      }
+    }
+  })
+  // .directive('reactCroutonWrapper', function() {
+  //   return {
+  //     restrict: 'AE',
+  //     template:'<div></div>',
+  //     scope:{
+  //       store:"="
+  //     },
+  //     controller: function($element, $scope) {
+  //       $scope.message = "";
+  //       $scope.store.listen(function(state) {
+  //         console.log('asfdlk;adfls;')
+  //         if (state.validateErrorEvent) {
+  //           $scope.message = state.validateErrorMsg;
+  //           reactRender()
+  //         }
+  //       });
+  //       function reactRender() {
+  //         React.render(
+  //           React.createElement(Crouton, {'message':$scope.message, 'type':'error', 'id':Date.now()})
+  //           ,
+  //           $element[0]
+  //         );
+  //       }
+  //       //reactRender(message);
+  //     }
+  //   };
+  // })
+  .controller('launchpad', function($timeout, $stateParams, $state) {
+    var self = this;
+    var LaunchpadStore = require('./launchpadFleetStore.js');
+    self.store = LaunchpadStore;
+    var listener = function(data) {
+      $timeout(function() {
+        self.descriptorCount = data.descriptorCount
+      });
+    };
+
+    LaunchpadStore.listen(listener);
+
+    LaunchpadStore.getCatalog();
+    self.openLog = function() {
+      LaunchpadStore.getSysLogViewerURL('lp');
+    }
+    self.openAbout = function() {
+      window.location.hash = window.location.hash + '/lp-about';
+    }
+    self.openDebug = function() {
+      window.location.hash = window.location.hash + '/lp-debug';
+    }
+    self.loadDashboard = function() {
+       window.location = '//' + window.location.hostname + ':8000/index.html?api_server=' + API_SERVER + '#/launchpad/' + $stateParams.management_domain;
+    }
+    self.loadComposer = function() {
+      LaunchpadStore.closeSocket();
+      LaunchpadStore.unlisten(listener);
+      window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=' + window.location.protocol + '//' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + $stateParams.management_domain + '&auth=' + encodeURIComponent(window.sessionStorage.getItem("auth")));
+    };
+    self.managementDomainName = $stateParams.management_domain;
+    self.networkServices = [1, 2];
+    self.descriptorCount = 0;
+});

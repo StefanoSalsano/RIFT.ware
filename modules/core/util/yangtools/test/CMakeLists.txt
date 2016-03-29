@@ -100,6 +100,7 @@ set(GTEST_C_SOURCES
   pbc_test_gencode2.cpp     # protobuf-c unit tests converted to gtests
   pbc_delta_test.cpp        # Protobuf Delta API test
   test_pb_schema.cpp        # Dynamic PB Schema Merge tests and other tests
+  yangjson_test.cpp         # Yang node to json conversion tests
 )
 
 rift_gtest(yangtools_gtest
@@ -202,6 +203,12 @@ rift_pytest(rw_pbcm_test
   DEPENDS yangtools_test_yang_gi
   )
 
+rift_pytest(rw_yang_json_test
+  TEST_ARGS rw_test_yang_json.py
+  TEST_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  DEPENDS yangtools_test_yang_gi
+  )
+
 rift_pytest(test_gi_pbc
   LONG_UNITTEST_TARGET
   TEST_ARGS test_gi_pbc.py
@@ -209,4 +216,10 @@ rift_pytest(test_gi_pbc
   DEPENDS yangtools_test_yang_gi
   )
 
+rift_pytest(rw_gi_thread_test
+  LONG_UNITTEST_TARGET
+  TEST_ARGS rw_gi_thread_test.py
+  TEST_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  DEPENDS yangtools_test_yang_gi
+  )
 

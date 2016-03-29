@@ -270,6 +270,14 @@ const rw_yang_pb_schema_t* rw_load_and_merge_schema(const rw_yang_pb_schema_t* s
  */
 const rw_yang_pb_schema_t* rw_load_schema(const char* so_filename, const char* yang_module_name);
 
+/// @cond GI_SCANNER
+/**
+* rw_yang_validate_schema:
+* @error_str: (out) (nullable) (transfer full)
+*/
+/// @endcond GI_SCANNER
+void rw_yang_validate_schema(const char* yang_module_name, char** error_str);
+
 /*****************************************************************************/
 // YangModule C APIs
 
@@ -512,6 +520,15 @@ bool_t rw_yang_node_is_rpc_input(rw_yang_node_t* ynode);
 
 //! C adaptor function. @sa YangNode::is_rpc_output(rw_yang_node_t* ynode)
 bool_t rw_yang_node_is_rpc_output(rw_yang_node_t* ynode);
+
+/// @cond GI_SCANNER
+/**
+* rw_yang_node_to_json:
+* @ymod:
+* @ostr: (out):
+*/
+/// @endcond GI_SCANNER
+void rw_yang_node_to_json(rw_yang_node_t* ynode, char** ostr, bool_t pretty_print);
 
 
 /*****************************************************************************/

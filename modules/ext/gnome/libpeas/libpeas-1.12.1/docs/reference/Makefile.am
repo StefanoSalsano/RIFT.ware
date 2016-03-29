@@ -101,6 +101,9 @@ include $(top_srcdir)/gtk-doc.make
 EXTRA_DIST += \
 	version.xml.in
 
+
+if ENABLE_GTK_DOC
+
 TESTS_ENVIRONMENT = \
 	SRCDIR=$(abs_srcdir)				\
 	BUILDDIR=$(abs_builddir)			\
@@ -108,5 +111,6 @@ TESTS_ENVIRONMENT = \
 	DOC_MAIN_SGML_FILE=$(DOC_MAIN_SGML_FILE)
 
 check-local: $(GTKDOC_CHECK)
-	@$(TESTS_ENVIRONMENT) $(GTKDOC_CHECK)
+	@$(TESTS_ENVIRONMENT) ./$(GTKDOC_CHECK)
 
+endif

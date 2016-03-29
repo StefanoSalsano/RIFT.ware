@@ -23,6 +23,7 @@
 
 #include "rwcli_schema.hpp"
 #include "yangncx.hpp"
+#include "rwyangutil.h"
 
 #define RIFT_INSTALL_ENV "RIFT_INSTALL"
 
@@ -35,7 +36,8 @@ const std::string SCHEMA_PATH("var/rift/schema");
 
 const fs::path YANG_DIR{"yang"};
 const fs::path VER_DIR{"version"};
-const std::string YANG_CUR_VER_LINK{"confd_yang"};
+
+const std::string YANG_CUR_VER_LINK{"latest"};
 
 const unsigned MAX_READ = 16;
 const unsigned BUF_LEN = (MAX_READ * (sizeof(struct inotify_event) + NAME_MAX + 1));
@@ -81,7 +83,7 @@ SchemaManager::SchemaManager(const std::string& schema_path)
   model_.reset(YangModelNcx::create_model());
   RW_ASSERT(model_);
 
-  model_->load_module(CONFIG_ROOT_MODEL);
+  model_->load_module(RW_BASE_MODEL);
 
   rift_install_ = getenv(RIFT_INSTALL_ENV);
   if (!rift_install_.length()) {
@@ -99,39 +101,8 @@ bool SchemaManager::load_all_schemas()
   // directory.
   fs::path schema_path = fs::path(rift_install_) / fs::path(schema_path_);
   fs::path version_dir = schema_path / VER_DIR;
-  fs::path confd_yang  = version_dir / fs::path(YANG_CUR_VER_LINK);
 
-  fs::path yang_dir;
-
-  if (fs::exists(confd_yang)) {
-
-    if (!fs::is_symlink(confd_yang)) {
-      std::cerr << "confd_yang is not a symlink? " << confd_yang << std::endl;
-      return false;
-    }
-
-    char buf[4096] = {};
-    auto len = readlink(confd_yang.string().c_str(), buf, sizeof(buf) - 1);
-    if (len == -1) {
-      std::cerr << "Failed to read symbolic link " << confd_yang.string() << std::endl;
-      return false;
-    }
-
-    boost::system::error_code ec;
-    yang_dir = fs::canonical(fs::path(buf), version_dir, ec);
-
-    if (ec) {
-      std::cerr << "Failed to create absolute path " << buf << ec.message() << std::endl;
-      return false;
-    }
-
-    if (fs::exists(yang_dir / YANG_DIR)) {
-      yang_dir /= YANG_DIR;
-    }
-
-  } else {
-    yang_dir = schema_path / YANG_DIR;
-  }
+  fs::path yang_dir = schema_path / YANG_DIR;
 
   if (!fs::exists(yang_dir)) {
     std::cerr << "Schema Yang directory does not exists " << yang_dir << std::endl;
@@ -197,7 +168,7 @@ InotifySchemaUpdater::InotifySchemaUpdater(SchemaManager* mgr)
   fs::path rift_yang_path(rift_install);
   fs::path rift_ver_path(rift_install);
 
-  rift_yang_path /= fs::path(mgr_->schema_path_) / YANG_DIR;
+  rift_yang_path /= LATEST_NORTHBOUND_VER_DIR;
   rift_ver_path /= fs::path(mgr_->schema_path_) / VER_DIR;
 
   inotify_fd_ = inotify_init1(IN_CLOEXEC);
@@ -215,7 +186,7 @@ InotifySchemaUpdater::InotifySchemaUpdater(SchemaManager* mgr)
               << errno << std::endl;
   }
 
-  // Watch for the delete followed by a create for confd_yang softlink 
+  // Watch for the delete followed by a create for latest softlink 
   ver_dir_watchfd_ = inotify_add_watch(inotify_fd_, rift_ver_path.c_str(), mask);
   if (ver_dir_watchfd_ == -1) {
     // report an error
@@ -252,7 +223,7 @@ int InotifySchemaUpdater::check_for_updates()
   // If the change is related to yang directory then add the file to the
   // changeset.
   // If the change is realted to version directory, then check if a new
-  // confd_yang link is created. If so, load the changeset schemas
+  // latest link is created. If so, load the changeset schemas
   for (char* ptr = buf; ptr < buf + nread;) {
     struct inotify_event* event = (struct inotify_event*)ptr;
 

@@ -6,7 +6,7 @@
 
 ./src-remove.sh
 
-#yfc schema -c rw-nsd.yang -f json -o json-nsd.json
+yfc schema -c rw-nsd.yang -f json -o json-nsd.json
 yfc schema -c rw-vnfd.yang -f json -o json-vnfd.json
 #yfc schema -c vnffgd.yang -f json -o json-vnffgd.json
 #yfc schema -c rw-vld.yang -f json -o json-vld.json

@@ -43,7 +43,6 @@ set(subdirs
   rwmc
   rwlaunchpad
   confd_client
-  examples
   rwcm
   )
 

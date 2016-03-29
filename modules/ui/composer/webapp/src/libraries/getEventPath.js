@@ -15,7 +15,7 @@ export default function getEventPath(event) {
 	// Array.unshift means put the value on the top of the array
 	const addToPath = (value) => path.unshift(value);
 	// warn: some browsers set the root's parent to itself
-	while (node && node !== node.parent) {
+	while (node && node !== node.parentNode) {
 		addToPath(node);
 		node = node.parentNode;
 	}

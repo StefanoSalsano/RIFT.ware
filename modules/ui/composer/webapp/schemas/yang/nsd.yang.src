@@ -84,14 +84,14 @@ module nsd
   grouping vnf-configuration {
     container vnf-configuration {
       description
-          "Information regarding the VNF configuration 
+          "Information regarding the VNF configuration
            is captured here. Note that if the NS contains
            multiple instances of the same VNF, each instance
            of the VNF may have different configuration";
 
       leaf config-type {
         description
-            "Must use this configuration type and fill in only pertaining 
+            "Must use this configuration type and fill in only pertaining
              config-method below";
         type enumeration {
           enum none;
@@ -150,7 +150,7 @@ module nsd
         case script {
           description
               "Use custom script for configuring the VNF.
-               This script is executed in the context of 
+               This script is executed in the context of
                Orchestrator.";
           container script {
             leaf script-type {
@@ -185,13 +185,13 @@ module nsd
         }
 
         leaf username {
-          description 
+          description
               "username for configuration.";
           type string;
         }
 
         leaf password {
-          description 
+          description
               "Password for configuration access authentication.";
           type string;
         }
@@ -211,14 +211,14 @@ module nsd
         }
 
         leaf config-delay {
-          description 
+          description
               "Wait (seconds) before applying the configuration to VNF";
           type uint64;
         }
       }
 
       list config-primitive {
-        ////rwpb:msg-new ConfigPrimitive;
+        //rwpb:msg-new ConfigPrimitive;
         description
             "List of configuration primitives supported by the
             configuration agent for this VNF.";
@@ -239,7 +239,7 @@ module nsd
       }
 
       list initial-config-primitive {
-        ////rwpb:msg-new InitialConfigPrimitive;
+        //rwpb:msg-new InitialConfigPrimitive;
         description
             "Initial set of configuration primitives.";
         key "seq";
@@ -250,7 +250,7 @@ module nsd
         }
 
         leaf name {
-          description 
+          description
               "Name of the configuration primitive.";
           type string;
         }
@@ -300,6 +300,12 @@ module nsd
 
       leaf vendor {
         description "Vendor of the NSD.";
+        type string;
+      }
+
+      leaf logo {
+        description
+          "Vendor logo for the Network Service";
         type string;
       }
 
@@ -356,19 +362,19 @@ module nsd
         key "id";
 
         leaf id {
-          description 
+          description
               "Identifier for the VLD.";
           type yang:uuid;
         }
 
         leaf name {
-          description 
+          description
               "Virtual Link Descriptor (VLD) name.";
           type string;
         }
 
         leaf short-name {
-          description 
+          description
               "Short name for VLD for UI";
           type string;
         }
@@ -417,8 +423,8 @@ module nsd
           }
 
            leaf vnfd-id-ref {
-             description 
-                 "A reference to a vnfd. This is a 
+             description
+                 "A reference to a vnfd. This is a
                   leafref to path:
                       ../../../nsd:constituent-vnfd
                       + [nsd:id = current()/../nsd:id-ref]
@@ -432,8 +438,8 @@ module nsd
            }
 
            leaf vnfd-connection-point-ref {
-             description 
-                 "A reference to a connection point name 
+             description
+                 "A reference to a connection point name
                   in a vnfd. This is a leafref to path:
                       /vnfd:vnfd-catalog/vnfd:vnfd
                       + [vnfd:id = current()/../nsd:vnfd-id-ref]
@@ -503,19 +509,19 @@ module nsd
         key "id";
 
         leaf id {
-          description 
+          description
               "Identifier for the VNFFGD.";
           type yang:uuid;
         }
 
         leaf name {
-          description 
+          description
               "VNFFGD name.";
           type string;
         }
 
         leaf short-name {
-          description 
+          description
               "Short name for VNFFGD for UI";
           type string;
         }
@@ -572,8 +578,8 @@ module nsd
             }
 
              leaf vnfd-id-ref {
-               description 
-                   "A reference to a vnfd. This is a 
+               description
+                   "A reference to a vnfd. This is a
                     leafref to path:
                         ../../../../nsd:constituent-vnfd
                         + [nsd:id = current()/../nsd:id-ref]
@@ -587,8 +593,8 @@ module nsd
              }
 
              leaf vnfd-connection-point-ref {
-               description 
-                   "A reference to a connection point name 
+               description
+                   "A reference to a connection point name
                     in a vnfd. This is a leafref to path:
                         /vnfd:vnfd-catalog/vnfd:vnfd
                         + [vnfd:id = current()/../nsd:vnfd-id-ref]
@@ -629,9 +635,55 @@ module nsd
             }
           }
 
-          container match-attributes {
+
+          leaf member-vnf-index-ref {
+            description "Reference to member-vnf within constituent-vnfds";
+            type leafref {
+              path "../../../nsd:constituent-vnfd/nsd:member-vnf-index";
+            }
+          }
+
+          leaf vnfd-id-ref {
+            description
+                "A reference to a vnfd. This is a
+                    leafref to path:
+                        ../../../nsd:constituent-vnfd
+                        + [nsd:id = current()/../nsd:id-ref]
+                        + /nsd:vnfd-id-ref
+                    NOTE: An issue with confd is preventing the
+                    use of xpath. Seems to be an issue with leafref
+                    to leafref, whose target is in a different module.
+                    Once that is resovled this will switched to use
+                    leafref";
+            type yang:uuid;
+          }
+
+          leaf vnfd-connection-point-ref {
+            description
+                "A reference to a connection point name
+                    in a vnfd. This is a leafref to path:
+                        /vnfd:vnfd-catalog/vnfd:vnfd
+                        + [vnfd:id = current()/../nsd:vnfd-id-ref]
+                        + /vnfd:connection-point/vnfd:name
+                    NOTE: An issue with confd is preventing the
+                    use of xpath. Seems to be an issue with leafref
+                    to leafref, whose target is in a different module.
+                    Once that is resovled this will switched to use
+                    leafref";
+            type string;
+          }
+
+          list match-attributes {
             description
                 "List of match attributes.";
+
+            key "id";
+
+            leaf id {
+              description
+                  "Identifier for the classifier match attribute rule.";
+              type yang:uuid;
+            }
 
             leaf ip-proto {
               description
@@ -672,7 +724,7 @@ module nsd
 
       list parameter-pool {
         description
-          "Pool of parameter values which must be 
+          "Pool of parameter values which must be
            pulled from during configuration";
         key "name";
 
@@ -759,7 +811,7 @@ module nsd
 
           leaf vnfd-id-ref {
             description
-                "A reference to a vnfd. This is a 
+                "A reference to a vnfd. This is a
                  leafref to path:
                      ../../../../nsd:constituent-vnfd
                      + [nsd:id = current()/../nsd:id-ref]

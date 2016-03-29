@@ -80,12 +80,12 @@ rw_tree_walker_status_t find_child_iter (RwPbcmTreeIterator *parent,
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
 
   if (value.type != RW_YLIB_DATA_TYPE_KS_PATH) {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   if (all_keys) {
     // Add validation for keys being present
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   RwPbcmTreeIterator child = *parent;

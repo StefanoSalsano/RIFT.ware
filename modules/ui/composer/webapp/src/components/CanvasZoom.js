@@ -40,10 +40,7 @@ const CanvasZoom = React.createClass({
 		const zoom = this.props.zoom || this.props.defaultZoom
 		const displayValue = numeral(zoom).format('0.0') + '%';
 		return (
-			<div ref="canvasZoom" className="CanvasZoom" style={this.props.style}
-				 onMouseOver={this.pauseSelectionManager}
-				 onMouseOut={this.resumeSelectionManager}
-				 onMouseLeave={this.resumeSelectionManager}>
+			<div ref="canvasZoom" className="CanvasZoom" style={this.props.style} onClick={event => event.preventDefault()}>
 				<Range
 					   value={zoom} min={this.props.min} max={this.props.max}
 					   title="Zoom the canvas. Double Click to reset to 100%."
@@ -59,12 +56,6 @@ const CanvasZoom = React.createClass({
 	onDblClick() {
 		const zoom = this.props.defaultZoom;
 		CanvasEditorActions.setCanvasZoom(zoom);
-	},
-	pauseSelectionManager() {
-		SelectionManager.pause();
-	},
-	resumeSelectionManager() {
-		SelectionManager.resume();
 	}
 });
 

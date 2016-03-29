@@ -19,11 +19,18 @@ class CrashDetails extends React.Component {
   constructor(props) {
     super(props)
     var self = this;
+    this.state = crashStore.getState();
+    crashStore.getCatalog();
     crashStore.listen(function(data) {
       self.setState({
         list:data.crashList,
         noDebug:!self.hasDebugData(data.crashList)
-      })
+      });
+      if (data.descriptorCount) {
+        self.setState({
+          descriptorCount: data.descriptorCount
+        });
+      }
     });
     crashStore.get();
   }
@@ -43,11 +50,15 @@ class CrashDetails extends React.Component {
     return false;
   }
   downloadFile(fileName, urlData) {
+    var replacedNewLines = urlData.replace(/\\n/g, '\n');
+    var replacedTabs = replacedNewLines.replace(/\\t/g, '\t');
+    var replacedQuotes= replacedTabs.replace(/\\"/g, '"');
+    var textFileBlob = new Blob([replacedQuotes], {type: 'text/plain;charset=UTF-8'});
     var aLink = document.createElement('a');
     var evt = document.createEvent("HTMLEvents");
     evt.initEvent("click");
     aLink.download = fileName;
-    aLink.href = urlData;
+    aLink.href = window.URL.createObjectURL(textFileBlob);
     aLink.dispatchEvent(evt);
   }
   openAbout = function() {
@@ -57,7 +68,12 @@ class CrashDetails extends React.Component {
     MissionControlStore.getSysLogViewerURL('mc');
 
   }
-
+  loadComposer = () => {
+  let API_SERVER = rw.getSearchParams(window.location).api_server;
+  let auth = window.sessionStorage.getItem("auth");
+  let mgmtDomainName = window.location.hash.split('/')[2];
+  window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=' + window.location.protocol + '//' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + mgmtDomainName + '&auth=' + auth);
+};
   render() {
     let html;
     var list = null;
@@ -65,7 +81,7 @@ class CrashDetails extends React.Component {
       var tree = <div style={{'margin-left':'auto', 'margin-right':'auto', 'width':'230px', 'padding':'90px'}}> No Debug Information Available </div>;
       if (!this.state.noDebug)
       {
-        var tree = this.state.list.map((node, i) => {
+        var tree = this.state.list && this.state.list.map((node, i) => {
                   var vm = node.name;
                   var vm_label = <span>{vm}</span>;
                   var backtrace = node.backtrace;
@@ -96,7 +112,7 @@ class CrashDetails extends React.Component {
       html = (
         <div>
               <div className="form-actions">
-                <a role="button" className="primary" onClick={this.state.noDebug ? false : this.downloadFile.bind(this, 'crash.txt', 'data:text;charset=UTF-8,' + encodeURIComponent(JSON.stringify(this.state.list)))}> Download Crash Details</a>
+                <a role="button" className="primary" onClick={this.state.noDebug ? false : this.downloadFile.bind(this, 'crash.txt', 'data:text;charset=UTF-8,' + decodeURIComponent(JSON.stringify(this.state.list, null, 2)))}> Download Crash Details</a>
               </div>
               <div className="crash-container">
                 <h2> Debug Information </h2>
@@ -114,7 +130,16 @@ class CrashDetails extends React.Component {
       onClick: function() {
         window.location.hash = refPage.hash
       }
-      }];
+      },{
+      name: 'CATALOG(' + this.state.descriptorCount + ')',
+      onClick: self.loadComposer
+    }];
+    let mgmtDomainName = window.location.hash.split('/')[2];
+      navItems.push({
+        name: 'ACCOUNTS',
+        href: '#/launchpad/' + mgmtDomainName + '/cloud-account/dashboard',
+        onClick: this.componentWillUnmount
+      })
     return (
             <div className="crash-app">
               <AppHeader title={'Launchpad: Debug'} nav={navItems} />{html}

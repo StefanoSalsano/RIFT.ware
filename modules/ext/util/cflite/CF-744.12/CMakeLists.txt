@@ -51,6 +51,7 @@ set (cflags
 set (linker_flags
   "--no-undefined"
   -pthread
+  "-Wl,--build-id"
 )
 
 set (cf_lib_names

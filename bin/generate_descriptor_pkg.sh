@@ -12,8 +12,8 @@
 
 # Usage: generate_descriptor_pkg.sh <base-directory> <package-directory>
 
-basedir=$1
-dir=$2
+basedir=${1%/}
+dir=${2%/}
 cd ${basedir}/${dir}
 rm -rf checksums.txt
 find * -type f |
@@ -21,4 +21,4 @@ find * -type f |
         md5sum $file >> checksums.txt
     done
 cd ..
-tar -zcvf ${dir}.tar.gz ${dir}
+tar -zcvf ${dir}.tar.gz ${dir}  --remove-files

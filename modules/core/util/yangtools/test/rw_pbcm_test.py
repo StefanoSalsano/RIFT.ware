@@ -16,6 +16,9 @@ import unittest
 import xmlrunner
 import gi
 import re
+gi.require_version('RwTypes', '1.0')
+gi.require_version('CompanyYang', '1.0')
+gi.require_version('DocumentYang', '1.0')
 from gi.repository import RwTypes
 from gi.repository import CompanyYang
 from gi.repository import DocumentYang

@@ -1,0 +1,19 @@
+{
+  "test_name":"TC_CAL_MODULE_TESTS",
+  "commandline":"./cal_module_test",
+  "target_vm":"VM",
+  "test_description":"System test targeting module tests for CAL accounts",
+  "run_as_root": true,
+  "status":"working",
+  "keywords":["nightly","smoke","smoke_stable","MANO","cloudsim"],
+  "timelimit": 2400,
+  "networks":[],
+  "vms":[
+    {
+      "name": "VM",
+      "memory": 8192,
+      "cpus": 4
+    }
+  ]
+}
+

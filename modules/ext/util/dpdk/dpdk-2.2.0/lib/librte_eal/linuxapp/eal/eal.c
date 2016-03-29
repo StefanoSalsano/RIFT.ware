@@ -199,8 +199,8 @@ rte_eal_config_create(void)
 	retval = fcntl(mem_cfg_fd, F_SETLK, &wr_lock);
 	if (retval < 0){
 		close(mem_cfg_fd);
-		rte_exit(EXIT_FAILURE, "Cannot create lock on '%s'. Is another primary "
-				"process running?\n", pathname);
+		rte_exit(EXIT_FAILURE, "Cannot create lock on '%s'm error %d, fd %d. Is another primary "
+				"process running?\n", pathname, retval, mem_cfg_fd);
 	}
 
 	rte_mem_cfg_addr = mmap(rte_mem_cfg_addr, sizeof(*rte_config.mem_config),

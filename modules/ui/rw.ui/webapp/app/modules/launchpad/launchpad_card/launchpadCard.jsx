@@ -32,7 +32,7 @@ class LaunchpadCard extends React.Component {
     let metrics = '';
     let monitoring_params_data;
     let deleting = false;
-
+    let metricsAndParameters = [];
     if(this.props.nsr && this.props.nsr.data) {
       metrics = this.props.nsr.data.map((info, index)=> {
           return (<LaunchpadNSInfo  key={index} name={info.name} data={info.data}/>)
@@ -47,6 +47,18 @@ class LaunchpadCard extends React.Component {
 
     if (this.props.nsr && this.props.nsr.deleting) {
       deleting = true;
+    }
+
+    if(true) {
+      // metricsAndParameters.push(<LaunchpadControls controlSets={this.props.nsr.nsControls} />)
+      if (this.props.nsr) {
+        if (this.props.nsr["nfvi-metrics"]) {
+          metricsAndParameters.push(<LpCardNfviMetrics name="NFVI METRICS" data={this.props.nsr["nfvi-metrics"]} />)
+        }
+        if (this.props.nsr["epa-params"]) {
+          metricsAndParameters.push(<EpaParams data={this.props.nsr["epa-params"]} />);
+        }
+      }
     }
 
     if(this.props.create){
@@ -66,9 +78,7 @@ class LaunchpadCard extends React.Component {
               NSD: {this.props.nsr.nsd_name}
             </div>
             <MonitoringParamsCarousel component_list={monitoring_params_data} slideno={this.props.slideno}/>
-            <LaunchpadControls controlSets={this.props.nsr.nsControls} />
-            <LpCardNfviMetrics name="NFVI METRICS" data={this.props.nsr["nfvi-metrics"]} />
-            <EpaParams data={this.props.nsr["epa-params"]} />
+            {metricsAndParameters}
           </div>
           }
         </DashboardCard>
@@ -243,9 +253,11 @@ export class NsrPrimitiveJobList extends React.Component {
   render () {
     let tree = null;
     tree = this.props.jobs.map(function(job, jindex) {
-          let nsrJobLabel = "NSR Job ID:" + job['job-id']
+          let nsrJobLabel = job['job-name'] ? job['job-name'] + ': ' + job['job-status'] : "NSR Job ID:" + job['job-id'] + ': ' + job['job-status']
           return (
-              <TreeView key={jindex} nodeLabel={nsrJobLabel} className="nsrJob">
+              <TreeView key={jindex} nodeLabel={nsrJobLabel} className="nsrJob" defaultCollapsed={true}>
+                <h4>NSR Job Name: {job['job-name']}</h4>
+                <h4>NSR Job ID: {job['job-id']}</h4>
                 <h4>NSR Job Status: {job['job-status']}</h4>
                   {job.vnfr ?
                   <TreeView defaultCollapsed={true} className="vnfrJobs" nodeLabel="VNFR Jobs">
@@ -254,7 +266,7 @@ export class NsrPrimitiveJobList extends React.Component {
                         <TreeView key={vindex} nodeLabel="VNFR Job">
                           <h5>VNFR ID: {v.id}</h5>
                           <h5>VNFR Job Status: {v['vnf-job-status']}</h5>
-                            {v.primitive.map((p, pindex) => {
+                            {v.primitive && v.primitive.map((p, pindex) => {
                               return (
                                 <div key={pindex}>
                                   <div>Name: {p.name}</div>

@@ -12,6 +12,8 @@ import DashboardCard from '../../components/dashboard_card/dashboard_card.jsx';
 import AppHeader from '../../components/header/header.jsx';
 import TopologyTree from '../../components/topology/topologyTree.jsx';
 import LaunchpadBreadcrumbs from '../launchpadBreadcrumbs.jsx';
+import Button from '../../components/button/rw.button.js';
+
 export default class Topologyview extends React.Component {
     constructor(props) {
         super(props);
@@ -47,18 +49,23 @@ export default class Topologyview extends React.Component {
         TopologyStore.unlisten(this.storeListener);
     }
     componentDidMount() {
-        let nsrRegEx = new RegExp("([0-9a-zA-Z-]+)\/topology");
+        let nsrRegEx = new RegExp("([0-9a-zA-Z-]+)\/compute-topology");
         let nsr_id;
         try {
           nsr_id = window.location.hash.match(nsrRegEx)[1];
         } catch (e) {
-
+            console.log("TopologyView.componentDidMount exception: ", e);
         }
-        TopologyStore.openNSRTopologySocket(nsr_id);
+        TopologyStore.getTopologyData(nsr_id);
     }
     selectNode = (node) => {
         TopologyStore.selectNode(node);
     }
+
+    handleReloadData = () => {
+        this.componentDidMount();
+    }
+
     render() {
         let html;
         let mgmtDomainName = window.location.hash.split('/')[2];
@@ -73,27 +80,35 @@ export default class Topologyview extends React.Component {
           name: 'VIEWPORT',
           onClick: this.componentWillUnmount
         },{
-          name: 'Topology'
+          name: 'COMPUTE TOPOLOGY'
+        },{
+            href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2',
+            name: 'NETWORK TOPOLOGY',
+            onClick: this.componentWillUnmount
         }
-        // Commented out for OSM_MWC
-        // ,{
-        //     href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2',
-        //     name: 'TOPOLOGYL2',
-        //     onClick: this.componentWillUnmount
-        // }, {
-        //     href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2Vm',
-        //     name: 'TOPOLOGYL2VM',
-        //     onClick: this.componentWillUnmount
-        // }
         ];
-        let nav = <AppHeader title="Launchpad: Viewport Topology" nav={navItems} />
+
+        let nav = <AppHeader title="Launchpad: Viewport: Compute Topology" nav={navItems} />
+        let reloadButton = null;
+
+        if (this.state.ajax_mode) {
+            reloadButton = <Button label="Reload data" className="reloadButton"
+                onClick={this.handleReloadData} />
+        }
+ 
         html = (
             <div className="app-body">
                 {nav}
+                {reloadButton}
                 <div className="topologyView">
                     <i className="corner-accent top left"></i>
                     <i className="corner-accent top right"></i>
-                    <TopologyTree data={this.state.topologyData} selectNode={this.selectNode} hasSelected={this.state.hasSelected} />
+                    <TopologyTree
+                        data={this.state.topologyData}
+                        selectNode={this.selectNode}
+                        hasSelected={this.state.hasSelected}
+                        headerExtras={reloadButton}
+                    />
                     <RecordDetail data={this.state.detailView || {}} isLoading={this.state.detailsLoading} />
                     <i className="corner-accent bottom left"></i>
                     <i className="corner-accent bottom right"></i>

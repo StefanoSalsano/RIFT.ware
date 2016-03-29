@@ -91,7 +91,7 @@ class EnumFieldGenerator : public FieldGenerator {
   string GetGiReturnAnnotations() const;
   string GetGiGetterReturnType() const;
   string GetGiGetterParameterList() const;
-  string GetGiParameterAnnotations() const;
+  string GetGiSetterAnnotations() const;
   string GetGiSetterParameterList() const;
   void GenerateGiCGetterMethod(io::Printer* printer) const;
   void GenerateGiCSetterMethod(io::Printer* printer) const;

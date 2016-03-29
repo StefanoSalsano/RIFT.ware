@@ -92,7 +92,7 @@ rw_status_t rwvcs_event_run(
  *                               or allocation errors.
  */
 static rw_status_t heartbeatmon_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     char *vm_ip_address,
     char *lead_vm_ip_address,
     const char * instance_name);
@@ -132,7 +132,7 @@ static rw_status_t generate_instance_name_id(
  * @return              - RW_STATUS_SUCCESS
  *                        aborts on failure
  */
-static rw_status_t reaper_start(
+rw_status_t reaper_start(
     rwvcs_instance_ptr_t instance,
     const char * instance_name);
 
@@ -148,7 +148,7 @@ static rw_status_t reaper_start(
  *                      aborts on failure
  */
 static rw_status_t rwcollection_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_collection * pb,
     vcs_manifest_action * m_action,
@@ -183,7 +183,7 @@ static rw_status_t rwvm_annex(
  *                      aborts on failure
  */
 static rw_status_t rwvm_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_vm *m_rwvm,
     vcs_manifest_action *m_action,
@@ -202,7 +202,7 @@ static rw_status_t rwvm_start(
  *                      aborts on failure
  */
 static rw_status_t rwproc_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_proc *m_rwproc,
     vcs_manifest_action *m_action,
@@ -221,7 +221,7 @@ static rw_status_t rwproc_start(
  *                      aborts on failure
  */
 static rw_status_t rwproc_native_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_native_proc *m_proc,
     vcs_manifest_action *m_action,
@@ -254,7 +254,7 @@ static rw_status_t rwvcs_get_vm_from_pool(
  *                      aborts on failure
  */
 static rw_status_t rwtasklet_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_tasklet *m_rwtasklet,
     vcs_manifest_action *m_action,
@@ -303,18 +303,20 @@ static char * envstr(const char * name);
  *                          process group.
  * @param track           - True if this process should be tracked via an open
  *                          file handle.
+ * @param is_rwproc       - True if this process is an RWPROC being launched.
  * @param stream_paths    - Paths for stream redirection.
  * @param term_mode       - Specifies the terminal control mode
  * @return                - RW_STATUS_SUCCESS, RW_STATUS_FAILURE.
  */
 static rw_status_t launch_process(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * instance_name,
     const char * path,
     char * const * argv,
     char * const * envp,
     bool reap,
     bool track,
+    bool is_rwproc,
     const struct stream_paths * stream_paths,
     pid_t * pid,
     native_proc_term_mode_t term_mode);
@@ -349,7 +351,7 @@ static char ** add_valgrind(
  * @returns Returns RW_STATUS_SUCCESS on success, otherwise returns
  * RW_STATUS_FAILURE.
  */
-static rw_status_t open_slave_pty(struct rwmain * rwmain, int master_pty_fd);
+static rw_status_t open_slave_pty(struct rwmain_gi * rwmain, int master_pty_fd);
 
 /*
  * Starts a TerminalIO tasklet
@@ -361,11 +363,11 @@ static rw_status_t open_slave_pty(struct rwmain * rwmain, int master_pty_fd);
  * RW_STATUS_FAILURE.
  */
 static rw_status_t start_terminal_io_tasklet(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char* parent_id);
 
 static rw_status_t event_run(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_event *m_event)
 {
@@ -433,7 +435,7 @@ static rw_status_t event_run(
 }
 
 rw_status_t rwmain_action_run(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_action *action)
 {
@@ -482,7 +484,7 @@ rw_status_t rwmain_action_run(
           "Failed to get instance name and id for %s, parent %s",
           action->start->component_name,
           parent_id);
-      RW_ASSERT(0);
+      RW_CRASH();
       goto done;
     }
 
@@ -594,7 +596,7 @@ generate_instance_name_id(
   return RW_STATUS_SUCCESS;
 }
 
-static rw_status_t reaper_start(rwvcs_instance_ptr_t instance, const char * instance_name)
+rw_status_t reaper_start(rwvcs_instance_ptr_t instance, const char * instance_name)
 {
   pid_t pid;
   int rc;
@@ -610,7 +612,13 @@ static rw_status_t reaper_start(rwvcs_instance_ptr_t instance, const char * inst
   RW_ASSERT(rc != -1);
 
   rc = unlink(reaper_sock_path);
-  (void)rc;
+  if ((rc == -1) && (errno != ENOENT)) {
+    RWTRACE_ERROR(instance->rwvx->rwtrace,
+                 RWTRACE_CATEGORY_RWVCS,
+                 "unlink failed: program=%s errno=%s\n",
+                 reaper_sock_path,
+                 strerror(errno));
+  }
 
   pid = fork();
   if (pid < 0) {
@@ -686,7 +694,7 @@ static rw_status_t reaper_start(rwvcs_instance_ptr_t instance, const char * inst
         }
       }
 #endif
-      RW_ASSERT(0);
+      RW_CRASH();
     }
   }
 
@@ -696,7 +704,7 @@ static rw_status_t reaper_start(rwvcs_instance_ptr_t instance, const char * inst
 }
 
 static rw_status_t rwcollection_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_collection * pb,
     vcs_manifest_action * m_action,
@@ -715,6 +723,11 @@ static rw_status_t rwcollection_start(
     if (m_action->start->has_config_ready &&
         m_action->start->config_ready) {
       status = rwvcs_rwzk_update_config_ready(rwvcs, instance_name, m_action->start->config_ready);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+    }
+    if (m_action->start->has_recovery_action &&
+        m_action->start->recovery_action) {
+      status = rwvcs_rwzk_update_recovery_action(rwvcs, instance_name, m_action->start->recovery_action);
       RW_ASSERT(status == RW_STATUS_SUCCESS);
     }
     goto done;
@@ -738,6 +751,8 @@ static rw_status_t rwcollection_start(
   component->state = RW_BASE_STATE_TYPE_STARTING;
   component->has_config_ready = m_action->start->has_config_ready;
   component->config_ready = m_action->start->config_ready;
+  component->has_recovery_action = m_action->start->has_recovery_action;
+  component->recovery_action = m_action->start->recovery_action;
   component->collection_info->collection_type = strdup(pb->collection_type);
   if (!component->collection_info->collection_type) {
     RW_ASSERT(component->collection_info->collection_type);
@@ -880,10 +895,10 @@ rwvcs_get_vm_from_pool(
 
 const char *multivm_rwzk_path = "/sys/rwmain/iamup";
 const char *multivm_rwzk_lock = "/sys/rwmain/iamup-LOCK";
-static rw_status_t watcher_multivm_rwmain(void* ud);
+static void watcher_multivm_rwmain(void* ud);
 
 static rw_status_t rwvm_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_vm *m_rwvm,
     vcs_manifest_action *m_action,
@@ -926,6 +941,12 @@ static rw_status_t rwvm_start(
       RW_ASSERT(status == RW_STATUS_SUCCESS);
     }
 
+    if (m_action->start->has_recovery_action &&
+        m_action->start->recovery_action) {
+      status = rwvcs_rwzk_update_recovery_action(rwvcs, instance_name, m_action->start->recovery_action);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+    }
+
     if (parent_id
         && !rwmain->parent_id) {
       rwmain->parent_id = strdup(parent_id);
@@ -942,8 +963,14 @@ static rw_status_t rwvm_start(
         rwmain->parent_id,
         multivm_rwzk_path);
 
-    status = rwvcs_rwzk_watcher_start(rwvcs, multivm_rwzk_path, watcher_multivm_rwmain, (void *)rwmain);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    rwcal_closure_ptr_t closure = rwvcs_rwzk_watcher_start(
+        rwvcs,
+        multivm_rwzk_path, 
+        rwmain->rwvx->rwsched_tasklet,
+        rwsched_dispatch_get_main_queue(rwmain->rwvx->rwsched),
+        watcher_multivm_rwmain,
+        (void *)rwmain);
+    RW_ASSERT(closure);
 
     status = rwvcs_rwzk_seed_auto_instance(rwvcs, 1, multivm_rwzk_lock);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -974,6 +1001,10 @@ static rw_status_t rwvm_start(
         protobuf_free_stack(info);
       }
     }
+    struct timespec tp;
+    r = clock_gettime(CLOCK_MONOTONIC, &tp);
+    RW_ASSERT(r == 0);
+    rwmain->start_sec = tp.tv_sec;
 
     goto done;
   }
@@ -1014,6 +1045,8 @@ static rw_status_t rwvm_start(
   rwvm->state = RW_BASE_STATE_TYPE_STARTING;
   rwvm->has_config_ready = m_action->start->has_config_ready;
   rwvm->config_ready = m_action->start->config_ready;
+  rwvm->has_recovery_action = m_action->start->has_recovery_action;
+  rwvm->recovery_action = m_action->start->recovery_action;
   if (m_rwvm && m_rwvm->has_leader) {
     rwvm->vm_info->has_leader = true;
     rwvm->vm_info->leader = m_rwvm->leader;
@@ -1099,6 +1132,7 @@ static rw_status_t rwvm_start(
             (char **)envp,
             no_reap_launched_process,
             no_track_launched_process,
+            false,
             NULL,
             &pid,
             NATIVE_PROC_TERM_MODE_NONE);
@@ -1115,6 +1149,7 @@ static rw_status_t rwvm_start(
             (char **)envp,
             no_reap_launched_process,
             no_track_launched_process,
+            false,
             NULL,
             &pid,
             NATIVE_PROC_TERM_MODE_NONE);
@@ -1234,6 +1269,7 @@ static rw_status_t rwvm_start(
           NULL,
           no_reap_launched_process,
           no_track_launched_process,
+          false,
           NULL,
           &pid,
           NATIVE_PROC_TERM_MODE_NONE);
@@ -1267,6 +1303,7 @@ static rw_status_t rwvm_start(
         NULL,
         no_reap_launched_process,
         no_track_launched_process,
+        false,
         NULL,
         &pid,
         NATIVE_PROC_TERM_MODE_NONE);
@@ -1315,7 +1352,7 @@ done:
 }
 
 static rw_status_t rwproc_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_proc *m_rwproc,
     vcs_manifest_action *m_action,
@@ -1343,12 +1380,22 @@ static rw_status_t rwproc_start(
       "starting rwproc instance name = \"%s\"",
       instance_name);
 
-  rwproc = rwvcs_rwproc_alloc(
-      rwvcs,
-      parent_id,
-      m_action->start->component_name,
-      instance_id,
-      instance_name);
+  rw_component_info proc;
+  bool alloced = true;
+  status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &proc);
+  if ((status == RW_STATUS_SUCCESS) 
+      && (proc.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+    rwproc = &proc;
+    alloced = false;
+  }
+  else {
+    rwproc = rwvcs_rwproc_alloc(
+        rwvcs,
+        parent_id,
+        m_action->start->component_name,
+        instance_id,
+        instance_name);
+  }
   RW_ASSERT(rwproc);
 
   if (m_rwproc && m_rwproc->run_as && !rwvcs->pb_rwmanifest->init_phase->settings->rwvcs->collapse_each_rwprocess)
@@ -1419,9 +1466,13 @@ static rw_status_t rwproc_start(
   rwproc->proc_info->has_pid = true;
 
   rwproc->has_state = true;
-  rwproc->state = RW_BASE_STATE_TYPE_STARTING;
+  if (rwproc->state != RW_BASE_STATE_TYPE_TO_RECOVER) {
+    rwproc->state = RW_BASE_STATE_TYPE_STARTING;
+  }
   rwproc->has_config_ready = m_action->start->has_config_ready;
   rwproc->config_ready = m_action->start->config_ready;
+  rwproc->has_recovery_action = m_action->start->has_recovery_action;
+  rwproc->recovery_action = m_action->start->recovery_action;
 
   // This needs to run first to make sure the mq is created prior to the
   // child writing to it.
@@ -1483,7 +1534,8 @@ static rw_status_t rwproc_start(
           valgrind_argv,
           envp,
           no_reap_launched_process,
-          no_track_launched_process,
+          track_launched_process,
+          true, //is_rwproc = true
           NULL,
           &pid,
           NATIVE_PROC_TERM_MODE_NONE);
@@ -1499,7 +1551,8 @@ static rw_status_t rwproc_start(
         argv,
         envp,
         no_reap_launched_process,
-        no_track_launched_process,
+        track_launched_process,
+        true, //is_rwproc = true
         NULL,
         &pid,
         NATIVE_PROC_TERM_MODE_NONE);
@@ -1524,7 +1577,13 @@ static rw_status_t rwproc_start(
   }
 
   free(argv);
-  free(rwproc);
+  if (alloced) {
+    free(rwproc);
+  }
+  else {
+    protobuf_c_message_free_unpacked_usebody(NULL, &proc.base);
+  }
+
 
   if (grp)
     free(grp);
@@ -1549,7 +1608,7 @@ static rw_status_t rwproc_start(
 }
 
 static rw_status_t rwproc_native_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_native_proc *m_proc,
     vcs_manifest_action *m_action,
@@ -1752,6 +1811,7 @@ static rw_status_t rwproc_native_start(
       envp,
       reap_launched_process,
       track_launched_process,
+      false,
       &stream_paths,
       &pid,
       term_mode);
@@ -1767,6 +1827,7 @@ static rw_status_t rwproc_native_start(
       envp,
       reap_launched_process,
       track_launched_process,
+      false,
       &stream_paths,
       &pid,
       term_mode);
@@ -1798,6 +1859,8 @@ static rw_status_t rwproc_native_start(
   rwproc->proc_info->native = true;
   rwproc->has_config_ready = m_action->start->has_config_ready;
   rwproc->config_ready = m_action->start->config_ready;
+  rwproc->has_recovery_action = m_action->start->has_recovery_action;
+  rwproc->recovery_action = m_action->start->recovery_action;
 
   status = rwvcs_rwzk_node_update(rwvcs, rwproc);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -1839,7 +1902,7 @@ done:
 }
 
 rw_status_t rwmain_native_proc_restart(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * proc)
 {
   rw_status_t status;
@@ -1904,7 +1967,7 @@ done:
 }
 
 static rw_status_t rwtasklet_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * parent_id,
     vcs_manifest_tasklet *m_rwtasklet,
     vcs_manifest_action *m_action,
@@ -1917,26 +1980,40 @@ static rw_status_t rwtasklet_start(
 
   RWLOG_EVENT(rwmain->rwvx->rwlog, RwVcs_notif_VtaskletStart, instance_name, instance_id);
 
+  rw_component_info tasklet;
+  bool alloced = true;
   RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);
-  component = rwvcs_rwtasklet_alloc(
-      rwmain->rwvx->rwvcs,
-      parent_id,
-      m_action->start->component_name,
-      instance_id,
-      instance_name);
+  status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, instance_name, &tasklet);
+  if ((status == RW_STATUS_SUCCESS) 
+      && (tasklet.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+    component = &tasklet;
+    alloced = false;
+  }
+  else {
+    component = rwvcs_rwtasklet_alloc(
+        rwmain->rwvx->rwvcs,
+        parent_id,
+        m_action->start->component_name,
+        instance_id,
+        instance_name);
+  }
   RWVCS_LATENCY_CHK_POST(rwmain->rwvx->rwtrace, RWTRACE_CATEGORY_RWVCS,
                          rwvcs_rwtasklet_alloc, "rwvcs_rwtasklet_alloc:%s", instance_name);
   if (!component) {
     rwmain_trace_crit(rwmain, "Failed to allocate component for %s", instance_name);
     status = RW_STATUS_FAILURE;
-    RW_ASSERT(0);
+    RW_CRASH();
     goto done;
   }
 
   component->has_state = true;
-  component->state = RW_BASE_STATE_TYPE_INITIALIZING;
+  if (component->state != RW_BASE_STATE_TYPE_TO_RECOVER) {
+    component->state = RW_BASE_STATE_TYPE_INITIALIZING;
+  }
   component->has_config_ready = m_action->start->has_config_ready;
   component->config_ready = m_action->start->config_ready;
+  component->has_recovery_action = m_action->start->has_recovery_action;
+  component->recovery_action = m_action->start->recovery_action;
   RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);
   status = rwvcs_rwzk_node_update(rwmain->rwvx->rwvcs, component);
   RWVCS_LATENCY_CHK_POST(rwmain->rwvx->rwtrace, RWTRACE_CATEGORY_RWVCS,
@@ -1956,7 +2033,7 @@ static rw_status_t rwtasklet_start(
   if (!rt) {
     rwmain_trace_crit(rwmain, "Failed to allocate rwmain_tasklet for %s", instance_name);
     status = RW_STATUS_FAILURE;
-    RW_ASSERT(0);
+    RW_CRASH();
     goto done;
   }
   rt->rwmain = rwmain;
@@ -1975,7 +2052,7 @@ static rw_status_t rwtasklet_start(
     if (status != RW_STATUS_SUCCESS)
       rwmain_trace_crit(rwmain, "Failed to mark %s as CRASHED", instance_name);
 
-    RW_ASSERT(0);
+    RW_CRASH();
     goto done;
   }
 
@@ -1986,12 +2063,19 @@ done:
     if (instance_name)
       free(instance_name);
   }
+  if (alloced) {
+    free(component);
+  }
+  else {
+    protobuf_c_message_free_unpacked_usebody(NULL, &tasklet.base);
+  }
+
 
   return status;
 }
 
 rw_status_t rwmain_tasklet_restart(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * tasklet_instance)
 {
   rw_status_t status;
@@ -2076,7 +2160,7 @@ static void on_serf_event(void * ctx, const char * event, const struct serf_memb
 
 rw_status_t
 rwmain_rwvm_init(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     vcs_manifest_vm * vm_def,
     const char * component_name,
     uint32_t instance_id,
@@ -2112,7 +2196,7 @@ rwmain_rwvm_init(
           "Failed to send vm pid %d to reaper: %s",
           getpid(),
           strerror(r));
-      RW_ASSERT(0);
+      RW_CRASH();
     }
   }
 
@@ -2143,6 +2227,7 @@ rwmain_rwvm_init(
         NULL,
         reap_launched_process,
         track_launched_process,
+        false,
         NULL,
         NULL,
         NATIVE_PROC_TERM_MODE_NONE);
@@ -2212,7 +2297,7 @@ static char * envstr(const char * name) {
 
 rw_status_t
 rwmain_rwproc_init(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     vcs_manifest_proc * proc_def,
     const char * component_name,
     uint32_t instance_id,
@@ -2225,14 +2310,26 @@ rwmain_rwproc_init(
 
   rwvcs = rwmain->rwvx->rwvcs;
 
+  rw_component_info proc;
+  bool alloced = true;
   RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);
   // Create an rwproc structure
-  rwproc = rwvcs_rwproc_alloc(
-      rwvcs,
-      parent_id,
-      component_name,
-      instance_id,
-      instance_name);
+  status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &proc);
+  if ((status == RW_STATUS_SUCCESS) 
+      && (proc.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+    rwproc = &proc;
+    alloced = false;
+    status = rwvcs_rwzk_node_update(rwvcs, rwproc);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+  }
+  else {
+    rwproc = rwvcs_rwproc_alloc(
+        rwvcs,
+        parent_id,
+        component_name,
+        instance_id,
+        instance_name);
+  }
   RW_ASSERT(rwproc);
   RWVCS_LATENCY_CHK_POST(rwmain->rwvx->rwtrace, RWTRACE_CATEGORY_RWVCS,
                          rwvcs_rwproc_alloc, "rwvcs_rwproc_alloc:%s", instance_name);
@@ -2276,10 +2373,31 @@ rwmain_rwproc_init(
       RW_ASSERT(r != -1);
     }
 
+    int num_children = rwproc->n_rwcomponent_children;
+    char *child_name = NULL;
+    while (num_children 
+           && (child_name = rwproc->rwcomponent_children[num_children - 1])) {
+      if (strstr(child_name, action.start->component_name)) {
+        rw_component_info child;
+        status = rwvcs_rwzk_lookup_component(
+            rwmain->rwvx->rwvcs,
+            child_name, 
+            &child);
+        if ((status == RW_STATUS_SUCCESS)
+            && (child.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+          int r = asprintf(&action.start->instance_id, "%u", (unsigned int)child.instance_id);
+          RW_ASSERT(r != -1);
+          break;
+        }
+      }
+      num_children--;
+    }
     action.start->n_python_variable = proc_def->tasklet[i]->n_python_variable;
     action.start->python_variable = proc_def->tasklet[i]->python_variable;
     action.start->has_config_ready = proc_def->tasklet[i]->has_config_ready;
     action.start->config_ready = proc_def->tasklet[i]->config_ready;
+    action.start->has_recovery_action = proc_def->tasklet[i]->has_recovery_action;
+    action.start->recovery_action = proc_def->tasklet[i]->recovery_action;
 
     RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);                           
     status = rwmain_action_run(rwmain, rwproc->instance_name, &action);
@@ -2302,14 +2420,19 @@ rwmain_rwproc_init(
   RWVCS_LATENCY_CHK_POST(rwmain->rwvx->rwtrace, RWTRACE_CATEGORY_RWVCS,
                          rwvcs_rwzk_update_state, "rwvcs_rwzk_update_state:%s", instance_name);
 
-  free(rwproc);
+  if (alloced) {
+    free(rwproc);
+  }
+  else {
+    protobuf_c_message_free_unpacked_usebody(NULL, &proc.base);
+  }
 
   return RW_STATUS_SUCCESS;
 }
 
 rw_status_t
 rwmain_stop_instance(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     rw_component_info * id)
 {
   rw_status_t status;
@@ -2376,7 +2499,7 @@ rwmain_stop_instance(
     if (status == RW_STATUS_SUCCESS)
       rwmain_proc_free(rp);
     else
-      RW_ASSERT(0);
+      RW_CRASH();
   } else if (id->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM) {
       halt_runloop = !(
           rwvcs->pb_rwmanifest->init_phase->settings->rwvcs->collapse_each_rwvm
@@ -2431,7 +2554,7 @@ rwmain_stop_instance(
 
 // Heartbeat monitoring (SERF for now)
 static rw_status_t heartbeatmon_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     char * vm_ip_address,
     char * lead_vm_ip_address,
     const char * instance_name)
@@ -2494,6 +2617,7 @@ static rw_status_t heartbeatmon_start(
       NULL,
       reap_launched_process,
       track_launched_process,
+      false,
       NULL,
       &pid,
       NATIVE_PROC_TERM_MODE_NONE);
@@ -2508,13 +2632,14 @@ static rw_status_t heartbeatmon_start(
 }
 
 static rw_status_t launch_process(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     const char * instance_name,
     const char * path,
     char * const * argv,
     char * const * envp,
     bool reap,
     bool track,
+    bool is_rwproc,
     const struct stream_paths * stream_paths,
     pid_t * pid,
     native_proc_term_mode_t term_mode)
@@ -2543,7 +2668,7 @@ static rw_status_t launch_process(
 
     env = (char **)malloc(sizeof(char *) * env_len);
     bzero(env, sizeof(char *) * env_len);
-
+    i = 0;
     if (rwvcs->envp) {
       for (i = 0; rwvcs->envp[i]; ++i)
         env[i] = rwvcs->envp[i];
@@ -2651,7 +2776,7 @@ static rw_status_t launch_process(
               "Failed to redirect stdout to %s: %s",
               stream_paths->stdout_path,
               strerror(err));
-          RW_ASSERT(0);
+          RW_CRASH();
         }
       }
 
@@ -2669,7 +2794,7 @@ static rw_status_t launch_process(
               "Failed to redirect stderr to %s: %s",
               stream_paths->stdout_path,
               strerror(err));
-          RW_ASSERT(0);
+          RW_CRASH();
         }
       }
     }
@@ -2694,7 +2819,7 @@ static rw_status_t launch_process(
 
     close(pipe_fds[1]);
 
-    np = rwmain_proc_alloc(rwmain, instance_name, lpid, pipe_fds[0]);
+    np = rwmain_proc_alloc(rwmain, instance_name, is_rwproc, lpid, pipe_fds[0]);
     RW_ASSERT(np);
 
     status = RW_SKLIST_INSERT(&(rwmain->procs), np);
@@ -2709,7 +2834,7 @@ static rw_status_t launch_process(
           "Failed to send pid %d to reaper: %s",
           lpid,
           strerror(r));
-      RW_ASSERT(0);
+      RW_CRASH();
     }
   }
 
@@ -2738,7 +2863,7 @@ static char ** add_valgrind(
 
   ret = (char **)malloc(len * sizeof(char *));
   if (!ret) {
-    RW_ASSERT(0);
+    RW_CRASH();
     return NULL;
   }
   bzero(ret, len * sizeof(char *));
@@ -2746,21 +2871,21 @@ static char ** add_valgrind(
   for (index = 0; prefix && prefix[index]; ++index) {
     ret[index] = strdup(prefix[index]);
     if (!ret[index]) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
   }
 
   ret[index++] = strdup("valgrind");
   if (!ret[index - 1]) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
   for (size_t i = 0; i < n_valgrind_args; ++i, ++index) {
     ret[index] = strdup(valgrind_args[i]);
     if (!ret[index]) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
   }
@@ -2768,7 +2893,7 @@ static char ** add_valgrind(
   for (size_t i = 0; argv[i]; ++i, ++index) {
     ret[index] = strdup(argv[i]);
     if (!ret[index]) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto err;
     }
   }
@@ -2784,7 +2909,7 @@ err:
 }
 
 
-rw_status_t open_slave_pty(struct rwmain * rwmain, int master_pty_fd)
+rw_status_t open_slave_pty(struct rwmain_gi * rwmain, int master_pty_fd)
 {
   const int term_name_size = 256;
   char term_name[term_name_size];
@@ -2856,7 +2981,7 @@ rw_status_t open_slave_pty(struct rwmain * rwmain, int master_pty_fd)
 }
 
 rw_status_t start_terminal_io_tasklet(
-                struct rwmain *rwmain, 
+                struct rwmain_gi *rwmain, 
                 const char* parent_id)
 {
   rw_status_t ret, status;
@@ -2877,6 +3002,8 @@ rw_status_t start_terminal_io_tasklet(
   m_start.component_name = "RW.TermIO";
   m_start.has_config_ready = true;
   m_start.config_ready = true;
+  m_start.has_recovery_action = true;
+  m_start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL;
 
 
   char *instance_name = NULL;
@@ -2892,7 +3019,7 @@ rw_status_t start_terminal_io_tasklet(
         "Failed to get instance name and id for %s, parent %s",
         m_action.start->component_name,
         parent_id);
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   ret = rwtasklet_start(rwmain, 
@@ -2910,7 +3037,7 @@ rw_status_t start_terminal_io_tasklet(
 
 
 static rw_status_t start_multivm_rwmain(
-    struct rwmain *rwmain,
+    struct rwmain_gi *rwmain,
     const char *collection_comp_name,
     const char *vm_name,
     const char *vm_ip_addr)
@@ -3080,7 +3207,7 @@ static rw_status_t start_multivm_rwmain(
 }
 
 typedef struct {
-  struct rwmain *rwmain;
+  struct rwmain_gi *rwmain;
   char *collection_name;
   char *vm_name;
   char *vm_ip_addr;
@@ -3102,10 +3229,10 @@ static void start_multivm_rwmain_f(void *ctx)
   free(ud);
 }
 
-static rw_status_t watcher_multivm_rwmain(void* ud)
+static void watcher_multivm_rwmain(void* ud)
 {
   RW_ASSERT(ud);
-  struct rwmain *rwmain = (struct rwmain *)ud;
+  struct rwmain_gi *rwmain = (struct rwmain_gi *)ud;
   rw_status_t status;
   int idx = 0;
 
@@ -3186,5 +3313,5 @@ done:
     }
     free(children);
   }
-  return status;
+  return;
 }

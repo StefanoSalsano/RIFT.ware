@@ -3,6 +3,8 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
+import gi
+gi.require_version('RwYang', '1.0')
 from gi.repository import (
         NsdYang,
         RwYang,
@@ -46,6 +48,24 @@ class GenericYangConverter(object):
 
     def to_xml_string(self, obj):
         return obj.to_xml_v2(self.__class__.model)
+
+    def from_json_string(self, json):
+        cls = self.__class__
+        obj = cls.yang_class()()
+        obj.from_json(cls.model, json)
+        return obj
+  
+    def from_json_file(self, filename):
+        with open(filename, 'r') as fp:
+            json = fp.read()
+  
+        cls = self.__class__
+        obj = cls.yang_class()()
+        obj.from_json(cls.model, json)
+        return obj
+  
+    def to_json_string(self, obj):
+        return obj.to_json(self.__class__.model) 
 
 
 class VnfdYangConverter(GenericYangConverter):

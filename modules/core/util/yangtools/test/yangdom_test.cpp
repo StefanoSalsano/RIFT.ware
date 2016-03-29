@@ -46,6 +46,7 @@ extern int g_argc;
 #include "yangtest_common.hpp"
 #include "company.pb-c.h"
 #include "testy2p-top1.pb-c.h"
+#include "test-a-composite.pb-c.h"
 
 using namespace rw_yang;
 
@@ -3961,4 +3962,79 @@ TEST(RwYangDom, Decimal64)
 
   std::string width = xml_val.substr (0, pos);
   EXPECT_EQ(width.length(), 7);
+}
+
+TEST(RwYangDom, YangPrefix)
+{
+  TEST_DESCRIPTION("Tests Yang Prefixes");
+
+  XMLManager::uptr_t mgr(xml_manager_create_xerces());
+  ASSERT_TRUE (mgr.get());
+
+  YangModel* model = mgr->get_yang_model();
+  ASSERT_TRUE (model);
+
+  YangModule* base_config = model->load_module("test-a-rw-vnf-base-config");
+  ASSERT_TRUE (base_config);
+  base_config->mark_imports_explicit();
+
+  model->register_ypbc_schema(
+      (const rw_yang_pb_schema_t*)RWPB_G_SCHEMA_YPBCSD(TestARwVnfBaseConfig));
+
+  RWPB_M_MSG_DECL_INIT(TestARwVnfBaseConfig_TunnelParams, tp);
+  tp.type = TEST_A_RW_VNF_BASE_TYPES_TUNNEL_TYPE_GRE;
+  tp.has_gre = true;
+  tp.gre.has_keepalive_time = true;
+  tp.gre.keepalive_time = 2000;
+  tp.gre.has_hold_time = true;
+  tp.gre.hold_time = 1600;
+  tp.gre.has_ttl = true;
+  tp.gre.ttl = 255;
+
+  rw_yang_netconf_op_status_t status;
+  XMLDocument::uptr_t dom(mgr->create_document_from_pbcm (&tp.base, status));
+  ASSERT_TRUE (dom.get());
+
+  std::cout << " DOM = " << std::endl << dom->to_string() << std::endl;
+
+  XMLNode *xmlnode = dom->get_root_node();
+  ASSERT_TRUE (xmlnode);
+
+  std::stack<XMLNode*> stack;
+  stack.push (xmlnode);
+
+  while ( !stack.empty() ) {
+
+    xmlnode = stack.top();
+    stack.pop();
+
+    auto ynode = xmlnode->get_yang_node();
+    ASSERT_TRUE (ynode);
+
+    if (!ynode->is_leafy()) {
+
+      auto ypbc_mdesc = ynode->get_ypbc_msgdesc();
+      ASSERT_TRUE (ypbc_mdesc);
+      EXPECT_STREQ (ypbc_mdesc->module->prefix, xmlnode->get_prefix().c_str());
+
+    } else {
+
+      auto ypbc_mdesc = xmlnode->get_parent()->get_yang_node()->get_ypbc_msgdesc();
+      ASSERT_TRUE (ypbc_mdesc);
+
+      for (unsigned i = 0; i < ypbc_mdesc->num_fields; ++i) {
+
+        auto ypbc_fdesc = &ypbc_mdesc->ypbc_flddescs[i];
+        if ( !strcmp(ypbc_fdesc->yang_node_name,
+                     xmlnode->get_local_name().c_str() )) {
+           EXPECT_STREQ (ypbc_fdesc->module->prefix, xmlnode->get_prefix().c_str());
+        }
+      }
+    }
+
+    for (XMLNodeIter xyni = xmlnode->child_begin(); xyni != xmlnode->child_end(); ++xyni ) {
+      XMLNode* child_node = &*xyni;
+      stack.push (child_node);
+    }
+  }
 }

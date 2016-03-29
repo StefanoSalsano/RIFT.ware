@@ -51,17 +51,19 @@ class CliVM(rift.vcs.VirtualMachine):
     This class represents a CLI VM.
     """
 
-    def __init__(self, name=None, *args, **kwargs):
+    def __init__(self, netconf_username="admin", netconf_password="admin", name=None, *args, **kwargs):
         """Creates a CliVM object.
 
         Arguments:
+            netconf_username - the netconf username
+            netconf_password - the netconf password
             name - the name of the tasklet
 
         """
         name = "RW_VM_CLI" if name is None else name
         super(CliVM, self).__init__(name=name, *args, **kwargs)
 
-        self.add_proc(rift.vcs.RiftCli())
+        self.add_proc(rift.vcs.RiftCli(netconf_username, netconf_password))
 
 
 class MgmtVM(rift.vcs.VirtualMachine):
@@ -82,6 +84,7 @@ class MgmtVM(rift.vcs.VirtualMachine):
         self.add_proc(rift.vcs.MsgBrokerTasklet())
         self.add_tasklet(rift.vcs.uAgentTasklet())
         self.add_proc(rift.vcs.RestconfTasklet(rest_port="8008"))
+        self.add_proc(rift.vcs.Watchdog())
         self.add_proc(rift.vcs.RestPortForwardTasklet())
         # Redis is not currently used by DTS
         # Disable but leave ready for easy enablement
@@ -97,10 +100,12 @@ class MasterVM(rift.vcs.VirtualMachine):
     This is a merge of both the CliVM and MgmtVM components
     """
 
-    def __init__(self, name=None, *args, **kwargs):
+    def __init__(self, netconf_username="admin", netconf_password="admin", name=None, *args, **kwargs):
         """Creates a MasterVM object.
 
         Arguments:
+            netconf_username - the netconf username
+            netconf_password - the netconf password
             name          - the name of the VM
 
         """
@@ -108,9 +113,10 @@ class MasterVM(rift.vcs.VirtualMachine):
         super(MasterVM, self).__init__(name=name, *args, **kwargs)
 
         self.add_proc(rift.vcs.uAgentTasklet())
-        self.add_proc(rift.vcs.RiftCli())
+        self.add_proc(rift.vcs.RiftCli(netconf_username=netconf_username, netconf_password=netconf_password))
         self.add_proc(rift.vcs.MsgBrokerTasklet())
         self.add_proc(rift.vcs.RestconfTasklet(rest_port="8008"))
+        self.add_proc(rift.vcs.Watchdog())
         self.add_proc(rift.vcs.RestPortForwardTasklet())
 
         # Redis is not currently used by DTS

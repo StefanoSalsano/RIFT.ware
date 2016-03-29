@@ -33,6 +33,12 @@ export default class LaunchNetworkService extends Component {
     this.updateName = this.updateName.bind(this);
     this.handleSave = this.handleSave.bind(this);
   }
+  evaluateLaunch = (e) => {
+    if (e.keyCode == 13) {
+      this.handleSave(true, e);
+      e.stopPropagation();
+    }
+  }
   openLog() {
       var LaunchpadStore = require('../launchpadFleetStore.js')
       LaunchpadStore.getSysLogViewerURL('lp');
@@ -59,11 +65,15 @@ export default class LaunchNetworkService extends Component {
       LaunchNetworkServiceStore.getDataCenters();
     });
   }
-  handleCancel() {
-    let loc = window.location.hash.split('/');
-    loc.pop();
-    LaunchNetworkServiceStore.resetView();
-    window.location.hash = loc.join('/');
+  handleCancel(e) {
+    e.preventDefault();
+    //capture enter key. overrides default html behavior for first button
+    if(e.keyCode != 13) {
+      let loc = window.location.hash.split('/');
+      loc.pop();
+      LaunchNetworkServiceStore.resetView();
+      window.location.hash = loc.join('/');
+    }
   }
   handleUpdate(data) {
     this.setState(data);
@@ -81,7 +91,9 @@ export default class LaunchNetworkService extends Component {
     let name = event.target.value;
     LaunchNetworkServiceStore.nameUpdated(name);
   }
-  handleSave(launch) {
+  handleSave(launch, e) {
+    console.log(e);
+    e.preventDefault();
     if (this.state.name == "") {
         AppHeaderActions.validateError('Please name the network service')
       return;
@@ -173,36 +185,36 @@ export default class LaunchNetworkService extends Component {
       );
     }
     let html = (
-      <div className={"app-body create-fleet"}>
-      <ScreenLoader show={this.state.isLoading}/>
-      <AppHeader title={'Launchpad: Instantiate Network Service'} nav={navItems} />
-        <h2 className="create-fleet-header name-input">
-           <label>Name <input type="text" pattern="^[a-zA-Z0-9_]*$" style={{textAlign:'left'}} onChange={this.updateName} value={name}/></label>
-        </h2>
-        <h2 className="create-fleet-header name-input" style={{display: isStandAlone ? 'inherit' : 'none'}}>
-          <label>Select Cloud Account
-            <SelectOption className="create-fleet-header" options={CloudAccountOptions} onChange={this.handleSelectCloudAccount} />
-          </label>
+      <form className={"app-body create-fleet"} onKeyDown={this.evaluateLaunch}>
+        <ScreenLoader show={this.state.isLoading}/>
+        <AppHeader title={'Launchpad: Instantiate Network Service'} nav={navItems} />
+          <h2 className="create-fleet-header name-input">
+             <label>Name <input type="text" pattern="^[a-zA-Z0-9_]*$" style={{textAlign:'left'}} onChange={this.updateName} value={name}/></label>
+          </h2>
+          <h2 className="create-fleet-header name-input" style={{display: isStandAlone ? 'inherit' : 'none'}}>
+            <label>Select Cloud Account
+              <SelectOption className="create-fleet-header" options={CloudAccountOptions} onChange={this.handleSelectCloudAccount} />
+            </label>
 
-        </h2>
-        <h2 className="create-fleet-header name-input" style={{display: isOpenMano ? 'inherit' : 'none'}}>
-          <label>Data Center
-            <SelectOption className="create-fleet-header" options={DataCenterOptions} onChange={this.handleSelectDataCenter} />
-          </label>
-        </h2>
-        <div className="launchNetworkService">
-          <div className="dashboardCard_wrapper launchNetworkService_panels">
-            <SelectDecriptor nsd={this.state.nsd} vnfd={this.state.vnfd} selectedNSDid={this.state.selectedNSDid}/>
-            <SLAParams data={this.state.sla_parameters}/>
-            {thirdPanel}
+          </h2>
+          <h2 className="create-fleet-header name-input" style={{display: isOpenMano ? 'inherit' : 'none'}}>
+            <label>Data Center
+              <SelectOption className="create-fleet-header" options={DataCenterOptions} onChange={this.handleSelectDataCenter} />
+            </label>
+          </h2>
+          <div className="launchNetworkService">
+            <div className="dashboardCard_wrapper launchNetworkService_panels">
+              <SelectDecriptor nsd={this.state.nsd} vnfd={this.state.vnfd} selectedNSDid={this.state.selectedNSDid}/>
+              <SLAParams data={this.state.sla_parameters}/>
+              {thirdPanel}
+            </div>
+            <div className="launchNetworkService_controls">
+              <Button label="Cancel" onClick={this.handleCancel} onKeyDown={this.evaluateLaunch} className="light"/>
+              <Button label="Save" onClick={this.handleSave.bind(this, false)} className="light" loadingColor="black" isLoading={this.state.isSaving}/>
+              <Button label="Launch" isLoading={this.state.isSaving} onClick={this.handleSave.bind(this, true)} className="dark"  type="submit"/>
+            </div>
           </div>
-        </div>
-        <div className="launchNetworkService_controls">
-            <Button label="Cancel" onClick={this.handleCancel} className="light"/>
-            <Button label="Save" onClick={this.handleSave.bind(this, false)} className="light" loadingColor="black" isLoading={this.state.isSaving}/>
-            <Button label="Launch" isLoading={this.state.isSaving} onClick={this.handleSave.bind(this, true)} className="dark"/>
-        </div>
-      </div>
+      </form>
     )
     return html
   }

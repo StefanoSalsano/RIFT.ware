@@ -2,11 +2,10 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
-#%%define _topdir           %{_rift_root}/scripts/packaging/rpmbuild/
 %define _topdir           %{_rift_root}/.install/rpmbuild/
 %define name              %{_rpmname}
-#%%define release           1%{?dist}
-%define release           %{_buildnum}%{?dist}
+%define release           1%{?dist}
+#%%define release           %{_buildnum}%{?dist}
 %define version           %{_version}
 %define buildroot         %{_topdir}/%{name}-%{version}-root
 %define DST_RIFT_ROOT     %{_dst_rift_root}

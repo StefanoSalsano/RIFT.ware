@@ -346,7 +346,7 @@ bool TestBaseCli::enter_config_mode()
   if (!r.success_) { return false;}
   if (r.completions_.size() != 1) { return false;}
 
-  completion = r.completions_[0];
+  completion = r.completions_[0].node_;
 
   if (completion->is_key()) return false;
 
@@ -396,7 +396,7 @@ void TestBaseCli::end_config_mode()
   EXPECT_EQ (r.success_, true);
   EXPECT_EQ (r.completions_.size(), 1);
 
-  completion = r.completions_[0];
+  completion = r.completions_[0].node_;
 
   EXPECT_FALSE (completion->is_key());
   EXPECT_FALSE (completion->is_leafy());
@@ -421,7 +421,7 @@ bool TestBaseCli::is_show_available()
   EXPECT_EQ (t.success_, true);
   EXPECT_EQ (t.completions_.size(), 1);
 
-  completion = t.completions_[0];
+  completion = t.completions_[0].node_;
 
   EXPECT_TRUE (!completion->is_key());
   EXPECT_TRUE (!completion->is_leafy());
@@ -446,7 +446,7 @@ bool TestBaseCli::is_no_available()
   EXPECT_EQ (t.success_, true);
   EXPECT_EQ (t.completions_.size(), 1);
 
-  completion = t.completions_[0];
+  completion = t.completions_[0].node_;
 
   EXPECT_TRUE (!completion->is_key());
   EXPECT_TRUE (!completion->is_leafy());
@@ -766,11 +766,11 @@ TEST (YangCLIBehavioral, Config_Completions_LeafsLists)
 
     ASSERT_TRUE (r.success_);
     EXPECT_EQ (r.completions_.size(), 1);
-    EXPECT_EQ (r.completions_[0]->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF_LIST);
-    EXPECT_TRUE(validate_leaf (r.completions_[0]));
-    EXPECT_EQ (r.completions_[0]->is_key(), false);
-    EXPECT_TRUE (r.completions_[0]->is_config());
-    EXPECT_EQ (r.completions_[0]->is_sentence(), false);
+    EXPECT_EQ (r.completions_[0].node_->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF_LIST);
+    EXPECT_TRUE(validate_leaf (r.completions_[0].node_));
+    EXPECT_EQ (r.completions_[0].node_->is_key(), false);
+    EXPECT_TRUE (r.completions_[0].node_->is_config());
+    EXPECT_EQ (r.completions_[0].node_->is_sentence(), false);
   }
 
   for (size_t i = 0; i < sizeof (uint8_values_valid)/sizeof (char *); i++) {
@@ -779,7 +779,7 @@ TEST (YangCLIBehavioral, Config_Completions_LeafsLists)
     ASSERT_TRUE (a.success_);
     ASSERT_EQ (a.completions_.size(), 1);
 
-    completion = a.completions_[0];
+    completion = a.completions_[0].node_;
     ASSERT_TRUE (completion->is_sentence());
 
     XMLDocument::uptr_t dom(tbcli.get_command_dom(a.result_tree_->children_.begin()->get()));
@@ -821,7 +821,7 @@ TEST (YangCLIBehavioral, Config_Completions_LeafsLists)
     ASSERT_TRUE (c.success_);
     ASSERT_EQ (c.completions_.size(), 1);
 
-    completion = c.completions_[0];
+    completion = c.completions_[0].node_;
     ASSERT_TRUE (completion->is_sentence());
 
     XMLDocument::uptr_t dom(tbcli.get_command_dom(c.result_tree_->children_.begin()->get()));
@@ -854,8 +854,8 @@ TEST (YangCLIBehavioral, Config_Completions_LeafsLists)
 
     ASSERT_TRUE (d.success_);
     EXPECT_EQ (d.completions_.size(), 1);
-    EXPECT_EQ (d.completions_[0]->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF_LIST);
-    EXPECT_TRUE(validate_leaf (d.completions_[0]));
+    EXPECT_EQ (d.completions_[0].node_->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF_LIST);
+    EXPECT_TRUE(validate_leaf (d.completions_[0].node_));
   }
   ASSERT_TRUE(tbcli.exit_config_mode(false));
 }
@@ -881,11 +881,11 @@ TEST (YangCLIBehavioral, Config_Completions_Leafs_Strings)
 
     ASSERT_TRUE (r.success_);
     EXPECT_EQ (r.completions_.size(), 1);
-    EXPECT_EQ (r.completions_[0]->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF);
-    EXPECT_TRUE(validate_leaf (r.completions_[0]));
-    EXPECT_EQ (r.completions_[0]->is_key(), false);
-    EXPECT_TRUE (r.completions_[0]->is_config());
-    EXPECT_EQ (r.completions_[0]->is_sentence(), false);
+    EXPECT_EQ (r.completions_[0].node_->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF);
+    EXPECT_TRUE(validate_leaf (r.completions_[0].node_));
+    EXPECT_EQ (r.completions_[0].node_->is_key(), false);
+    EXPECT_TRUE (r.completions_[0].node_->is_config());
+    EXPECT_EQ (r.completions_[0].node_->is_sentence(), false);
   }
 
   for (size_t i = 0; i < sizeof (some_strings)/sizeof (char *); i++) {
@@ -894,7 +894,7 @@ TEST (YangCLIBehavioral, Config_Completions_Leafs_Strings)
     ASSERT_TRUE (a.success_);
     ASSERT_EQ (a.completions_.size(), 1);
 
-    completion = a.completions_[0];
+    completion = a.completions_[0].node_;
     ASSERT_TRUE (completion->is_sentence());
   }
   ASSERT_TRUE(tbcli.exit_config_mode());
@@ -921,14 +921,14 @@ TEST (YangCLIBehavioral, Config_Completions_Containers)
                        ParseLineResult::NO_OPTIONS );
     EXPECT_EQ (r.success_, true);
     EXPECT_EQ (r.completions_.size(), 1);
-    EXPECT_EQ (r.completions_[0]->get_stmt_type(), RW_YANG_STMT_TYPE_CONTAINER);
-    EXPECT_EQ (r.completions_[0]->is_key(), false);
-    EXPECT_TRUE (!r.completions_[0]->is_leafy());
-    EXPECT_TRUE (r.completions_[0]->is_config());
-    EXPECT_TRUE (r.completions_[0]->is_keyword());
+    EXPECT_EQ (r.completions_[0].node_->get_stmt_type(), RW_YANG_STMT_TYPE_CONTAINER);
+    EXPECT_EQ (r.completions_[0].node_->is_key(), false);
+    EXPECT_TRUE (!r.completions_[0].node_->is_leafy());
+    EXPECT_TRUE (r.completions_[0].node_->is_config());
+    EXPECT_TRUE (r.completions_[0].node_->is_keyword());
 
-    EXPECT_EQ (r.completions_[0]->is_sentence(), false);
-    EXPECT_EQ (r.completions_[0]->has_keys(), false);
+    EXPECT_EQ (r.completions_[0].node_->is_sentence(), false);
+    EXPECT_EQ (r.completions_[0].node_->has_keys(), false);
 
   }
 
@@ -938,7 +938,7 @@ TEST (YangCLIBehavioral, Config_Completions_Containers)
     ASSERT_TRUE (a.success_);
     ASSERT_EQ (a.completions_.size(), 1);
 
-    completion = a.completions_[0];
+    completion = a.completions_[0].node_;
     ASSERT_TRUE (completion->is_sentence());
   }
 
@@ -1467,14 +1467,14 @@ TEST (YangCLICompletion, LeafListInteger)
 
     EXPECT_EQ (r.success_, true);
     EXPECT_EQ (r.completions_.size(), 1);
-    EXPECT_EQ (r.completions_[0]->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF_LIST);
-    EXPECT_EQ (r.completions_[0]->is_key(), false);
-    EXPECT_TRUE (r.completions_[0]->is_leafy());
-    EXPECT_TRUE (r.completions_[0]->is_config());
-    EXPECT_TRUE (r.completions_[0]->is_keyword());
+    EXPECT_EQ (r.completions_[0].node_->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF_LIST);
+    EXPECT_EQ (r.completions_[0].node_->is_key(), false);
+    EXPECT_TRUE (r.completions_[0].node_->is_leafy());
+    EXPECT_TRUE (r.completions_[0].node_->is_config());
+    EXPECT_TRUE (r.completions_[0].node_->is_keyword());
 
-    EXPECT_EQ (r.completions_[0]->is_sentence(), false);
-    EXPECT_EQ (r.completions_[0]->has_keys(), false);
+    EXPECT_EQ (r.completions_[0].node_->is_sentence(), false);
+    EXPECT_EQ (r.completions_[0].node_->has_keys(), false);
   }
 }
 
@@ -1503,14 +1503,14 @@ TEST (YangCLICompletion, LeafString)
 
     EXPECT_EQ (r.success_, true);
     EXPECT_EQ (r.completions_.size(), 1);
-    EXPECT_EQ (r.completions_[0]->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF);
-    EXPECT_EQ (r.completions_[0]->is_key(), false);
-    EXPECT_TRUE (r.completions_[0]->is_leafy());
-    EXPECT_TRUE (r.completions_[0]->is_config());
-    EXPECT_TRUE (r.completions_[0]->is_keyword());
+    EXPECT_EQ (r.completions_[0].node_->get_stmt_type(), RW_YANG_STMT_TYPE_LEAF);
+    EXPECT_EQ (r.completions_[0].node_->is_key(), false);
+    EXPECT_TRUE (r.completions_[0].node_->is_leafy());
+    EXPECT_TRUE (r.completions_[0].node_->is_config());
+    EXPECT_TRUE (r.completions_[0].node_->is_keyword());
 
-    EXPECT_EQ (r.completions_[0]->is_sentence(), false);
-    EXPECT_EQ (r.completions_[0]->has_keys(), false);
+    EXPECT_EQ (r.completions_[0].node_->is_sentence(), false);
+    EXPECT_EQ (r.completions_[0].node_->has_keys(), false);
   }
 }
 
@@ -1538,14 +1538,14 @@ TEST (YangCLICompletion, Container)
     ParseLineResult r (tbcli, std::string("g-container ") + std::string(endings[i]), ParseLineResult::NO_OPTIONS );
     EXPECT_EQ (r.success_, true);
     EXPECT_EQ (r.completions_.size(), 1);
-    EXPECT_EQ (r.completions_[0]->get_stmt_type(), RW_YANG_STMT_TYPE_CONTAINER);
-    EXPECT_EQ (r.completions_[0]->is_key(), false);
-    EXPECT_TRUE (!r.completions_[0]->is_leafy());
-    EXPECT_TRUE (r.completions_[0]->is_config());
-    EXPECT_TRUE (r.completions_[0]->is_keyword());
+    EXPECT_EQ (r.completions_[0].node_->get_stmt_type(), RW_YANG_STMT_TYPE_CONTAINER);
+    EXPECT_EQ (r.completions_[0].node_->is_key(), false);
+    EXPECT_TRUE (!r.completions_[0].node_->is_leafy());
+    EXPECT_TRUE (r.completions_[0].node_->is_config());
+    EXPECT_TRUE (r.completions_[0].node_->is_keyword());
 
-    EXPECT_EQ (r.completions_[0]->is_sentence(), false);
-    EXPECT_EQ (r.completions_[0]->has_keys(), false);
+    EXPECT_EQ (r.completions_[0].node_->is_sentence(), false);
+    EXPECT_EQ (r.completions_[0].node_->has_keys(), false);
   }
 }
 
@@ -1583,7 +1583,7 @@ TEST (YangCLICompletion, Multiple)
     EXPECT_EQ (r.completions_.size(), counts[i]);
 
     ParseLineResult q (tbcli, std::string("g-container ") + std::string(endings[i]), ParseLineResult::ENTERKEY_MODE);
-    EXPECT_EQ (q.completions_[0]->is_sentence(), false);
+    EXPECT_EQ (q.completions_[0].node_->is_sentence(), false);
     EXPECT_EQ (q.completions_.size(), ecounts[i]);
     if ((i == 0)  || (i == 3)) {
       // completed keywords - parsing would work. sentence will not be complete though
@@ -1645,12 +1645,12 @@ TEST (YangCLICompletion, List) {
     ASSERT_TRUE (r.success_);
     EXPECT_EQ (2, r.completions_.size());
 
-    EXPECT_TRUE (r.completions_[0]->is_key());
-    EXPECT_TRUE (r.completions_[0]->is_leafy());
-    EXPECT_TRUE (r.completions_[0]->is_config());
+    EXPECT_TRUE (r.completions_[0].node_->is_key());
+    EXPECT_TRUE (r.completions_[0].node_->is_leafy());
+    EXPECT_TRUE (r.completions_[0].node_->is_config());
 
-    EXPECT_TRUE (!r.completions_[0]->is_sentence());
-    EXPECT_TRUE (!r.completions_[0]->has_keys());
+    EXPECT_TRUE (!r.completions_[0].node_->is_sentence());
+    EXPECT_TRUE (!r.completions_[0].node_->has_keys());
   }
 
   const char  *endings2[] = {"2"};
@@ -1658,12 +1658,12 @@ TEST (YangCLICompletion, List) {
     ParseLineResult r (tbcli, std::string("g-list ") + std::string(endings2[i]), ParseLineResult::NO_OPTIONS );
     EXPECT_EQ (true, r.success_);
     EXPECT_EQ (1, r.completions_.size());
-    EXPECT_TRUE (r.completions_[0]->is_leafy());
-    EXPECT_TRUE (r.completions_[0]->is_config());
+    EXPECT_TRUE (r.completions_[0].node_->is_leafy());
+    EXPECT_TRUE (r.completions_[0].node_->is_config());
 
 
-    EXPECT_EQ (r.completions_[0]->is_sentence(), false);
-    EXPECT_EQ (r.completions_[0]->has_keys(), false);
+    EXPECT_EQ (r.completions_[0].node_->is_sentence(), false);
+    EXPECT_EQ (r.completions_[0].node_->has_keys(), false);
   }
 
 
@@ -1693,12 +1693,12 @@ TEST (YangCLICompletion, LeafEnum)
   ASSERT_EQ (3, r.completions_.size());
 
   for (size_t i = 0; i < 3; i++) {
-    EXPECT_TRUE (r.completions_[i]->is_leafy());
-    EXPECT_TRUE (r.completions_[i]->is_config());
-    EXPECT_TRUE (r.completions_[i]->is_keyword());
+    EXPECT_TRUE (r.completions_[i].node_->is_leafy());
+    EXPECT_TRUE (r.completions_[i].node_->is_config());
+    EXPECT_TRUE (r.completions_[i].node_->is_keyword());
 
-    EXPECT_EQ (r.completions_[i]->is_sentence(), false);
-    EXPECT_EQ (r.completions_[i]->has_keys(), false);
+    EXPECT_EQ (r.completions_[i].node_->is_sentence(), false);
+    EXPECT_EQ (r.completions_[i].node_->has_keys(), false);
   }
 
   const char  *endings[] = {"f", "se", "sev", "seventh"};
@@ -1856,7 +1856,7 @@ TEST (YangCLIModes, ModeAtList)
 
   ASSERT_TRUE (u.success_);
   EXPECT_EQ (1, u.completions_.size());
-  EXPECT_TRUE (u.completions_[0]->is_built_in());
+  EXPECT_TRUE (u.completions_[0].node_->is_built_in());
 
   tbcli.mode_exit();
   ASSERT_EQ (middle, tbcli.current_mode_->dom_node_);
@@ -2007,7 +2007,7 @@ TEST (YangCLICompletion, DISABLED_FailingTests) {
   EXPECT_EQ (true, r.success_);
   EXPECT_EQ (1, r.completions_.size());
 
-  EXPECT_TRUE (r.completions_[0]->has_keys());
+  EXPECT_TRUE (r.completions_[0].node_->has_keys());
 }
 
 TEST (CliAppData, Create)
@@ -2272,17 +2272,17 @@ TEST (YangCLILeafList, LeafListCheck)
   const char* leaflist_base = "ip-addrs ip 1.1.1.1 ";
   ParseLineResult a(tbcli, leaflist_base, ParseLineResult::NO_OPTIONS);
   ASSERT_TRUE(a.success_);
-  ASSERT_TRUE(a.completions_.size() == 2);
+  EXPECT_EQ(a.completions_.size(), 2);
 
   const char* leaflist_a1 = "ip-addrs port 1234 ip 1.1.1.1 ";
   ParseLineResult a1(tbcli, leaflist_a1, ParseLineResult::NO_OPTIONS);
   ASSERT_TRUE(a1.success_);
-  ASSERT_TRUE(a1.completions_.size() == 1);
+  EXPECT_EQ(a1.completions_.size(), 1);
 
   const char* leaflist_a2 = "ip-addrs ip ";
   ParseLineResult a2(tbcli, leaflist_a2, ParseLineResult::NO_OPTIONS);
   ASSERT_TRUE(a2.success_);
-  ASSERT_TRUE(a2.completions_.size() == 1);
+  EXPECT_EQ(a2.completions_.size(), 1);
 
   const char* leaflist_b = "ip-addrs ip 1.1.1.1 2.2.2.2";
   ParseLineResult b(tbcli, leaflist_b, ParseLineResult::ENTERKEY_MODE);
@@ -2575,6 +2575,7 @@ TEST(YangCLIRpc, CheckOrder)
       "helicarrier jet-fighters 32 missiles 500 turbines 24 "
       "director nick-fury executive-director maria";
   ParseLineResult a(tbcli, rpc, ParseLineResult::ENTERKEY_MODE);
+  EXPECT_EQ (tbcli.parse_line_buffer(rpc, true), PARSE_LINE_RESULT_SUCCESS);
   ASSERT_TRUE(a.success_);
   ASSERT_TRUE(a.parse_tree_->is_sentence());
   {
@@ -2877,6 +2878,143 @@ TEST(YangCLIXML, No_Container)
   EXPECT_EQ(c_no_root->to_string_pretty(), cc_expected_xml);
 
   tbcli.mode_exit();
+  EXPECT_TRUE(tbcli.exit_config_mode());
+}
+
+
+TEST(YangCLIBehavioral, Quoting)
+{
+  TEST_DESCRIPTION ("Test scenarios for which parser must put extra quotes");
+
+  YangModelNcx* model = YangModelNcx::create_model();
+  YangModel::ptr_t p(model);
+  model->load_module("rift-cli-test");
+
+  TestBaseCli tbcli(*model,0);
+  tbcli.set_rwcli_like_params();
+
+  // Check regular quoting
+  // Test will fail since its not processed before parsing
+  const char* cmd = "show manifest inventory component \"A B C\"";
+
+  ParseLineResult a(tbcli, cmd, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE (!a.success_);
+
+  // This is how cli would send quoted string ('nick fury')
+  // if it had sent in a flat string buffer
+  const char* rpc = "avengers shield agents 16 "
+    "helicarrier jet-fighters 32 missiles 500 turbines 24 "
+    "director nick fury executive-director maria";
+  EXPECT_NE (tbcli.parse_line_buffer(rpc, true), PARSE_LINE_RESULT_SUCCESS);
+
+  const char* rpc2[] = {
+    "avengers", "shield", "agents", "16",
+    "helicarrier", "jet-fighters", "32", "missiles", "500",
+    "turbines", "24", "director", "nick fury", "executive-director",
+    "maria"
+  };
+
+  EXPECT_EQ (tbcli.process_line_buffer(15, rpc2, true), PARSE_LINE_RESULT_SUCCESS);
+
+  // With newline and embedded quotes
+  const char* rpc3[] = {
+    "avengers", "shield", "agents", "16",
+    "helicarrier", "jet-fighters", "32", "missiles", "500",
+    "turbines", "24", "director", "nick\nfury\'s", "executive-director",
+    "maria\"d souza"
+  };
+
+  EXPECT_EQ (tbcli.process_line_buffer(15, rpc3, true), PARSE_LINE_RESULT_SUCCESS);
+
+  // With unprintable characters
+  const char* rpc4[] = {
+    "avengers", "shield", "agents", "16",
+    "helicarrier", "jet-fighters", "32", "missiles", "500",
+    "turbines", "24", "director", "佐藤 �", "executive-director",
+    "佐藤 �"
+  };
+
+  EXPECT_EQ (tbcli.process_line_buffer(15, rpc4, true), PARSE_LINE_RESULT_SUCCESS);
+}
+
+TEST(YangCLINsPrefix, ManifestPath)
+{
+  TEST_DESCRIPTION("Test parsing commands with module prefix as done by CliManifest");
+  YangModelNcx* model = YangModelNcx::create_model();
+  YangModel::ptr_t p(model);
+  YangModule* module = nullptr;
+
+  module = model->load_module("rift-cli-test");
+  ASSERT_TRUE(module);
+
+  module = model->load_module("other-rwcli_test");
+  ASSERT_TRUE(module);
+
+  TestBaseCli tbcli(*model,0);
+  tbcli.root_parse_node_->flags_.set_inherit(ParseFlags::V_LIST_KEYS_CLONED);
+
+  std::string network_cmd("network");
+  ParseLineResult p1(tbcli, network_cmd, ParseLineResult::NO_OPTIONS);
+  ASSERT_TRUE(p1.success_);
+  ASSERT_EQ(0, p1.completions_.size());
+
+  std::string clitest_network_cmd("rwclitest:network ");
+  ParseLineResult p2(tbcli, clitest_network_cmd, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p2.success_);
+  EXPECT_EQ(p2.completions_.size(), 1);
+  EXPECT_TRUE(p2.result_node_);
+
+  std::string cli_network_cmd("cli:network ");
+  ParseLineResult p3(tbcli, cli_network_cmd, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p3.success_);
+  EXPECT_EQ(p3.completions_.size(), 1);
+  EXPECT_TRUE(p3.result_node_);
+
+  std::string path1 = clitest_network_cmd + std::string("servers ");
+  ParseLineResult p4(tbcli, path1, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p4.success_);
+  EXPECT_TRUE(p4.result_node_);
+
+  std::string path2 = cli_network_cmd + std::string("servers ");
+  ParseLineResult p5(tbcli, path2, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_FALSE(p5.success_);
+}
+
+TEST(YangCLINsPrefix, HelpAndTabComplete)
+{
+  TEST_DESCRIPTION("Test Help and Tab complete when there prefix is required");
+  YangModelNcx* model = YangModelNcx::create_model();
+  YangModel::ptr_t p(model);
+  YangModule* module = nullptr;
+
+  module = model->load_module("rift-cli-test");
+  ASSERT_TRUE(module);
+
+  module = model->load_module("other-rwcli_test");
+  ASSERT_TRUE(module);
+
+  TestBaseCli tbcli(*model,0);
+  tbcli.set_rwcli_like_params();
+
+  ASSERT_TRUE(tbcli.enter_config_mode());
+  
+  tbcli.generate_help("rwcli");
+  
+  std::string line = tbcli.tab_complete("rwcli");
+  EXPECT_EQ(line, "rwclitest:");
+
+  std::vector<ParseMatch> matches = tbcli.generate_matches("rwcli");
+  ASSERT_EQ (matches.size(), 2);
+  EXPECT_EQ (matches[0].match_, "rwclitest:network");
+  EXPECT_EQ (matches[1].match_, "rwclitest:show");
+
+  line = tbcli.tab_complete("cli:");
+  EXPECT_EQ(line, "cli:network ");
+
+  matches = tbcli.generate_matches("cli:");
+  ASSERT_EQ (matches.size(), 1);
+  EXPECT_EQ (matches[0].match_, "cli:network");
+
   EXPECT_TRUE(tbcli.exit_config_mode());
 }
 

@@ -21,6 +21,9 @@ import tempfile
 import rw_peas
 from xml.dom.minidom import parseString
 
+from gi import require_version
+require_version('RwvcsApi', '1.0')
+
 logger = logging.getLogger(__name__)
 
 SYSTEM_READY_TIMEOUT_SECS = 120

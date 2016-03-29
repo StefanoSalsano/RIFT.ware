@@ -39,11 +39,16 @@ public:
     log_cli = NULL;
     logs_from_peer = 0;
     cli_dest_path = NULL;
-    asprintf(&_filename,
-              "/tmp/%s",filename);
+    if(filename[0] == '/') {
+      asprintf(&_filename,
+               "%s",filename);
+    }else { 
+      asprintf(&_filename,
+               "/tmp/%s",filename);
+    }
     if(_lead_instance_id == inst_data->rwtasklet_info->identity.rwtasklet_instance_id || _lead_instance_id == 0) {
       _is_lead_instance = TRUE;
-      _file_fd = open(_filename,O_RDWR|O_CREAT|O_APPEND,S_IRWXU);
+      _file_fd = open(_filename,O_RDWR|O_CREAT|O_APPEND|O_CLOEXEC,S_IRWXU);
       if(_file_fd > 0) {
         set_state (CONNECTED);
       }
@@ -54,11 +59,15 @@ public:
     }
     else {
       RW_ASSERT(inst_data); 
+      if (!inst_data) { return; }
+
       _is_lead_instance = FALSE;
       log_cli_chan = inst_data->cc;
       log_cli = &inst_data->rwlogd_peer_msg_client; 
       int r = asprintf (&cli_dest_path, "/R/%s/%d", RWLOGD_PROC, lead_instance_id);
       RW_ASSERT(r);
+      if (!r) { return; }
+
       dest = rwmsg_destination_create(
           inst_data->rwtasklet_info->rwmsg_endpoint,
           RWMSG_ADDRTYPE_UNICAST,

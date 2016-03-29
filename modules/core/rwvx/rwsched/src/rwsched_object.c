@@ -28,7 +28,7 @@ rwsched_dispatch_retain(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -55,7 +55,7 @@ rwsched_dispatch_release(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void *
@@ -77,7 +77,7 @@ rwsched_dispatch_get_context(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
   return NULL;
 }
 
@@ -101,7 +101,7 @@ rwsched_dispatch_set_context(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -120,7 +120,7 @@ rwsched_dispatch_suspend(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -139,7 +139,7 @@ rwsched_dispatch_resume(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 #else
 void
@@ -160,7 +160,7 @@ rwsched_dispatch_retain(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -185,7 +185,7 @@ rwsched_dispatch_release(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void *
@@ -208,7 +208,7 @@ rwsched_dispatch_get_context(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
   return NULL;
 }
 
@@ -233,7 +233,7 @@ rwsched_dispatch_set_context(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -254,7 +254,7 @@ rwsched_dispatch_suspend(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -275,6 +275,6 @@ rwsched_dispatch_resume(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 #endif

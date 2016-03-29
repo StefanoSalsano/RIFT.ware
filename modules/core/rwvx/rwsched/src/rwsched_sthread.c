@@ -59,7 +59,7 @@ rwsched_dispatch_sthread_queue_create(rwsched_tasklet_ptr_t sched_tasklet,
     return queue;
   }
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
   return NULL;
 }
 

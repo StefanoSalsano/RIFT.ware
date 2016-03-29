@@ -4,12 +4,16 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
+import LaunchNetworkServiceSource from '../network_service_launcher/launchNetworkServiceSource.js';
+import LaunchNetworkServiceActions from '../network_service_launcher/launchNetworkServiceActions.js';
+
 var alt = require('../../core/alt');
 var ConfigAgentAccountSource = require('./configAgentAccountSource');
 var ConfigAgentAccountActions = require('./configAgentAccountActions');
 
 function createconfigAgentAccountStore () {
   this.exportAsync(ConfigAgentAccountSource);
+  this.exportAsync(LaunchNetworkServiceSource);
   this.bindAction(ConfigAgentAccountActions.CREATE_SUCCESS, this.createSuccess);
   this.bindAction(ConfigAgentAccountActions.CREATE_LOADING, this.createLoading);
   this.bindAction(ConfigAgentAccountActions.CREATE_FAIL, this.createFail);
@@ -21,9 +25,12 @@ function createconfigAgentAccountStore () {
   this.bindAction(ConfigAgentAccountActions.GET_CONFIG_AGENT_ACCOUNT_SUCCESS, this.getConfigAgentAccountSuccess);
   this.bindAction(ConfigAgentAccountActions.GET_CONFIG_AGENT_ACCOUNT_FAIL, this.getConfigAgentAccountFail);
   this.bindAction(ConfigAgentAccountActions.GET_CONFIG_AGENT_ACCOUNTS_SUCCESS, this.getConfigAgentAccountsSuccess);
-  // this.bindAction(ConfigAgentAccountActions.GET_CONFIG_AGENT_ACCOUNTS_FAIL, this.getconfigAgentAccountsFail);
+  // this.bindAction(ConfigAgentAccountActions.GET_CONFIG_AGENT_ACCOUNTS_FAIL, this.getConfigAgentAccountsFail);
   this.bindAction(ConfigAgentAccountActions.VALIDATE_ERROR, this.validateError);
   this.bindAction(ConfigAgentAccountActions.VALIDATE_RESET, this.validateReset);
+      this.bindListeners({
+        getCatalogSuccess: LaunchNetworkServiceActions.getCatalogSuccess
+    });
   this.exportPublicMethods({
     resetAccount: this.resetAccount.bind(this)
   })
@@ -59,7 +66,7 @@ function createconfigAgentAccountStore () {
       name: '',
       'account-type': 'juju'
   };
-  
+
 }
 
 createconfigAgentAccountStore.prototype.resetAccount = function() {
@@ -159,6 +166,17 @@ createconfigAgentAccountStore.prototype.getConfigAgentAccountsSuccess = function
   this.setState({
     configAgentAccounts: configAgentAccounts || [],
     isLoading:false
+  });
+};
+createconfigAgentAccountStore.prototype.getCatalogSuccess = function(data) {
+  var self = this;
+  var descriptorCount = 0;
+  data.forEach(function(catalog) {
+    descriptorCount += catalog.descriptors.length;
+  });
+
+  self.setState({
+    descriptorCount: descriptorCount
   });
 };
 

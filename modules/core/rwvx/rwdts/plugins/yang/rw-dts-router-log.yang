@@ -767,9 +767,7 @@ module rw-dts-router-log
     rwnotify:log-event-id 00040048;
     description "General xact related debug";
     uses rwlog:severity-debug;
-
     uses dtsrouter-xact-attr;
-
     leaf log {
       description "Log message";
       type string;

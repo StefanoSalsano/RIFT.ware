@@ -38,20 +38,35 @@ static serf_context_ptr_t start_serf(rwvcs_instance_ptr_t rwvcs, pid_t * pid)
 
   status = rw_unique_port(8173, &bind_port);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
+  if (status != RW_STATUS_SUCCESS) {
+    return NULL;
+  }
 
   status = rw_unique_port(8174, &rpc_port);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
+  if (status != RW_STATUS_SUCCESS) {
+    return NULL;
+  }
 
   install_dir = getenv("INSTALLDIR");
 
   r = asprintf(&serf_path, "%s/usr/bin/serf", install_dir ? install_dir : "");
   RW_ASSERT(r != -1);
+  if (r==-1) {
+    return NULL;
+  }
 
   r = asprintf(&bind_arg, "-bind=127.0.0.1:%d", bind_port);
+  if (r==-1) {
+    return NULL;
+  }
   RW_ASSERT(r != -1);
 
   r = asprintf(&rpc_arg, "-rpc-addr=127.0.0.1:%d", rpc_port);
   RW_ASSERT(r != -1);
+  if (r==-1) {
+    return NULL;
+  }
 
   char * argv[] = {
     serf_path,
@@ -72,6 +87,9 @@ static serf_context_ptr_t start_serf(rwvcs_instance_ptr_t rwvcs, pid_t * pid)
   if (lpid == 0) {
     r = prctl(PR_SET_PDEATHSIG, SIGTERM);
     RW_ASSERT(r == 0);
+    if (r!=0) {
+      return NULL;
+  }
 
     execvp(argv[0], argv);
   }

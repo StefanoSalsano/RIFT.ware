@@ -20,6 +20,10 @@ import tornado.httpserver
 import tornado.web
 import tornado.platform.asyncio
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwTypes', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     RwcalYang,
@@ -569,6 +573,13 @@ class RwCalProxyTasklet(rift.tasklets.Tasklet):
                       RwCalProxyTasklet.HTTP_PORT)
         self.server.listen(RwCalProxyTasklet.HTTP_PORT)
 
+    def stop(self):
+      try:
+         self.server.stop()
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in LP stop:", sys.exc_info()[0])
+         raise
 
     @asyncio.coroutine
     def init(self):

@@ -11,6 +11,9 @@
 
 import traceback
 import functools
+import gi
+gi.require_version('RwTypes', '1.0')
+
 from gi.repository import RwTypes
 
 def rwstatus_from_exc_map(exc_map):

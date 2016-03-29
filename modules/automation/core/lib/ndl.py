@@ -695,6 +695,7 @@ class Testbed(object):
         else:
             req.data=urllib.urlencode(args).encode('UTF-8')
 
+        logger.debug("ndl::_NDL_API::request %s" % req.get_full_url() )
         try:
             response = urllib.request.urlopen(req)
         except urllib.request.HTTPError as e:

@@ -3025,6 +3025,10 @@ public:
   bool                           list_delete_ = false;
   // In case of delete, merge operation is not performed
   bool                           merge_op_ = true;
+  // If setting a non-key attribute, the flag is set to true
+  // in which case the merge operation would be done
+  // irrespective of flag merge_op_.
+  bool                           is_non_key_set_ = false;
 };
 
 /**

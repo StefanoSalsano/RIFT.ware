@@ -74,6 +74,9 @@ void rwlogd_filter::rwlog_dump_info(int verbosity)
 rwlog_severity_t rwlogd_filter:: get_severity(uint32_t category)
 {
   RW_ASSERT(category < filter_hdr_.num_categories);
+  if (category >= filter_hdr_.num_categories) {
+    return RW_LOG_LOG_SEVERITY_DEBUG;
+  }
   return category_filter_[category].severity;
 }
 
@@ -81,12 +84,18 @@ void  rwlogd_filter:: set_severity(uint32_t category,
                                    rwlog_severity_t sev)
 {
   RW_ASSERT(category < filter_hdr_.num_categories);
+  if (category >= filter_hdr_.num_categories) {
+    return;
+  }
   category_filter_[category].severity = sev;
 }
 
 void  rwlogd_filter:: set_critical_info_filter(uint32_t category,RwLog__YangEnum__OnOffType__E critical_info_filter)
 {
   RW_ASSERT(category < filter_hdr_.num_categories);
+  if (category >= filter_hdr_.num_categories) {
+    return;
+  }
   category_filter_[category].critical_info = critical_info_filter;
 }
 
@@ -165,7 +174,6 @@ bool rwlogd_filter:: check_groupid_filter(char *name, rw_call_id_t *value)
   {
     if (!value)
     {
-      RWLOG_ASSERT(0);
       return RWLOG_FILTER_DROP;
     }
 
@@ -252,7 +260,6 @@ filter_attribute* find_exact_match_filter_string(filter_attribute **filter_info,
   if (!field_name || !value)
   {
     RWLOG_ERROR_PRINT("find_bloom:Incorrect Parameters\n");
-    RWLOG_ASSERT(0);
     return NULL;
   }
   int r = asprintf (&filter_key, 
@@ -261,6 +268,9 @@ filter_attribute* find_exact_match_filter_string(filter_attribute **filter_info,
                     value,
                     category_str);
   RW_ASSERT(r);
+  if (!r) {
+    return NULL;
+  }
 
   filter_attribute *name =  NULL;
   HASH_FIND_STR(*filter_info, filter_key , name);
@@ -338,6 +348,9 @@ rw_status_t find_exact_match_filter_uint64_new(filter_attribute **filter_info,
                     field_name,
                     value);
   RW_ASSERT(r);
+  if (!r) {
+    return RW_STATUS_FAILURE;
+  }
 
   filter_attribute *name =  NULL;
 
@@ -373,6 +386,9 @@ rw_status_t remove_exact_match_filter_string(filter_attribute **filter_info,
                     value,
                     category_str);
   RW_ASSERT(r);
+  if (!r) {
+    return RW_STATUS_FAILURE;
+  }
   HASH_FIND_STR(*filter_info,filter_key,name);
   if (name) 
   {
@@ -431,6 +447,9 @@ rw_status_t remove_exact_match_filter_uint64_new(filter_attribute **filter_info,
                     value,
                     cat);
   RW_ASSERT(r);
+  if (!r) {
+    return RW_STATUS_FAILURE;
+  }
   HASH_FIND_STR(*filter_info, filter_key, name);
   if (name)
   {
@@ -461,7 +480,7 @@ extern "C" rw_status_t add_exact_match_deny_filter_string(filter_attribute **den
   name = (filter_attribute*)malloc(sizeof(filter_attribute));
   if (name == NULL)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
   strncpy(name->attribute_value_string,value,MAX_ATTRIBUTE_LEN);
 
@@ -491,7 +510,7 @@ extern "C" rw_status_t add_exact_match_filter_string(filter_attribute **filter_i
   name = (filter_attribute*)malloc(sizeof(filter_attribute));
   if (name == NULL)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
   int r = snprintf (name->attribute_value_string, 
                     MAX_ATTRIBUTE_LEN,
@@ -500,6 +519,9 @@ extern "C" rw_status_t add_exact_match_filter_string(filter_attribute **filter_i
                     value, 
                     category_str);
   RW_ASSERT(r);
+  if(!r) {
+    return RW_STATUS_FAILURE;
+  }
   name->next_call_flag =  next_call_flag;
 
   HASH_ADD_STR(*filter_info,attribute_value_string,name);
@@ -526,7 +548,7 @@ extern "C" rw_status_t add_exact_match_filter_uint64(filter_attribute **filter_i
   name = (filter_attribute*)malloc(sizeof(filter_attribute));
   if (name == NULL)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
 
@@ -558,7 +580,7 @@ extern "C" rw_status_t add_exact_match_filter_uint64_new(filter_attribute **filt
   name = (filter_attribute*)malloc(sizeof(filter_attribute));
   if (name == NULL)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   int r = snprintf (name->attribute_value_string,
@@ -567,6 +589,9 @@ extern "C" rw_status_t add_exact_match_filter_uint64_new(filter_attribute **filt
                     field_name,
                     value);
   RW_ASSERT(r);
+  if (!r) {
+    return RW_STATUS_FAILURE;
+  }
   HASH_ADD_STR(*filter_info,attribute_value_string,name);
   return RW_STATUS_SUCCESS;
 }

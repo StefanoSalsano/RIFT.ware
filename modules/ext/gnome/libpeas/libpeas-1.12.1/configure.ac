@@ -17,8 +17,8 @@ AC_PREREQ(2.63.2)
 # <mclasen> on the stable branch, interface age == micro
 # <mclasen> on the unstable (ie master), interface age = 0
 m4_define(peas_major_version,  1)
-m4_define(peas_minor_version,  12)
-m4_define(peas_micro_version,  2)
+m4_define(peas_minor_version,  17)
+m4_define(peas_micro_version,  0)
 m4_define(peas_interface_age,  0)
 
 m4_define(peas_binary_age, [m4_eval(100 * peas_minor_version + peas_micro_version)])
@@ -238,7 +238,7 @@ LUA51_REQUIRED=5.1.0
 LUAJIT_REQUIRED=2.0
 
 LGI_MAJOR_VERSION=0
-LGI_MINOR_VERSION=8
+LGI_MINOR_VERSION=9
 LGI_MICRO_VERSION=0
 LGI_REQUIRED=$LGI_MAJOR_VERSION.$LGI_MINOR_VERSION.$LGI_MICRO_VERSION
 AC_DEFINE_UNQUOTED(LGI_MAJOR_VERSION, [$LGI_MAJOR_VERSION], [LGI major version.])
@@ -252,7 +252,7 @@ m4_define([peas_lgi_version_test], [
 #include <lauxlib.h>
 #include <lualib.h>
 
-#include "peas-plugin-loader-lua-utils.c"
+#include "peas-lua-utils.c"
 
 int main(int argc, char **argv)
 {
@@ -321,8 +321,10 @@ else
     else
         AC_MSG_RESULT([$found_lua51 ($with_lua51)])
 
+        LUA51_BIN="$with_lua51"
         LUA51_CFLAGS=`$PKG_CONFIG --cflags $with_lua51`
         LUA51_LIBS=`$PKG_CONFIG --libs $with_lua51`
+        AC_SUBST(LUA51_BIN)
         AC_SUBST(LUA51_CFLAGS)
         AC_SUBST(LUA51_LIBS)
 
@@ -362,8 +364,9 @@ PYTHON2_REQUIRED=2.5.2
 PYTHON3_REQUIRED=3.2.0
 
 dnl Used by the Python loader to check the PyGObject version at runtime
+dnl 3.2 renamed the GObject property helper to Property from property
 PYGOBJECT_MAJOR_VERSION=3
-PYGOBJECT_MINOR_VERSION=0
+PYGOBJECT_MINOR_VERSION=2
 PYGOBJECT_MICRO_VERSION=0
 PYGOBJECT_REQUIRED=$PYGOBJECT_MAJOR_VERSION.$PYGOBJECT_MINOR_VERSION.$PYGOBJECT_MICRO_VERSION
 AC_DEFINE_UNQUOTED(PYGOBJECT_MAJOR_VERSION,[$PYGOBJECT_MAJOR_VERSION], [PyGObject major version.])
@@ -391,14 +394,14 @@ else
             if test -n "${PYTHON2_CONFIG}"; then
                 PKG_CHECK_MODULES(PYGOBJECT, pygobject-3.0 >= $PYGOBJECT_REQUIRED, [
                     found_python2=yes
+                    PYTHON2_BIN="$PYTHON2"
                     PYTHON2_CFLAGS=`${PYTHON2_CONFIG} --includes`
                     PYTHON2_LIBS=`${PYTHON2_CONFIG} --libs`
                     PYTHON2_LDFLAGS=`${PYTHON2_CONFIG} --ldflags`
-                    PYTHON2_PYEXECDIR=`$PYTHON2 -c "from distutils import sysconfig; print(sysconfig.get_python_lib(1, 0, prefix='\\$' '{exec_prefix}'))"`
+                    AC_SUBST(PYTHON2_BIN)
                     AC_SUBST(PYTHON2_CFLAGS)
                     AC_SUBST(PYTHON2_LIBS)
                     AC_SUBST(PYTHON2_LDFLAGS)
-                    AC_SUBST(PYTHON2_PYEXECDIR)
                     AC_DEFINE(ENABLE_PYTHON2, 1, [Define to compile with Python 2 support])
                 ], [
                     found_python2="no (PyGObject not found)"
@@ -435,14 +438,14 @@ else
         if test -n "${PYTHON3_CONFIG}"; then
             PKG_CHECK_MODULES(PYGOBJECT, pygobject-3.0 >= $PYGOBJECT_REQUIRED, [
                 found_python3=yes
+                PYTHON3_BIN="$PYTHON"
                 PYTHON3_CFLAGS=`${PYTHON3_CONFIG} --includes`
                 PYTHON3_LIBS=`${PYTHON3_CONFIG} --libs`
                 PYTHON3_LDFLAGS=`${PYTHON3_CONFIG} --ldflags`
-                PYTHON3_PYEXECDIR="${pyexecdir}"
+                AC_SUBST(PYTHON3_BIN)
                 AC_SUBST(PYTHON3_CFLAGS)
                 AC_SUBST(PYTHON3_LIBS)
                 AC_SUBST(PYTHON3_LDFLAGS)
-                AC_SUBST(PYTHON3_PYEXECDIR)
                 AC_DEFINE(ENABLE_PYTHON3, 1, [Define to compile with Python 3 support])
             ], [
                 found_python3="no (PyGObject not found)"
@@ -467,6 +470,7 @@ dnl Documentation
 dnl ================================================================
 
 GTK_DOC_CHECK([1.11],[--flavour no-tmpl])
+AM_CONDITIONAL(ENABLE_GTK_DOC, test "x$enable_gtk_doc" = "xyes")
 
 AC_ARG_ENABLE(doc-cross-references,
               AS_HELP_STRING([--disable-doc-cross-references],
@@ -532,6 +536,7 @@ libpeas/Makefile
 libpeas-gtk/Makefile
 loaders/Makefile
 loaders/lua5.1/Makefile
+loaders/lua5.1/resources/Makefile
 loaders/python/Makefile
 loaders/python3/Makefile
 data/Makefile
@@ -549,6 +554,7 @@ po/Makefile.in
 tests/Makefile
 tests/libpeas/Makefile
 tests/libpeas/plugins/Makefile
+tests/libpeas/plugins/embedded/Makefile
 tests/libpeas/plugins/extension-c/Makefile
 tests/libpeas/plugins/extension-lua/Makefile
 tests/libpeas/plugins/extension-python/Makefile
@@ -580,7 +586,6 @@ Configuration:
         Build libpeas-gtk             : ${enable_gtk}
         Coverage testing              : ${enable_gcov}
         Glade Catalog                 : ${found_glade_catalog}
-        Disable deprecated features   : ${enable_deprecation}
 
 Languages support:
 

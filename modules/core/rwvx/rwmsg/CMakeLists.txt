@@ -76,6 +76,8 @@ target_link_libraries(rwmsgbroker PRIVATE
   rwmsg
   rwsched
   rwtrace
+  rwvcs
+  rwtasklet
 
   CoreFoundation
   ck

@@ -20,6 +20,7 @@
 #include <protobuf-c/rift-protobuf-c.h>
 #include <rwlib.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include <rw-dts.pb-c.h>
 #include <rwdts_int.h>
 
@@ -813,7 +814,7 @@ rwdts_shard_chunk_match(rwdts_shard_handle_t *shard_handle,
       }
     break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       return NULL;
   }
 
@@ -1668,7 +1669,7 @@ rwdts_rts_shard_update_element(rwdts_shard_t *shard, rwdts_chunk_rtr_info_t *rtr
       return(rwdts_rts_shard_update_element_null(shard, rtr_info, publisher, chunk_id, membid, msgpath)); 
     break;
     default:
-    RW_ASSERT(0);
+    RW_CRASH();
   }
   return RW_STATUS_FAILURE;
 }

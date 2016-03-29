@@ -32,11 +32,14 @@ class JsonToXmlTranslator(object):
     dicts, lists, and leaves. This class walks that tree shape and emits the
     equivalent NETCONF XML.
     '''
-    def __init__(self, schema_root, operation, is_rpc):
+    def __init__(self, schema_root, config_operation):
+        '''
+        schema_root : the schema node parent of the json to translate
+        config_operation : the netconf edit operation
+        '''
+        self._config_operation = config_operation
 
         self._schema_node = schema_root
-        self._operation = operation
-        self._is_rpc = is_rpc
 
         self._handler = {
             type(None) : self._handle_empty,
@@ -77,7 +80,6 @@ class JsonToXmlTranslator(object):
                     values = json_node["%s:%s" %(child_schema_node.get_prefix(),child_schema_node.get_name())]
                     key = child_schema_node.get_name()
                 except KeyError:
-
                     continue
 
             schema_prefix = child_schema_node.get_prefix()
@@ -102,8 +104,6 @@ class JsonToXmlTranslator(object):
                 xml.append("</%s>" % (schema_node_name))
 
         if len(schema_children) == 0:
-            
-            
             xml.append('')
 
         return ''.join(xml)
@@ -114,10 +114,11 @@ class JsonToXmlTranslator(object):
 
         namespace = schema_node.get_ns()
         for item in json_node:
-            if self._is_rpc:
+            if schema_node.is_rpc_input():
                 xml.append('<%s xmlns="%s">' % (key, namespace))
             else:
-                xml.append('<%s xmlns="%s" xc:operation="%s">' % (key, namespace, self._operation))
+                xml.append('<%s xmlns="%s" xc:operation="%s">' % (key, namespace, self._config_operation))
+
             xml.append(self._handler[type(item)](item, schema_node))
             xml.append("</%s>" % (key))
 
@@ -401,7 +402,7 @@ class ConfdRestTranslator(object):
         return xml
 
 
-    def _convert_POST_PUT_target(self, root_node, operation, body, queries, is_rpc, target):
+    def _convert_POST_PUT_target(self, root_node, operation, body, queries, is_operation, target):
         """Used to convert the last element and queries for POSTs, and PUTs
 
         root_node -- the YangNode that is the parent of the target
@@ -412,7 +413,7 @@ class ConfdRestTranslator(object):
         elif operation == "POST":
             config_operation = "create"
         else:
-            raise ValueError("unknown operation %s" % operation)
+            raise ValueErro("unknown operation %s" % operation)
 
         target_node = find_child_by_name(root_node, target)
 
@@ -427,9 +428,9 @@ class ConfdRestTranslator(object):
             is_xml = True
             xml_body = body[0]
             
-            if target_node.is_listy() and not is_rpc:
+            if target_node.is_listy() and not is_operation:
                 emit_target = False
-            elif is_rpc:
+            elif is_operation:
                 emit_target = True
                 if "<input>" not in xml_body:
                     raise ValueError("improper rpc input")
@@ -442,9 +443,9 @@ class ConfdRestTranslator(object):
             else:
                 translate_node = target_node
 
-            xml_body = JsonToXmlTranslator(translate_node, config_operation, is_rpc).convert(body[0])
+            xml_body = JsonToXmlTranslator(translate_node, config_operation).convert(body[0])
             is_xml = False
-        if is_xml and not is_rpc:
+        if is_xml and not is_operation:
             # json translator adds operation
             xml_body = xml_body.replace('>', ' xc:operation="{}">'.format(config_operation), 1)
 

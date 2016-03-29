@@ -198,6 +198,7 @@ class ActionProperty(Dict):
 
 class JujuApi(object):
     def __init__ (self, log, server, port, user, secret, loop):
+        ''' Connect to the juju host '''
         self.log = log
         self.server = server
         self.user = user
@@ -218,8 +219,11 @@ class JujuApi(object):
             ssl._create_default_https_context = ssl._create_unverified_context
 
     def reconnect(self):
-        self.log.info("Juju: try reconnect to endpoint ", self.endpoint)
+        ''' Reconnect on error cases'''
+        self.log.info("Juju: try reconnect to endpoint {}".
+                      format(self.endpoint))
         try:
+            self.lock.acquire()
             self.env.close()
             del self.env
         except Exception as e:
@@ -229,17 +233,22 @@ class JujuApi(object):
         try:
             self.env = ApiEnvironment(self.endpoint)
             self.env.login(self.secret, user=self.user)
-            self.log.info("Juju: reconnected to endpoint ", self.endpoint)
+            self.log.info("Juju: reconnected to endpoint {}".
+                          format(self.endpoint))
         except Exception as e:
             self.log.error("Juju: exception in close e={}".format(e))
 
+        self.lock.release()
 
     def get_status(self):
         try:
+            self.lock.acquire()
             status = self.env.status()
+            self.lock.release()
             return status
         except Exception as e:
             self.log.error("Juju: exception while getting status: {}".format(e))
+            self.lock.release()
             self.reconnect()
         return None
 
@@ -296,12 +305,16 @@ class JujuApi(object):
         return _parse_action_specs(results)
 
     def enqueue_action(self, action, receivers, params):
-        result = self.env.actions_enqueue(action, receivers, params)
         try:
-            return Action.from_data(result['results'][0])
+            self.lock.acquire()
+            result = self.env.actions_enqueue(action, receivers, params)
+            resp = Action.from_data(result['results'][0])
+            self.lock.release()
+            return resp
         except Exception as e:
             self.log.error("Juju: Exception enqueing action {} on units {} with params {}: {}".
                            format(action, receivers, params, e))
+            self.lock.release()
             return None
 
     @asyncio.coroutine
@@ -310,9 +323,8 @@ class JujuApi(object):
 
     def _is_deployed(self, service, status=None):
         status = self.get_service_status(service, status=status)
-        if status:
-            if status not in ['terminated']:
-                return True
+        if status not in ['terminated', 'NA']:
+            return True
 
         return False
 
@@ -327,25 +339,19 @@ class JujuApi(object):
             *** Make sure this is NOT a asyncio coroutine function ***
         '''
         try:
-            self.lock.acquire()
             #self.log.debug ("In get service status for service %s, %s" % (service, services))
             if status is None:
                 status = self.get_status()
             if status:
                 srv_status = status['Services'][service]['Status']['Status']
-                self.lock.release()
                 return srv_status
         except KeyError as e:
             self.log.info("Juju: Did not find service {}, e={}".format(service, e))
-            self.lock.release()
-            return None # Service not deployed
         except Exception as e:
             self.log.error("Juju: exception checking service status for {}, e {}".
                            format(service, e))
-            self.reconnect()
 
-        self.lock.release()
-        return 'unknown'
+        return 'NA'
 
     def is_service_active(self, service):
         if self.get_service_status(service) == 'active':
@@ -365,6 +371,10 @@ class JujuApi(object):
             return True
 
         return False
+
+    def is_service_in_error(self, service):
+        if self.get_service_status == 'error':
+            self.log.debug("Juju: service is in error state for %s" % service)
 
     def wait_for_service(self, service):
         # Check if the agent for the unit is up, wait for units does not wait for service to be up
@@ -391,15 +401,20 @@ class JujuApi(object):
             return False
         self.log.debug("Juju: Config for {} updated to: {}".format(service, config))
         try:
+            # Try to fix error on service, most probably due to config issue
+            if self.is_service_in_error:
+                self.resolve_error(service)
             self.lock.acquire()
             self.env.set_config(service, config)
+            self.lock.release()
+            return True
         except Exception as e:
             self.log.error("Juju: exception setting config for {} with {}, e {}".
                            format(service, config, e))
             self.reconnect()
 
         self.lock.release()
-        return True
+        return False
 
     @asyncio.coroutine
     def set_parameter(self, service, parameter, value):
@@ -429,7 +444,8 @@ class JujuApi(object):
 
         try:
             self.lock.acquire()
-            self.log.debug("Juju: Local charm settings: dir=%s, series=%s" % (directory, series))
+            self.log.debug("Juju: Local charm settings: dir=%s, series=%s" %
+                           (directory, series))
             result = self.env.add_local_charm_dir(directory, series)
             url = result['CharmURL']
 
@@ -441,8 +457,8 @@ class JujuApi(object):
             return 'error'
 
         try:
-            self.log.debug("Juju: Deploying using: service=%s, url=%s, to=%s, config=%s" %
-                           (service, url, deploy_to, config))
+            self.log.debug("Juju: Deploying using: service={}, url={}, to={}, config={}".
+                           format(service, url, deploy_to, config))
             if config:
                 self.env.deploy(service, url, machine_spec=deploy_to, config=config)
             else:
@@ -451,8 +467,8 @@ class JujuApi(object):
             self.log.warn('Juju: Error deploying {}: {}'.format(service, e))
             if not self._is_deployed(service):
                 self.log.critical ("Juju: Service {} is not deployed" % service)
-                self.reconnect()
                 self.lock.release()
+                self.reconnect()
                 return 'error'
 
         if wait:
@@ -460,15 +476,15 @@ class JujuApi(object):
             try:
                 self.log.debug("Juju: Waiting for charm %s to come up" % service)
                 self.env.wait_for_units(timeout=self.deploy_timeout)
+                self.lock.release()
             except Exception as e:
                 self.log.critical('Juju: Error starting all units for {}: {}'.
                                   format(service, e))
-                self.reconnect()
                 self.lock.release()
+                self.reconnect()
                 return 'error'
 
             self.wait_for_service(service)
-        self.lock.release()
         return 'deploying'
 
     @asyncio.coroutine
@@ -476,31 +492,30 @@ class JujuApi(object):
         return self.execute_actions(service, action, params, wait=wait, bail=bail)
 
     def _execute_actions(self, service, action, params, wait=False, bail=False):
+        tags = []
         try:
-            self.lock.acquire()
             services = get_service_units(self.env.status())
             depl_units = services[service]
         except KeyError as e:
             self.log.error("Juju: Unable to get service units for {}, e={}".
                            format(services, e))
-            self.lock.release()
-            raise e
+            return tags
         except Exception as e:
             self.log.error("Juju: Error on getting service details for service {}, e={}".
                            format(service, e))
             self.reconnect()
-            self.lock.release()
-            raise e
+            return tags
 
-        tags = []
         # Go through each unit deployed and apply the actions to the unit
         for unit, status in depl_units.items():
-            self.log.debug("Juju: Execute on unit %s with %s" % (unit, status))
+            self.log.debug("Juju: Execute on unit {} with {}".
+                           format(unit, status))
             idx = int(unit[unit.index('/')+1:])
             self.log.debug("Juju: Unit index is %d" % idx)
 
             unit_name = "unit-%s-%d" % (service, idx)
-            self.log.debug("Juju: Sending action: %s, %s, %s" % (action, unit_name, params))
+            self.log.debug("Juju: Sending action: {}, {}, {}".
+                           format(action, unit_name, params))
             try:
                 result = self.enqueue_action(action, [unit_name], params)
                 if result:
@@ -523,7 +538,6 @@ class JujuApi(object):
             #         raise RuntimeError("Juju: Error applying action %s on %s with %s" % (action, unit, params))
             #     yield from asyncio.sleep(1, loop=self.loop)
 
-        self.lock.release()
         return tags
 
     def get_service_units_status(self, service, status):
@@ -547,6 +561,30 @@ class JujuApi(object):
                        format(service, units_status))
         return units_status
 
+    def resolve_error(self, service, status=None):
+        if status is None:
+            status = self.get_status()
+
+        if status is None:
+            return
+
+        srv_status = self.get_service_status(service, status)
+        if srv_status and srv_status not in ['terminated', 'NA']:
+            units = self.get_service_units_status(service, status)
+            for unit, ustatus in units.items():
+                if ustatus == 'error':
+                    self.log.info("Juju: Found unit %s with status %s" %
+                                  (unit, ustatus))
+                    try:
+                        self.lock.acquire()
+                        # Takes the unit name as service_name/idx unlike action
+                        self.env.resolved(unit)
+                    except Exception as e:
+                        self.log.debug("Juju: Exception when running resolve on unit {}: {}".
+                                       format(unit, e))
+                    self.lock.release()
+
+
     @asyncio.coroutine
     def destroy_service(self, service):
         self._destroy_service(service)
@@ -556,17 +594,13 @@ class JujuApi(object):
             *** Do NOT add aysncio yield on this function, run in separate thread ***
         '''
         self.log.debug("Juju: Destroy charm service: %s" % service)
-        try:
-            self.lock.acquire()
-            status = self.get_status()
-        except Exception as e:
-            self.log.debug("Juju: Exception getting status e={}".format(e))
-            self.reconnect()
-        self.lock.release()
+        status = self.get_status()
+        if status is None:
+            return
 
         srv_status = self.get_service_status(service, status)
         count = 0
-        while srv_status and srv_status not in ['terminated']:
+        while srv_status and srv_status not in ['terminated', 'NA']:
             count += 1
             self.log.debug("Juju: service %s is in %s state, count %d" %
                            (service, srv_status, count))
@@ -575,35 +609,22 @@ class JujuApi(object):
                                (service, srv_status, count))
                 break
 
-            units = self.get_service_units_status(service, status)
-            for unit, ustatus in units.items():
-                if ustatus == 'error':
-                    self.log.info("Juju: Found unit %s with status %s" %
-                                  (unit, ustatus))
-                    try:
-                        self.lock.acquire()
-                        self.env.resolved(unit)
-                    except Exception as e:
-                        self.log.debug("Juju: Exception when running resolve ({}) on unit {}: {}".
-                                       format(count, unit, e))
-                    self.lock.release()
+            self.resolve_error(service, status)
 
             try:
                 self.lock.acquire()
                 self.env.destroy_service(service)
+                self.lock.release()
             except Exception as e:
                 self.log.debug("Juju: Exception when running destroy on service {}: {}".
-                       format(unit, e))
-            self.lock.release()
-
-            try:
-                time.sleep(3)
-                self.lock.acquire()
-                status = self.get_status()
-            except Exception as e:
-                self.log.error("Juju: Exception getting status again e={}".format(e))
+                       format(service, e))
+                self.lock.release()
                 self.reconnect()
-            self.lock.release()
+
+            time.sleep(3)
+            status = self.get_status()
+            if status is None:
+                return
             srv_status = self.get_service_status(service, status)
 
         self.log.debug("Destroyed service %s (%s)" % (service, srv_status))

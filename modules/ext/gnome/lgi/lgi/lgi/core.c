@@ -536,6 +536,13 @@ core_module (lua_State *L)
     name = g_strdup_printf (MODULE_NAME_FORMAT_PLAIN,
 			    luaL_checkstring (L, 1));
 
+#if defined(__APPLE__)
+  char *path = g_module_build_path (GOBJECT_INTROSPECTION_LIBDIR,
+                                    name);
+  g_free(name);
+  name = path;
+#endif
+
   /* Try to load the module. */
   GModule *module = g_module_open (name, 0);
   if (module == NULL)
@@ -555,6 +562,22 @@ core_module (lua_State *L)
   return 2;
 }
 
+static int core_upcase (lua_State *L)
+{
+  gchar *str = g_ascii_strup (luaL_checkstring (L, 1), -1);
+  lua_pushstring (L, str);
+  g_free (str);
+  return 1;
+}
+
+static int core_downcase (lua_State *L)
+{
+  gchar *str = g_ascii_strdown (luaL_checkstring (L, 1), -1);
+  lua_pushstring (L, str);
+  g_free (str);
+  return 1;
+}
+
 static const struct luaL_Reg lgi_reg[] = {
   { "log",  core_log },
   { "gtype", core_gtype },
@@ -565,6 +588,8 @@ static const struct luaL_Reg lgi_reg[] = {
   { "band", core_band },
   { "bor", core_bor },
   { "module", core_module },
+  { "upcase", core_upcase },
+  { "downcase", core_downcase },
   { NULL, NULL }
 };
 
@@ -636,7 +661,7 @@ set_resident (lua_State *L)
     }
 }
 
-int
+G_MODULE_EXPORT int
 luaopen_lgi_corelgilua51 (lua_State* L)
 {
   LgiStateMutex *mutex;

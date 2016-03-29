@@ -376,12 +376,23 @@ string StringFieldGenerator::GetGiGetterParameterList() const
   return param_list;
 }
 
-string StringFieldGenerator::GetGiParameterAnnotations() const
+string StringFieldGenerator::GetGiSetterAnnotations() const
 {
-  std::string annotations = "";
+  std::string annotations;
 
-  if (descriptor_->label() == FieldDescriptor::LABEL_REPEATED) {
-    annotations.append("(array length=len)");
+  switch (descriptor_->label()) {
+    case FieldDescriptor::LABEL_REPEATED:
+      annotations.append("(array length=len)");
+      break;
+    case FieldDescriptor::LABEL_OPTIONAL:
+      if (!isCType() && !riftopts.flatinline) {
+        annotations.append("(nullable)");
+      }
+      // ** fall through **
+    case FieldDescriptor::LABEL_REQUIRED:
+      break;
+    default:
+      return "";
   }
 
   if (annotations.length()) {

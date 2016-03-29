@@ -27,6 +27,9 @@ static rwdts_member_rsp_code_t rwmemlogdts_dts_callback_state(
   void *getnext_ptr )
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_xact_t *xact = xact_info->xact;
   RW_ASSERT_TYPE(xact, rwdts_xact_t);
 
@@ -70,6 +73,9 @@ static rwdts_member_rsp_code_t rwmemlogdts_dts_callback_command(
   void *getnext_ptr )
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_xact_t *xact = xact_info->xact;
   RW_ASSERT_TYPE(xact, rwdts_xact_t);
 
@@ -167,8 +173,17 @@ rw_status_t rwmemlog_instance_dts_register(
   rwdts_api_t* dts_api )
 {
   RW_ASSERT(instance);
+  if (!instance) {
+    return RW_STATUS_FAILURE;
+  }
   RW_ASSERT(!instance->tasklet_info);
+  if (instance->tasklet_info) {
+    return RW_STATUS_FAILURE;
+  }
   RW_ASSERT(!instance->dts_api);
+  if (instance->dts_api) {
+    return RW_STATUS_FAILURE;
+  }
 
   instance->dts_api = dts_api;
 
@@ -286,7 +301,7 @@ rw_status_t rwmemlog_instance_dts_register(
   /* Say we're finished */
   rwdts_appconf_phase_complete(instance->dts_config_group, RWDTS_APPCONF_PHASE_REGISTER);
 
-  return RW_STATUS_SUCCESS;
+  return instance->dts_config_reg?RW_STATUS_SUCCESS:RW_STATUS_FAILURE;
 
 error:
   rwmemlog_instance_dts_deregister( instance, false );
@@ -301,7 +316,13 @@ void rwmemlog_instance_dts_deregister(
   bool dts_internals)
 {
   RW_ASSERT(instance->buffer_pool);
+  if (!instance->buffer_pool) {
+    return;
+  }
   RW_ASSERT(instance->mutex);
+  if (!instance->mutex) {
+    return;
+  }
 
   if (instance->dts_config_group && !dts_internals) {
     // ATTN: How do I delete this thing?

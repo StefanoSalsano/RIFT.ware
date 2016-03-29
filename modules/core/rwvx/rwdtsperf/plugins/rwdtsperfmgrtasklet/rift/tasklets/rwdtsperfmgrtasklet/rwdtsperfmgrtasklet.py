@@ -15,6 +15,15 @@ import logging
 import math
 import sys
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwDtsperfYang', '1.0')
+gi.require_version('RwDtsperfmgrYang', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('RwVcsYang', '1.0')
+
+
+
 from gi.repository import (
     RwDts as rwdts,
     RwDtsperfYang as rwdtsperf,

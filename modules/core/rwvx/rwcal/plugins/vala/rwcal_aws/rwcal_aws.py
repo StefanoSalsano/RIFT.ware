@@ -4,6 +4,8 @@
 #
 
 import time
+import os
+import subprocess
 import logging
 import rift.rwcal.aws as aws_drv
 import rw_status
@@ -17,6 +19,9 @@ from gi.repository import (
 
 logger = logging.getLogger('rwcal.aws')
 logger.setLevel(logging.DEBUG)
+
+PREPARE_VM_CMD = "prepare_vm.py --aws_key {key} --aws_secret {secret} --aws_region {region} --server_id {server_id}"
+DELETE_VM_CMD =  "delete_vm.py --aws_key {key} --aws_secret {secret} --aws_region {region} --server_id {server_id}"
 
 rwstatus = rw_status.rwstatus_from_exc_map({ IndexError: RwTypes.RwStatus.NOTFOUND,
                                              KeyError: RwTypes.RwStatus.NOTFOUND,
@@ -314,11 +319,9 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             vm.state = 'inactive'
         for network_intf in vm_info.network_interfaces:
             if 'Attachment' in network_intf and network_intf['Attachment']['DeviceIndex'] == 0:
-                #For now use public ip as maangement IP
                 if 'Association' in network_intf and 'PublicIp' in network_intf['Association']:
-                    vm.management_ip = network_intf['Association']['PublicIp']
-                else:
-                    vm.management_ip = network_intf['PrivateIpAddress']
+                    vm.public_ip = network_intf['Association']['PublicIp']
+                vm.management_ip = network_intf['PrivateIpAddress']
             else:
                 addr = vm.private_ip_list.add()
                 addr.ip_address = network_intf['PrivateIpAddress']
@@ -407,6 +410,27 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         flavor = [flav for flav in self._flavor_list if flav.id == flavor_id]
         self._flavor_list.delete(flavor[0])
 
+    @staticmethod
+    def _fill_flavor_info(flavor_info):
+        """Create a GI object from flavor info dictionary
+
+        Converts Flavor information dictionary object returned by openstack
+        driver into Protobuf Gi Object
+
+        Arguments:
+            flavor_info: Flavor information from openstack
+
+        Returns:
+             Object of class FlavorInfoItem
+        """
+        flavor = RwcalYang.FlavorInfoItem()
+        flavor.name                       = flavor_info.name
+        flavor.id                         = flavor_info.id
+        flavor.vm_flavor.memory_mb = flavor_info.vm_flavor.memory_mb 
+        flavor.vm_flavor.vcpu_count = flavor_info.vm_flavor.vcpu_count 
+        flavor.vm_flavor.storage_gb = flavor_info.vm_flavor.storage_gb 
+        return flavor
+    
     @rwstatus(ret_on_failure=[[]])
     def do_get_flavor_list(self, account):
         """Return flavor information.
@@ -419,7 +443,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         """
         response = RwcalYang.VimResources()
         for flv in self._flavor_list:
-            response.flavorinfo_list.append(flv)
+            response.flavorinfo_list.append(RwcalAWSPlugin._fill_flavor_info(flv))
         return response
     
 
@@ -435,7 +459,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             Flavor info item
         """
         flavor = [flav for flav in self._flavor_list if flav.id == id]
-        return (flavor[0])
+        return (RwcalAWSPlugin._fill_flavor_info(flavor[0]))
 
     def _fill_network_info(self, network_info, account):
         """Create a GI object from network info dictionary
@@ -682,6 +706,16 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         drv = self._get_driver(account)
         port_list = drv.get_network_interface_list(SubnetId=link_id)
         for port in port_list:
+            if port  and port.association and 'AssociationId' in port.association:
+                drv.disassociate_public_ip_from_network_interface(NetworkInterfaceId=port.id)
+            if port and port.attachment and 'AttachmentId' in port.attachment:
+                drv.detach_network_interface(AttachmentId = port.attachment['AttachmentId'],Force=True) #force detach as otherwise delete fails
+                #detach instance takes time; so poll to check port is not in-use
+                port = drv.get_network_interface(NetworkInterfaceId=port.id)
+                retries = 0
+                while port.status == 'in-use' and retries < 10:
+                    time.sleep(5)
+                    port = drv.get_network_interface(NetworkInterfaceId=port.id)
             drv.delete_network_interface(NetworkInterfaceId=port.id)
         drv.delete_subnet(link_id)
         
@@ -766,7 +800,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         if mgmt_port[0].association and 'PublicIp' in mgmt_port[0].association:
             vdu.public_ip = mgmt_port[0].association['PublicIp']
             #For now set managemnet ip also to public ip 
-            vdu.management_ip = vdu.public_ip
+            #vdu.management_ip = vdu.public_ip
         if vm_info.tags:
             for tag in vm_info.tags:
                 if tag['Key'] == 'Name':
@@ -782,8 +816,9 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         #if vm_info.placement and 'AvailabilityZone' in vm_info.placement:
         #    vdu.availability_zone = vm_info.placement['AvailabilityZone']
         # Fill the port information
+        cp_port_list = [port for port in port_list if port.attachment and port.attachment['DeviceIndex'] != 0]
         
-        for port in port_list:
+        for port in cp_port_list:
             c_point = vdu.connection_points.add()
             RwcalAWSPlugin._fill_connection_point_info(c_point, port)
         return vdu
@@ -840,6 +875,24 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
                 drv.associate_public_ip_to_network_interface(NetworkInterfaceId = port.id)
         return port
     
+    def prepare_vdu_on_boot(self, account, server_id,vdu_init_params,vdu_port_list = None):
+        cmd = PREPARE_VM_CMD.format(key     = account.aws.key,
+                                  secret  = account.aws.secret,
+                                  region  = account.aws.region,
+                                  server_id = server_id)
+        if vdu_init_params.has_field('name'):
+            cmd += (" --vdu_name "+ vdu_init_params.name)
+        if vdu_init_params.has_field('node_id'):
+            cmd += (" --vdu_node_id "+ vdu_init_params.node_id)
+        if vdu_port_list is not None:
+            for port_id in vdu_port_list:
+                cmd += (" --vdu_port_list "+ port_id)  
+
+        exec_path = 'python3 ' + os.path.dirname(aws_drv.__file__)
+        exec_cmd = exec_path+'/'+cmd
+        logger.info("Running command: %s" %(exec_cmd))
+        subprocess.call(exec_cmd, shell=True)
+        
     @rwstatus(ret_on_failure=[""])
     def do_create_vdu(self, account, vdu_init):
         """Create a new virtual deployment unit
@@ -880,17 +933,22 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
 
         # Wait for instance to get to running state before attaching network interface
         # to instance 
-        vm_inst[0].wait_until_running()
+        #vm_inst[0].wait_until_running()
 
-        if vdu_init.name:
-            vm_inst[0].create_tags(Tags=[{'Key': 'Name','Value':vdu_init.name}])
-        if vdu_init.node_id is not None:
-            vm_inst[0].create_tags(Tags=[{'Key':'node_id','Value':vdu_init.node_id}])    
+        #if vdu_init.name:
+            #vm_inst[0].create_tags(Tags=[{'Key': 'Name','Value':vdu_init.name}])
+        #if vdu_init.node_id is not None:
+            #vm_inst[0].create_tags(Tags=[{'Key':'node_id','Value':vdu_init.node_id}])    
              
         # Create the connection points
+        port_list = []
         for index,c_point in enumerate(vdu_init.connection_points):
             port_id = self._create_connection_point(account, c_point)
-            drv.attach_network_interface(NetworkInterfaceId = port_id.id,InstanceId = vm_inst[0].id,DeviceIndex=index+1)
+            port_list.append(port_id.id)
+            #drv.attach_network_interface(NetworkInterfaceId = port_id.id,InstanceId = vm_inst[0].id,DeviceIndex=index+1)
+
+        # We wait for instance to get to running state and update name,node_id and attach network intfs
+        self.prepare_vdu_on_boot(account, vm_inst[0].id, vdu_init, port_list)
 
         return vm_inst[0].id
 
@@ -948,6 +1006,19 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
                 port = drv.get_network_interface(NetworkInterfaceId=c_point.connection_point_id)
             drv.delete_network_interface(port.id)
               
+    def cleanup_vdu_on_term(self, account, server_id,vdu_port_list = None):
+        cmd = DELETE_VM_CMD.format(key    = account.aws.key,
+                                  secret  = account.aws.secret,
+                                  region  = account.aws.region,
+                                  server_id = server_id)
+        if vdu_port_list is not None:
+            for port_id in vdu_port_list:
+                cmd += (" --vdu_port_list "+ port_id)  
+
+        exec_path = 'python3 ' + os.path.dirname(aws_drv.__file__)
+        exec_cmd = exec_path+'/'+cmd
+        logger.info("Running command: %s" %(exec_cmd))
+        subprocess.call(exec_cmd, shell=True)
         
     @rwstatus
     def do_delete_vdu(self, account, vdu_id):
@@ -965,19 +1036,11 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         vm_inst = drv.get_instance(vdu_id)
        
         port_list = drv.get_network_interface_list(InstanceId = vdu_id)
-        delete_port_list = [port for port in port_list if port.attachment and port.attachment['DeleteOnTermination'] is False]
+        delete_port_list = [port.id for port in port_list if port.attachment and port.attachment['DeleteOnTermination'] is False]
         drv.terminate_instance(vdu_id)
+
+        self.cleanup_vdu_on_term(account,vdu_id,delete_port_list)
         
-        # Interface can be deleted only after they are detached and so wait for instance to be
-        # terminated before deleting network interface
-        if len(delete_port_list) > 0:
-            vm_inst.wait_until_terminated()
-            for port in delete_port_list:
-                # Release elastic ip address if associated 
-                if port.association and 'AssociationId' in port.association:
-                    drv.disassociate_public_ip_from_network_interface(NetworkInterfaceId=port.id)
-                drv.delete_network_interface(port.id)
-                
     
     @rwstatus(ret_on_failure=[None])
     def do_get_vdu(self, account, vdu_id):

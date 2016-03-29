@@ -59,7 +59,7 @@ loadComposer = () => {
   let mgmtDomainName = window.location.hash.split('/')[2];
   LaunchpadFleetStore.closeSocket();
   LaunchpadFleetStore.listen(this.handleUpdate);
-  window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=http://' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + mgmtDomainName + '&auth=' + auth);
+  window.location.replace('//' + window.location.hostname + ':9000/index.html?api_server=' + API_SERVER + '&upload_server=' + window.location.protocol + '//' + window.location.hostname + '&clearLocalStorage' + '&mgmt_domain_name=' + mgmtDomainName + '&auth=' + auth);
 };
 render () {
     var self = this;
@@ -77,16 +77,23 @@ render () {
         onClick: this.componentWillUnmount
       })
     };
-    let nav = <AppHeader title={'LAUNCHPAD: ' + mgmtDomainName} nav={navItems} />
+    if(!mgmtDomainName) {
+      mgmtDomainName = 'dashboard';
+    }
+    if(mgmtDomainName.toUpperCase() == 'DASHBOARD' || mgmtDomainName.toUpperCase() == 'UNDEFINED') {
+      mgmtDomainName = '';
+    } else {
+      mgmtDomainName = ' : ' + mgmtDomainName;
+    }
+    let nav = <AppHeader title={'LAUNCHPAD' + mgmtDomainName} nav={navItems} />
     return (
-      <div>
+      <div className="lp_dashboard">
       {nav}
         <ScreenLoader show={self.state.isLoading}/>
         <ReactCSSTransitionGroup
         transitionName="loader-animation"
         component="div"
         className="dashboardCard_wrapper"
-
         >
             {
               self.state.nsrs.map(

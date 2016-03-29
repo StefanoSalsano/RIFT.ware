@@ -9,6 +9,7 @@ basesystem-10.0-9.fc20.noarch
 bash-4.2.45-4.fc20.x86_64
 bind-libs-lite-9.9.4-8.fc20.x86_64
 bind-license-9.9.4-8.fc20.noarch
+bind-utils
 binutils-2.23.88.0.1-13.fc20.x86_64
 boost-filesystem-1.54.0-9.fc20.x86_64
 boost-system-1.54.0-9.fc20.x86_64
@@ -60,6 +61,7 @@ e2fsprogs-libs-1.42.8-3.fc20.x86_64
 ebtables-2.0.10-11.fc20.x86_64
 elfutils-libelf-0.157-1.fc20.x86_64
 expat-2.1.0-7.fc20.x86_64
+expect-5.45-10.fc20.x86_64
 fedora-logos-21.0.1-1.fc20.x86_64
 fedora-release-20-1.noarch
 file-5.14-14.fc20.x86_64
@@ -103,6 +105,7 @@ heat-cfntools-1.2.3-2.fc20.noarch
 hostname-3.13-2.fc20.x86_64
 http-parser-2.0-5.20121128gitcd01361.fc20.x86_64
 http-parser-devel-2.0-5.20121128gitcd01361.fc20.x86_64
+httpd
 hwdata-0.260-1.fc20.noarch
 info-5.1-4.fc20.x86_64
 initscripts-9.50-1.fc20.x86_64
@@ -207,6 +210,7 @@ libvirt-daemon-driver-storage-1.1.3.3-2.fc20.x86_64
 libvirt-daemon-driver-uml-1.1.3.3-2.fc20.x86_64
 libvirt-daemon-driver-vbox-1.1.3.3-2.fc20.x86_64
 libvirt-daemon-driver-xen-1.1.3.3-2.fc20.x86_64
+libvirt-daemon-lxc-1.1.3.3-2.fc20.x86_64
 libwebp-0.3.1-2.fc20.x86_64
 libwsman1-2.3.6-8.fc20.x86_64
 libxml2-2.9.1-2.fc20.x86_64
@@ -228,6 +232,7 @@ man-db-2.6.5-2.fc20.x86_64
 mozjs17-17.0.0-8.fc20.x86_64
 mpfr-3.1.2-4.fc20.x86_64
 mtools-4.0.18-4.fc20.x86_64
+nbd
 ncurses-5.9-12.20130511.fc20.x86_64
 ncurses-base-5.9-12.20130511.fc20.noarch
 ncurses-libs-5.9-12.20130511.fc20.x86_64
@@ -370,6 +375,8 @@ perl-threads-shared-1.45-1.fc20.x86_64
 perl-Time-HiRes-1.9726-1.fc20.x86_64
 perl-Time-Local-1.2300-291.fc20.noarch
 perl-version-0.99.04-2.fc20.x86_64
+php
+php-gd
 pinentry-0.8.1-11.fc20.x86_64
 pkgconfig-0.28-3.fc20.x86_64
 pm-utils-1.4.1-26.fc20.x86_64
@@ -433,8 +440,10 @@ rpm-libs-4.11.1-7.fc20.x86_64
 rpm-python-4.11.1-7.fc20.x86_64
 rsync-3.1.0-1pre1.fc20.x86_64
 rsyslog-7.4.2-2.fc20.x86_64
-salt-0.17.5-1.fc20.noarch
-salt-master-0.17.5-1.fc20.noarch
+salt-master-2015.5.0-1.fc20.noarch
+salt-2015.5.0-1.fc20.noarch
+salt-minion-2015.5.0-1.fc20.noarch
+screen
 sed-4.2.2-5.fc20.x86_64
 selinux-policy-3.12.1-106.fc20.noarch
 selinux-policy-targeted-3.12.1-106.fc20.noarch
@@ -454,6 +463,7 @@ systemd-208-9.fc20.x86_64
 systemd-libs-208-9.fc20.x86_64
 sysvinit-tools-2.88-14.dsf.fc20.x86_64
 tar-1.26-29.fc20.x86_64
+tcl-8.5.14-1.fc20.x86_64
 tcp_wrappers-7.6-76.fc20.x86_64
 tcp_wrappers-libs-7.6-76.fc20.x86_64
 trousers-0.3.11.2-1.fc20.x86_64
@@ -478,3 +488,4 @@ zeromq3-3.2.4-1.fc20.x86_64
 zip-3.0-9.fc20.x86_64
 zlib-1.2.8-3.fc20.x86_64
 zlib-devel-1.2.8-3.fc20.x86_64
+zookeeper-java.noarch

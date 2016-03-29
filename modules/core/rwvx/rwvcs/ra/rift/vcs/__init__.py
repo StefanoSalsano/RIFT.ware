@@ -18,11 +18,11 @@ from .procs import (
         Confd,
         RedisCluster,
         RedisServer,
-        RestconfNative,
         Webserver,
         UIServerLauncher,
         RiftCli,
         CrossbarServer,
+        Watchdog,
         )
 
 from .tasklets import (

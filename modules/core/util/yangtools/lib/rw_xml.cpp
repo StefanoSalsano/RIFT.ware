@@ -3171,7 +3171,7 @@ void XMLWalkerInOrder::walk_recursive(XMLNode *node, XMLVisitor *visitor)
       return;
     default:
       // Hmmm ... Assert for now
-      RW_ASSERT(0);
+      RW_CRASH();
   }
   if (next_node) {
     walk_recursive(next_node, visitor);
@@ -3255,7 +3255,7 @@ rw_xml_next_action_t Builder::append_child (XMLNode *node)
 {
   UNUSED (node);
 
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_XML_ACTION_ABORT;
 }
 
@@ -3267,7 +3267,7 @@ rw_xml_next_action_t Builder::append_child (const char *local_name,
   UNUSED (ns);
   UNUSED (text_val);
 
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3278,7 +3278,7 @@ rw_xml_next_action_t Builder::mark_child_for_deletion(const char *local_name,
   UNUSED (local_name);
   UNUSED (ns);
 
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3291,7 +3291,7 @@ rw_xml_next_action_t Builder::append_child_enum (const char *local_name,
   UNUSED (ns);
   UNUSED (val);
 
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3300,7 +3300,7 @@ rw_xml_next_action_t Builder::push (XMLNode *node)
 {
   UNUSED (node);
 
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3311,7 +3311,7 @@ rw_xml_next_action_t Builder::push (const char *local_name,
   UNUSED (local_name);
   UNUSED (ns);
 
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3357,6 +3357,10 @@ rw_xml_next_action_t XMLBuilder::append_child_enum (const char *local_name,
       // error - abort traversal
       return RW_XML_ACTION_ABORT;
     }
+    if (!child_yang->is_key()) {
+      is_non_key_set_ = true;
+      merge_op_ = true;
+    }
 
     if (current_node_->add_child (child_yang, text_val.c_str()) == nullptr) {
       // error - abort traversal
@@ -3387,6 +3391,11 @@ rw_xml_next_action_t XMLBuilder::append_child (const char *local_name,
     return RW_XML_ACTION_TERMINATE;
   }
 
+  if (!child_yang->is_key()) {
+    is_non_key_set_ = true;
+    merge_op_ = true;
+  }
+
   if (current_node_->add_child (child_yang, text_val) == nullptr) {
     // error - abort traversal
     return RW_XML_ACTION_ABORT;
@@ -3408,7 +3417,11 @@ rw_xml_next_action_t XMLBuilder::mark_child_for_deletion (const char *local_name
   XMLNode *child = current_node_->add_child (child_yang);
   RW_ASSERT(nullptr != child);
 
-  merge_op_ = false;
+  // If there was a set on an attribute which was non-key node
+  // we must not suppress the merge operation.
+  if (!is_non_key_set_) {
+    merge_op_ = false;
+  }
 
   if (child_yang->has_keys()) {
     // This is a list. Need to push this node, get all the keys, and be back
@@ -3442,7 +3455,9 @@ rw_xml_next_action_t XMLBuilder::push (const char *local_name,
 {
   stack_.push (current_node_);
 
+  // Reset to default values
   if (!merge_op_) merge_op_ = true;
+  if (is_non_key_set_) is_non_key_set_ = false;
 
   YangNode* my_yang_node = current_node_->get_descend_yang_node();
   RW_ASSERT (my_yang_node);
@@ -3547,11 +3562,11 @@ rw_yang_netconf_op_status_t Traverser::traverse()
         return RW_YANG_NETCONF_OP_STATUS_FAILED;
 
       default:
-        RW_ASSERT(0);
+        RW_CRASH();
     }
   }
 
-  RW_ASSERT(0);
+  RW_CRASH();
   return RW_YANG_NETCONF_OP_STATUS_FAILED;
 }
 

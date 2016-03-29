@@ -4,14 +4,13 @@
  *
  */
 var cors = require('cors');
-var Subscriptions = require('./sockets.js');
-var Subscription = new Subscriptions();
 var fs = require('fs');
 var missionControlAPI = require('./missioncontrol/missionControl.js');
 var launchpadAPI = require('./launchpad/launchpad.js');
 var aboutAPI = require('./about/about.js')
 var debugAPI = require('./debug/debug.js')
 var cloudAPI = require('./cloud_account/cloudAccount.js')
+var sdnAPI = require('./sdn_account/sdnAccount.js')
 var bodyParser = require('body-parser');
 var utils = require('./utils/utils.js');
 var logging = require('./logging/logging.js');
@@ -32,13 +31,15 @@ function sendSuccessResponse(response, res) {
     res.status(response.statusCode);
     res.send(response.data);
 }
-var routes = function(app) {
+var routes = function(app, socketManager) {
     app.use(bodyParser.json());
     app.use(cors());
     app.use(bodyParser.urlencoded({
         extended: true
     }));
-    app.all('*', cors(), function(req, res, next) {
+
+    // Begin auth related routes
+    function checkAuthorization(req, res, next) {
         utils.checkAuthorizationHeader(req).then(
             //success
             function() {
@@ -51,7 +52,57 @@ var routes = function(app) {
                     error: 'Authentication information required'
                 });
             });
+    };
+
+    app.all('/launchpad*', cors(), function(req, res, next) {
+        checkAuthorization(req, res, next);
     });
+
+    app.all('/mission-control*', cors(), function(req, res, next) {
+        checkAuthorization(req, res, next);
+    });
+
+    app.all('/logging*', cors(), function(req, res, next) {
+        checkAuthorization(req, res, next);
+    });
+
+    app.all('/socket-polling*', cors(), function(req, res, next) {
+        checkAuthorization(req, res, next);
+    });
+
+    app.all('/api*', cors(), function(req, res, next) {
+        checkAuthorization(req, res, next);
+    });
+
+    app.all('/cloud-account*', cors(), function(req, res, next) {
+        checkAuthorization(req, res, next);
+    });
+    // End auth related routes
+
+    // Test route
+    app.get('/test', cors(), function(req, res) {
+        res.statusCode = 200;
+        res.send({
+            hello: 'world'
+        });
+    });
+    // Test end
+
+    // Begin unauntheticated APIs
+
+    // Used by QA
+    app.get('/inactivity-timeout', cors(), function(req, res) {
+        var response = {
+            statusCode: 200,
+            data: {
+                'inactivity-timeout': process.env.UI_TIMEOUT_SECS || 600000
+            }
+        }
+        sendSuccessResponse(response, res);
+    });
+
+    // End unauntheticated APIs
+
     // Begin launchpad page APIs
     //
     app.get('/launchpad/nsr', cors(), function(req, res) {
@@ -194,8 +245,15 @@ var routes = function(app) {
             res.send(error.errorMessage);
         });
     });
-    app.get('/launchpad/nsr/:id/topology', cors(), function(req, res) {
-        launchpadAPI['topology'].get(req).then(function(data) {
+    app.get('/launchpad/nsr/:id/compute-topology', cors(), function(req, res) {
+        launchpadAPI['computeTopology'].get(req).then(function(data) {
+            sendSuccessResponse(data, res);
+        }, function(error) {
+            sendErrorResponse(error, res);
+        })
+    });
+    app.get('/launchpad/network-topology', cors(), function(req, res) {
+        launchpadAPI['networkTopology'].get(req).then(function(data) {
             sendSuccessResponse(data, res);
         }, function(error) {
             sendErrorResponse(error, res);
@@ -485,15 +543,6 @@ var routes = function(app) {
             sendErrorResponse(error, res);
         });
     });
-    // End mission control page APIs
-    // Start Logging API
-    app.get('/logging/syslog-viewer', cors(), function(req, res) {
-        logging.get(req).then(function(data) {
-            res.send(data);
-        }, function(error) {
-            sendErrorResponse(error, res);
-        })
-    });
     app.get('/mission-control/crash-details', cors(), function(req, res) {
       debugAPI["crash-details"].get(req).then(
         function(data) {
@@ -514,9 +563,20 @@ var routes = function(app) {
         }
       );
     });
+    // End mission control page APIs
+    // Start Logging API
+    app.get('/logging/syslog-viewer', cors(), function(req, res) {
+        logging.get(req).then(function(data) {
+            res.send(data);
+        }, function(error) {
+            sendErrorResponse(error, res);
+        })
+    });
+    // End Logging API
+    
     // Start socket API
     app.post('/socket-polling', cors(), function(req, res) {
-        Subscription.subscribe(req).then(function(data) {
+        socketManager.subscribe(req).then(function(data) {
           sendSuccessResponse(data, res);
         }, function(error) {
           sendErrorResponse(error, res);
@@ -579,5 +639,43 @@ var routes = function(app) {
         });
     });
     // end Cloud Account API
+
+    // Start Sdn Account API
+    app.get('/sdn-account', cors(), function(req, res) {
+        sdnAPI.get(req).then(function(data) {
+            sendSuccessResponse(data, res);
+        }, function(error) {
+            sendErrorResponse(error, res);
+        });
+    });
+    app.get('/sdn-account/:id', cors(), function(req, res) {
+        sdnAPI.get(req).then(function(data) {
+            sendSuccessResponse(data, res);
+        }, function(error) {
+            sendErrorResponse(error, res);
+        });
+    });
+    app.post('/sdn-account', cors(), function(req, res) {
+        sdnAPI.create(req).then(function(data) {
+            sendSuccessResponse(data, res);
+        }, function(error) {
+            sendErrorResponse(error, res);
+        });
+    });
+    app.put('/sdn-account/:id', cors(), function(req, res) {
+        sdnAPI.update(req).then(function(data) {
+            sendSuccessResponse(data, res);
+        }, function(error) {
+            sendErrorResponse(error, res);
+        });
+    });
+    app.delete('/sdn-account/:id', cors(), function(req, res) {
+       sdnAPI.delete(req).then(function(data) {
+            sendSuccessResponse(data, res);
+        }, function(error) {
+            sendErrorResponse(error, res);
+        });
+    });
+    // End Sdn Account API
 };
 module.exports = routes;

@@ -6,6 +6,8 @@
 
 import json
 
+import tornado.escape
+
 from ..schema import collect_children
 
 def json_to_xml(schema_node, json_string):
@@ -76,13 +78,18 @@ def json_to_xml(schema_node, json_string):
         return str(json_node)
 
     def _handle_str(json_node, schema_node, key=None):
-        return json_node
-
+        return tornado.escape.xhtml_escape(json_node)
+            
     handler = {dict : _handle_dict, 
                int : _handle_int, 
                bool : _handle_int,
                str : _handle_str}        
 
+
+
+
     parsed_json= json.loads(json_string)
 
-    return "<root>" + handler[type(parsed_json)](parsed_json, schema_node) + "</root>"
+    xml_str = "<root>" + handler[type(parsed_json)](parsed_json, schema_node) + "</root>"
+
+    return xml_str

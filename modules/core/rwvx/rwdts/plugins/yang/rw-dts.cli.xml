@@ -7,5 +7,6 @@
      <addPrintHook path="dts" hook="rwcli_plugin:default_print"/>
      <addPrintHook path="start-dts" hook="rwcli_plugin:default_print"/>
      <addPrintHook path="rtr-peer-reg-keyspec" hook="rwcli_plugin:default_print"/>
+     <addPrintHook path="journal-info" hook="rwcli_plugin:default_print"/>
   </modifications>
 </cli>

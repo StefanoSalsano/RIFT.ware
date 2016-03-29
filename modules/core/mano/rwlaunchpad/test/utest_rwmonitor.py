@@ -15,6 +15,11 @@ import unittest
 import uuid
 import xmlrunner
 
+import gi
+gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwVnfrYang', '1.0')
+gi.require_version('RwTypes', '1.0')
+
 from gi.repository import (
         RwcalYang,
         RwVnfrYang,

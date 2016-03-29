@@ -37,6 +37,8 @@ import VirtualLink from './descriptors/VirtualLink'
 import VirtualNetworkFunction from './descriptors/VirtualNetworkFunction'
 import VirtualNetworkFunctionReadOnlyWrapper from './descriptors/VirtualNetworkFunctionReadOnlyWrapper'
 import InternalConnectionPointRef from './descriptors/InternalConnectionPointRef'
+import VirtualNetworkFunctionConnectionPoint from './descriptors/VirtualNetworkFunctionConnectionPoint'
+import VirtualDeploymentUnitInternalConnectionPoint from './descriptors/VirtualDeploymentUnitInternalConnectionPoint'
 
 function findChildDescriptorModelAndUpdateModel(model, parent) {
 	if (parent instanceof DescriptorModel) {
@@ -88,6 +90,12 @@ class DescriptorModelFactory {
 
 		function mapClassifier(classifier, containerList) {
 			containerList.push(classifier);
+			// get the referenced vnfd required for rendering the connection point
+			const vnfdRef = findCatalogItemByTypeAndId('vnfd', classifier.model['vnfd-id-ref']);
+			if (vnfdRef) {
+				classifier.uiState.vnfdRef = vnfdRef;
+			}
+			classifier.matchAttributes.forEach(attr => containerList.push(attr));
 		}
 
 		function mapRSP(rsp, containerList) {
@@ -103,6 +111,7 @@ class DescriptorModelFactory {
 
 		function mapVDU(vdu, containerList) {
 			containerList.push(vdu);
+			vdu.connectionPoint.forEach(d => containerList.push(d));
 		}
 
 		function mapCVNFD(cvnfd, containerList) {
@@ -128,6 +137,7 @@ class DescriptorModelFactory {
 			containerList.push(vnfd);
 			vnfd.vdu.forEach(vdu => mapVDU(vdu, containerList));
 			vnfd.vld.forEach(vld => mapIVLD(vld, containerList));
+			vnfd.connectionPoint.forEach(cp => containerList.push(cp));
 		}
 
 		function mapPNFD(pnfd, containerList) {
@@ -168,8 +178,8 @@ class DescriptorModelFactory {
 		return findChildDescriptorModelAndUpdateModel(model, parent) || new VirtualNetworkFunction(model, parent);
 	}
 
-	static newConnectionPoint(model, parent) {
-		return findChildDescriptorModelAndUpdateModel(model, parent) || new ConnectionPoint(model, parent);
+	static newVirtualNetworkFunctionConnectionPoint(model, parent) {
+		return findChildDescriptorModelAndUpdateModel(model, parent) || new VirtualNetworkFunctionConnectionPoint(model, parent);
 	}
 
 	static newInternalConnectionPoint(model, parent) {
@@ -178,6 +188,10 @@ class DescriptorModelFactory {
 
 	static newVirtualDeploymentUnit(model, parent) {
 		return findChildDescriptorModelAndUpdateModel(model, parent) || new VirtualDeploymentUnit(model, parent);
+	}
+
+	static newVirtualDeploymentUnitInternalConnectionPoint(model, parent) {
+		return findChildDescriptorModelAndUpdateModel(model, parent) || new VirtualDeploymentUnitInternalConnectionPoint(model, parent);
 	}
 
 	static newVirtualLink(model, parent) {
@@ -235,7 +249,8 @@ class DescriptorModelFactory {
 	}
 
 	static newInternalConnectionPointRef(model, parent) {
-		return findChildDescriptorModelAndUpdateModel(model, parent) || new InternalConnectionPointRef(model, parent);
+		// note do not find children bc model is not an object it is a leaf-list primative and so the class manages it
+		return new InternalConnectionPointRef(model, parent);
 	}
 
 	/**
@@ -265,6 +280,10 @@ class DescriptorModelFactory {
 
 	static isConstituentVnfd(obj) {
 		return obj instanceof ConstituentVnfd;
+	}
+
+	static isConstituentVnfdWithServiceChain(obj, chain) {
+		return obj instanceof ConstituentVnfd && obj.vnfdServiceFunctionChain === chain;
 	}
 
 	static isNetworkService(obj) {
@@ -327,7 +346,7 @@ class DescriptorModelFactory {
 		return Classifier;
 	}
 
-	static get ClassifierMatchAttribute() {
+	static get ClassifierMatchAttributes() {
 		return ClassifierMatchAttributes;
 	}
 
@@ -351,8 +370,12 @@ class DescriptorModelFactory {
 		return InternalConnectionPointRef;
 	}
 
-	static get ConnectionPoint() {
-		return ConnectionPoint;
+	static get VirtualNetworkFunctionConnectionPoint() {
+		return VirtualNetworkFunctionConnectionPoint;
+	}
+
+	static get VirtualDeploymentUnitInternalConnectionPoint() {
+		return VirtualDeploymentUnitInternalConnectionPoint;
 	}
 
 }

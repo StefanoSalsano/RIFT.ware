@@ -35,8 +35,9 @@ module rw-vnf-base-config
        RIFT VNFs augment this YANG model for configuration.";
   }
 
-  grouping vm-identity{
-    leaf vm-identity{
+  grouping vm-identity {
+    leaf vm-identity {
+      description "VM ID";
       type uint32;
     }
   }
@@ -47,6 +48,7 @@ module rw-vnf-base-config
     description
       "Container for VNF base configuration";
     list network-context {
+      description "Network Context configuration";
       rwpb:msg-new ConfigNetworkContext;
       rwcli:new-mode "network-context";
       key name;
@@ -59,44 +61,56 @@ module rw-vnf-base-config
       }
 
       list interface {
+        description "List of interfaces";
         rwpb:msg-new ConfigIpInterface;
         rwcli:new-mode "ip-interface";
         key name;
 
         leaf name {
-          description "interface name";
+          description "Interface name";
           type string {
             length "min..64";
           }
           rwpb:field-inline true;
         }
-        leaf interface-type{
-          description "Interface type. defaults to an interface bound to port/vlan";
+        leaf interface-type {
+          description "Interface type, defaults to an interface bound to port/VLAN";
           type rwvnfbasetypes:interface-type;
         }
 
-        choice type{
-          case broadcast{
+        choice type {
+          case broadcast {
             uses rwvnfbasetypes:bind-interface;
           }
-          case tunnel{
-            container tunnel{
+          case tunnel {
+            container tunnel {
               rwpb:msg-flat true;
               rwpb:msg-new TunnelParams;
               uses rwvnfbasetypes:tunnel-params;
             }
           }
         }
-
-        list ip {
-          key address;
-
-          leaf address {
-            description "IP address assigned to the interface";
-            type rwt:ip-prefix-non-canonical;
-            rwpb:field-string-max 46;
-            rwpb:field-inline true;
-            rwpb:field-c-type "rw_ip_prefix_t";
+        choice autoconfig{
+          case autoconfig{
+            container autoconfigure {
+              description "Auconfigure paramertes either from port or dhcp";
+              leaf port{
+                type empty;
+              }
+            }
+          }
+          case manual {
+            list ip {
+              key address;
+              
+              leaf address {
+                description "IP address assigned to the interface";
+                type rwt:ip-prefix-non-canonical;
+                rwpb:field-string-max 46;
+                rwpb:field-inline true;
+                rwpb:field-c-type "rw_ip_prefix_t";
+              }
+            }
           }
         }
       }
@@ -107,10 +121,15 @@ module rw-vnf-base-config
         }
       }
       container ip {
+        description "IP configuration parameters";
         rwpb:msg-new ConfigIp;
+        leaf ipv6-forwarding {
+          type empty;
+          description "Enable IPv6 forwarding";
+        }
 
         list route {
-          description "static IP route configured";
+          description "Static IP route configured";
           rwpb:msg-new ConfigRoute;
           key prefix;
           rwcli:new-mode "ip-route";
@@ -123,47 +142,51 @@ module rw-vnf-base-config
         }
         
         list neighbor {
+          description "Neighbor (ARP) configuration";
           key address;
 
-          leaf address{
-            description "IP address for the static arp entry";
+          leaf address {
+            description "IP address for the static ARP entry";
             type rwt:ip-address;
             rwpb:field-string-max 46;
             rwpb:field-c-type "rw_ip_addr_t";
           }
           leaf macaddress {
-            description "MAC address for the static arp entry";
+            description "MAC address for the static ARP entry";
             type rwt:mac-address;
             rwpb:field-string-max 18;
             rwpb:field-c-type "rw_mac_addr_t";
           }
           leaf interface-name {
-            description "Interface Name for the static arp entry";
+            description "Interface Name for the static ARP entry";
             type string {
               length "min..64";
             }
           }
         }
 
-        list pool{
+        list pool {
+          description "IP pool configuration";
           rwpb:msg-new ConfigPool;
           rwcli:new-mode "ip-pool";
           key name;
 
-          leaf name{
-            description "pool name for the pool";
+          leaf name {
+            description "Name for the pool";
             type string {
               length "min..64";
             }
           }
-          leaf nat-pool{
+          leaf nat-pool {
+            description "Enable NAT for the pool";
             type boolean;
           }
-          list address{
+          list address {
+            description "List of IP prefixes for the pool";
             rwpb:msg-new ConfigPoolAddress;
             key prefix;
             leaf prefix {
-              description "prefix for the pool";
+              description "Prefix for the pool";
               rwpb:field-inline true;
               type rwt:ip-prefix-non-canonical;
               rwpb:field-string-max 46;
@@ -173,21 +196,23 @@ module rw-vnf-base-config
         }
 
         list nat-pool {
+          description "NAT pool configuration";
           rwpb:msg-new ConfigNatPool;
           rwcli:new-mode "ip-nat-pool";
           key name;
-          leaf name{
-            description "pool name for the nat-pool";
+          leaf name {
+            description "Name for the NAT pool";
             type string {
               length "min..64";
             }
           }
-          list address{
+          list address {
+            description "List of IP prefixes for the pool";
             rwpb:msg-new ConfigNatPoolAddress;
             max-elements 10;
             key prefix;
             leaf prefix {
-              description "prefix for the nat-pool";
+              description "Prefix for the NAT pool";
               rwpb:field-inline true;
               type rwt:ip-prefix-non-canonical;
               rwpb:field-string-max 46;
@@ -199,6 +224,7 @@ module rw-vnf-base-config
       }
 
       container packet-capture {
+        description "Packet capture configuration";
         list filter {
           rwpb:msg-new IpFilterConfig;
           key "trace-id";
@@ -207,6 +233,7 @@ module rw-vnf-base-config
       }
 
       container packet-trace {
+        description "Packet trace configuration";
         list filter {
           rwpb:msg-new IpFilterConfigTrace;
           key "trace-id";
@@ -215,6 +242,7 @@ module rw-vnf-base-config
       }
 
       list vrf {
+        description "Virtual Router and Forwarding (VRF) configurations";
         rwpb:msg-new ConfigVrf;
         rwcli:new-mode vrf;
 
@@ -229,28 +257,29 @@ module rw-vnf-base-config
         }
 
         list interface {
+          description "VRF interface configuration";
           rwpb:msg-new VrfConfigIpInterface;
           rwcli:new-mode "ip-interface";
           key name;
 
           leaf name {
-            description "interface name";
+            description "Interface name";
             type string {
               length "min..64";
             }
             rwpb:field-inline true;
           }
-          leaf interface-type{
-            description "Interface type. defaults to an interface bound to port/vlan";
+          leaf interface-type {
+            description "Interface type, defaults to an interface bound to port/VLAN";
             type rwvnfbasetypes:interface-type;
           }
 
-          choice type{
-            case broadcast{
+          choice type {
+            case broadcast {
               uses rwvnfbasetypes:bind-interface;
             }
-            case tunnel{
-              container tunnel{
+            case tunnel {
+              container tunnel {
                 rwpb:msg-flat true;
                 rwpb:msg-new VrfTunnelParams;
                 uses rwvnfbasetypes:tunnel-params;
@@ -259,6 +288,7 @@ module rw-vnf-base-config
           }
 
           list ip {
+            description "Interface IP list";
             key address;
 
             leaf address {
@@ -272,38 +302,44 @@ module rw-vnf-base-config
         }
         container ipv6{
           description "Ipv6 specific configuration. Routes/Neighbors are common to v4/v6 and are found under the ip container";
-          leaf forwarding{
+          leaf forwarding {
             type empty;
+            description "Enable IPv6 forwarding";
           }
         }
         container ip {
+          description "VRF IP configuration";
           rwpb:msg-new VrfConfigIp;
-
+          leaf ipv6-forwarding {
+            type empty;
+            description "Enable IPv6 forwarding";
+          }
           list route {
-            description "static IP route configured";
+            description "Static IP routes configured";
             rwpb:msg-new VrfConfigRoute;
             key prefix;
             rwcli:new-mode "ip-route";
             leaf prefix {
-              description "static IP route prefix";
+              description "Static IP route prefix";
               type rwt:ip-prefix-non-canonical;
               rwpb:field-string-max 46;
             }
             list nexthop {
+              description "Next hops in the route";
               rwpb:msg-new VrfConfigNexthop;
               max-elements 10;
               key "gateway interface-name";
 
               leaf gateway {
                 rwpb:field-inline true;
-                description "gateway address of the static route";
+                description "Gateway address of the static route";
                 type rwt:ip-address;
                 rwpb:field-string-max 46;
                 rwpb:field-c-type "rw_ip_addr_t";
               }
               leaf interface-name {
                 rwpb:field-inline true;
-                description "interface of the static route";
+                description "Interface of the static route";
                 type string {
                   length "min..64";
                 }
@@ -313,47 +349,51 @@ module rw-vnf-base-config
           }
 
           list neighbor {
+            description "Neighbor (ARP) configuration";
             key address;
 
-            leaf address{
-              description "IP address for the static arp entry";
+            leaf address {
+              description "IP address for the static ARP entry";
               type rwt:ip-address;
               rwpb:field-string-max 46;
               rwpb:field-c-type "rw_ip_addr_t";
             }
             leaf macaddress {
-              description "MAC address for the static arp entry";
+              description "MAC address for the static ARP entry";
               type rwt:mac-address;
               rwpb:field-string-max 18;
               rwpb:field-c-type "rw_mac_addr_t";
             }
             leaf interface-name {
-              description "Interface Name for the static arp entry";
+              description "Interface Name for the static ARP entry";
               type string {
                 length "min..64";
               }
             }
           }
 
-          list pool{
+          list pool {
+            description "IP pool configuration";
             rwpb:msg-new VrfConfigPool;
             rwcli:new-mode "ip-pool";
             key name;
 
-            leaf name{
-              description "pool name for the pool";
+            leaf name {
+              description "Name for the pool";
               type string {
                 length "min..64";
               }
             }
-            leaf nat-pool{
+            leaf nat-pool {
+              description "Enable NAT for the pool";
               type boolean;
             }
-            list address{
+            list address {
+              description "List of IP prefixes for the pool";
               rwpb:msg-new VrfConfigPoolAddress;
               key prefix;
               leaf prefix {
-                description "prefix for the pool";
+                description "Prefix for the pool";
                 rwpb:field-inline true;
                 type rwt:ip-prefix-non-canonical;
                 rwpb:field-string-max 46;
@@ -363,21 +403,22 @@ module rw-vnf-base-config
           }
 
           list nat-pool {
+            description "NAT pool configuration";
             rwpb:msg-new VrfConfigNatPool;
             rwcli:new-mode "ip-nat-pool";
             key name;
-            leaf name{
-              description "pool name for the nat-pool";
+            leaf name {
+              description "Name for the NAT pool";
               type string {
                 length "min..64";
               }
             }
-            list address{
+            list address {
               rwpb:msg-new VrfConfigNatPoolAddress;
               max-elements 10;
               key prefix;
               leaf prefix {
-                description "prefix for the nat-pool";
+                description "Prefix for the NAT pool";
                 rwpb:field-inline true;
                 type rwt:ip-prefix-non-canonical;
                 rwpb:field-string-max 46;
@@ -389,6 +430,7 @@ module rw-vnf-base-config
         }
 
         container packet-capture {
+          description "Packet capture configuration";
           list filter {
             rwpb:msg-new VrfIpFilterConfig;
             key "trace-id";
@@ -397,6 +439,7 @@ module rw-vnf-base-config
         }
 
         container packet-trace {
+          description "Packet trace configuration";
           list filter {
             rwpb:msg-new VrfIpFilterConfigTrace;
             key "trace-id";
@@ -407,6 +450,7 @@ module rw-vnf-base-config
     }
 
     list port {
+      description "Port configuration";
       rwcli:new-mode " port";
       rwpb:msg-new PortConfig;
       max-elements 64;
@@ -425,7 +469,7 @@ module rw-vnf-base-config
       }
 
       leaf descr-string {
-        description "description comment for port";
+        description "Description comment for port";
         rwpb:field-inline true;
         type string {
           length "min..32";
@@ -436,14 +480,14 @@ module rw-vnf-base-config
         description "Administrative bring up  the port";
         type empty;
       }
-      
-      leaf mtu{
+      leaf mtu {
         description "MTU of the port";
         type uint32;
       }
-
       choice porttype {
+        description "Port type";
         case ethernet {
+          description "Ethernet port configuration";
           leaf virtual-fabric {
             type boolean;
           }
@@ -470,20 +514,21 @@ module rw-vnf-base-config
               }
               case interface-name {
                 leaf interface-name {
-                  description "port name in the VM (shown in ifconfig)";
+                  description "Port name in the VM (shown in ifconfig)";
                   type string {
                     length "min..16";
                   }
                 }
               }
-              case private-name{
-                leaf private-name{
+              case private-name {
+                leaf private-name {
                   description "Internal DPDK name of the port";
                   type string;
                 }
               }
             }
-            leaf port-mode{
+            leaf port-mode {
+              description "Mode of operation for port (raw-socket/direct)";
               type rwvnfbasetypes:port-mode;
             }
           }
@@ -511,102 +556,110 @@ module rw-vnf-base-config
               }
             }
           }
-          container bundle-member{
-            leaf name{
+          container bundle-member {
+            description "Port aggreagation configuration";
+            leaf name {
               description "Name of the port";
               rwpb:field-inline true;
               type string {
                 length "min..64";
               }
             }
-            leaf mode{
+            leaf mode {
+              description "LACP mode";
               type rwvnfbasetypes:lacp-mode;
             }
-            container port{
-              leaf priority{
+            container port {
+              leaf priority {
+                description "Port priority";
                 type uint32;
               }
             }
           }
-          container lacp{
-            leaf fast-switchover{
-              description "Used to diable the wait-while timer in LACP state machine";
+          container lacp {
+            description "LACP configuration";
+            leaf fast-switchover {
+              description "Used to disable the wait-while timer in LACP state machine";
               type empty;
             }
-            leaf rate{
+            leaf rate {
+              description "LACP PDU rate (fast/slow)";
               type rwvnfbasetypes:lacp-rate;
             }
           }
           leaf receive-q-length {
-            description "No of receive queues for the port. default is 2";
+            description "Number of receive queues for the port. Default is 2";
             type uint32;
           }
 
           container descriptors {
             leaf rx-size {
-              description "Size of rx descriptor ring. default is 256";
+              description "Size of rx descriptor ring. Default is 256";
               type uint32;
             }
             leaf tx-size {
-              description "Size of tx descriptor ring. default is 256";
+              description "Size of tx descriptor ring. Default is 256";
               type uint32;
             }
           }
-          leaf numa-socket{
+          leaf numa-socket {
             type int32;
-            description "CPU numa socket where the port is attached";
+            description "CPU NUMA socket where the port is attached";
           }
 
           // Flow control configuration for the port
           uses rwvnfbasetypes:flow-control;
         }
         case lag {
-          container lacp-attributes{
-            leaf priority{
-              description "configure the lacp priority for the system(colony)";
+          description "Link Aggregateion Group (LAG) configuration";
+          container lacp-attributes {
+            leaf priority {
+              description "Configure the LACP priority for the VNF";
               type uint32;
             }
-            leaf mac{
+            leaf mac {
               description "MAC address used by the Link Aggregation Group";
               type rwt:mac-address;
               rwpb:field-string-max 18;
               rwpb:field-c-type "rw_mac_addr_t";
             }
           }
-          container minimum-active{
-            leaf links{
+          container minimum-active {
+            leaf links {
               description "Minimum number of active links to bring up the bundle";
               type uint32;
             }
           }
-          container maximum-active{
-            leaf links{
+          container maximum-active {
+            leaf links {
               description "Maximum number of active links in the bundle";
               type uint32;
             }
           }
-          leaf load-balance{
-            description "packet contents to use for load-balancing";
+          leaf load-balance {
+            description "Packet contents to use for load-balancing";
             type rwvnfbasetypes:lag-lb-mode;
           }
-          leaf mac-mode{
+          leaf mac-mode {
             description "Mac-mode for 1:1 redundancy";
             type rwvnfbasetypes:mac-mode;
           }
         }
       }
 
-      list vlan{
+      list vlan {
+        description "VLAN configuration";
         key id;
         rwcli:new-mode "  vlan";
         rwpb:msg-new VlanConfig;
         max-elements 32;
 
         leaf id {
+          description "VLAN ID";
           type uint32;
         }
         leaf descr-string {
-          description "description comment for port";
+          description "Description comment for VLAN";
           rwpb:field-inline true;
           type string {
             length "min..32";
@@ -614,9 +667,10 @@ module rw-vnf-base-config
         }
 
         leaf open {
-          description "open the specified port";
+          description "Open the specified VLAN";
           type empty;
         }
+
         leaf virtual-fabric {
           type boolean;
         }
@@ -624,11 +678,13 @@ module rw-vnf-base-config
     }
 
     container virtual-fabric {
+      description "Virtual fabric configuration";
       list network {
+        description "Network configuration";
         key address;
 
         leaf address {
-          description "ipv4 address assigned to the interface";
+          description "IP address assigned to the interface";
           type rwt:ip-prefix;
           rwpb:field-string-max 46;
           rwpb:field-inline true;

@@ -2,6 +2,8 @@
 # 
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
+import gi
+gi.require_version('rwpython_util', '1.0')
 
 from gi.repository import (
     GObject,

@@ -21,80 +21,80 @@ Cloud.get = function(req) {
 
   if (!id) {
     // Get all cloud accounts
-    return new Promise(function (resolve, reject) {
+    return new Promise(function(resolve, reject) {
 
       var requestHeaders = {};
       _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.collection,
-        {
+        constants.HTTP_HEADERS.accept.collection, {
           'Authorization': req.get('Authorization')
         });
 
       request({
-        url: utils.confdPort(api_server) + '/api/operational/cloud/account',
-        type: 'GET',
-        headers: requestHeaders,
-        forever: constants.FOREVER_ON
-      },
-      function(error, response, body) {
-        var data;
-        if (utils.validateResponse('Cloud.get', error, response, body, resolve, reject)) {
-          try{
-            data = JSON.parse(response.body).collection['rw-cloud:account']
-          } catch(e) {
-            console.log('Problem with "Cloud.get"', e);
-            var err = {};
-            err.statusCode = 500;
-            err.errorMessage = {
-              error: 'Problem with "Cloud.get": ' + e// + e.toString()
+          url: utils.confdPort(api_server) + '/api/operational/cloud/account',
+          type: 'GET',
+          headers: requestHeaders,
+          forever: constants.FOREVER_ON,
+          rejectUnauthorized: false
+        },
+        function(error, response, body) {
+          var data;
+          if (utils.validateResponse('Cloud.get', error, response, body, resolve, reject)) {
+            try {
+              data = JSON.parse(response.body).collection['rw-cloud:account']
+            } catch (e) {
+              console.log('Problem with "Cloud.get"', e);
+              var err = {};
+              err.statusCode = 500;
+              err.errorMessage = {
+                error: 'Problem with "Cloud.get": ' + e // + e.toString()
+              }
+              return reject(err);
             }
-            return reject(err);
-          }
-          console.log(data);
-          return resolve({
-            statusCode: response.statusCode,
-            data: self.poolAggregate(data)
-          });
-        };
-      });
+            console.log(data);
+            return resolve({
+              statusCode: response.statusCode,
+              data: self.poolAggregate(data)
+            });
+          };
+        });
     });
   } else {
     //Get a specific cloud account
-    return new Promise(function (resolve, reject) {
+    return new Promise(function(resolve, reject) {
       var requestHeaders = {};
       _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.data,
-        {
+        constants.HTTP_HEADERS.accept.data, {
           'Authorization': req.get('Authorization')
         });
 
       request({
-        url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + id,
-        type: 'GET',
-        headers: requestHeaders,
-        forever: constants.FOREVER_ON
-      },
-      function (error, response, body) {
-        var data;
-        if (utils.validateResponse('Cloud.get', error, response, body, resolve, reject)) {
-          try {
-            data = JSON.parse(response.body)['rw-cloud:account'];
-          } catch (e) {
-            console.log('Problem with "Cloud.get"', e);
-            var err = {};
-            err.statusCode = 500;
-            err.errorMessage = {
-              error: 'Problem with "Cloud.get": ' + e.toString()
+          url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + id,
+          type: 'GET',
+          headers: requestHeaders,
+          forever: constants.FOREVER_ON,
+          rejectUnauthorized: false
+        },
+        function(error, response, body) {
+          var data;
+          if (utils.validateResponse('Cloud.get', error, response, body, resolve, reject)) {
+            try {
+              data = JSON.parse(response.body)['rw-cloud:account'];
+            } catch (e) {
+              console.log('Problem with "Cloud.get"', e);
+              var err = {};
+              err.statusCode = 500;
+              err.errorMessage = {
+                error: 'Problem with "Cloud.get": ' + e.toString()
+              }
+              return reject(err);
             }
-            return reject(err);
-          }
 
-          return resolve({
-            statusCode: response.statusCode,
-            data: data
-          });
-        }
-      });
+            return resolve({
+              statusCode: response.statusCode,
+              data: data
+            });
+          }
+        });
     });
   }
 };
@@ -104,9 +104,9 @@ Cloud.create = function(req) {
   var api_server = req.query["api_server"];
   var data = req.body;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
-      "account":Array.isArray(data)?data:[data]
+      "account": Array.isArray(data) ? data : [data]
     };
 
     console.log('Creating with', JSON.stringify(jsonData));
@@ -114,9 +114,8 @@ Cloud.create = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -124,8 +123,9 @@ Cloud.create = function(req) {
       method: 'POST',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('Cloud.create', error, response, body, resolve, reject)) {
         return resolve({
           statusCode: response.statusCode,
@@ -142,7 +142,7 @@ Cloud.update = function(req) {
   var id = req.params.id;
   var data = req.body;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
       "rw-cloud:account": data
     };
@@ -152,9 +152,8 @@ Cloud.update = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -162,8 +161,9 @@ Cloud.update = function(req) {
       method: 'PUT',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('Cloud.update', error, response, body, resolve, reject)) {
         return resolve({
           statusCode: response.statusCode,
@@ -191,19 +191,19 @@ Cloud.delete = function(req) {
     });
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
     request({
       url: utils.confdPort(api_server) + '/api/config/cloud/account/' + id,
       method: 'DELETE',
       headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    }, function(error, response, body){
+      forever: constants.FOREVER_ON,
+      rejectUnauthorized: false
+    }, function(error, response, body) {
       if (utils.validateResponse('Cloud.delete', error, response, body, resolve, reject)) {
         return resolve({
           statusCode: response.statusCode,
@@ -219,40 +219,40 @@ Cloud.getResources = function(req) {
   var api_server = req.query["api_server"];
   var cloudAccount = req.query["cloud_account"];
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
-      url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + cloudAccount + '/resources?deep',
-      type: 'GET',
-      headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    },
-    function(error, response, body) {
-      var data;
-      if (utils.validateResponse('Cloud.getResources', error, response, body, resolve, reject)) {
-        try {
-          data = JSON.parse(response.body)['rw-cloud:resources']
-        } catch(e) {
-          console.log('Problem with "Cloud.getResources"', e);
+        url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + cloudAccount + '/resources?deep',
+        type: 'GET',
+        headers: requestHeaders,
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false
+      },
+      function(error, response, body) {
+        var data;
+        if (utils.validateResponse('Cloud.getResources', error, response, body, resolve, reject)) {
+          try {
+            data = JSON.parse(response.body)['rw-cloud:resources']
+          } catch (e) {
+            console.log('Problem with "Cloud.getResources"', e);
 
-          var err = {};
-          err.statusCode = 500;
-          err.errorMessage = {
-            error: 'Problem with "Cloud.getResources": ' + e.toString()
+            var err = {};
+            err.statusCode = 500;
+            err.errorMessage = {
+              error: 'Problem with "Cloud.getResources": ' + e.toString()
+            }
+
+            return reject(err);
           }
 
-          return reject(err);
-        }
-
-        return resolve(data);
-      };
-    });
+          return resolve(data);
+        };
+      });
   });
 };
 
@@ -261,43 +261,43 @@ Cloud.getPools = function(req) {
   var api_server = req.query["api_server"];
   var cloudAccount = req.query["cloud-account"];
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
 
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
-      url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + cloudAccount + '/pools',
-      type: 'GET',
-      headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    },
-    function(error, response, body) {
-      var data;
-      if (utils.validateResponse('Cloud.getPools', error, response, body, resolve, reject)) {
-        try {
-          data = JSON.parse(response.body)['rw-cloud:pools']
-        } catch(e) {
-          console.log('Problem with "Cloud.getPools"', e);
-          var err = {};
-          err.statusCode = 500;
-          err.errorMessage = {
-            error: 'Problem with "Cloud.getPools": ' + e.toString()
+        url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + cloudAccount + '/pools',
+        type: 'GET',
+        headers: requestHeaders,
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false
+      },
+      function(error, response, body) {
+        var data;
+        if (utils.validateResponse('Cloud.getPools', error, response, body, resolve, reject)) {
+          try {
+            data = JSON.parse(response.body)['rw-cloud:pools']
+          } catch (e) {
+            console.log('Problem with "Cloud.getPools"', e);
+            var err = {};
+            err.statusCode = 500;
+            err.errorMessage = {
+              error: 'Problem with "Cloud.getPools": ' + e.toString()
+            }
+
+            return reject(err);
           }
 
-          return reject(err);
+          return resolve({
+            statusCode: response.statusCode,
+            data: data
+          });
         }
-
-        return resolve({
-          statusCode: response.statusCode,
-          data: data
-        });
-      }
-    });
+      });
   });
 }
 

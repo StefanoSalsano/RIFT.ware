@@ -5,7 +5,6 @@
 import asyncio
 import concurrent.futures
 import re
-import sys
 import tempfile
 import yaml
 
@@ -127,7 +126,7 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
         Returns True if configured using config_agent
         """
         # Deploy the charm if specified for the vnf
-        self._log.debug("Juju config agent: create vnfr nsr=%s  vnfr=%s" %(nsr, vnfr.id))
+        self._log.debug("Juju config agent: create vnfr nsr=%s  vnfr=%s" %(nsr, vnfr.name))
         self._log.debug("Juju config agent: Const = %s" %(vnfr._const_vnfd))
         try:
             vnf_config = vnfr._const_vnfd.vnf_configuration
@@ -136,20 +135,25 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
                 return False
             charm = vnf_config.juju.charm
             self._log.debug("Juju config agent: charm = %s", charm)
-        except:
-            self._log.debug("Juju config agent: vnf_configuration error %s" % (sys.exc_info()[0]))
+        except Exception as e:
+            self._log.debug("Juju config agent: vnf_configuration error for vnfr {}: {}".
+                            format(vnfr.name, e))
             return False
 
-        # Add a instance api for use with exectuon status
-        if self._api is None:
-            # Create a api instance to get the action status
-            self._api = yield from self._loop.run_in_executor(
-                None,
-                juju_intf.JujuApi,
-                self._log, self._ip_address,
-                self._port, self._user, self._secret,
-                self.loop
-            )
+        try:
+            # Add a instance api for use with exectuon status
+            if self._api is None:
+                # Create a api instance to get the action status
+                self._api = yield from self._loop.run_in_executor(
+                    None,
+                    juju_intf.JujuApi,
+                    self._log, self._ip_address,
+                    self._port, self._user, self._secret,
+                    self.loop
+                )
+        except Exception as e:
+            self._log.critical("Juju config agent: API exception for VNFR {}: {}".
+                               format(vnfr.name, e))
 
         # Prepare unique name for this VNF
         vnf_unique_name = get_vnf_unique_name(vnfr._nsr_name, vnfr.vnfd.name, vnfr.member_vnf_index)
@@ -158,32 +162,39 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
             api = self._juju_vnfs['api']
         else:
             # Create an juju api instance for this VNFR
-            api = yield from self._loop.run_in_executor(
+            try:
+                api = yield from self._loop.run_in_executor(
                     None,
                     juju_intf.JujuApi,
                     self._log, self._ip_address,
                     self._port, self._user, self._secret,
                     self.loop
                 )
+            except Exception as e:
+                self._log.critical("Juju config agent: API exception for VNFR {}: {}".
+                                   format(vnfr.name, e))
+                api = None
+
         self._juju_vnfs.update({vnfr.id: {'name': vnf_unique_name, 'charm': charm,
                                           'nsr_id': nsr, 'member_vnf_index': vnfr.member_vnf_index,
                                           'xpath': vnfr.xpath, 'tags': {},
                                           'active': False, 'config': vnf_config,
-                                          'api' : api}})
+                                          'api' : api, 'vnfr_name' : vnfr.name}})
         self._log.debug("Juju config agent: Charm %s for vnf %s deployed as %s" %
                         (charm, vnfr.name, vnf_unique_name))
 
         try:
             if vnf_unique_name not in self._tasks:
                 self._tasks[vnf_unique_name] = {}
-            self._tasks[vnf_unique_name]['deploy'] = self.loop.create_task(
-                self._helper.deploy_service(api, charm, vnf_unique_name)
-            )
+            if api:
+                self._tasks[vnf_unique_name]['deploy'] = self.loop.create_task(
+                    self._helper.deploy_service(api, charm, vnf_unique_name)
+                )
+                self._log.debug("Juju config agent: Deployed service %s" % vnf_unique_name)
         except Exception as e:
-            self._log.critical("Juju config agent: Unable to deploy service %s for charm %s: {}" %
-                               (vnf_unique_name, charm, e))
+            self._log.critical("Juju config agent: Unable to deploy service {} for charm {}: {}".
+                               format(vnf_unique_name, charm, e))
 
-        self._log.debug("Juju config agent: Deployed service %s" % vnf_unique_name)
         return True
 
     @asyncio.coroutine
@@ -222,7 +233,7 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
                         # apply initial config for the vnfr
                         yield from self.apply_initial_config(vnf.id, vnf)
                     else:
-                        self._log.info("Juju config agent: service not yet deployed for %s" % vnf.id)
+                        self._log.info("Juju config agent: service not yet deployed for %s" % vnf.name)
             except Exception as e:
                 self._log.error("Juju config agent: ns active VNF {}, e {}".format(vnf.name, e))
 
@@ -239,16 +250,17 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
         Notification of Terminate the network service
         """
         self._log.debug("Juju config agent: Terminate VNFr {}, current vnfrs={}".
-                        format(vnfr.id, self._juju_vnfs))
+                        format(vnfr.name, self._juju_vnfs))
         try:
             vnf = self._juju_vnfs[vnfr.id]
             service = vnf['name']
             self._log.debug ("Juju config agent: Terminating VNFr %s, %s" %
-                             (vnfr.id, service))
-            self._tasks[service]['destroy'] = self.loop.create_task(
-                self._helper.destroy_service(vnf['api'], service)
-            )
-            del vnf
+                             (vnfr.name, service))
+            if vnf['api']:
+                self._tasks[service]['destroy'] = self.loop.create_task(
+                    self._helper.destroy_service(vnf['api'], service)
+                )
+            del self._juju_vnfs[vnfr.id]
             self._log.debug ("Juju config agent: current vnfrs={}".
                              format(self._juju_vnfs))
             if service in self._tasks:
@@ -258,8 +270,11 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
                     tasks.append(action)
                 del tasks
         except KeyError as e:
-            self._log.debug ("Juju config agent: Error termiating charm service for VNFr {}, e={}".
-                             format(vnfr.id, e))
+            self._log.debug ("Juju config agent: Termiating charm service for VNFr {}, e={}".
+                             format(vnfr.name, e))
+        except Exception as e:
+            self._log.error("Juju config agent: Exception terminating charm service for VNFR {}: {}".
+                            format(vnfr.name, e))
 
     @asyncio.coroutine
     def notify_terminate_vl(self, nsr, vlr, xact):
@@ -278,7 +293,6 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
                 if e:
                     self.log.error("Juju config agent: Error in task for {} and {} : {}".
                                    format(service, action, e))
-                    return False
                 r= task.result()
                 if r:
                     self.log.debug("Juju config agent: Task for {} and {}, returned {}".
@@ -287,13 +301,14 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
             else:
                 self.log.debug("Juju config agent: task {}, {} not done".
                                format(service, action))
+                return False
         except KeyError as e:
             self.log.error("Juju config agent: KeyError for task for {} and {}: {}".
                            format(service, action, e))
         except Exception as e:
             self.log.error("Juju config agent: Error for task for {} and {}: {}".
                            format(service, action, e))
-        return False
+        return True
 
     @asyncio.coroutine
     def vnf_config_primitive(self, nsr_id, vnfr_id, primitive, output):
@@ -311,6 +326,11 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
             service = vnfr['name']
             vnf_config = vnfr['config']
             api = vnfr['api']
+            if vnfr['api'] is None:
+                self._log.error("Juju config agent: No API handle present for {}".
+                                format(vnfr['name']))
+                return
+
             self._log.debug("VNF config %s" % vnf_config)
             configs = vnf_config.config_primitive
             for config in configs:
@@ -476,9 +496,18 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
 
     @asyncio.coroutine
     def apply_initial_config(self, vnf_id, vnf):
+        """
+        Apply the initial configuration
+        Expect config directives mostly, not actions
+        Actions in initial config may not work based on charm design
+        """
         try:
             tags = []
             vnfr = self._juju_vnfs[vnf_id]
+            if vnfr['api'] is None:
+                self._log.error("Juju config agent: No API available for apply initial config")
+                return
+
             vnf_cat = yield from self.fetch_vnfr(vnf.xpath)
             if vnf_cat and vnf_cat.mgmt_interface.ip_address:
                 vnfr['tags'].update({'rw_mgmt_ip': vnf_cat.mgmt_interface.ip_address})
@@ -486,7 +515,6 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
             try:
                 for primitive in vnfr['config'].initial_config_primitive:
                     self._log.debug("Initial config %s" % (primitive))
-                    # Currently, expecting only config, not actions, for initial config
                     if primitive.name == 'config':
                         for param in primitive.parameter:
                             if vnfr['tags']:
@@ -495,15 +523,16 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
             except KeyError as e:
                 self._log.exception("Juju config agent: Initial config error: config=%s" % config)
                 config = None
-                return
-            self._log.debug("Juju config agent: Applying initial config for %s as %s" %
-                            (vnfr['name'], config))
-            yield from self._loop.run_in_executor(
-                None,
-                vnfr['api']._apply_config,
-                vnfr['name'],
-                config
-            )
+
+            self._log.debug("Juju config agent: Applying initial config for {} as {}".
+                            format(vnfr['name'], config))
+            if config:
+                yield from self._loop.run_in_executor(
+                    None,
+                    vnfr['api']._apply_config,
+                    vnfr['name'],
+                    config
+                )
 
             # Apply any actions specified as part of initial config
             for primitive in vnfr['config'].initial_config_primitive:
@@ -525,18 +554,19 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
                     tags.append(tag)
 
         except KeyError as e:
-            self._log.info("Juju config agent: VNFR %s not managed by Juju, e=%s" % (vnf_id, e))
+            self._log.info("Juju config agent: VNFR %s not managed by Juju" % (vnf_id))
         except Exception as e:
-            self._log.exception("Juju config agent: Exception juju apply_initial_config for VNFR %s",
-                                vnf_id)
+            self._log.exception("Juju config agent: Exception juju apply_initial_config for VNFR {}: {}".
+                                format(vnf_id, e))
         return tags
 
     def is_vnfr_managed(self, vnfr_id):
         try:
-            if self._juju_vnfs[vnfr_id]:
+            if vnfr_id in self._juju_vnfs:
                 return True
-        except:
-            pass
+        except Exception as e:
+            self._log.debug("Juju config agent: Is VNFR {} managed: {}".
+                            format(vnfr_id, e))
         return False
 
     def is_service_active(self, service):
@@ -544,7 +574,7 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
         resp = False
         try:
             for vnf in self._juju_vnfrs:
-                if vnf['name'] == service:
+                if vnf['name'] == service and vnf['api']:
                     # Check if deploy is over
                     if self.check_task_status(service, 'deploy'):
                         resp = yield from self._loop.run_in_executor(
@@ -572,10 +602,14 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
             self._log.debug("Juju config agent: Service state for {} is {}".
                             format(service, resp))
             return resp
-        except KeyError as e:
-            self._log.error("Juju config agent: VNFR id %s not found in config agent, e=%s" %
-                            (vnfr_id, e))
+        except KeyError:
+            self._log.debug("Juju config agent: VNFR id {} not found in config agent".
+                            format(vnfr_id))
             return True
+        except Exception as e:
+            self._log.error("Juju config agent: VNFR id {} is_configured: {}".
+                            format(vnfr_id, e))
+        return False
 
     @asyncio.coroutine
     def get_status(self, vnfr_id):
@@ -584,6 +618,10 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
             vnfr = self._juju_vnfs[vnfr_id]
             if vnfr['active']:
                 return 'configured'
+
+            if vnfr['api'] is None:
+                self._log.error("Juju config agent: API not found for get status")
+                return 'failed'
 
             service = vnfr['name']
             # Check if deploy is over
@@ -596,17 +634,19 @@ class JujuNsmConfigPlugin(rwnsmconfigplugin.NsmConfigPluginBase):
             self._log.debug("Juju config agent: Service status for {} is {}".
                             format(service, resp))
             status =  'configuring'
-            if resp is None:
-                status = 'failed'
-            elif resp in ['active', 'blocked']:
+            if resp in ['active', 'blocked']:
                 status = 'configured'
-            elif resp in ['error']:
+            elif resp in ['error', 'NA']:
                 status = 'failed'
             return status
         except KeyError as e:
-            self._log.error("Juju config agent: VNFR id %s not found in config agent, e=%s" %
-                            (vnfr_id, e))
+            self._log.debug("Juju config agent: VNFR id {} not found in config agent, e={}".
+                            format(vnfr_id, e))
             return 'configured'
+        except Exception as e:
+            self._log.error("Juju config agent: VNFR id {} gt_status, e={}".
+                            format(vnfr_id, e))
+        return resp
 
     def get_action_status(self, execution_id):
         ''' Get the action status for an execution ID

@@ -4,12 +4,18 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
-# This script needs to run on jenkins(charm) !
-# copy it from the source tree to:
+# About:
 #
-# or call out of /usr/rift/scripts/packaging ?
+# The $RIFT_ROOT/scripts/packaging/update-riftware-repo.sh is responsible for:
+# 	1. copying/moving the RPMs from the staging area
+#	2. update build system by calling $RIFT_ROOT/scripts/packaging/setrepo ${RIFT_BUILD_NUMBER} ${repo}.
+#		- The setrepo script will then update the http://charm:8000 build system and mark the build number with it's repo: nightly/testing/release
+#	3. and then finally calling the createrepo scripts on the proper release directories.
 #
-
+# !!! This script needs to run as jenkins on jenkins(charm) !!!
+#
+# nate.hudson@riftio.com
+#
 
 #####################################################################################################
 ## Arguments
@@ -19,17 +25,21 @@
 # $2 is the build_number
 # $3 is the repo to update, ex. nightly or testing
 
+# not fully implemented!
+# $4 is the version: ie 4.0 or 4.1
+# ? $5 is the method: copy or move?
+
 DIR=$1
 BUILD=$2
 REPO=$3
 
-# copy or move? optional argument
-#CPMV=$3
-CPMV="copy"
+# $4 RW version. optional argument
+#VER=4.0
+VER=${4:-4.0}
 
-# RW version. optional argument
-#VER=$4
-VER=4.0
+# $5 copy or move? optional argument
+#CPMV="copy"
+CPMV=${5:-copy}
 
 #####################################################################################################
 ## Arguments
@@ -40,9 +50,10 @@ REPO_BASE=/net/boson/home1/autobot/www/mirrors/releases/riftware/${VER}/20/x86_6
 #LOG=/tmp/createrepo-${REPO}.log
 LOG=/var/log/createrepo/createrepo.log
 ME=`basename "$0"`
-LOCK=/tmp/createrepo-${REPO}.lock.d
-
-GLOB=${DIR}/*-${BUILD}*.rpm
+#LOCK=/tmp/createrepo-${REPO}.lock.d
+LOCK=/tmp/createrepo.lock
+# we only want one lock so we don't have a bunch of createrepos running at a time
+GLOB=${DIR}/*${BUILD}*.rpm
 
 function log()
 {
@@ -89,21 +100,6 @@ remove_lock () {
 }
 
 
-#function procs_running()
-#{
-#	#NUM=`ps aux | grep -i $ME | grep -iv grep | grep -iv ssh | wc -l`
-#	NUM=`pgrep -f $ME -c`
-#	log " "
-#	log "[procs_running]: num=$NUM "
-#	log "[procs_running]: PS= `ps aux | grep -i $ME | grep -iv grep | grep -iv ssh ` "
-#	log " "
-#	log "[procs_running]: PGREP=  `pgrep -a -f $ME ` "
-#	log " "
-#	echo "$NUM"
-#	#return $NUM
-#	#return `ps aux | grep -i $ME | grep -iv grep | grep -iv ssh | wc -l`
-#}
-
 
 #####################################################################################################
 ## START of main
@@ -112,61 +108,57 @@ remove_lock () {
 log " "
 log "START @ `date` "
 log "ME=$ME "
-log "ARGS=$1 $2 $3 "
+log "ARGS=$1 $2 $3 $4 $5"
+log " "
 log "GLOB=${GLOB} "
 log "REPO=${REPO} "
+log "VER=${VER} "
+log "CPMV=${CPMV} "
 log " "
 
+
 if [ "${DIR}" == "" ]; then
-	echo "You must pass in the directory as arg1 to find the RPMS. Quitting."
+	MSG="You must pass in the directory as arg1 to find the RPMS. Quitting."
+	echo $MSG && log "$MSG"
 	exit 1
 fi
 
 if [ "${BUILD}" == "" ]; then
-	echo "You must pass in the build_number as arg2. Quitting."
+	MSG="You must pass in the build_number as arg2. Quitting."
+	echo $MSG && log "$MSG"
 	exit 1
 fi
 
 if [ "${REPO}" == "" ]; then
-	echo "You must pass in the repo as arg3. Quitting."
+	MSG="You must pass in the repo as arg3. Quitting."
+	echo $MSG && log "$MSG"
 	exit 1
 fi
 
+# repo can now be a branch, such as osm_mwc RIFT-10926
+#if [[ "${REPO}" != "nightly"  && "${REPO}" != "testing"  && "${REPO}" != "release" ]]; then
+#	MSG="Repo can only be: nightly/testing/release."
+#	echo $MSG && log "$MSG"
+#	exit 1
+#fi
+
 # really this should only be run by jenkins so the permissions are correct in the repo
 if [ `whoami` != 'jenkins' ]; then
-	echo "You must be jenkins to do this. Quitting."
+	MSG="You must be jenkins to do this. Quitting."
+	echo $MSG && log "$MSG"
 	exit 1
 fi
 
 if ! which createrepo >/dev/null; then
-	echo "createrepo not found! Quitting."
+	MSG="createrepo not found! Quitting."
+	echo $MSG && log "$MSG"
 	exit 1;
 fi
 
 
 
+#NUM_RUNNING=`pgrep -f $ME -c`
 
-#NUM_RUNNING=`ps aux | grep -i $ME | grep -iv grep | grep -iv ssh | wc -l` # must ignore ssh too 
-#NUM_RUNNING=$(procs_running)
-NUM_RUNNING=`pgrep -f $ME -c`
-
-
-#echo "[update-riftware-repo] glob=${GLOB} repo=${REPO} num_running=${NUM_RUNNING} " >> $LOG 2>&1
-#echo "[update-riftware-repo] glob=${GLOB} repo=${REPO}" >> $LOG 2>&1
-#echo "[update-riftware-repo] repo=${REPO} " >> $LOG 2>&1
-#log "glob=${GLOB} repo=${REPO} num_running=${NUM_RUNNING}"
-
-# each copy of this script runs inside ssh so that means 2 procs returned by pgrep
-#while [ "$NUM_RUNNING" -gt 2 ]; do
-	#$NUM_RUNNING=`ps aux | grep -i $ME | grep -iv grep | grep -iv ssh | wc -l`
-	#NUM_RUNNING=`procs_running`
-	#NUM_RUNNING=$(procs_running)
-#	NUM_RUNNING=`pgrep -f $ME -c`
-
-	#echo "[update-riftware-repo] glob=${GLOB} repo=${REPO} num_running=${NUM_RUNNING} ...sleeping..." >> $LOG 2>&1
-#	log "glob=${GLOB} repo=${REPO} num_running=${NUM_RUNNING} ...sleeping..."
-#	sleep 60
-#done
 
 # lock
 create_lock_or_wait
@@ -176,15 +168,12 @@ create_lock_or_wait
 if [ "${CPMV}" == "copy" ]; then
 	log "CMD: cp -vf ${GLOB} ${REPO_BASE}/${REPO}/ "
 	cp -vf ${GLOB} ${REPO_BASE}/${REPO}/ >> $LOG 2>&1
-	# put real cp here!!!
 fi
 
 log "CDing to ${REPO_BASE}/${REPO}"
 #cd /net/boson/home1/autobot/www/mirrors/releases/riftware/4.0/20/x86_64/${REPO} || exit 1;
 cd ${REPO_BASE}/${REPO} || { echo "Failed to cd to ${REPO_BASE}/${REPO}. Exitting."; remove_lock; exit 1; }
 
-# run setrepo to update the build system
-update_buildsys
 
 #
 # http://linux.die.net/man/8/createrepo
@@ -201,12 +190,17 @@ createrepo --update --profile . >> $LOG 2>&1
 log "sleeping a bit"
 sleep 10
 
+# run setrepo to update the build system
+# the full binaries are available now, even if the deltas are not
+update_buildsys
+
+# deltas turned OFF for now, they were taking a long time
 # then the deltas for testing
-if [ "${REPO}" == "testing" ]; then
-	#echo "[update-riftware-repo] running createrepo with deltas" >> $LOG 2>&1
-	log "running createrepo with deltas"
-	createrepo -v --max-delta-rpm-size 5000000000 --oldpackagedirs . --deltas --num-deltas=5 --cachedir=/tmp/repo-${REPO}.cache --profile . >> $LOG 2>&1
-fi
+#if [ "${REPO}" == "testing" ]; then
+#	#echo "[update-riftware-repo] running createrepo with deltas" >> $LOG 2>&1
+#	log "running createrepo with deltas"
+#	createrepo -v --max-delta-rpm-size 5000000000 --oldpackagedirs . --deltas --num-deltas=5 --cachedir=/tmp/repo-${REPO}.cache --profile . >> $LOG 2>&1
+#fi
 
 #unlock
 remove_lock

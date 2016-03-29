@@ -129,10 +129,17 @@ class NsmConfigPluginBase(object):
     @asyncio.coroutine
     def vnf_config_primitive(self, nsr_id, vnfr_id, primitive, output):
         """Apply config primitive on a VNF"""
+        pass
+
+    @abc.abstractmethod
+    def is_vnfr_managed(self, vnfr_id):
+        """ Check if VNR is managed by config agent """
+        pass
 
     @asyncio.coroutine
     def invoke(self, method, *args):
-        self._log.debug("Config agent plugin: method %s with args %s: %s" % (method, args, self))
+        self._log.debug("Config agent plugin: method {} with args {}: {}".
+                        format(method, args, self))
         # TBD - Do a better way than string compare to find invoke the method
         if method == 'notify_create_nsr':
             yield from self.notify_create_nsr(args[0], args[1])

@@ -69,7 +69,7 @@ for logical_vm in VMS:
         
 # os.kill(os.getpid(), 11)
 
-x=random.randint(3,10)*3
+x=random.randint(1,3)*3
 print("sleeping %d secs" % x)
 sys.stdout.flush()
 sys.stderr.write("stderr")

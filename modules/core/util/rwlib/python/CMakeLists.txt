@@ -14,6 +14,7 @@ rift_python_install_tree(
   rift/rwlib/xml/__init__.py
   rift/rwlib/xml/helpers.py
   rift/rwlib/util/__init__.py
+  rift/rwlib/util/certs.py
   rift/rwlib/util/iteration.py
   PYTHON3_ONLY
   COMPONENT

@@ -37,6 +37,11 @@ NbReqMsg::~NbReqMsg()
 {
 }
 
+rwsched_dispatch_queue_t NbReqMsg::get_execution_q() const
+{ 
+  return instance_->concurrent_q();
+}
+
 StartStatus NbReqMsg::execute()
 {
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "request");

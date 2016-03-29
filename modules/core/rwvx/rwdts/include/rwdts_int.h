@@ -33,6 +33,7 @@
 #include <rwdts_member_api.h>
 #include <uthash.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include "rw-dts-api-log.pb-c.h"
 #include "rw-dts-router-log.pb-c.h"
 #include "rw-dts.pb-c.h"
@@ -130,6 +131,8 @@ shown=TRUE;								\
   int keylen = RWDTS_PBCM_HASHKEYLEN(pb_key_ptr, field); \
   HASH_FIND(hash_handle, table, &((pb_key_ptr)->field), keylen, elem);\
 }
+
+#define RWDTS_API_VCS_INSTANCE_CHILD_STATE "D,/rw-base:vcs/instances/instance/child-n/publish-state"
 
 extern ProtobufCInstance _rwdts_pbc_instance;
 
@@ -536,7 +539,11 @@ struct rwdts_member_registration_s {
   uint32_t dts_internal:1;
   uint32_t in_sync:1;
   uint32_t gi_app:1;
-  uint32_t _pad:23;
+  uint32_t pub_bef_reg_ready:4;
+  uint32_t cach_at_reg_ready:4;
+  uint32_t pub_aft_reg_ready:4;
+  uint32_t reg_ready_done:1;
+  uint32_t _pad:10;
   uint64_t tx_serialnum;
   int      retry_count;
   int      pend_outstanding;
@@ -643,6 +650,7 @@ typedef struct rwdts_api_reg_sent_list_s {
 typedef struct rwdts_api_dereg_path_info_s {
   char            *path;
   rwdts_api_t     *apih;
+  vcs_recovery_type recovery_action;
   UT_hash_handle  hh_dereg;
 } rwdts_api_dereg_path_info_t;
 
@@ -864,6 +872,7 @@ struct rwdts_api_s {
   rwdts_member_reg_handle_t init_regidh;
   rwdts_member_reg_handle_t init_regkeyh;
   rwdts_member_reg_handle_t dts_regh[RWDTS_MAX_INTERNAL_REG];
+  rwdts_member_reg_handle_t journal_regh;
   uint32_t dts_state_change_count;
   fsm_trace_state_t trace_dts_state[MAX_DTS_STATES_TRACE_SZ];
   rwdts_audit_t  audit;          /*< audit related data structure */
@@ -1028,7 +1037,7 @@ rwdts_query_error_ref(rwdts_query_error_t *boxed);
 void
 rwdts_query_error_unref(rwdts_query_error_t *boxed);
 
-bool rwdts_member_allow_add_block(rwdts_xact_t *xact,
+void rwdts_member_notify_newblock(rwdts_xact_t *xact,
                                   rwdts_xact_block_t *block);
 
 #define MAX_TRACE_EVT 20
@@ -1132,6 +1141,13 @@ struct rwdts_xact_err_s {
 };
 typedef struct rwdts_xact_err_s rwdts_xact_err_t;
 
+typedef enum rwdts_newblockadd_notify_e {
+  RWDTS_NEWBLOCK_NONE = 0,
+  RWDTS_NEWBLOCK_TO_NOTIFY,
+  RWDTS_NEWBLOCK_NOTIFY,
+  RWDTS_NEWBLOCK_NOTIFIED
+} rwdts_newblockadd_notify_t;
+
 struct rwdts_xact_block_s {
   RWDtsXactBlock subx;
   struct {
@@ -1151,6 +1167,7 @@ struct rwdts_xact_block_s {
   GDestroyNotify gdestroynotify;
   bool exec;
   bool evtrsp_internal;
+  rwdts_newblockadd_notify_t newblockadd_notify;
 };
 
 struct rwdts_member_data_elem_s {
@@ -1482,7 +1499,7 @@ extern void rwdts_dbg_add_tr(RWDtsDebug *dbg, rwdts_trace_filter_t *fit);
 extern int rwdts_dbg_tracert_add_ent(RWDtsTraceroute *tr, RWDtsTracerouteEnt *ent);
 extern void rwdts_dbg_tracert_append(RWDtsTraceroute *dst, RWDtsTraceroute *src);
 extern void rwdts_dbg_errrep_append(RWDtsErrorReport *dst, RWDtsErrorReport *src);
-extern void rwdts_dbg_tracert_dump(RWDtsTraceroute *tr,        const rw_yang_pb_schema_t *schema);
+extern void rwdts_dbg_tracert_dump(RWDtsTraceroute *tr, rwdts_xact_t *xact);
 extern char*  rwdts_print_ent_type(RWDtsTracerouteEntType type);
 extern char* rwdts_print_ent_state(RWDtsTracerouteEntState state);
 extern char* rwdts_print_ent_event(RWDtsXactEvt evt);
@@ -1896,6 +1913,7 @@ rwdts_member_data_advice_query_action(rwdts_xact_t*             xact,
                                       RWDtsQueryAction          action,
                                       uint32_t                  flags,
                                       rwdts_event_cb_t*         advise_cb,
+                                      rwdts_event_cb_t*         rcvd_advise_cb,
                                       bool                      inc_serial);
 
 void rwdts_member_data_advise_cb(rwdts_xact_t*        xact,
@@ -1976,6 +1994,9 @@ rwdts_xact_block_add_query_ks_reg(rwdts_xact_block_t* block,
 /*********** RWDTS Journal Changes START *******************/
 #define RWDTS_JOURNAL_IN_USE_QLEN 10
 typedef struct rwdts_journal_q_element_s {
+  uint64_t router_idx;
+  uint64_t client_idx;
+  uint64_t serialno;
   rwdts_xact_query_t  *xquery;
   rwdts_member_xact_evt_t    evt;
   struct rwdts_journal_q_element_s  *next;
@@ -1993,6 +2014,12 @@ typedef enum  rwdts_journal_mode_s {
 #define RWDTS_JOURNAL_QRY_ID_PTR(t_query) (&((t_query)->serial->id))
 #define RWDTS_JOURNAL_QRY_SERIAL(t_query) ((t_query)->serial->serial)
 #define RWDTS_JOURNAL_HD_QRY(t_entry) ((t_entry)->xquery->query)
+
+#define RWDTS_JOURNAL_IS_VALID_QUERY(t_query) \
+    ((t_query) \
+    && ((t_query)->serial) \
+    && ((t_query)->serial->has_id) \
+    && ((t_query)->serial->has_serial))
 
 #define RWDTS_JOURNAL_VALID_QUERY(t_query) \
     RW_ASSERT((t_query)); \
@@ -2145,6 +2172,9 @@ void rwdts_query_result_deinit(rwdts_query_result_t* query_result);
 uint32_t
 rwdts_get_stored_keys(rwdts_member_registration_t* reg,
                                             rw_keyspec_path_t*** keyspecs);
+rw_status_t rwdts_journal_show_init(rwdts_api_t *apih);
+void rwdts_journal_consume_xquery(rwdts_xact_query_t *xquery,
+                                  rwdts_member_xact_evt_t evt);
 rwsched_dispatch_source_t
 rwdts_member_timer_create(rwdts_api_t *apih,
                           uint64_t timeout,
@@ -2153,6 +2183,8 @@ rwdts_member_timer_create(rwdts_api_t *apih,
                           bool start);
 rw_status_t
 rwdts_deinit_cursor(rwdts_member_cursor_t *cursor);
+rw_status_t
+rwdts_member_reg_handle_solicit_advise(rwdts_member_reg_handle_t  regh);
 __END_DECLS
 
 #endif /* __RWDTS_API_H */

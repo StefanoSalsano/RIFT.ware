@@ -13,6 +13,13 @@ import time
 import sys
 import os, stat
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwConmanYang', '1.0')
+gi.require_version('RwNsrYang', '1.0')
+gi.require_version('RwVnfrYang', '1.0')
+
 from gi.repository import (
     RwDts as rwdts,
     RwYang,
@@ -26,6 +33,17 @@ import rift.tasklets
 if sys.version_info < (3, 4, 4):
     asyncio.ensure_future = asyncio.async
 
+def log_this_vnf(vnf_cfg):
+    log_vnf = ""
+    used_item_list = ['nsr_name', 'vnfr_name', 'member_vnf_index', 'mgmt_ip_address']
+    for item in used_item_list:
+        if item in vnf_cfg:
+            if item == 'mgmt_ip_address':
+                log_vnf += "({})".format(vnf_cfg[item])
+            else:
+                log_vnf += "{}/".format(vnf_cfg[item])
+    return log_vnf
+        
 class ConfigManagerROifConnectionError(Exception):
     pass
 class ScriptError(Exception):
@@ -165,14 +183,23 @@ class ConfigManagerEvents(object):
         # Fetch VNFR for each VNFR id in NSR
 
     @asyncio.coroutine
+    def update_vnf_state(self, vnf_cfg, state):
+        nsr_obj = vnf_cfg['nsr_obj']
+        yield from nsr_obj.update_vnf_cm_state(vnf_cfg['vnfr'], state)
+        
+    @asyncio.coroutine
     def apply_vnf_config(self, vnf_cfg):
-        vnf_cfg['cm_state'] = conmanY.RecordState.CFG_DELAY
+        yield from self.update_vnf_state(vnf_cfg, conmanY.RecordState.CFG_DELAY)
         yield from asyncio.sleep(vnf_cfg['config_delay'], loop=self._loop)
-        vnf_cfg['cm_state'] = conmanY.RecordState.CFG_SEND
+        # See if we are still alive!
+        if vnf_cfg['nsr_obj'].being_deleted:
+            # Don't do anything, just return
+            return True
+        yield from self.update_vnf_state(vnf_cfg, conmanY.RecordState.CFG_SEND)
         try:
             if vnf_cfg['config_method'] == 'netconf':
                 self._log.info("Creating ncc handle for VNF cfg = %s!", vnf_cfg)
-                self.ncc = ConfigManagerVNFnetconf(self._log, self._loop, self._parent, vnf_cfg)
+                self.ncc = ConfigManagerVNFnetconf(self._log, self._loop, self, vnf_cfg)
                 if vnf_cfg['protocol'] == 'ssh':
                     yield from self.ncc.connect_ssh()
                 else:
@@ -181,11 +208,11 @@ class ConfigManagerEvents(object):
             elif vnf_cfg['config_method'] == 'rest':
                 if self.rcc is None:
                     self._log.info("Creating rcc handle for VNF cfg = %s!", vnf_cfg)
-                    self.rcc = ConfigManagerVNFrestconf(self._log, self._loop, self._parent, vnf_cfg)
+                    self.rcc = ConfigManagerVNFrestconf(self._log, self._loop, self, vnf_cfg)
                 self.ncc.apply_edit_cfg()
             elif vnf_cfg['config_method'] == 'script':
                 self._log.info("Executing script for VNF cfg = %s!", vnf_cfg)
-                scriptc = ConfigManagerVNFscriptconf(self._log, self._loop, self._parent, vnf_cfg)
+                scriptc = ConfigManagerVNFscriptconf(self._log, self._loop, self, vnf_cfg)
                 yield from scriptc.apply_edit_cfg()
             elif vnf_cfg['config_method'] == 'juju':
                 self._log.info("Executing juju config for VNF cfg = %s!", vnf_cfg)
@@ -194,22 +221,24 @@ class ConfigManagerEvents(object):
             else:
                 self._log.error("Unknown configuration method(%s) received for %s",
                                 vnf_cfg['config_method'], vnf_cfg['vnf_unique_name'])
-                vnf_cfg['cm_state'] = conmanY.RecordState.CFG_FAILED
-                return
+                yield from self.update_vnf_state(vnf_cfg, conmanY.RecordState.CFG_FAILED)
+                return True
 
-            self._log.critical("Successfully applied configuration to (%s/%s_%d)",
-                               vnf_cfg['nsr_name'],
-                               vnf_cfg['vnfr_name'], vnf_cfg['member_vnf_index'])
+            #Update VNF state
+            yield from self.update_vnf_state(vnf_cfg, conmanY.RecordState.READY)
+            self._log.info("Successfully applied configuration to VNF: %s",
+                               log_this_vnf(vnf_cfg))
         except Exception as e:
-            self._log.error("Applying configuration(%s) file(%s) to (%s/%s_%d) at %s failed as: %s",
+            self._log.error("Applying configuration(%s) file(%s) to VNF: %s failed as: %s",
                             vnf_cfg['config_method'],
-                            vnf_cfg['nsr_name'],
                             vnf_cfg['cfg_file'],
-                            vnf_cfg['vnfr_name'], vnf_cfg['member_vnf_index'],
-                            vnf_cfg['mgmt_ip_address'],
+                            log_this_vnf(vnf_cfg),
                             str(e))
-            raise
+            #raise
+            return False
 
+        return True
+        
 class ConfigManagerVNFscriptconf(object):
 
     def __init__(self, log, loop, parent, vnf_cfg):
@@ -222,7 +251,7 @@ class ConfigManagerVNFscriptconf(object):
     #@asyncio.coroutine
     def apply_edit_cfg(self):
         vnf_cfg = self._vnf_cfg
-        self._log.debug("Attempting to apply scriptconf to VNF: %s", vnf_cfg['mgmt_ip_address'])
+        self._log.debug("Attempting to apply scriptconf to VNF: %s", log_this_vnf(vnf_cfg))
         try:
             st = os.stat(vnf_cfg['cfg_file'])
             os.chmod(vnf_cfg['cfg_file'], st.st_mode | stat.S_IEXEC)
@@ -234,14 +263,15 @@ class ConfigManagerVNFscriptconf(object):
             script_msg = yield from proc.stdout.read()
             rc = yield from proc.wait()
 
+            self._log.debug("Debug config script output (%s)", script_msg)
             if rc != 0:
                 raise ScriptError(
                     "script config returned error code : %s" % rc
                     )
 
-            self._log.debug("config script output (%s)", script_msg)
         except Exception as e:
-            self._log.error("Error (%s) while executing script config", str(e))
+            self._log.error("Error (%s) while executing script config for VNF: %s",
+                            str(e), log_this_vnf(vnf_cfg))
             raise
 
 class ConfigManagerVNFrestconf(object):
@@ -262,7 +292,7 @@ class ConfigManagerVNFrestconf(object):
     @asyncio.coroutine
     def apply_edit_cfg(self):
         vnf_cfg = self._vnf_cfg
-        self._log.debug("Attempting to apply restconf to VNF: %s", vnf_cfg['mgmt_ip_address'])
+        self._log.debug("Attempting to apply restconf to VNF: %s", log_this_vnf(vnf_cfg))
         try:
             http_c = tornadoh.AsyncHTTPClient()
             # TBD
@@ -292,7 +322,7 @@ class ConfigManagerVNFnetconf(object):
         while (time.time() - start_time) < timeout_secs:
 
             try:
-                self._log.info("Attemping VNF netconf connection.")
+                self._log.info("Attemping netconf connection to VNF: %s", log_this_vnf(vnf_cfg))
 
                 self._manager = yield from ncclient.asyncio_manager.asyncio_connect(
                     loop=self._loop,
@@ -305,19 +335,19 @@ class ConfigManagerVNFnetconf(object):
                     hostkey_verify=False,
                 )
 
-                self._log.info("VNF netconf connected.")
+                self._log.info("Netconf connected to VNF: %s", log_this_vnf(vnf_cfg))
                 return
 
             except ncclient.transport.errors.SSHError as e:
-                vnf_cfg['cm_state'] = conmanY.RecordState.FAILED_CONNECTION
-                self._log.error("Netconf connection to VNF ip %s failed: %s",
-                                vnf_cfg['mgmt_ip_address'], str(e))
+                yield from self._parent.update_vnf_state(vnf_cfg, conmanY.RecordState.FAILED_CONNECTION)
+                self._log.error("Netconf connection to VNF: %s, failed: %s",
+                                log_this_vnf(vnf_cfg), str(e))
 
             yield from asyncio.sleep(2, loop=self._loop)
 
         raise ConfigManagerROifConnectionError(
-            "Failed to connect to VNF %s within %s seconds" %
-            (vnf_cfg['mgmt_ip_address'], timeout_secs)
+            "Failed to connect to VNF: %s within %s seconds" %
+            (log_this_vnf(vnf_cfg), timeout_secs)
         )
 
     @asyncio.coroutine
@@ -333,8 +363,8 @@ class ConfigManagerVNFnetconf(object):
         while (time.time() - start_time) < timeout_secs:
 
             try:
-                vnf_cfg['cm_state'] = conmanY.RecordState.CONNECTING
-                self._log.debug("Attemping VNF netconf connection.")
+                yield from self._parent.update_vnf_state(vnf_cfg, conmanY.RecordState.CONNECTING)
+                self._log.debug("Attemping netconf connection to VNF: %s", log_this_vnf(vnf_cfg))
 
                 self._manager = ncclient.asyncio_manager.manager.connect_ssh(
                     host=vnf_cfg['mgmt_ip_address'],
@@ -346,29 +376,29 @@ class ConfigManagerVNFnetconf(object):
                     hostkey_verify=False,
                 )
 
-                vnf_cfg['cm_state'] = conmanY.RecordState.NETCONF_SSH_CONNECTED
-                self._log.debug("VNF netconf over SSH connected.")
+                yield from self._parent.update_vnf_state(vnf_cfg, conmanY.RecordState.NETCONF_SSH_CONNECTED)
+                self._log.debug("netconf over SSH connected to VNF: %s", log_this_vnf(vnf_cfg))
                 return
 
             except ncclient.transport.errors.SSHError as e:
-                vnf_cfg['cm_state'] = conmanY.RecordState.FAILED_CONNECTION
-                self._log.error("Netconf connection to VNF ip %s failed: %s",
-                                vnf_cfg['mgmt_ip_address'], str(e))
+                yield from self._parent.update_vnf_state(vnf_cfg, conmanY.RecordState.FAILED_CONNECTION)
+                self._log.error("Netconf connection to VNF: %s, failed: %s",
+                                log_this_vnf(vnf_cfg), str(e))
 
             yield from asyncio.sleep(2, loop=self._loop)
 
         raise ConfigManagerROifConnectionError(
-            "Failed to connect to VNF %s within %s seconds" %
-            (vnf_cfg['mgmt_ip_address'], timeout_secs)
+            "Failed to connect to VNF: %s within %s seconds" %
+            (log_this_vnf(vnf_cfg), timeout_secs)
         )
 
     @asyncio.coroutine
     def apply_edit_cfg(self):
         vnf_cfg = self._vnf_cfg
-        self._log.debug("Attempting to apply netconf to VNF: %s", vnf_cfg['mgmt_ip_address'])
+        self._log.debug("Attempting to apply netconf to VNF: %s", log_this_vnf(vnf_cfg))
 
         if self._manager is None:
-            self._log.error("Netconf is not connected to %s, aborting!", vnf_cfg['mgmt_ip_address'])
+            self._log.error("Netconf is not connected to VNF: %s, aborting!", log_this_vnf(vnf_cfg))
             return
 
         # Get config file contents
@@ -379,12 +409,8 @@ class ConfigManagerVNFnetconf(object):
             self._log.error("Reading contents of the configuration file(%s) failed: %s", vnf_cfg['cfg_file'], str(e))
             return
 
-        # if self._parent.cfg_sleep:
-        #     self._log.debug("apply_edit_cfg Sleeping now ... %s", vnf_cfg['mgmt_ip_address'])
-        #     yield from asyncio.sleep(120, loop=self._loop)
-        #     self._parent.cfg_sleep = False
         try:
-            self._log.debug("apply_edit_cfg Woke up ... %s", vnf_cfg['mgmt_ip_address'])
+            self._log.debug("apply_edit_cfg to VNF: %s", log_this_vnf(vnf_cfg))
             xml = '<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0">{}</config>'.format(configuration)
             response = yield from self._manager.edit_config(xml, target='running')
             if hasattr(response, 'xml'):
@@ -413,7 +439,7 @@ class ConfigManagerVNFjujuconf(object):
     #@asyncio.coroutine
     def apply_edit_cfg(self):
         vnf_cfg = self._vnf_cfg
-        self._log.debug("Attempting to apply juju conf to VNF: %s", vnf_cfg['mgmt_ip_address'])
+        self._log.debug("Attempting to apply juju conf to VNF: %s", log_this_vnf(vnf_cfg))
         try:
             args = ['python3',
                 vnf_cfg['juju_script'],

@@ -11,7 +11,8 @@
 local assert, require, pcall, setmetatable, pairs, type, error, tostring,
 _VERSION, jit
    = assert, require, pcall, setmetatable, pairs, type, error, tostring,
-_VERSION, jit
+_VERSION, rawget(_G, 'jit')
+
 local package = require 'package'
 
 -- Require core lgi utilities, used during bootstrap.
@@ -84,6 +85,8 @@ repo.GLib._precondition.Bytes = 'GLib-Bytes'
 repo.GLib._precondition.Timer = 'GLib-Timer'
 repo.GLib._precondition.MarkupParser = 'GLib-Markup'
 repo.GLib._precondition.MarkupParseContext = 'GLib-Markup'
+repo.GLib._precondition.Source = 'GLib-Source'
+repo.GLib._precondition.SourceFuncs = 'GLib-Source'
 for _, name in pairs { 'Variant', 'VariantType', 'VariantBuilder' } do
    repo.GLib._precondition[name] = 'GLib-Variant'
 end

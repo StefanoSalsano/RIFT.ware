@@ -15,7 +15,7 @@ import RspConnectionPointRef from './RspConnectionPointRef'
 import VnfdConnectionPointRef from './VnfdConnectionPointRef'
 
 /**
- * A ConnectionPoint is always a child of a VNFD. We use it to build VnfdConnectionPointRef instances. So convenience
+ * A VirtualNetworkFunctionConnectionPoint is always a child of a VNFD. We use it to build VnfdConnectionPointRef instances. So convenience
  * methods are add to access the fields needed to do that.
  */
 export default class ClassifierMatchAttributes extends DescriptorModel {
@@ -28,10 +28,14 @@ export default class ClassifierMatchAttributes extends DescriptorModel {
 		return 'ClassifierMatchAttributes';
 	}
 
+	static get qualifiedType() {
+		return 'nsd.vnffgd.classifier.' + ClassifierMatchAttributes.type;
+	}
+
 	constructor(model, parent) {
 		super(model, parent);
 		this.type = ClassifierMatchAttributes.type;
-		this.uiState['qualified-type'] = 'nsd.vnffgd.classifier.match-attributes';
+		this.uiState['qualified-type'] = ClassifierMatchAttributes.qualifiedType;
 		this.className = ClassifierMatchAttributes.className;
 		this.position = new Position();
 	}

@@ -120,13 +120,6 @@ This will ensure any state regarding callid is cleaned up in logging subsystem.
            #include "rw-log.pb-c.h"
            #include "rwlog.h"
 ~~~
--# Include the new yang notification log file  to modules/automation/systemtest/plugins/yang/rw-composite.yang
-~~~{.c}
-         import rw-appmgr-log
-         {
-              prefix "rwappmgrlog";
-         }
-~~~
 -# Include the .so file in modules/automation/systemtest/plugins/yang/CMakeLists.txt
 ~~~{.c}
          ${CMAKE_INSTALL_PREFIX}/usr/lib/librwgeneric_yang_pb.so

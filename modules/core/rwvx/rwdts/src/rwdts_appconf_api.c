@@ -70,6 +70,7 @@ static void *rwdts_appconf_xact_init(rwdts_group_t *grp,
 
   return appx;
 }
+
 static void rwdts_appconf_xact_deinit(rwdts_group_t *grp,
                                       rwdts_xact_t *xact,
                                       void *ctx,
@@ -251,16 +252,36 @@ rwdts_appconf_t *rwdts_appconf_group_create(rwdts_api_t *apih,
                                             rwdts_appconf_cbset_t *cbset)
 {
   rw_status_t rs;
-  rwdts_appconf_t *ac = RW_MALLOC0_TYPE(sizeof(rwdts_appconf_t), rwdts_appconf_t);
   RW_ASSERT(cbset);
   RW_ASSERT(cbset->config_apply);
+
+  if (cbset == NULL) {
+    RWDTS_API_LOG_XACT_EVENT(apih, xact, RwDtsApiLog_notif_AppconfError,
+                             "AppconfGroup Create invalid callback param",
+                              apih->client_path);
+    return NULL;
+  }
+  if (!cbset->config_apply) {
+    RWDTS_API_LOG_XACT_EVENT(apih, xact, RwDtsApiLog_notif_AppconfError,
+                             "AppconfGroup Create invalid config apply param",
+                              apih->client_path);
+    return NULL;
+  }
+  rwdts_appconf_t *ac = RW_MALLOC0_TYPE(sizeof(rwdts_appconf_t), rwdts_appconf_t);
   ac->apih = apih;
   memcpy(&ac->cb, cbset, sizeof(ac->cb));
   rs = rwdts_api_group_create(ac->apih, rwdts_appconf_xact_init,
-                  rwdts_appconf_xact_deinit, rwdts_appconf_xact_event, ac,
-                  &ac->group);
+                  rwdts_appconf_xact_deinit, rwdts_appconf_xact_event, 
+                  ac, &ac->group);
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
   RW_ASSERT(ac->group);
+
+  if ((rs != RW_STATUS_SUCCESS) || !ac->group) {
+    RWDTS_API_LOG_XACT_EVENT(apih, xact, RwDtsApiLog_notif_AppconfError,
+                             "AppconfGroup API Create failure",
+                              apih->client_path);
+    return NULL;
+  }
 
   ac->phase_complete = false;
   ac->reg_pend = 0;
@@ -464,6 +485,9 @@ rwdts_appconf_cb_prepare(const rwdts_xact_info_t *xact_info,
                          void* user_data)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_xact_t *xact = xact_info->xact;
   RW_ASSERT_TYPE(xact, rwdts_xact_t);
   RW_ASSERT(action != RWDTS_QUERY_INVALID);
@@ -566,6 +590,9 @@ static rwdts_member_reg_handle_t rwdts_appconf_register_int(rwdts_appconf_t *ac,
                                                             void *prepare_ud,
                                                             GDestroyNotify prepare_cb_dtor) {
   RW_ASSERT(ac);
+  if (!ac) {
+    return NULL;
+  }
   RW_ASSERT_TYPE(ac, rwdts_appconf_t);
 
   rwdts_member_reg_handle_t regh = NULL;
@@ -835,6 +862,9 @@ rwdts_api_appconf_group_create_gi(rwdts_api_t*            apih,
                                   GDestroyNotify config_validate_dtor,
                                   GDestroyNotify config_apply_dtor) {
   RW_ASSERT(appconf);
+  if (!appconf) {
+    return RW_STATUS_FAILURE;
+  }
   rwdts_appconf_cbset_t cb = {
     .xact_init_gi    = init,
     .xact_deinit_gi  = deinit,
@@ -876,6 +906,9 @@ rwdts_api_appconf_group_create(rwdts_api_t*            apih,
                                void*                   user_data,
                                rwdts_appconf_t**       appconf) {
   RW_ASSERT(appconf);
+  if (!appconf) {
+    return RW_STATUS_FAILURE;
+  }
   rwdts_appconf_cbset_t cb = {
     .xact_init       = init,
     .xact_deinit     = deinit,

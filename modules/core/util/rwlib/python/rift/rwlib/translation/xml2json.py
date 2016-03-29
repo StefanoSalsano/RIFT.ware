@@ -6,6 +6,10 @@
 
 from lxml import etree 
 
+import tornado.escape
+
+from gi.repository import RwYang
+
 from ..schema import collect_children
 from ..util import iterate_with_lookahead
 from ..xml import (
@@ -16,7 +20,7 @@ from ..xml import (
 def xml_to_json(schema_root, xml_string):
     '''Used to convert rooted XML into equivalent JSON 
     
-    This class walks the xml tree and emits the equivalent json.
+    This function walks the xml tree and emits the equivalent json.
     
     '''
     def walk(schema_node, xml_node, depth=1):
@@ -36,6 +40,7 @@ def xml_to_json(schema_root, xml_string):
             is_leafy = child_schema_node.is_leafy()
             is_listy = child_schema_node.is_listy()
 
+
             if is_leafy and is_listy:
                 json.append("%s[" % indent)
                 list_indent = "  " + indent
@@ -48,7 +53,19 @@ def xml_to_json(schema_root, xml_string):
                 json.append("%s]" % indent)
                 
             elif is_leafy:
-                json.append('%s"%s"' % (indent, sibling_xml_nodes[0].text))
+                actual_type = child_schema_node.node_type().get_leaf_type()
+
+                if actual_type is RwYang.LeafType.LEAF_TYPE_STRING:
+                    # unescape the xml
+                    raw_string = tornado.escape.xhtml_unescape(sibling_xml_nodes[0].text)
+                else:
+                    raw_string = sibling_xml_nodes[0].text                    
+
+                escaped_json = tornado.escape.json_encode(raw_string)
+
+                json.append('%s%s' % (indent, escaped_json))
+                actual_type = child_schema_node.node_type().get_leaf_type()
+
 
             elif is_listy:
                 json.append("%s[" % indent)

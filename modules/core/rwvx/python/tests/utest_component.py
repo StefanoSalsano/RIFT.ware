@@ -20,6 +20,11 @@ import unittest
 import xmlrunner
 
 import rift.vx.component
+
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwBaseYang', '1.0')
+
 from gi.repository import RwDts, RwBaseYang
 
 def create_component(instance_name, component_type, parent_name=None, children_names=None):

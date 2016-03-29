@@ -13,6 +13,15 @@ import os.path
 import sys
 import re
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwVnfrYang', '1.0')
+gi.require_version('RwVnfmYang', '1.0')
+gi.require_version('RwVlrYang', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
+gi.require_version('RwTypes', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     RwVnfrYang,
@@ -241,7 +250,7 @@ class VcsComponent(object):
 
 class VirtualDeploymentUnitRecord(object):
     """  Virtual Deployment Unit Record """
-    def __init__(self, dts, log, loop, vdud, vnfr, mgmt_intf, cloud_account_name):
+    def __init__(self, dts, log, loop, vdud, vnfr, mgmt_intf, cloud_account_name, vdur_id=None):
         self._dts = dts
         self._log = log
         self._loop = loop
@@ -250,7 +259,7 @@ class VirtualDeploymentUnitRecord(object):
         self._mgmt_intf = mgmt_intf
         self._cloud_account_name = cloud_account_name
 
-        self._vdur_id = str(uuid.uuid4())
+        self._vdur_id = vdur_id or str(uuid.uuid4())
         self._int_intf = []
         self._ext_intf = []
         self._state = VDURecordState.INIT
@@ -640,18 +649,26 @@ class VirtualDeploymentUnitRecord(object):
         @asyncio.coroutine
         def on_prepare(xact_info, query_action, ks_path, msg):
             """ This VDUR is active """
-            self._log.debug("Received on_prepare (%s:%s:%s)",
+            self._log.debug("Received VDUR instantiate on_prepare (%s:%s:%s)",
                             query_action,
                             ks_path,
                             msg)
 
-            self._vm_resp = msg
+            if (query_action == rwdts.QueryAction.UPDATE or
+                query_action == rwdts.QueryAction.CREATE):
+                self._vm_resp = msg
 
-            if msg.resource_state == "active":
-                # Move this VDU to ready state
-                yield from self.vdu_is_active()
-            elif msg.resource_state == "failed":
-                yield from self.instantiation_failed()
+                if msg.resource_state == "active":
+                    # Move this VDU to ready state
+                    yield from self.vdu_is_active()
+                elif msg.resource_state == "failed":
+                    yield from self.instantiation_failed()
+            elif query_action == rwdts.QueryAction.DELETE:
+                self._log.debug("DELETE action in on_prepare for VDUR instantiation, ignoring")
+            else:
+                raise NotImplementedError(
+                    "%s action on VirtualDeployementUnitRecord not supported",
+                    query_action)
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
@@ -755,7 +772,7 @@ class InternalVirtualLinkRecord(object):
         return vlr
 
     @asyncio.coroutine
-    def instantiate(self, xact):
+    def instantiate(self, xact, restart_mode=False):
         """ Instantiate VL """
 
         @asyncio.coroutine
@@ -806,7 +823,14 @@ class InternalVirtualLinkRecord(object):
             return vlr
 
         self._state = VlRecordState.INSTANTIATION_PENDING
-        yield from instantiate_vlr()
+
+        if restart_mode:
+            vl = yield from get_vlr()
+            if vl is None:
+                yield from instantiate_vlr()
+        else:
+            yield from instantiate_vlr()
+
         self._state = VlRecordState.ACTIVE
 
     def vlr_in_vns(self):
@@ -1101,24 +1125,45 @@ class VirtualNetworkFunctionRecord(object):
                 self._vlr_by_cp[int_cp] = vlr
 
     @asyncio.coroutine
-    def instantiate_vls(self, xact):
+    def instantiate_vls(self, xact, restart_mode=False):
         """ Instantiate the VLs associated with this VNF """
         self._log.debug("Instantiating Internal Virtual Links for vnfd id: %s",
                         self.vnfd_id)
 
         for vlr in self._vlrs:
             self._log.debug("Instantiating VLR %s", vlr)
-            yield from vlr.instantiate(xact)
+            yield from vlr.instantiate(xact, restart_mode)
 
     def find_vlr_by_cp(self, cp_name):
         """ Find the VLR associated with the cp name """
         return self._vlr_by_cp[cp_name]
 
-    def create_vdus(self, vnfr):
+    def create_vdus(self, vnfr, restart_mode=False):
         """ Create the VDUs associated with this VNF """
-        self._log.debug("Creating VDU's for vnfd id: %s", self.vnfd_id)
+
+        def get_vdur_id(vdud):
+            """Get the corresponding VDUR's id for the VDUD. This is useful in
+            case of a restart.
+
+            In restart mode we check for exiting VDUR's ID and use them, if
+            available. This way we don't end up creating duplicate VDURs
+            """
+            vdur_id = None
+
+            if restart_mode and vdud is not None:
+                try:
+                    vdur = [vdur.id for vdur in vnfr._vnfr.vdur if vdur.vdu_id_ref == vdud.id]
+                    vdur_id = vdur[0]
+                except IndexError:
+                    self._log.error("Unable to find a VDUR for VDUD {}", vdud)
+
+            return vdur_id
+
+        self._log.info("Creating VDU's for vnfd id: %s", self.vnfd_id)
         for vdu in self.vnfd.msg.vdu:
             self._log.debug("Creating vdu: %s", vdu)
+            vdur_id = get_vdur_id(vdu)
+
             vdur = VirtualDeploymentUnitRecord(
                 dts=self._dts,
                 log=self._log,
@@ -1127,6 +1172,7 @@ class VirtualNetworkFunctionRecord(object):
                 vnfr=vnfr,
                 mgmt_intf=self.has_mgmt_interface(vdu),
                 cloud_account_name=self.cloud_account_name,
+                vdur_id=vdur_id
                 )
 
             self._vdus.append(vdur)
@@ -1134,7 +1180,7 @@ class VirtualNetworkFunctionRecord(object):
     @asyncio.coroutine
     def instantiate_vdus(self, xact, vnfr):
         """ Instantiate the VDUs associated with this VNF """
-        self._log.debug("Instantiating VDU's for vnfd id: %s", self.vnfd_id)
+        self._log.debug("Instantiating VDU's for vnfd id %s: %s", self.vnfd_id, self._vdus)
 
         lookup = {vdu.vdu_id:vdu for vdu in self._vdus}
 
@@ -1358,7 +1404,7 @@ class VirtualNetworkFunctionRecord(object):
         self._state = state
 
     @asyncio.coroutine
-    def instantiate(self, xact):
+    def instantiate(self, xact, restart_mode=False):
         """ instantiate this VNF """
         self.set_state(VirtualNetworkFunctionRecordState.VL_INIT_PHASE)
 
@@ -1421,7 +1467,7 @@ class VirtualNetworkFunctionRecord(object):
         # instantiate VLs
         self._log.debug("VNFR-ID %s: Instantiate VLs", self._vnfr_id)
         try:
-            yield from self.instantiate_vls(xact)
+            yield from self.instantiate_vls(xact, restart_mode)
         except Exception:
             self._log.exception("VL instantiation failed")
             yield from self.instantiation_failed()
@@ -1431,13 +1477,14 @@ class VirtualNetworkFunctionRecord(object):
 
         # instantiate VDUs
         self._log.debug("VNFR-ID %s: Create VDUs", self._vnfr_id)
-        self.create_vdus(self)
+        self.create_vdus(self, restart_mode)
 
         # publish the VNFR
         self._log.debug("VNFR-ID %s: Publish VNFR", self._vnfr_id)
         yield from self.publish(xact)
 
         # instantiate VDUs
+        # ToDo: Check if this should be prevented during restart
         self._log.debug("VNFR-ID %s: Instantiate VDUs", self._vnfr_id)
         _ = self._loop.create_task(self.instantiate_vdus(xact, self))
 
@@ -1507,8 +1554,15 @@ class VnfdDtsHandler(object):
 
         def on_apply(dts, acg, xact, action, scratch):
             """Apply the  configuration"""
-            self._log.debug("Got VNFD apply (xact: %s) (action: %s)(scr: %s)",
+            self._log.debug("Got VNFM VNFD apply (xact: %s) (action: %s)(scr: %s)",
                             xact, action, scratch)
+            # Create/Update a VNFD record
+            for cfg in self._regh.get_xact_elements(xact):
+                # Only interested in those VNFD cfgs whose ID was received in prepare callback
+                if cfg.id in acg.scratch['vnfds']:
+                    self._vnfm.update_vnfd(cfg)
+
+            del acg._scratch['vnfds'][:]
 
         @asyncio.coroutine
         def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
@@ -1520,6 +1574,7 @@ class VnfdDtsHandler(object):
                 fref = ProtobufC.FieldReference.alloc()
                 fref.goto_whole_message(msg.to_pbcm())
 
+                # Handle deletes in prepare_callback, but adds/updates in apply_callback
                 if fref.is_field_deleted():
                     # Delete an VNFD record
                     self._log.debug("Deleting VNFD with id %s", msg.id)
@@ -1530,12 +1585,15 @@ class VnfdDtsHandler(object):
                     # Delete a VNFD record
                     yield from self._vnfm.delete_vnfd(msg.id)
                 else:
+                    # Handle actual adds/updates in apply_callback,
+                    # just check if VNFD in use in prepare_callback
                     if self._vnfm.vnfd_in_use(msg.id):
                         self._log.debug("Cannot modify an VNFD in use - %s", msg)
                         err = "Cannot modify an VNFD in use - %s" % msg
                         raise VirtualNetworkFunctionDescriptorRefCountExists(err)
-                    # Create/Update an VNFD record
-                    yield from self._vnfm.update_vnfd(msg)
+
+                    # Add this VNFD to scratch to create/update in apply callback
+                    acg._scratch['vnfds'].append(msg.id)
 
                 xact_info.respond_xpath(rwdts.XactRspCode.ACK)
             except Exception:
@@ -1550,6 +1608,8 @@ class VnfdDtsHandler(object):
             )
         acg_hdl = rift.tasklets.AppConfGroup.Handler(on_apply=on_apply)
         with self._dts.appconf_group_create(handler=acg_hdl) as acg:
+            # Need a list in scratch to store VNFDs to create/update later
+            acg._scratch['vnfds'] = list()
             self._regh = acg.register(
                 xpath=VnfdDtsHandler.XPATH,
                 flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
@@ -1579,11 +1639,15 @@ class VcsComponentDtsHandler(object):
         """ Registers VCS component dts publisher registration"""
         self._log.debug("VCS Comp publisher DTS handler registering path %s",
                         VcsComponentDtsHandler.XPATH)
-        handler = rift.tasklets.DTS.RegistrationHandler()
-        self._regh = yield from self._dts.register(
-            VcsComponentDtsHandler.XPATH,
-            flags=rwdts.Flag.PUBLISHER | rwdts.Flag.NO_PREP_READ,
-            handler=handler)
+        
+        hdl = rift.tasklets.DTS.RegistrationHandler()
+        handlers = rift.tasklets.Group.Handler()
+        with self._dts.group_create(handler=handlers) as group:
+            self._regh = group.register(xpath=VcsComponentDtsHandler.XPATH,
+                                        handler=hdl,
+                                        flags=(rwdts.Flag.PUBLISHER |
+                                               rwdts.Flag.NO_PREP_READ |
+                                               rwdts.Flag.FILE_DATASTORE),)
 
     @asyncio.coroutine
     def publish(self, xact, path, msg):
@@ -1628,6 +1692,31 @@ class VnfrDtsHandler(object):
         def on_abort(*args):
             """ Abort callback """
             self._log.debug("VNF  transaction got aborted")
+
+        @asyncio.coroutine
+        def on_event(dts, g_reg, xact, xact_event, scratch_data):
+
+            @asyncio.coroutine
+            def instantiate_realloc_vnfr(vnfr):
+                """Re-populate the vnfm after restart
+
+                Arguments:
+                    vlink 
+
+                """
+
+                with self._dts.transaction(flags=0) as xact:
+                    yield from vnfr.instantiate(xact, restart_mode=True)
+
+            if xact_event == rwdts.MemberEvent.INSTALL:
+                curr_cfg = self.regh.elements
+                for cfg in curr_cfg:
+                    vnfr = self.vnfm.create_vnfr(cfg)
+                    self._loop.create_task(instantiate_realloc_vnfr(vnfr))
+
+            self._log.debug("Got on_event in vnfm")
+
+            return rwdts.MemberRspCode.ACTION_OK
 
         @asyncio.coroutine
         def on_prepare(xact_info, action, ks_path, msg):
@@ -1705,12 +1794,14 @@ class VnfrDtsHandler(object):
 
         hdl = rift.tasklets.DTS.RegistrationHandler(on_commit=on_commit,
                                                     on_prepare=on_prepare,)
-        with self._dts.group_create() as group:
+        handlers = rift.tasklets.Group.Handler(on_event=on_event,)
+        with self._dts.group_create(handler=handlers) as group:
             self._regh = group.register(xpath=VnfrDtsHandler.XPATH,
                                         handler=hdl,
                                         flags=(rwdts.Flag.PUBLISHER |
                                                rwdts.Flag.NO_PREP_READ |
-                                               rwdts.Flag.CACHE),)
+                                               rwdts.Flag.CACHE |
+                                               rwdts.Flag.FILE_DATASTORE),)
 
     @asyncio.coroutine
     def create(self, xact, path, msg):
@@ -1719,6 +1810,7 @@ class VnfrDtsHandler(object):
         """
         self._log.debug("Creating VNFR xact = %s, %s:%s",
                         xact, path, msg)
+
         self.regh.create_element(path, msg)
         self._log.debug("Created VNFR xact = %s, %s:%s",
                         xact, path, msg)
@@ -1813,14 +1905,14 @@ class VirtualNetworkFunctionDescriptor(object):
         """ Update the Virtual Network Function Descriptor """
         if self.in_use():
             self._log.error("Cannot update descriptor %s in use", self.id)
-            raise("Cannot update descriptor in use %s" % self.id)
+            raise VirtualNetworkFunctionDescriptorRefCountExists("Cannot update descriptor in use %s" % self.id)
         self._vnfd = vnfd
 
     def delete(self):
         """ Delete the Virtual Network Function Descriptor """
         if self.in_use():
             self._log.error("Cannot delete descriptor %s in use", self.id)
-            raise("Cannot delete descriptor in use %s" % self.id)
+            raise VirtualNetworkFunctionDescriptorRefCountExists("Cannot delete descriptor in use %s" % self.id)
         self._vnfm.delete_vnfd(self.id)
 
 
@@ -2078,6 +2170,7 @@ class VnfManager(object):
         """ Fetch VNFDs based with the vnfd id"""
         vnfd_path = VirtualNetworkFunctionDescriptor.path_for_id(vnfd_id)
         self._log.debug("Fetch vnfd with path %s", vnfd_path)
+        vnfd = None
 
         res_iter = yield from self._dts.query_read(vnfd_path, rwdts.Flag.MERGE)
 
@@ -2113,7 +2206,12 @@ class VnfManager(object):
                 self._log.error("Cannot find VNFD id:%s", vnfd_id)
                 raise VirtualNetworkFunctionDescriptorError("Cannot find VNFD id:%s", vnfd_id)
 
-            yield from self.create_vnfd(vnfd)
+            if vnfd.id != vnfd_id:
+                self._log.error("Bad Recovery state {} found for {}".format(vnfd.id, vnfd_id))
+                raise VirtualNetworkFunctionDescriptorError("Bad Recovery state {} found for {}".format(vnfd.id, vnfd_id))
+
+            if vnfd.id not in self._vnfds:
+                self.create_vnfd(vnfd)
 
         return self._vnfds[vnfd_id]
 
@@ -2131,7 +2229,6 @@ class VnfManager(object):
                         path, msg)
         yield from self.vnfr_handler.update(xact, path, msg)
 
-    @asyncio.coroutine
     def create_vnfd(self, vnfd):
         """ Create a virtual network function descriptor """
         self._log.debug("Create virtual networkfunction descriptor - %s", vnfd)
@@ -2146,13 +2243,17 @@ class VnfManager(object):
                                                                 vnfd)
         return self._vnfds[vnfd.id]
 
-    @asyncio.coroutine
     def update_vnfd(self, vnfd):
         """ update the Virtual Network Function descriptor """
         self._log.debug("Update virtual network function descriptor - %s", vnfd)
+
+        # Hack to remove duplicates from leaf-lists - to be fixed by RIFT-6511
+        for ivld in vnfd.internal_vld:
+            ivld.internal_connection_point_ref = list(set(ivld.internal_connection_point_ref))
+
         if vnfd.id not in self._vnfds:
             self._log.debug("No VNFD found - creating VNFD id = %s", vnfd.id)
-            yield from self.create_vnfd(vnfd)
+            self.create_vnfd(vnfd)
         else:
             self._log.debug("Updating VNFD id = %s, vnfd = %s", vnfd.id, vnfd)
             self._vnfds[vnfd.id].update(vnfd)
@@ -2227,6 +2328,13 @@ class VnfmTasklet(rift.tasklets.Tasklet):
     def on_instance_started(self):
         """ Task insance started callback """
         self.log.debug("Got instance started callback")
+
+    def stop(self):
+      try:
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in VNFM stop:", sys.exc_info()[0])
+         raise
 
     @asyncio.coroutine
     def init(self):

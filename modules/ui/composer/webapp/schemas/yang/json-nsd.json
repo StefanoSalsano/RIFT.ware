@@ -416,6 +416,10 @@
            "description": "Vendor of the NSD.",
            "type": "string"
           },
+          "logo": {
+           "description": "Vendor logo for the Network Service",
+           "type": "string"
+          },
           "description": {
            "description": "Description of the NSD.",
            "type": "string"
@@ -637,12 +641,33 @@
                  "path": "../../nsd:rsp/nsd:id"
                 }
                }
+              },
+              "member-vnf-index-ref": {
+               "description": "Reference to member-vnf within constituent-vnfds",
+               "type": {
+                "leafref": {
+                 "path": "../../../nsd:constituent-vnfd/nsd:member-vnf-index"
+                }
+               }
+              },
+              "vnfd-id-ref": {
+               "description": "A reference to a vnfd. This is a\n   leafref to path:\n       ../../../nsd:constituent-vnfd\n       + [nsd:id = current()/../nsd:id-ref]\n       + /nsd:vnfd-id-ref\n   NOTE: An issue with confd is preventing the\n   use of xpath. Seems to be an issue with leafref\n   to leafref, whose target is in a different module.\n   Once that is resovled this will switched to use\n   leafref",
+               "type": "yang:uuid"
+              },
+              "vnfd-connection-point-ref": {
+               "description": "A reference to a connection point name\n   in a vnfd. This is a leafref to path:\n       /vnfd:vnfd-catalog/vnfd:vnfd\n       + [vnfd:id = current()/../nsd:vnfd-id-ref]\n       + /vnfd:connection-point/vnfd:name\n   NOTE: An issue with confd is preventing the\n   use of xpath. Seems to be an issue with leafref\n   to leafref, whose target is in a different module.\n   Once that is resovled this will switched to use\n   leafref",
+               "type": "string"
               }
              },
-             "container": {
+             "list": {
               "match-attributes": {
                "description": "List of match attributes.",
+               "key": "id",
                "leaf": {
+                "id": {
+                 "description": "Identifier for the classifier match attribute rule.",
+                 "type": "yang:uuid"
+                },
                 "ip-proto": {
                  "description": "IP Protocol.",
                  "type": "uint8"
@@ -1041,6 +1066,10 @@
            "description": "Vendor of the VNFD.",
            "type": "string"
           },
+          "logo": {
+           "description": "Vendor logo for the Virtual Network Function",
+           "type": "string"
+          },
           "description": {
            "description": "Description of the VNFD.",
            "type": "string"
@@ -1049,8 +1078,30 @@
            "description": "Version of the VNFD",
            "type": "string"
           },
-          "vnf-type": {
-           "description": "Type of VNF.\nNOTE: This needs to map with Service Function Type in ODL to\nsupport VNFFG. Service Function Type is manadatory param in ODL\nSFC. This is temporarily set to string for ease of use",
+          "service-function-chain": {
+           "description": "Type of node in Service Function Chaining Architecture",
+           "type": {
+            "enumeration": {
+             "enum": {
+              "UNAWARE": {
+               "value": 0
+              },
+              "CLASSIFIER": {
+               "value": 1
+              },
+              "SF": {
+               "value": 2
+              },
+              "SFF": {
+               "value": 3
+              }
+             }
+            }
+           },
+           "default": "UNAWARE"
+          },
+          "service-function-type": {
+           "description": "Type of Service Function.\nNOTE: This needs to map with Service Function Type in ODL to\nsupport VNFFG. Service Function Type is manadatory param in ODL\nSFC. This is temporarily set to string for ease of use",
            "type": "string"
           }
          },
@@ -3003,6 +3054,10 @@
           },
           "label": {
            "description": "A descriptive string",
+           "type": "string"
+          },
+          "default-value": {
+           "description": " A default value for this input parameter",
            "type": "string"
           }
          }

@@ -1,5 +1,0 @@
-[
-{ "id" : "1", "label" : "source", "typeId" : "tg", "sink" : "2" },
-{ "id" : "2", "label" : "server", "typeId" : "lb", "destination" : "3" },
-{ "id" : "3", "label" : "sink", "typeId" : "tg" }
-]

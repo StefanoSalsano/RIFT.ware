@@ -91,7 +91,7 @@ class MessageFieldGenerator : public FieldGenerator {
   string GetGiReturnAnnotations() const;
   string GetGiGetterReturnType() const;
   string GetGiGetterParameterList() const;
-  string GetGiParameterAnnotations() const;
+  string GetGiSetterAnnotations() const;
   string GetGiSetterParameterList() const;
   string GetGiCreateParameterList() const;
   void GenerateGiCGetterMethod(io::Printer* printer) const;

@@ -277,15 +277,23 @@ string MessageFieldGenerator::GetGiGetterParameterList() const
   return param_list;
 }
 
-string MessageFieldGenerator::GetGiParameterAnnotations() const
+string MessageFieldGenerator::GetGiSetterAnnotations() const
 {
-  std::string annotations = "";
+  std::string annotations = "(transfer none)";
 
-  if (descriptor_->label() == FieldDescriptor::LABEL_REPEATED) {
-    annotations.append("(array length=len)");
-    annotations.append("(transfer none)");
-  } else {
-    annotations.append("(transfer none)");
+  switch (descriptor_->label()) {
+    case FieldDescriptor::LABEL_REPEATED:
+      annotations.append("(array length=len)");
+      break;
+    case FieldDescriptor::LABEL_OPTIONAL:
+      if (!riftopts.flatinline) {
+        annotations.append("(nullable)");
+      }
+      // ** fall through **
+    case FieldDescriptor::LABEL_REQUIRED:
+      break;
+    default:
+      return "";
   }
 
   if (annotations.length()) {
@@ -348,6 +356,7 @@ void MessageFieldGenerator::GenerateGiCGetterMethod(io::Printer* printer) const
 
   // Begining Brace of the function
   printer->Print(vars, "{\n"
+                       "  PROTOBUF_C_GI_MUTEX_GUARD_AUTO_RELEASE();\n"
                        "  /* Return 0 value for any return type */\n"
                        "  PROTOBUF_C_GI_CHECK_FOR_ERROR_RETVAL(boxed, err, $domain$, ($getter_rt$)0);\n\n");
   printer->Indent();
@@ -447,7 +456,8 @@ void MessageFieldGenerator::GenerateGiCSetterMethod(io::Printer* printer) const
   printer->Print(GetGiSetterParameterList().c_str());
 
   // Begining Brace of the function
-  printer->Print("{\n");
+  printer->Print("{\n"
+                 "  PROTOBUF_C_GI_MUTEX_GUARD_AUTO_RELEASE();\n");
 
   printer->Indent();
   vars["pb_field_in"] = GetGiCIdentifier("helper_macro") + "(" + FieldName(descriptor_) + ")";
@@ -598,7 +608,7 @@ void MessageFieldGenerator::GenerateGiCSetterMethod(io::Printer* printer) const
                          "  ProtobufCMessage* old_msg = $boxed_field$->box.message;\n"
                          "  $invalidate_fn$($boxed_field$);\n"
                          "  $boxed_field$ = NULL;\n"
-                         "  if (old_msg == $fname$->box.message) {\n"
+                         "  if ($fname$ && old_msg == $fname$->box.message) {\n"
                          "    $boxed_field$ = $fname$;\n"
                          "    return;\n"
                          "  }\n"

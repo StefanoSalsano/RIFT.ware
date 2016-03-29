@@ -12,8 +12,11 @@
 
 import pytest
 
+import gi
+gi.require_version('RwMcYang', '1.0')
+
 from gi.repository import GLib, RwMcYang
-from rift.auto.proxy import ProxyRequestError
+from rift.auto.session import ProxyRequestError
 
 
 @pytest.fixture(scope='module')
@@ -113,7 +116,7 @@ class TestCloudAccount:
     # Test cloud account type
     #
 
-    def test_create_cloud_account_with_no_type(self, proxy, cloud_account_name):
+    def _test_create_cloud_account_with_no_type(self, proxy, cloud_account_name):
         '''Test that a cloud account cannot be created if no type is provided
 
         Arguments:

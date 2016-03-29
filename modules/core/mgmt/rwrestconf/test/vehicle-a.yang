@@ -214,6 +214,18 @@ module vehicle-a
     }
   }
 
+  rpc in-list-no-out {                                                                     
+    input {                                                                          
+      list in {
+        key "k";
+        leaf k {
+          type string;
+        }
+      }
+    }
+  }
+
+
   identity identity-base {
     description "Testing base identity";    
   }
@@ -321,6 +333,18 @@ module vehicle-a
         }
       }
     }
+  }
+
+  notification notif {
+    container cont {
+      list dict {
+        key "name";
+        leaf name { type string; }
+        leaf value { type string; }
+      }
+      leaf cont-leaf { type boolean; }
+    }
+    leaf top-leaf { type uint32; }
   }
 
   rpc exec-ns-config-primitive {

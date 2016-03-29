@@ -4,19 +4,19 @@
  *
  * Copyright (C) 2010 - Garrett Regier
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -76,10 +76,25 @@ testing_engine_new_full (gboolean nonglobal_loaders)
                               "*unkown-loader.plugin* does-not-exist");
   testing_util_push_log_hook ("*Error loading *unkown-loader.plugin*");
 
+  testing_util_push_log_hook ("Bad plugin file '"
+                              BUILDDIR "*/embedded*.plugin': "
+                              "embedded plugins must be a resource");
+  testing_util_push_log_hook ("Error loading '"
+                              BUILDDIR "*/embedded*.plugin'*");
+
+  testing_util_push_log_hook ("Bad plugin file '"
+                              BUILDDIR "*embedded-invalid-loader.plugin': "
+                              "embedded plugins must use the C plugin loader");
+
   /* Must be after pushing log hooks */
   engine = testing_util_engine_new_full (nonglobal_loaders);
-  peas_engine_add_search_path (engine, BUILDDIR "/tests/libpeas/plugins",
-                                       SRCDIR   "/tests/libpeas/plugins");
+
+  peas_engine_add_search_path (engine,
+                               "resource:///org/gnome/libpeas/"
+                               "tests/plugins", NULL);
+  peas_engine_add_search_path (engine,
+                               BUILDDIR "/tests/libpeas/plugins",
+                               SRCDIR   "/tests/libpeas/plugins");
 
   return engine;
 }

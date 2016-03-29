@@ -561,6 +561,20 @@ rw_piot_get_link_stats(rw_piot_api_handle_t api_handle, rw_piot_link_stats_t *st
   return;
 }
 
+int
+rw_piot_get_extended_stats(rw_piot_api_handle_t api_handle,
+                           struct rte_eth_xstats *xstats, unsigned n)
+{
+  rw_piot_device_t *rw_piot_dev = RWPIOT_GET_DEVICE(api_handle);
+  ASSERT(RWPIOT_VALID_DEVICE(rw_piot_dev));
+  if (NULL == rw_piot_dev) {
+    RW_PIOT_LOG(RTE_LOG_ERR, "PIOT Could not find device by handle or invalid input param\n");
+    return -1;
+  }
+  return rte_eth_xstats_get(rw_piot_dev->rte_port_id,
+                            xstats, n);
+}
+
 
 void 
 rw_piot_reset_link_stats(rw_piot_api_handle_t api_handle)
@@ -572,6 +586,7 @@ rw_piot_reset_link_stats(rw_piot_api_handle_t api_handle)
     return;
   }
   rte_eth_stats_reset(rw_piot_dev->rte_port_id);
+  rte_eth_xstats_reset(rw_piot_dev->rte_port_id);
   return;
 }
 

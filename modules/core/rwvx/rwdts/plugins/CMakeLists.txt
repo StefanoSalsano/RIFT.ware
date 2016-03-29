@@ -7,5 +7,5 @@
 
 cmake_minimum_required(VERSION 2.8)
 
-set(subdirs proto rwdtsrouter-c yang rwdtstasklet)
+set(subdirs proto rwdtsrouter-c yang rwdtstasklet dtstestpub)
 rift_add_subdirs(SUBDIR_LIST ${subdirs})

@@ -21,6 +21,7 @@
 #include <protobuf-c/rift-protobuf-c.h>
 #include <rwlib.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include <rw-dts.pb-c.h>
 #include "rwdts_int.h"
 
@@ -1438,7 +1439,7 @@ rwdts_convert_yang_audit_action (RwDts__YangEnum__AuditAction__E action)
       return RWDTS_AUDIT_ACTION_RECOVER;
 
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
   }
 
   /* Should not reach here */
@@ -1558,6 +1559,9 @@ rwdts_member_start_audit(const rwdts_xact_info_t* xact_info,
                          void*                    getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL){
+    return RWDTS_ACTION_NA;
+  }
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
   RW_ASSERT_TYPE(apih, rwdts_api_t);
 
@@ -1744,6 +1748,9 @@ rwdts_member_fill_audit_summary(rwdts_api_t*                    apih,
 {
 
   RW_ASSERT(summary != NULL);
+  if (summary == NULL) {
+    return;
+  }
 
   rwdts_member_registration_t *reg;
 

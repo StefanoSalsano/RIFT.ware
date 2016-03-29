@@ -314,7 +314,7 @@ void rw_minikey_basic_bytes_pointy_init(rw_minikey_basic_bytes_pointy_t *mk)
 }
 
 #define RWPB_MINIKEY_DEF_INIT_BYTES_POINTY(var_, key_, keylen_) \
-    RW_ASSERT(0); /* Not implemented for now. */
+    RW_CRASH(); /* Not implemented for now. */
 
 /*
  * key type bytes with fixed max length

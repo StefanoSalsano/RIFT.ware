@@ -38,12 +38,11 @@ include(rift_submodule)
 ##
 set(subdirs
   rwcli
-  rwmgmt-api
-  rwmgmt-ui
+  rwdebug-scripts
   rwnetconf
   rwrestconf
   rwuagent
-  rwdebug-scripts
+  rwwatchdog
   )
 
 rift_add_subdirs(SUBDIR_LIST ${subdirs})

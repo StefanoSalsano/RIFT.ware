@@ -7,4 +7,7 @@ git subtree add --prefix=glib/glib-2.40.0 -m 'Add glib-2-40 branch' --squash  gi
 git branch glib-2-42
 git subtree add --prefix=glib/glib-2.42.0 -m 'Add glib-2-42 branch' --squash  git://git.gnome.org/glib glib-2-42
 
+git branch glib-2-46
+git subtree add --prefix=glib/glib-2.46.0 -m 'Add glib-2-46 branch' --squash  git://git.gnome.org/glib glib-2-46
+
 

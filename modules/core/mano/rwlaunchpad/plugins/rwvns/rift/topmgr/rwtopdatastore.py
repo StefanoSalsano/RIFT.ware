@@ -4,6 +4,8 @@
 #
 
 
+import gi
+gi.require_version('RwTypes', '1.0')
 from gi.repository import (
     IetfNetworkYang,
     IetfNetworkTopologyYang,

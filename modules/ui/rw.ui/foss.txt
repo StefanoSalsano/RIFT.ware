@@ -19,6 +19,7 @@ RIFT.ui, webapp/node_modules/http-proxy, http-proxy, MIT, https://github.com/nod
 RIFT.ui, webapp/node_modules/jquery, jquery, MIT-like, https://github.com/jquery/jquery
 RIFT.ui, webapp/node_modules/loader-utils, loader-utils, MIT, https://github.com/webpack/loader-utils
 RIFT.ui, webapp/node_modules/loaders.css, loaders.css, MIT, https://github.com/ConnorAtherton/loaders.css/tree/master
+RIFT.ui, webapp/node_modules/minimist, minimist, MIT, https://github.com/substack/minimist
 RIFT.ui, webapp/node_modules/ngtemplate-loader, ngtemplate-loader, MIT, https://github.com/WearyMonkey/ngtemplate-loader
 RIFT.ui, webapp/node_modules/node-sass, node-sass, MIT-like, https://github.com/sass/node-sass
 RIFT.ui, webapp/node_modules/open-iconic, open-iconic, MIT and SIL, https://github.com/iconic/open-iconic
@@ -42,6 +43,7 @@ RIFT.ui, api/node_modules/body-parser, body-parser, MIT, https://github.com/expr
 RIFT.ui, api/node_modules/cors, cors, MIT, https://github.com/expressjs/cors
 RIFT.ui, api/node_modules/express, express, MIT, https://github.com/strongloop/express
 RIFT.ui, api/node_modules/hawk, hawk, BSD-3-Clause, https://github.com/hueniverse/hawk
+RIFT.ui, api/node_modules/minimist, minimist, MIT, https://github.com/substack/minimist
 RIFT.ui, api/node_modules/promise, promise, MIT, https://github.com/then/promise
 RIFT.ui, api/node_modules/qs, qs, BSD-3-Clause, https://github.com/hapijs/qs
 RIFT.ui, api/node_modules/request, request, Apache-2.0, https://github.com/request/request

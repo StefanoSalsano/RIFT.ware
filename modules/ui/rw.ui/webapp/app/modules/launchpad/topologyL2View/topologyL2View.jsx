@@ -6,17 +6,18 @@
  */
 import React from 'react';
 import TopologyL2Store from './topologyL2Store.js';
+import TopologyL2Actions from './topologyL2Actions.js';
 import RecordDetail from '../recordViewer/recordDetails.jsx';
 import './topologyL2View.scss';
+import TopologyDetail from './detailView.jsx';
 import DashboardCard from '../../components/dashboard_card/dashboard_card.jsx';
 import AppHeader from '../../components/header/header.jsx';
 import TopologyL2Graph from '../../components/topology/topologyL2Graph.jsx';
+import Button from '../../components/button/rw.button.js';
 
 export default class TopologyL2view extends React.Component {
     constructor(props) {
         super(props);
-        //console.log("\n=====================================================");
-        //console.log("TopologyL2view constructor called. props=", props);
         this.state = TopologyL2Store.getState();
         TopologyL2Store.listen(this.storeListener);
     }
@@ -24,14 +25,16 @@ export default class TopologyL2view extends React.Component {
         var LaunchpadStore = require('../launchpadFleetStore.js')
         LaunchpadStore.getSysLogViewerURL('lp');
     }
-    openAbout() {
+    openAbout = () => {
+        this.componentWillUnmount();
         let loc = window.location.hash.split('/');
         loc.pop();
         loc.pop();
         loc.push('lp-about');
         window.location.hash = loc.join('/');
     }
-    openDebug() {
+    openDebug = () => {
+        this.compoentWillUnmount();
         let loc = window.location.hash.split('/');
         loc.pop();
         loc.pop();
@@ -43,27 +46,22 @@ export default class TopologyL2view extends React.Component {
     }
 
     componentWillUnmount() {
+        TopologyL2Store.closeSocket();
         TopologyL2Store.unlisten(this.storeListener);
     }
     componentDidMount() {
-        if (this.props.topologyType == 'vm') {
-            TopologyL2Store.fetchVmTop();
-        } else {
-            TopologyL2Store.fetchStackedTop();
-        }
-
+        TopologyL2Store.getTopologyData('dummy-id');
     }
 
-    topoTag(topologyType) {
-        var info = {
-            single: 'topologyL2',
-            vm: 'topologyL2Vm'
-        }
-        return info[topologyType];
+    onNodeEvent = (node_id) => {
+        TopologyL2Actions.nodeClicked(node_id);
     }
 
-    // TODO: handle when no data in this.state.data
-    // TODO: Add RecordDetail. See original topology render function
+    handleReloadData = () => {
+        console.log("TopologyView.handleReloadData");
+        this.componentDidMount();
+    }
+
     render() {
         let html;
         let mgmtDomainName = window.location.hash.split('/')[2];
@@ -78,42 +76,36 @@ export default class TopologyL2view extends React.Component {
           name: 'VIEWPORT',
           onClick: this.componentWillUnmount
         },{
-            href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topology',
-            name: 'TOPOLOGY',
-            onClick: this.componentWillUnmount
+          href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/compute-topology',
+          name: 'COMPUTE TOPOLOGY',
+          onClick: this.componentWillUnmount
+        },{
+            name: 'NETWORK TOPOLOGY'
         }];
 
-        switch(this.props.topologyType) {
-            case 'single':
-                navItems = navItems.concat([{
-                    name: 'TOPOLOGYL2'
-                }, {
-                    href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2Vm',
-                    name: 'TOPOLOGYL2VM',
-                    onClick: this.componentWillUnmount
-                }]);
-                break;
-
-            case 'vm':
-                navItems = navItems.concat([{
-                    href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2',
-                    name: 'TOPOLOGYL2',
-                    onClick: this.componentWillUnmount
-                }, {
-                    name: 'TOPOLOGYL2VM'
-                }]);
-                break;
+        let nav = <AppHeader title="Launchpad: Viewport: Network Topology" nav={navItems} />
+        let reloadButton = null;
+        if (this.state.ajax_mode) {
+            reloadButton = <Button label="Reload data" className="reloadButton"
+                onClick={this.handleReloadData} />
         }
-
-        let nav = <AppHeader title="Topology" nav={navItems} />
 
         html = (
             <div className="app-body">
                 {nav}
+                {reloadButton}
                 <div className="topologyL2View">
                     <i className="corner-accent top left"></i>
                     <i className="corner-accent top right"></i>
-                    <TopologyL2Graph data={this.state.topologyData}  />
+                    <TopologyL2Graph data={this.state.topologyData} 
+                                     nodeEvent={this.onNodeEvent}
+                                     debugMode={this.props.debugMode}
+                                     headerExtras={reloadButton}
+                    />
+                    <TopologyDetail data={this.state.detailData || {}} 
+                                    isLoading={this.state.isLoading}
+                                    debugMode={this.props.debugMode}
+                    />
                     <i className="corner-accent bottom left"></i>
                     <i className="corner-accent bottom right"></i>
                 </div>
@@ -122,6 +114,11 @@ export default class TopologyL2view extends React.Component {
 
         return html;
     }
-
 }
 
+TopologyL2view.propTypes = {
+    debugMode: React.PropTypes.bool
+}
+TopologyL2view.defaultProps = {
+    debugMode: false
+}

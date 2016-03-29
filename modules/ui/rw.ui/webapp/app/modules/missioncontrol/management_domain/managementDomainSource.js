@@ -28,7 +28,7 @@ var managementDomainSource = {
       remote: function(state, managementDomain) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/mgmt-domain?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/mgmt-domain?api_server=' + API_SERVER,
             type:'POST',
             beforeSend: Utils.addAuthorizationStub,
             data: JSON.stringify(managementDomain),
@@ -67,7 +67,7 @@ var managementDomainSource = {
       remote: function(state, managementDomain) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/mgmt-domain/' + managementDomain.name + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/mgmt-domain/' + managementDomain.name + '?api_server=' + API_SERVER,
             type:'PUT',
             beforeSend: Utils.addAuthorizationStub,
             data: JSON.stringify(managementDomain),
@@ -99,7 +99,7 @@ var managementDomainSource = {
       remote: function(state, managementDomain) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/mgmt-domain/' + managementDomain + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/mgmt-domain/' + managementDomain + '?api_server=' + API_SERVER,
             type:'DELETE',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -127,7 +127,7 @@ var managementDomainSource = {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/pool?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/pool?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -154,7 +154,7 @@ var managementDomainSource = {
       remote: function(state, managementDomain) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/mgmt-domain/' + managementDomain + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/mgmt-domain/' + managementDomain + '?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {

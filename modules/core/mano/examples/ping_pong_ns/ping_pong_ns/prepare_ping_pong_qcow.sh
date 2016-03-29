@@ -61,9 +61,13 @@ echo "Mounting guestfs for $PINGQCOW"
 guestmount -a ping_pong/$PINGQCOW -m /dev/sda1 $MOUNT_PT
 
 echo "Setting up resolv.conf"
-echo "search lab.riftio.com eng.riftio.com riftio.com" >  $MOUNT_PT/etc/resolv.conf
-echo "nameserver 10.64.1.3" >>  $MOUNT_PT/etc/resolv.conf
-echo "PEERDNS=no" >> $MOUNT_PT/etc/sysconfig/network-scripts/ifcfg-eth0
+# removed RIFT.io lab-centric setup in RIFT-11991
+#echo "search lab.riftio.com eng.riftio.com riftio.com" >  $MOUNT_PT/etc/resolv.conf
+#echo "nameserver 10.64.1.3" >>  $MOUNT_PT/etc/resolv.conf
+#echo "PEERDNS=no" >> $MOUNT_PT/etc/sysconfig/network-scripts/ifcfg-eth0
+
+# add a valid DNS server just in case
+echo "nameserver 8.8.8.8" >  $MOUNT_PT/etc/resolv.conf
 echo "DEFROUTE=yes" >> $MOUNT_PT/etc/sysconfig/network-scripts/ifcfg-eth0
 
 for i in 1 2

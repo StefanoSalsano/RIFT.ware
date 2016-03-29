@@ -8,7 +8,7 @@
 .app-body {
   >header {
     padding: 20px 0px;
-
+/*
     h1 {
       background: url('../../../assets/img/header-logo.png') no-repeat;
       height: 51px;
@@ -20,6 +20,7 @@
       font-size: 1.625rem;
       font-weight: 400;
     }
+    */
   }
   .header-nav {
     margin: 0rem 1.25rem 1.25rem;
@@ -46,7 +47,7 @@
     flex: 1;
     position: relative;
     margin: 0.5rem;
-    min-width: 1340px;
+    min-width: 900px;
 
     .recordPanels {
       display: flex;
@@ -81,7 +82,8 @@
     }
     .recordNavigator {
       flex: 1;
-      max-width: 400px;
+      min-width: 300px;
+      max-width: 300px;
       .nsr:before {
         content: 'NSR: '
       }
@@ -98,8 +100,13 @@
     }
     .recordCard.dashboardCard {
       flex: 1 1 auto;
-      min-width: 700px;
-
+      min-width: 600px;
+      a {
+          cursor: pointer;
+          margin-left: 0.5rem;
+          font-weight: normal;
+          color: black;
+      }
       .recordCard_content {
         padding: 0rem 0;
       }
@@ -170,6 +177,10 @@
       h1 {
         margin: 0 0 0 0.5rem;
       }
+    }
+    .launchpadCard_title {
+          flex: 0 1 auto;
+          min-height: 1rem;
     }
     .nfvi-metrics {
       flex:1 0 auto;

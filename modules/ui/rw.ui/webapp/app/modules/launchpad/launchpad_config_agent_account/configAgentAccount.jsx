@@ -7,6 +7,7 @@
 import React from 'react/addons';
 import AppHeaderActions from '../../components/header/headerActions.js';
 import './configAgentAccount.scss';
+import Button from '../../components/button/rw.button.js';
 var ConfigAgentAccountStore = require('./configAgentAccountStore')
 var ConfigAgentAccountActions = require('./configAgentAccountActions')
 class ConfigAgentAccount extends React.Component {
@@ -173,20 +174,31 @@ class ConfigAgentAccount extends React.Component {
             configAgentAccount: temp
         });
     }
+    preventDefault = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    evaluateSubmit = (e) => {
+        if (e.keyCode == 13) {
+            this.update(e);
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }
 
     render() {
         // This section builds elements that only show up on the create page.
         var name = <label>Name <input type="text" onChange={this.handleNameChange.bind(this)} style={{'text-align':'left'}} /></label>
         var buttons = [
-            <a role="button" onClick={this.cancel} class="cancel">Cancel</a>,
-            <a role="button" onClick={this.create.bind(this)} className="save">Save</a>
+            <a onClick={this.cancel} class="cancel">Cancel</a>,
+            <Button role="button" onClick={this.create.bind(this)} className="save" label="Save" />
         ]
         if (this.props.edit) {
             name = <label>{this.state.configAgentAccount.name}</label>
             var buttons = [
-                <a role="button" onClick={this.handleDelete} ng-click="create.delete(create.configAgentAccount)" className="delete">Remove Account</a>,
-                    <a role="button" onClick={this.cancel} class="cancel">Cancel</a>,
-                    <a role="button" onClick={this.update.bind(this)} className="update">UPdate</a>
+                <a onClick={this.handleDelete} ng-click="create.delete(create.configAgentAccount)" className="delete">Remove Account</a>,
+                    <a  onClick={this.cancel} class="cancel">Cancel</a>,
+                    <Button role="button" onClick={this.update.bind(this)} className="update" label="Update" />
             ]
             let selectAccount = null;
             let params = null;
@@ -262,9 +274,9 @@ class ConfigAgentAccount extends React.Component {
         if (this.props.edit) {
             name = <label>{this.state.configAgentAccount.name}</label>
             var buttons = [
-                <a role="button" onClick={this.handleDelete} ng-click="create.delete(create.configAgentAccount)" className="delete">Remove Account</a>,
-                    <a role="button" onClick={this.cancel} class="cancel">Cancel</a>,
-                    <a role="button" onClick={this.update.bind(this)} className="update">Update</a>
+                <a onClick={this.handleDelete} ng-click="create.delete(create.configAgentAccount)" className="delete">Remove Account</a>,
+                    <a onClick={this.cancel} class="cancel">Cancel</a>,
+                    <Button role="button" onClick={this.update.bind(this)} className="update" label="Update" />
             ]
             let selectAccount = null;
             let params = null;
@@ -272,7 +284,7 @@ class ConfigAgentAccount extends React.Component {
 
         var html = (
 
-              <div className="app-body create configAgentAccount">
+              <form className="app-body create configAgentAccount"  onSubmit={this.preventDefault} onKeyDown={this.evaluateSubmit}>
                   <h2 className="create-management-domain-header name-input">
                        {name}
                   </h2>
@@ -283,7 +295,7 @@ class ConfigAgentAccount extends React.Component {
                   <div className="form-actions">
                       {buttons}
                   </div>
-              </div>
+              </form>
         )
         return html;
     }

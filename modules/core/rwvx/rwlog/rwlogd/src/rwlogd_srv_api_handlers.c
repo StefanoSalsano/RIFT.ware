@@ -45,12 +45,21 @@ rwlogd_create_server_endpoint(rwlogd_instance_ptr_t instance)
                    RWLOGD_PROC,
                    instance->rwtasklet_info->identity.rwtasklet_instance_id);
   RW_ASSERT(r != -1);
+  if ( r == -1) {
+    return RW_STATUS_FAILURE;
+  }
 
 
   RW_ASSERT(instance->rwtasklet_info->rwmsg_endpoint);
+  if (!instance->rwtasklet_info->rwmsg_endpoint) {
+    return RW_STATUS_FAILURE;
+  }
   // Create a server channel that tasklet uses to recieve messages from clients
   instance->sc = rwmsg_srvchan_create(instance->rwtasklet_info->rwmsg_endpoint);
   RW_ASSERT(instance->sc);
+  if (!instance->sc) {
+    return RW_STATUS_FAILURE;
+  }
 
   //Initialize the protobuf service
   RWLOGD__INITSERVER(&instance->rwlogd_srv, rwlogd_);
@@ -60,6 +69,9 @@ rwlogd_create_server_endpoint(rwlogd_instance_ptr_t instance)
                                        (ProtobufCService *)&instance->rwlogd_srv,
                                        instance);
   RW_ASSERT(rwstatus == RW_STATUS_SUCCESS);
+  if (rwstatus != RW_STATUS_SUCCESS) {
+    return rwstatus;
+  }
 
   RWLOGD_PEER_API__INITSERVER(&instance->rwlogd_peerapi_srv,rwlogd_);
   rwstatus = rwmsg_srvchan_add_service(instance->sc,
@@ -67,6 +79,9 @@ rwlogd_create_server_endpoint(rwlogd_instance_ptr_t instance)
                                        (ProtobufCService *)&instance->rwlogd_peerapi_srv,
                                        instance);
   RW_ASSERT(rwstatus == RW_STATUS_SUCCESS);
+  if (rwstatus != RW_STATUS_SUCCESS) {
+    return rwstatus;
+  }
 
 
   // Bind this srvchan to rwsched's taskletized cfrunloop
@@ -75,6 +90,9 @@ rwlogd_create_server_endpoint(rwlogd_instance_ptr_t instance)
   rwstatus = rwmsg_srvchan_bind_rwsched_cfrunloop(instance->sc,
                                                     instance->rwtasklet_info->rwsched_tasklet_info);
   RW_ASSERT(rwstatus == RW_STATUS_SUCCESS);
+  if (rwstatus != RW_STATUS_SUCCESS) {
+    return rwstatus;
+  }
 
   free(my_path);
   return rwstatus;
@@ -106,10 +124,15 @@ rwlogd_file_send_log(RwlogdPeerAPI_Service    *srv,
 
   // Validate input parameters
   RW_ASSERT(srv);
+  if (!srv) { return; }
   RW_ASSERT(req);
+  if (!req) { return; }
   RW_ASSERT(user_handle);
+  if (!user_handle) { return; }
   RW_ASSERT(closure);
+  if (!closure) { return; }
   RW_ASSERT(closure_data);
+  if (!closure_data) { return; }
 
   instance = (rwlogd_instance_ptr_t) user_handle;
   //RW_CF_TYPE_VALIDATE(instance, rwlogd_instance_ptr_t);
@@ -137,10 +160,15 @@ rwlogd_send_log(RwlogdPeerAPI_Service   *srv,
 
   // Validate input parameters
   RW_ASSERT(srv);
+  if (!srv) { return; }
   RW_ASSERT(req);
+  if (!req) { return; }
   RW_ASSERT(user_handle);
+  if (!user_handle) { return; }
   RW_ASSERT(closure);
+  if (!closure) { return; }
   RW_ASSERT(closure_data);
+  if (!closure_data) { return; }
 
   instance = (rwlogd_instance_ptr_t) user_handle;
   //RW_CF_TYPE_VALIDATE(instance, rwlogd_instance_ptr_t);

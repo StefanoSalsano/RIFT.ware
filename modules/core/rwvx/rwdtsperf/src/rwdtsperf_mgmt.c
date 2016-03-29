@@ -255,7 +255,6 @@ static __inline__ void rwdtsperf_update_averages(xact_detail_ptr_t xact_detail,
   if (xact_detail->xact_repeat_count) {
     rwdtsperf_average_ptr_t ave = &xact_detail->curr_average_xact_time;
     if (ave->count) {
-      unsigned long old_average = ave->average;
       ave->average = 
           ((ave->average * ave->count) + xact_duration) /
           (ave->count + 1);

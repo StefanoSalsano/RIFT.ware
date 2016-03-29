@@ -94,7 +94,7 @@ class BytesFieldGenerator : public FieldGenerator {
   string GetGiReturnAnnotations() const;
   string GetGiGetterReturnType() const;
   string GetGiGetterParameterList() const;
-  string GetGiParameterAnnotations() const;
+  string GetGiSetterAnnotations() const;
   string GetGiSetterParameterList() const;
   bool HasLengthOut() const;
   void GenerateGiCGetterMethod(io::Printer* printer) const;

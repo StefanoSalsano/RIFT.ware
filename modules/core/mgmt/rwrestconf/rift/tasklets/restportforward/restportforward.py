@@ -7,6 +7,8 @@
 
 import asyncio
 import logging
+import gi
+
 from subprocess import (
     Popen,
     PIPE,
@@ -16,6 +18,7 @@ import sys
 
 import tornado
 
+gi.require_version('RwRestportforwardYang', '1.0')
 from gi.repository import (
     RwDts,
     RwRestportforwardYang,
@@ -88,6 +91,13 @@ class RestPortForwardTasklet(rift.tasklets.Tasklet):
         except ValueError as e:
             self.log.error(e)
         _set_port_forward(8888)
+
+    def stop(self):
+      try:
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in LP stop:", sys.exc_info()[0])
+         raise
 
     @asyncio.coroutine
     def on_dts_state_change(self, state):

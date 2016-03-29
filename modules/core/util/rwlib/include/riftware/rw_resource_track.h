@@ -80,7 +80,7 @@ static inline int _rw_ta_destructor(void *handle)
     rh->addr = NULL;
   }
   else {
-    //RW_ASSERT(0);
+    //RW_CRASH();
   }
   return 0;
 }
@@ -171,7 +171,7 @@ _rw_ta_resource_track_attach_child(void *prh,
     rh->addr = addr;
   }
   else {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
   memblock = ((char *)rh->addr - RW_MAGIC_PAD);
 
@@ -247,7 +247,7 @@ _rw_ta_resource_track_remove(void *addr,
     memblock = ((char *)addr - RW_MAGIC_PAD);
   }
   else {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   if (hash) RW_ASSERT(*((rw_magic_pad_t *) memblock) == (hash ^ (rw_magic_pad_t) memblock));

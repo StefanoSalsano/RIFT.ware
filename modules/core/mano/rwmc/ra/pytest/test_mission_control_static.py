@@ -12,6 +12,9 @@
 
 import pytest
 
+import gi
+gi.require_version('RwMcYang', '1.0')
+
 from gi.repository import RwMcYang
 
 @pytest.fixture(scope='module')
@@ -188,7 +191,6 @@ class TestMissionControlSetup:
         pool_config = RwMcYang.MgmtDomainPools_Vm(name=vm_pool_name)
         proxy.create_config("/mgmt-domain/domain[name='%s']/pools/vm" % mgmt_domain_name, pool_config)
 
-    @pytest.mark.usefixtures('splat_launchpad')
     def test_wait_for_launchpad_started(self, proxy, mgmt_domain_name):
         '''Wait for the launchpad to start
         
@@ -205,7 +207,6 @@ class TestMissionControlSetup:
 
 
 @pytest.mark.depends('launchpad')
-@pytest.mark.usefixtures('splat_launchpad')
 @pytest.mark.incremental
 class TestMissionControl:
 

@@ -151,7 +151,7 @@ void rwmsg_queue_set_notify(rwmsg_endpoint_t *ep,
   } else {
     q->_notify.theme = RWMSG_NOTIFY_NONE;
     if (RW_STATUS_SUCCESS != rwmsg_notify_init(ep, &q->_notify, "queue (NONE)", NULL)) {
-      RW_ASSERT(0);
+      RW_CRASH();
     }
     q->notify = &q->_notify;
   }

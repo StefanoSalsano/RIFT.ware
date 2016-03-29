@@ -470,7 +470,7 @@ rwmsg_toytask_block(rwmsg_toytask_t *toy, uint64_t id, int timeout_ms)
   }
   else {
     // This should never happen as one of the sources should have signaled the semahpore to wake it up
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   // Return the revents value to the caller
@@ -509,7 +509,7 @@ rwmsg_toysched_io_callback(rwsched_CFSocketRef s,
     revents = POLLOUT;
   }
   else {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   // Invoke the user specified callback

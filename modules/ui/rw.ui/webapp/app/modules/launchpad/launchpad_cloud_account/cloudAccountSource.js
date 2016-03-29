@@ -29,7 +29,7 @@ var createCloudAccountSource = {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/cloud-account?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/cloud-account?api_server=' + API_SERVER,
             type:'POST',
             beforeSend: Utils.addAuthorizationStub,
             data: JSON.stringify(cloudAccount),
@@ -42,6 +42,7 @@ var createCloudAccountSource = {
               reject(error);
             }
           }).fail(function(xhr){
+            console.log('what')
             //Authentication and the handling of fail states should be wrapped up into a connection class.
             Utils.checkAuthentication(xhr.status);
           });
@@ -73,7 +74,7 @@ var createCloudAccountSource = {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/cloud-account/' + cloudAccount.name + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/cloud-account/' + cloudAccount.name + '?api_server=' + API_SERVER,
             type:'PUT',
             beforeSend: Utils.addAuthorizationStub,
             data: JSON.stringify(cloudAccount),
@@ -106,7 +107,7 @@ var createCloudAccountSource = {
       remote: function(state, cloudAccount, cb) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/cloud-account/' + cloudAccount + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/cloud-account/' + cloudAccount + '?api_server=' + API_SERVER,
             type:'DELETE',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -129,12 +130,12 @@ var createCloudAccountSource = {
    *
    * @return {Promise}
    */
-  getCloudAccount: function() {
+  getCloudAccountByName: function() {
     return {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/cloud-account/' + cloudAccount + '?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/cloud-account/' + cloudAccount + '?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -161,8 +162,8 @@ var createCloudAccountSource = {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/cloud-account?api_server=' + API_SERVER,
-            // url: 'http://' + window.location.hostname + ':3000/mission-control/cloud-account?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/cloud-account?api_server=' + API_SERVER,
+            // url: '//' + window.location.hostname + ':3000/mission-control/cloud-account?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(cloudAccounts) {

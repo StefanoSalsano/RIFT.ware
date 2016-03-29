@@ -237,7 +237,6 @@ ProtobufCInstance protobuf_c_default_instance = {
   .data = NULL,
 };
 
-
 static inline void *
 do_alloc(ProtobufCInstance* instance,
          size_t size)
@@ -10644,6 +10643,7 @@ protobuf_c_message_gi_unref(
     }
   }
 
+  PROTOBUF_C_GI_MUTEX_GUARD_AUTO_RELEASE();
   int old_ref_cnt = g_atomic_int_add(&gi_base->ref_count, -1);
   switch (old_ref_cnt) {
     case 0:
@@ -10668,6 +10668,36 @@ protobuf_c_message_gi_unref(
       break;
   }
   return FALSE;
+}
+
+#define PROTOBUF_C_GI_GUARD_LOCKED_MAGIC 0x6472617547636250
+#define PROTOBUF_C_GI_GUARD_RELEASED_MAGIC 0x2D72617547636250
+
+pthread_mutex_t protobuf_c_global_mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+
+intptr_t
+protobuf_c_gi_mutex_guard_lock(void)
+{
+  int err = pthread_mutex_lock(&protobuf_c_global_mutex);
+  PROTOBUF_C_ASSERT(0 == err);
+  return PROTOBUF_C_GI_GUARD_LOCKED_MAGIC;
+}
+
+void
+protobuf_c_gi_mutex_guard_release(
+  intptr_t* guard)
+{
+  switch (*guard) {
+    case PROTOBUF_C_GI_GUARD_LOCKED_MAGIC: {
+      int err = pthread_mutex_unlock(&protobuf_c_global_mutex);
+      PROTOBUF_C_ASSERT(0 == err);
+      *guard = PROTOBUF_C_GI_GUARD_RELEASED_MAGIC;
+      return;
+    }
+    case PROTOBUF_C_GI_GUARD_RELEASED_MAGIC:
+      return;
+  }
+  PROTOBUF_C_ASSERT_NOT_REACHED();
 }
 
 ProtobufCMessage*

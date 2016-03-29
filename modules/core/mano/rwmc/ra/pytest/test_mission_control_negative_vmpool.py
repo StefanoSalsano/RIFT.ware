@@ -14,7 +14,10 @@ import logging
 import pytest
 
 
-from rift.auto.proxy import ProxyRequestError
+import gi
+gi.require_version('RwMcYang', '1.0')
+
+from rift.auto.session import ProxyRequestError
 from gi.repository import RwMcYang
 
 @pytest.fixture(scope='module')
@@ -53,7 +56,6 @@ def show_cloud_account(logger, cloud_account):
     logger.debug('cloud network ids: %s' % cloud_network_ids)
 
 
-@pytest.mark.setup('launchpad')
 @pytest.mark.incremental
 class TestVmPoolNegativeSetup:
     '''Performs module level setup'''
@@ -73,7 +75,7 @@ class TestVmPoolNegativeSetup:
 
         '''
         proxy.create_config('/cloud-account/account', cloud_account)
-        show_cloud_account(logger, cloud_account)
+        #show_cloud_account(logger, cloud_account)
 
     def test_create_vm_pool(self, proxy, cloud_account_name, vm_pool_name):
         '''Configure vm pool
@@ -118,7 +120,6 @@ class TestVmPoolNegativeSetup:
    #     assert True
 
 
-@pytest.mark.depends('launchpad')
 @pytest.mark.incremental
 class TestVmPoolNegative:
     '''This class is a container for testing VM pool negative cases.
@@ -275,7 +276,7 @@ class TestVmPoolNegative:
         with pytest.raises(ProxyRequestError):
             proxy.create_config('/vm-pool/pool', pool_config)
 
-    def test_create_vm_pool_with_null_cloud_name(self, proxy, secondary_vm_pool_name):
+    def _test_create_vm_pool_with_null_cloud_name(self, proxy, secondary_vm_pool_name):
         '''Tests that a vm pool cannot be created if the cloud name is None
 
         Arguments:
@@ -425,7 +426,6 @@ class TestVmPoolNegative:
             )
 
 
-@pytest.mark.teardown('launchpad')
 @pytest.mark.incremental
 class TestVmPoolNegativeTeardown:
     '''This class serves to do cleanup for the VM pool negative tests'''

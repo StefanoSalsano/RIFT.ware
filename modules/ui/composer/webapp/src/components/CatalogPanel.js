@@ -26,6 +26,7 @@ import ComposerAppActions from '../actions/ComposerAppActions'
 import ComposerAppStore from '../stores/ComposerAppStore'
 import CatalogPanelStore from '../stores/CatalogPanelStore'
 import LoadingIndicator from './LoadingIndicator'
+import SelectionManager from '../libraries/SelectionManager'
 
 import '../styles/CatalogPanel.scss'
 
@@ -103,7 +104,7 @@ const CatalogPanel = React.createClass({
 		const hasNoCatalogs = this.props.hasNoCatalogs;
 		const isLoading = this.props.isLoading;
 		return (
-			<div className={className} data-resizable="right" style={{width: this.props.layout.left}}>
+			<div className={className} data-resizable="right" data-resizable-handle-offset="0 6" style={{width: this.props.layout.left}}>
 				<CatalogPanelToolbar />
 				<div className="CatalogPanelBody">
 					{(() => {

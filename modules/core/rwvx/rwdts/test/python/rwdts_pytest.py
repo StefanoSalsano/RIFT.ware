@@ -22,6 +22,17 @@ import time
 import weakref
 import datetime
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('CF', '1.0')
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwDtsToyTaskletYang', '1.0')
+gi.require_version('RwMain', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('RwTasklet', '1.0')
+gi.require_version('RwDtsYang', '1.0')
+gi.require_version('RwTypes', '1.0')
+
 from gi.repository import RwDts
 import gi.repository.RwBaseYang as rwbase
 import gi.repository.RwDtsToyTaskletYang as toyyang
@@ -593,9 +604,7 @@ class Publisher(object):
         msg, ks = self.default_regh.get_next_element(cursor)
 
       logger.debug(" READ data record = %d Validate %s" %(count, self.validate))
-      #if self.validate == "pub_read_empty_list" and count == 0:
-      #RIFT-7529 Should be zero
-      if self.validate == "pub_read_empty_list" and count == 1:
+      if self.validate == "pub_read_empty_list" and count == 0:
         self.test.exit_now(self.test)
       elif self.validate == "pub_read_list_entries10" and count == 10:
         self.test.exit_now(self.test)

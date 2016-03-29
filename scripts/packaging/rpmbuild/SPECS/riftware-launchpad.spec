@@ -4,13 +4,27 @@
 
 %define _topdir           %{_rift_root}/.install/rpmbuild/
 %define name              %{_rpmname}
-%define release           %{_buildnum}%{?dist}
+%define release           1%{?dist}
+#%%define release           %{_buildnum}%{?dist}
 %define version           %{_version}
 %define buildroot         %{_topdir}/%{name}-%{version}-root
 %define DST_RIFT_ROOT     %{_dst_rift_root}
 %define RIFT_ROOT         %{_rift_root}
 
 %define _binaries_in_noarch_packages_terminate_build   0 	# http://winzter143.blogspot.com/2011/11/linux-arch-dependent-binaries-in-noarch.html
+
+# Override this redhat macro.  This definition skips the Python
+# byte-compile, which we don't like (I think due to Py2/Py3 confusion
+# with Riftware plugins)
+#
+%define __os_install_post    \
+  /usr/lib/rpm/redhat/brp-compress \
+  %{!?__debug_package:\
+  /usr/lib/rpm/redhat/brp-strip %{__strip} \
+  /usr/lib/rpm/redhat/brp-strip-comment-note %{__strip} %{__objdump} \
+   } \
+   /usr/lib/rpm/redhat/brp-strip-static-archive %{__strip} \
+%{nil}
 
 Name:     	%{name}
 Version:  	%{version}
@@ -28,7 +42,8 @@ BuildRequires: yum
 # turn this off when we have proper deps
 AutoReqProv: no
 
-Requires: riftware-base >= %{_version}-%{_buildnum}, riftware-base-ui >= %{_version}-%{_buildnum}
+Requires: riftware-base >= %{_version}, riftware-base-ui = %{_version}
+#Requires: riftware-base riftware-base-ui
 #Requires(post): info
 #Requires(preun): info
 
@@ -39,6 +54,7 @@ The %{name} program is a RIFT.ware package.
 
 # This reads the sources and patches in the source directory %_sourcedir. It unpackages the sources to a subdirectory underneath the build directory %_builddir and applies the patches.
 %prep
+%autosetup -n %{name}-%{version}
 
 # This compiles the files underneath the build directory %_builddir. This is often implemented by running some variation of "./configure && make".
 %build
@@ -56,6 +72,15 @@ echo "BuildDir: %_builddir"
 echo "buildroot: %{buildroot}"
 echo "pwd: `pwd`";
 
+# test
+echo "   Name:  %{name}"
+echo "Version:  %{version}.%{_buildnum}"
+echo "Release:  %{release}"
+echo "Source0:  %{name}-%{version}.tar.gz"
+
+
+
+
 # copy in service files to buildroot .install location
 mkdir -p %{buildroot}/%{DST_RIFT_ROOT}/.install/var/rift/services/%{name}/
 cp -p %{RIFT_ROOT}/scripts/packaging/services/%{name}/rwlp-start.sh  %{buildroot}/%{DST_RIFT_ROOT}/.install/var/rift/services/%{name}/
@@ -68,13 +93,13 @@ install -p -D -m 644 %{RIFT_ROOT}/scripts/packaging/services/%{name}/rwlp.servic
 echo "running CMD: cp -Rp %{RIFT_ROOT}/.install/rpmbuild/SOURCES/%{name}-%{version}/* %{buildroot}/"
 cp -Rp %{RIFT_ROOT}/.install/rpmbuild/SOURCES/%{name}-%{version}/* %{buildroot}/
 
-# do other install steps here
-# do other install steps here
-# do other install steps here
+rm -f \
+    %{buildroot}/debugfiles.list \
+    %{buildroot}/debugsources.list \
+    %{buildroot}/debuglinks.list \
+    %{buildroot}/elfbins.list
 
-exit 0; # http://stackoverflow.com/questions/30317213/how-to-remove-pyo-anc-pyc-from-an-rpm
-
-%post
+%post 
 # reload systemD and enable service
 /bin/systemctl daemon-reload
 /bin/systemctl enable rwlp
@@ -82,12 +107,27 @@ exit 0; # http://stackoverflow.com/questions/30317213/how-to-remove-pyo-anc-pyc-
 # do we want to auto start the service?
 #systemctl start rwlp
 
-
 %files
 /%{DST_RIFT_ROOT}/
 %{_unitdir}/rwlp.service
 
+%files debuginfo
+
+/debugfiles.list
+/debugsources.list
+/debuglinks.list
+/elfbins.list
+
+# Don't ask...
+
+%exclude /debugfiles.list
+%exclude /debugsources.list
+%exclude /debuglinks.list
+%exclude /elfbins.list
+
+
 %clean
+rm -rf ${buildroot}
 #rm -rf $RPM_BUILD_ROOT
 #rm -rvf $RPM_BUILD_ROOT
 

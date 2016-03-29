@@ -191,6 +191,9 @@ rwtasklet_info_get_tasklet_id_by_name_in_collection(rwtasklet_info_t *rwtasklet_
   
   total_depth = 0;
   status = rwvcs_rwzk_lookup_component(rwtasklet_info->rwvcs, instance_name, &target);
+  if (status != RW_STATUS_SUCCESS){
+    goto ret;
+  }
   // find the starting point
   while ((status = rwvcs_rwzk_lookup_component(rwtasklet_info->rwvcs, target.rwcomponent_parent, &target))== RW_STATUS_SUCCESS) {
     total_depth++;
@@ -245,6 +248,40 @@ rwtasklet_info_get_local_fpathid(rwtasklet_info_t *rwtasklet_info)
   }
 
   return ret;
+}
+
+char*
+rwtasklet_info_get_vnfname(rwtasklet_info_t * tasklet_info)
+{
+  rw_status_t status;
+  bool ret;
+  rw_component_info component_info;
+  char *instance_name;
+ 
+  instance_name = to_instance_name(tasklet_info->identity.rwtasklet_name,
+                                   tasklet_info->identity.rwtasklet_instance_id);
+  if (!instance_name){
+    return 0;
+  }
+  status = rwvcs_rwzk_lookup_component(tasklet_info->rwvcs,
+                                       instance_name,
+                                       &component_info);
+  while(status == RW_STATUS_SUCCESS){
+    ret = rwtasklet_get_component_name_compare(&component_info, "rwcluster");
+    if (ret ){
+      return split_component_name(component_info.instance_name);
+    }else{
+      ret = rwtasklet_get_component_name_compare(&component_info, "rwcolony");
+      if (ret) {
+        return split_component_name(component_info.instance_name);
+      }
+    }
+    free(instance_name);
+    instance_name = component_info.rwcomponent_parent;
+    status = rwvcs_rwzk_lookup_component(tasklet_info->rwvcs,
+                                         instance_name, &component_info);
+  }  
+  return NULL;
 }
 
 uint32_t
@@ -317,7 +354,7 @@ char * rwtasklet_info_get_cluster_instance_name(rwtasklet_info_t * tasklet_info)
   char * ret_instance_name = NULL;
   char * instance_name;
   rw_status_t status;
-  bool match;
+  bool match = 0;
   rw_component_info component_info;
 
   instance_name = to_instance_name(tasklet_info->identity.rwtasklet_name, tasklet_info->identity.rwtasklet_instance_id);
@@ -325,8 +362,8 @@ char * rwtasklet_info_get_cluster_instance_name(rwtasklet_info_t * tasklet_info)
     return NULL;
   }
 
-  do {
-    status = rwvcs_rwzk_lookup_component(tasklet_info->rwvcs, instance_name, &component_info);
+  status = rwvcs_rwzk_lookup_component(tasklet_info->rwvcs, instance_name, &component_info);
+  while(status == RW_STATUS_SUCCESS && !match) {
     match = rwtasklet_get_component_name_compare(&component_info, "rwcluster");
     if (component_info.rwcomponent_parent == NULL){
       break;
@@ -337,12 +374,13 @@ char * rwtasklet_info_get_cluster_instance_name(rwtasklet_info_t * tasklet_info)
       RW_ASSERT(instance_name);
     }
     protobuf_free_stack(component_info);
-  } while(status == RW_STATUS_SUCCESS && !match);
-
+    status = rwvcs_rwzk_lookup_component(tasklet_info->rwvcs, instance_name, &component_info);
+  } 
+  
   if (match){
     ret_instance_name = instance_name;
   }
-
+  
   return ret_instance_name;
 }
 
@@ -365,7 +403,7 @@ char * rwtasklet_info_get_parent_vm_instance_name(rwtasklet_info_t * tasklet_inf
 {
   char * instance_name;
   rw_status_t status;
-  bool match;
+  bool match = 0;
   rw_component_info component_info;
 
   instance_name = to_instance_name(tasklet_info->identity.rwtasklet_name, tasklet_info->identity.rwtasklet_instance_id);
@@ -373,8 +411,8 @@ char * rwtasklet_info_get_parent_vm_instance_name(rwtasklet_info_t * tasklet_inf
     return NULL;
   }
 
-  do {
-    status = rwvcs_rwzk_lookup_component(tasklet_info->rwvcs, instance_name, &component_info);
+  status = rwvcs_rwzk_lookup_component(tasklet_info->rwvcs, instance_name, &component_info);
+  while(status == RW_STATUS_SUCCESS && !match) {
     match = (component_info.component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM);
     if (component_info.rwcomponent_parent == NULL){
       break;
@@ -385,7 +423,8 @@ char * rwtasklet_info_get_parent_vm_instance_name(rwtasklet_info_t * tasklet_inf
       RW_ASSERT(instance_name);
     }
     protobuf_free_stack(component_info);
-  } while(status == RW_STATUS_SUCCESS && !match);
+    status = rwvcs_rwzk_lookup_component(tasklet_info->rwvcs, instance_name, &component_info);
+  } 
 
   if (! match){
     return NULL;

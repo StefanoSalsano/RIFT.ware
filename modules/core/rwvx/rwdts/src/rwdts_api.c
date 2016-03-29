@@ -23,6 +23,7 @@
 #include <rwdts_xpath.h>
 #include <sys/time.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include <rwdts_appconf_api.h>
 #include <rw_rand.h>
 #include <rw_pb_schema.h>
@@ -873,6 +874,7 @@ static const GEnumValue  _rwdts_member_event_values[] =  {
   { RWDTS_MEMBER_EVENT_PRECOMMIT,"PRECOMMIT", "PRECOMMIT" },
   { RWDTS_MEMBER_EVENT_COMMIT,   "COMMIT",    "COMMIT" },
   { RWDTS_MEMBER_EVENT_PREPARE,  "ABORT",     "ABORT" },
+  {RWDTS_MEMBER_EVENT_INSTALL, "INSTALL", "INSTALL" },
   { 0, NULL, NULL}
 };
 
@@ -987,7 +989,7 @@ GType rwdts_appconf_action_get_type(void)
 const char * rwdts_action_str(rwdts_appconf_action_t action)
 {
   if (action > RWDTS_APPCONF_ACTION_RECOVER)
-    RW_ASSERT(0);
+    RW_CRASH();
 
   return _rwdts_appconf_action_enum_values[action-1].value_nick;
 }
@@ -1278,9 +1280,13 @@ rwdts_xact_id_str(const RWDtsXactID* id,
 {
   RW_ASSERT(id != NULL);
   RW_ASSERT(str != NULL);
-
-  int len = snprintf(str, str_size, "%lu:%lu:%lu", id->router_idx, id->client_idx, id->serialno);
-  RW_ASSERT(len < str_size);
+  if ((str_size==0)||(str==NULL)) {
+    return NULL;
+  }
+  str[0] = 0;
+  if (id) {
+    snprintf(str, str_size, "%lu:%lu:%lu", id->router_idx, id->client_idx, id->serialno);
+  }
   return str;
 }
 
@@ -1366,6 +1372,9 @@ rwdts_member_handle_mgmt_get_ks_ebuf(const rwdts_xact_info_t* xact_info,
                                      void*                    getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   rwdts_xact_t *xact = xact_info->xact;
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
@@ -1376,15 +1385,29 @@ rwdts_member_handle_mgmt_get_ks_ebuf(const rwdts_xact_info_t* xact_info,
   RWPB_T_PATHSPEC(ypb_path) *ks = (RWPB_T_PATHSPEC(ypb_path) *)rw_keyspec_path_create_dup_of_type(
       keyspec, &xact->ksi, RWPB_G_PATHSPEC_PBCMD(ypb_path));
   RW_ASSERT(ks);
+  if (ks == NULL) {
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "keyspec duplication failed");
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Check if the name is present if so whether they match
   if (ks->dompath.path001.has_key00 &&
       !strstr(apih->client_path, ks->dompath.path001.key00.name)) {
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
     return RWDTS_ACTION_NA;
   }
 
   // We can only handle reads and the CLI should only send those
   RW_ASSERT(action == RWDTS_QUERY_READ);
+  if (action != RWDTS_QUERY_READ) {
+    char action_str[32];
+    rwdts_query_action_to_str(action, action_str,sizeof(action_str));
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "only QUERY READ supported action=%s", action_str);
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Form the response.
   RWPB_M_MSG_DECL_INIT(ypb_path, pb_rsp);
@@ -1408,8 +1431,15 @@ rwdts_member_handle_mgmt_get_ks_ebuf(const rwdts_xact_info_t* xact_info,
     .evtrsp = RWDTS_EVTRSP_ACK
   };
 
+  rw_status_t rs =
   rwdts_member_send_response(xact, xact_info->queryh, &rsp);
-
+  if (rs != RW_STATUS_SUCCESS) {
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "QUERY READ send response failed:%d", rs);
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
+    protobuf_c_message_free_unpacked_usebody(NULL, &pb_rsp.base);
+    return RWDTS_ACTION_NOT_OK;
+  }
   // Free the protobuf
   protobuf_c_message_free_unpacked_usebody(NULL, &pb_rsp.base);
   rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
@@ -1426,6 +1456,9 @@ rwdts_member_handle_mgmt_get_pbc_ebuf(const rwdts_xact_info_t* xact_info,
                                       void*                    getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   rwdts_xact_t *xact = xact_info->xact;
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
@@ -1436,15 +1469,29 @@ rwdts_member_handle_mgmt_get_pbc_ebuf(const rwdts_xact_info_t* xact_info,
   RWPB_T_PATHSPEC(ypb_path) *ks = (RWPB_T_PATHSPEC(ypb_path) *)rw_keyspec_path_create_dup_of_type(
       keyspec, &xact->ksi, RWPB_G_PATHSPEC_PBCMD(ypb_path));
   RW_ASSERT(ks);
+  if (ks == NULL) {
+   RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL,
+           RWDTS_ACTION_NOT_OK, "keyspec duplication failed");
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Check if the name is present if so whether they match
   if (ks->dompath.path001.has_key00 &&
       !strstr(apih->client_path, ks->dompath.path001.key00.name)) {
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
     return RWDTS_ACTION_NA;
   }
 
   // We can only handle reads and the CLI should only send those
   RW_ASSERT(action == RWDTS_QUERY_READ);
+  if (action != RWDTS_QUERY_READ) {
+    char action_str[32];
+    rwdts_query_action_to_str(action, action_str,sizeof(action_str));
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "only QUERY READ supported action=%s", action_str);
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Form the response.
   RWPB_M_MSG_DECL_INIT(ypb_path, pb_rsp);
@@ -1472,9 +1519,18 @@ rwdts_member_handle_mgmt_get_pbc_ebuf(const rwdts_xact_info_t* xact_info,
     .msgs = &rsp_arr[0],
     .evtrsp = RWDTS_EVTRSP_ACK
   };
-
+  
+  rw_status_t rs = 
   rwdts_member_send_response(xact, xact_info->queryh, &rsp);
-
+  if (rs != RW_STATUS_SUCCESS) {
+    char action_str[32];
+    rwdts_query_action_to_str(action, action_str,sizeof(action_str));
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "send response failed for action=%s", action_str);
+    protobuf_c_message_free_unpacked_usebody(NULL, &pb_rsp.base);
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
   // Free the protobuf
   protobuf_c_message_free_unpacked_usebody(NULL, &pb_rsp.base);
   rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
@@ -1490,7 +1546,10 @@ rwdts_member_handle_mgmt_get_pbc_stats(const rwdts_xact_info_t* xact_info,
                                        uint32_t                 credits,
                                        void*                    getnext_ptr)
 {
-  RW_ASSERT(xact_info);
+  RW_ASSERT_MESSAGE(xact_info, "rwdts_member_handle_mgmt_get_pbc_stats:invalid xact_info");
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   rwdts_xact_t *xact = xact_info->xact;
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
@@ -1500,16 +1559,30 @@ rwdts_member_handle_mgmt_get_pbc_stats(const rwdts_xact_info_t* xact_info,
 
   RWPB_T_PATHSPEC(ypb_path) *ks = (RWPB_T_PATHSPEC(ypb_path) *)rw_keyspec_path_create_dup_of_type(
       keyspec, &xact->ksi, RWPB_G_PATHSPEC_PBCMD(ypb_path));
-  RW_ASSERT(ks);
+  RW_ASSERT_MESSAGE(ks, "rwdts_member_handle_mgmt_get_pbc_stats:keyspec duplication failed");
+  if (ks == NULL) {
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "rwdts_member_handle_mgmt_get_pbc_stats:keyspec duplication failed");
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Check if the name is present if so whether they match
   if (ks->dompath.path001.has_key00 &&
       !strstr(apih->client_path, ks->dompath.path001.key00.name)) {
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
     return RWDTS_ACTION_NA;
   }
 
   // We can only handle reads and the CLI should only send those
   RW_ASSERT(action == RWDTS_QUERY_READ);
+  if (action != RWDTS_QUERY_READ) {
+    char action_str[32];
+    rwdts_query_action_to_str(action, action_str,sizeof(action_str));
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "only QUERY_READ supported:action=%s", action_str);
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Form the response.
   RWPB_M_MSG_DECL_INIT(ypb_path, pb_rsp);
@@ -1574,7 +1647,16 @@ rwdts_member_handle_mgmt_get_pbc_stats(const rwdts_xact_info_t* xact_info,
     .evtrsp = RWDTS_EVTRSP_ACK
   };
 
-  rwdts_member_send_response(xact, xact_info->queryh, &rsp);
+  rw_status_t rs = rwdts_member_send_response(xact, xact_info->queryh, &rsp);
+  if (rs != RW_STATUS_SUCCESS) {
+    char action_str[32];
+    rwdts_query_action_to_str(action, action_str,sizeof(action_str));
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "send response failed:action=%s", action_str);
+    protobuf_c_message_free_unpacked_usebody(NULL, &pb_rsp.base);
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Free the protobuf
   protobuf_c_message_free_unpacked_usebody(NULL, &pb_rsp.base);
@@ -1591,7 +1673,10 @@ rwdts_member_handle_mgmt_get_ks_stats(const rwdts_xact_info_t* xact_info,
                                       uint32_t                 credits,
                                       void*                    getnext_ptr)
 {
-  RW_ASSERT(xact_info);
+  RW_ASSERT_MESSAGE(xact_info, "xact_info NULL in rwdts_member_handle_mgmt_get_ks_stats");
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  } 
 
   rwdts_xact_t *xact = xact_info->xact;
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
@@ -1602,15 +1687,29 @@ rwdts_member_handle_mgmt_get_ks_stats(const rwdts_xact_info_t* xact_info,
   RWPB_T_PATHSPEC(ypb_path) *ks = (RWPB_T_PATHSPEC(ypb_path) *)rw_keyspec_path_create_dup_of_type(
       keyspec, &xact->ksi, RWPB_G_PATHSPEC_PBCMD(ypb_path));
   RW_ASSERT(ks);
+  if (ks==NULL) {
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL,
+           RWDTS_ACTION_NOT_OK, "keyspec duplication failed");
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Check if the name is present if so whether they match
   if (ks->dompath.path001.has_key00 &&
       !strstr(apih->client_path, ks->dompath.path001.key00.name)) {
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
     return RWDTS_ACTION_NA;
   }
 
   // We can only handle reads and the CLI should only send those
   RW_ASSERT(action == RWDTS_QUERY_READ);
+  if (action != RWDTS_QUERY_READ) {
+    char action_str[32];
+    rwdts_query_action_to_str(action, action_str,sizeof(action_str));
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "only READ supported:action=%s", action_str);
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Form the response.
   RWPB_M_MSG_DECL_INIT(ypb_path, pb_rsp);
@@ -1684,7 +1783,16 @@ rwdts_member_handle_mgmt_get_ks_stats(const rwdts_xact_info_t* xact_info,
     .evtrsp = RWDTS_EVTRSP_ACK
   };
 
-  rwdts_member_send_response(xact, xact_info->queryh, &rsp);
+  rw_status_t rs = rwdts_member_send_response(xact, xact_info->queryh, &rsp);
+  if (rs != RW_STATUS_SUCCESS) {
+    char action_str[32];
+    rwdts_query_action_to_str(action, action_str,sizeof(action_str));
+    RWDTS_MEMBER_SEND_ERROR(xact, keyspec, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "send response failed for action=%s", action_str);
+    protobuf_c_message_free_unpacked_usebody(NULL, &pb_rsp.base);
+    rw_keyspec_path_free(&ks->rw_keyspec_path_t, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Free the protobuf
   protobuf_c_message_free_unpacked_usebody(NULL, &pb_rsp.base);
@@ -1701,7 +1809,10 @@ rwdts_member_handle_mgmt_req(const rwdts_xact_info_t* xact_info,
                              uint32_t                 credits,
                              void*                    getnext_ptr)
 {
-  RW_ASSERT(xact_info);
+  RW_ASSERT_MESSAGE(xact_info, "xact_info NULL in rwdts_member_handle_mgmt_req");
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  } 
   rwdts_xact_t *xact = xact_info->xact;
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
   RW_ASSERT_TYPE(apih, rwdts_api_t);
@@ -1711,7 +1822,12 @@ rwdts_member_handle_mgmt_req(const rwdts_xact_info_t* xact_info,
 
   dts_ks = (RWPB_T_PATHSPEC(RwDts_data_Dts_Member)*)rw_keyspec_path_create_dup_of_type(key, &xact->ksi, RWPB_G_PATHSPEC_PBCMD(RwDts_data_Dts_Member));
   RW_ASSERT(dts_ks);
-  RW_ASSERT(action != RWDTS_QUERY_INVALID);
+  if (dts_ks == NULL) {
+    RWDTS_MEMBER_SEND_ERROR(xact, key, NULL, apih, NULL,
+           RWDTS_ACTION_NOT_OK, "keyspec duplication failed");
+    return RWDTS_ACTION_NOT_OK;
+  }
+  RW_ASSERT_MESSAGE((action != RWDTS_QUERY_INVALID), "Invalid action:%d", action);
 
   // Check if the name is present if so whether they macth
   if (dts_ks->dompath.path001.has_key00 && !strstr(apih->client_path, dts_ks->dompath.path001.key00.name)) {
@@ -1726,6 +1842,14 @@ rwdts_member_handle_mgmt_req(const rwdts_xact_info_t* xact_info,
 
   // We can only handle reads and the CLI should only send those
   RW_ASSERT(action == RWDTS_QUERY_READ);
+  if (action != RWDTS_QUERY_READ) {
+    char action_str[32];
+    rwdts_query_action_to_str(action, action_str,sizeof(action_str));
+    RWDTS_MEMBER_SEND_ERROR(xact, key, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "only READ supported action=%s", action_str);
+    rw_keyspec_path_free(&dts_ks->rw_keyspec_path_t, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
 
 
   // Repond to the request
@@ -2191,7 +2315,15 @@ rwdts_member_handle_mgmt_req(const rwdts_xact_info_t* xact_info,
     .evtrsp = RWDTS_EVTRSP_ACK
   };
 
+  rs = 
   rwdts_member_send_response(xact, xact_info->queryh, &rsp);
+  if (rs != RW_STATUS_SUCCESS) {
+    RWDTS_MEMBER_SEND_ERROR(xact, key, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "send respnse failed");
+    protobuf_c_message_free_unpacked_usebody(NULL, (ProtobufCMessage*)mbr_state_p);
+    rw_keyspec_path_free((rw_keyspec_path_t*)dts_mbr, NULL);
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   // Free the protobuf
   protobuf_c_message_free_unpacked_usebody(NULL, (ProtobufCMessage*)mbr_state_p);
@@ -2208,13 +2340,21 @@ rwdts_member_handle_clear_stats_req(const rwdts_xact_info_t* xact_info,
                                     uint32_t                 credits,
                                     void*                    getnext_ptr)
 {
-  RW_ASSERT(xact_info);
+  RW_ASSERT_MESSAGE(xact_info, "rwdts_member_handle_clear_stats_req:xact_info NULL");
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
   RW_ASSERT_TYPE(apih, rwdts_api_t);
   RWPB_T_MSG(RwDts_input_ClearDts_Stats_Member) *inp;
 
   inp = (RWPB_T_MSG(RwDts_input_ClearDts_Stats_Member) *) msg;
   RW_ASSERT(inp);
+  if (inp == NULL) {
+    RWDTS_MEMBER_SEND_ERROR(xact_info->xact, key, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "invalid input message");
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   if (inp->name) {
     if (!strstr(apih->client_path, inp->name)) {
@@ -2239,7 +2379,10 @@ rwdts_member_start_tracing(const rwdts_xact_info_t* xact_info,
                          uint32_t                 credits,
                          void*                    getnext_ptr)
 {
-  RW_ASSERT(xact_info);
+  RW_ASSERT_MESSAGE(xact_info, "rwdts_member_start_tracing:xact_info NULL");
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
   RW_ASSERT_TYPE(apih, rwdts_api_t);
   RWPB_T_MSG(RwDts_input_StartDts_Tracing) *trace;
@@ -2266,7 +2409,11 @@ rwdts_member_start_tracing(const rwdts_xact_info_t* xact_info,
       (rw_keyspec_path_t *) RWPB_G_PATHSPEC_VALUE(RwDts_output_StartDts_Tracing);
 
   rw_status_t rs_status = rwdts_xact_info_respond_keyspec(xact_info, RWDTS_XACT_RSP_CODE_ACK, ks, (ProtobufCMessage*)&me);
-  RW_ASSERT(rs_status == RW_STATUS_SUCCESS);
+  if (rs_status != RW_STATUS_SUCCESS) {
+    RWDTS_MEMBER_SEND_ERROR(xact_info->xact, key, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "failed to send response");
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   return RWDTS_ACTION_ASYNC;
 }
@@ -2279,7 +2426,10 @@ rwdts_member_stop_tracing(const rwdts_xact_info_t* xact_info,
                           uint32_t                 credits,
                           void*                    getnext_ptr)
 {
-  RW_ASSERT(xact_info);
+  RW_ASSERT_MESSAGE(xact_info, "rwdts_member_stop_tracing:xact_info NULL");
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   rwdts_api_t *apih = (rwdts_api_t*)xact_info->ud;
   RW_ASSERT_TYPE(apih, rwdts_api_t);
 
@@ -2296,7 +2446,12 @@ rwdts_member_stop_tracing(const rwdts_xact_info_t* xact_info,
   apih->trace.persistant = 0;
 
   rw_status_t rs_status = rwdts_xact_info_respond_keyspec(xact_info, RWDTS_XACT_RSP_CODE_ACK, NULL, NULL);
-  RW_ASSERT(rs_status == RW_STATUS_SUCCESS);
+  RW_ASSERT_MESSAGE((rs_status == RW_STATUS_SUCCESS), "rwdts_xact_info_respond_keyspec failed");
+  if (rs_status != RW_STATUS_SUCCESS) {
+    RWDTS_MEMBER_SEND_ERROR(xact_info->xact, key, NULL, apih, NULL, 
+             RWDTS_ACTION_NOT_OK, "failed to send response");
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   return RWDTS_ACTION_ASYNC;
 }
@@ -2336,7 +2491,7 @@ static void rwdts_conf1_apply(rwdts_api_t *apih,
   }
 
   /* Replace whole config */
-  RW_ASSERT(!apih->conf1.tracert.filters_ct);
+  RW_ASSERT_MESSAGE(!apih->conf1.tracert.filters_ct, "rwdts_conf1_apply:conf1.tracert.filters_ct is zero");
   rwdts_member_cursor_t *cur = rwdts_member_data_get_current_cursor(xact, apih->conf1.tracert.reg);
   rw_keyspec_path_t *elem_ks = NULL;
   rwdts_member_data_reset_cursor(xact, apih->conf1.tracert.reg);
@@ -2381,7 +2536,7 @@ static void rwdts_conf1_apply(rwdts_api_t *apih,
       }
       keyspec = NULL;
       apih->conf1.tracert.filters_ct++;
-      RWDTS_API_LOG_XACT_EVENT(apih,xact,RwDtsApiLog_notif_TraceSet,ks->path);
+      RWDTS_API_LOG_EVENT(apih, TraceSet, ks->path);
     }
     else if (tr->has_client) {
       // There is no reason to store this. If the whole configuration is
@@ -2427,7 +2582,7 @@ static void rwdts_register_debug_keyspecs(rwdts_api_t *apih)
   rw_keyspec_path_create_dup(&RWPB_G_PATHSPEC_VALUE(RwKeyspecStats_data_KeyspecStats_Member)->rw_keyspec_path_t,
                              &apih->ksi,
                              &ks_stats);
-  RW_ASSERT(ks_stats);
+  RW_ASSERT_MESSAGE(ks_stats, "keyspec duplication failed");
   rw_keyspec_path_set_category (ks_stats, &apih->ksi, RW_SCHEMA_CATEGORY_DATA);
 
   regns[no_regs].keyspec = ks_stats;
@@ -2512,7 +2667,7 @@ static void rwdts_register_keyspecs(rwdts_api_t *apih)
   if (!strstr(apih->client_path, "DTSRouter")) {
     rwdts_member_event_cb_t cb1 = { .cb = { NULL, NULL, NULL, NULL, NULL }, .ud = NULL };
 
-    RWPB_T_PATHSPEC(RwDts_data_RtrInitRegId_Member) keyspecid_entry  = (*RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrInitRegId_Member));
+    RWPB_T_PATHSPEC(RwDts_data_RtrInitRegId_Member_Registration) keyspecid_entry  = (*RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrInitRegId_Member_Registration));
 
     keyspec = (rw_keyspec_path_t*)&keyspecid_entry;
 
@@ -2521,7 +2676,7 @@ static void rwdts_register_keyspecs(rwdts_api_t *apih)
     keyspecid_entry.dompath.path001.has_key00 = TRUE;
 
     RW_KEYSPEC_PATH_SET_CATEGORY ((rw_keyspec_path_t*)keyspec, &apih->ksi , RW_SCHEMA_CATEGORY_DATA, NULL );
-    apih->init_regidh = (rwdts_member_reg_handle_t) rwdts_member_registration_init_local(apih, keyspec, &cb1, RWDTS_FLAG_SUBSCRIBER|RWDTS_FLAG_INTERNAL_REG, RWPB_G_MSG_PBCMD(RwDts_data_RtrInitRegId_Member));
+    apih->init_regidh = (rwdts_member_reg_handle_t) rwdts_member_registration_init_local(apih, keyspec, &cb1, RWDTS_FLAG_SUBSCRIBER|RWDTS_FLAG_INTERNAL_REG, RWPB_G_MSG_PBCMD(RwDts_data_RtrInitRegId_Member_Registration));
     rwdts_member_reg_handle_mark_internal(apih->init_regidh);
 
     keyspec = NULL;
@@ -2651,6 +2806,7 @@ static void rwdts_register_keyspecs(rwdts_api_t *apih)
 
     rwdts_appconf_phase_complete(apih->conf1.appconf, RWDTS_APPCONF_PHASE_REGISTER);
   }
+  rwdts_journal_show_init(apih);
 
   return;
 }
@@ -2700,6 +2856,10 @@ rwdts_api_init_internal(rwtasklet_info_ptr_t           rw_tasklet_info,
     rwtrace_ctx_category_severity_set(apih->rwtrace_instance,
                                       RWTRACE_CATEGORY_RWTASKLET,
                                       RWTRACE_SEVERITY_ERROR);
+  }
+
+  if (rw_tasklet_info && !rw_tasklet_info->apih) {
+    rw_tasklet_info->apih = apih;
   }
 
   RWTRACE_INFO(apih->rwtrace_instance,
@@ -2766,7 +2926,12 @@ rwdts_api_init_internal(rwtasklet_info_ptr_t           rw_tasklet_info,
   rwdts_member_service_init(apih);
 
   rs = rwmsg_srvchan_bind_rwsched_queue(apih->server.sc, apih->server.rwq);
-  RW_ASSERT(rs == RW_STATUS_SUCCESS);
+  if (rs != RW_STATUS_SUCCESS) {
+    RWDTS_API_LOG_EVENT(apih, DtsapiInitFailed,
+                      "DTS API initilization  failed with router");
+    rwdts_api_deinit(apih);
+    return NULL;
+  }
 
   // Add service to the server channnel
   rs = rwmsg_srvchan_add_service(apih->server.sc, my_path, &apih->server.service.base, apih);
@@ -2894,7 +3059,12 @@ rwdts_api_add_ypbc_schema(rwdts_api_t*  apih,
                           const rw_yang_pb_schema_t* schema)
 {
   RW_ASSERT_TYPE (apih, rwdts_api_t);
-  RW_ASSERT (schema);
+  RW_ASSERT_MESSAGE(schema, "rwdts_api_add_ypbc_schema invalid schema");
+  if (schema == NULL) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, 
+        "rwdts_api_add_ypbc_schema invalid schema");
+    return RW_STATUS_FAILURE;
+  }
 
   const rw_yang_pb_schema_t* schema_c = NULL;
 
@@ -3121,6 +3291,7 @@ rw_status_t rwdts_api_deinit(rwdts_api_t *apih)
     apih->group = NULL;
   }
   if (apih->rwtasklet_info) {
+    apih->rwtasklet_info->apih = NULL;
     rwtasklet_info_unref(apih->rwtasklet_info);
     apih->rwtasklet_info = NULL;
   }
@@ -3398,7 +3569,10 @@ rwdts_xact_block_deinit(struct rwdts_xact_block_s *block_p)
 {
   RWDtsXactBlock *block = &block_p->subx;
 
-  RW_ASSERT(block);
+  RW_ASSERT_MESSAGE(block, "rwdts_xact_block_deinit:invalid block");
+  if (block == NULL) {
+    return RW_STATUS_FAILURE;
+  }
   RWDTS_API_LOG_XACT_EVENT(block_p->xact->apih, block_p->xact, RwDtsApiLog_notif_XactDeinited,
                            RWLOG_ATTR_SPRINTF("Called rwdts_xact_block_deinit (block_p = 0x%p\n", block_p)); 
 
@@ -3417,7 +3591,10 @@ rwdts_xact_block_deinit(struct rwdts_xact_block_s *block_p)
  */
 void rwdts_query_result_deinit(rwdts_query_result_t* query_result)
 {
-  RW_ASSERT(query_result);
+  RW_ASSERT_MESSAGE(query_result, "rwdts_query_result_deinit:invalid query_result");
+  if (query_result == NULL) {
+    return;
+  }
   if (query_result->keyspec) {
     rw_keyspec_path_free(query_result->keyspec, NULL);
     query_result->keyspec = NULL;
@@ -3773,10 +3950,19 @@ rwdts_api_query_internal(rwdts_api_t*                apih,
                          const ProtobufCMessage*     msg)
 {
   RW_ASSERT_TYPE(apih, rwdts_api_t);
-  RW_ASSERT(keyspec);
-  RW_ASSERT(cb);
-  RW_ASSERT(action != RWDTS_QUERY_INVALID);
-
+  RW_ASSERT_MESSAGE(keyspec,"rwdts_api_query_internal:invalid keyspec");
+  RW_ASSERT_MESSAGE(cb,"rwdts_api_query_internal:invalid callback");
+  if ((keyspec == NULL) ||(cb == NULL)) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical,
+                "rwdts_api_query_internal - Invalid parameters");
+    return NULL;
+  }
+  RW_ASSERT_MESSAGE((action != RWDTS_QUERY_INVALID), "rwdts_api_query_internal:action is invalid");
+  if (action == RWDTS_QUERY_INVALID) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical,
+                "rwdts_api_query_internal - invalid action");
+    return NULL;
+  }
   /* Set singleton query flags */
   if (action == RWDTS_QUERY_READ || action == RWDTS_QUERY_RPC) {
     flags |= (RWDTS_XACT_FLAG_NOTRAN);
@@ -3789,10 +3975,15 @@ rwdts_api_query_internal(rwdts_api_t*                apih,
 
   rwdts_xact_t *xact = rwdts_api_xact_create(apih, flags, cb?cb->cb:NULL, cb?cb->ud:NULL);
   RW_ASSERT_MESSAGE(xact, "Xact init failed");
+  if (xact == NULL) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "transaction creation failed");
+    return NULL;
+  }
 
   rwdts_xact_block_t *blk = rwdts_xact_block_create(xact);
   if (blk == NULL) {
     rwdts_xact_unref(xact, __PRETTY_FUNCTION__, __LINE__);
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "block creation failed");
     return NULL;
   }
   rw_status_t rs = rwdts_xact_block_add_query_ks(blk,
@@ -3802,11 +3993,13 @@ rwdts_api_query_internal(rwdts_api_t*                apih,
                                                  0,
                                                  msg);
   if (rs != RW_STATUS_SUCCESS) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "block add query failed");
     rwdts_xact_unref(xact, __PRETTY_FUNCTION__, __LINE__);
     return NULL;
   }
   rs = rwdts_xact_block_execute(blk, flags | RWDTS_XACT_FLAG_END, NULL, NULL, NULL);
   if (rs != RW_STATUS_SUCCESS) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "block execute failed");
     rwdts_xact_unref(xact, __PRETTY_FUNCTION__, __LINE__);
     return NULL;
   }
@@ -3832,7 +4025,14 @@ rwdts_api_query(rwdts_api_t*                apih,
 {
   RW_ASSERT_TYPE(apih, rwdts_api_t);
   RW_ASSERT(action != RWDTS_QUERY_INVALID);
-  RW_ASSERT(xpath);
+  if (action == RWDTS_QUERY_INVALID) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "invalid action");
+    return NULL;
+  }
+  if (xpath == NULL) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "invalid xpath");
+    return NULL;
+  }
   rwdts_xact_t *xact = NULL;
   rwdts_event_cb_t cb = { callback, user_data };
 
@@ -3869,6 +4069,10 @@ rwdts_api_query_gi(rwdts_api_t*                 apih,
                    const ProtobufCMessage*      msg)
 {
   RW_ASSERT(action != RWDTS_QUERY_INVALID);
+  if (action == RWDTS_QUERY_INVALID) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "invalid action");
+    return NULL;
+  }
   rwdts_xact_t *xact = rwdts_api_query(apih, xpath, action, flags, callback, user_data, msg);
   if (xact) {
     xact->gdestroynotify = ud_dtor;
@@ -3893,8 +4097,16 @@ rwdts_api_query_ks(rwdts_api_t*                 apih,
 
   rwdts_event_cb_t cb = { callback, user_data };
   RW_ASSERT_TYPE(apih, rwdts_api_t);
-  RW_ASSERT(keyspec);
-  RW_ASSERT(action != RWDTS_QUERY_INVALID);
+  if (keyspec == NULL) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "rwdts_api_query_ks:invalid keyspec");
+    return NULL;
+  }
+  RW_ASSERT_MESSAGE((action != RWDTS_QUERY_INVALID), "rwdts_api_query_ks:invalid action=%d", action);
+  if (action == RWDTS_QUERY_INVALID) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "rwdts_api_query_ks:invalid action");
+    return NULL;
+  }
+  
 
   return rwdts_api_query_internal(apih, keyspec, action, flags, &cb, msg);
 }
@@ -3910,7 +4122,11 @@ rwdts_api_query_reduction(rwdts_api_t*                 apih,
 {
   RW_ASSERT_TYPE(apih, rwdts_api_t);
   RW_ASSERT(action != RWDTS_QUERY_INVALID);
-  RW_ASSERT(xpath);
+  RW_ASSERT_MESSAGE((xpath!=NULL), "rwdts_api_query_reduction:invalid xpath");
+  if (xpath == NULL) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "rwdts_api_query_reduction:invalid xpath");
+    return NULL;
+  }
 
   rwdts_xact_t *xact = NULL;
   rwdts_event_cb_t cb = { callback, user_data };
@@ -3942,6 +4158,9 @@ rwdts_api_query_reduction(rwdts_api_t*                 apih,
       }
     }
   }
+  else {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "rwdts_api_query_reduction:xpath parse failed");
+  }
 
   return xact;
 }
@@ -3951,7 +4170,10 @@ rwdts_notification_cb(rwdts_xact_t*           xact,
                       rwdts_xact_status_t*    xact_status,
                       void*                   user_data)
 {
- RW_ASSERT(xact);
+ RW_ASSERT_MESSAGE(xact, "rwdts_notification_cb - invalid transaction parameter");
+ if (xact == NULL) {
+   return;
+ }
  rwdts_api_t* apih = xact->apih;
  RW_ASSERT_TYPE(apih, rwdts_api_t);
 
@@ -3974,7 +4196,12 @@ rwdts_api_send_notification(rwdts_api_t*             apih,
 
   rw_keyspec_path_t *keyspec = NULL;
   keyspec = (rw_keyspec_path_t *)msg->descriptor->ypbc_mdesc->schema_path_value;
-  RW_ASSERT(keyspec);
+  RW_ASSERT_MESSAGE(keyspec, "rwdts_api_send_notification:invalid keyspec");
+
+  if (!keyspec) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "rwdts_api_send_notification:invalid keyspec");
+    return NULL;
+  }
   xact = rwdts_api_query_internal(apih, keyspec, RWDTS_QUERY_UPDATE, 
                                   RWDTS_FLAG_ADVISE|RWDTS_XACT_FLAG_NOTRAN, &cb, msg);
 
@@ -3994,6 +4221,7 @@ rwdts_api_query_poll(rwdts_api_t*                 api,
                      uint64_t                     count)
 {
   // TODO: Implement
+    RWLOG_EVENT(api->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "rwdts_api_query_poll- Not implemented");
   return NULL;
 }
 
@@ -4005,7 +4233,10 @@ rwdts_api_query_poll(rwdts_api_t*                 api,
 void*
 rwdts_xact_info_get_next_key(const rwdts_xact_info_t *xact_info)
 {
-  RW_ASSERT(xact_info);
+  RW_ASSERT_MESSAGE(xact_info, "rwdts_xact_info_get_next_key:xact_info - invalid parameter");
+  if (xact_info == NULL) {
+    return (NULL);
+  }
   rwdts_match_info_t *match_info = (rwdts_match_info_t*)xact_info->queryh;
   if (match_info &&  match_info->query) {
       return (match_info->getnext_ptr);
@@ -4173,7 +4404,12 @@ rw_status_t
 rwdts_api_keyspec_from_xpath(rwdts_api_t* apih, const char* xpath, rw_keyspec_path_t **out_keyspec)
 {
 
-  RW_ASSERT(out_keyspec);
+  RW_ASSERT_MESSAGE(out_keyspec, "rwdts_api_keyspec_from_xpath:invalid param out_keyspec");
+  if (out_keyspec == NULL) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical,
+                "rwdts_api_keyspec_from_xpath:invalid param out_keyspec");
+    return RW_STATUS_FAILURE;
+  } 
   *out_keyspec = NULL;
 
   *out_keyspec = rw_keyspec_path_from_xpath(rwdts_api_get_ypbc_schema(apih),
@@ -4337,7 +4573,6 @@ GType rwdts_shard_anycast_get_type(void)
   return type;
 }
 
-#define RWDTS_API_VCS_INSTANCE_CHILD_STATE "D,/rw-base:vcs/instances/instance/child-n/publish-state"
 
 typedef struct rwdts_api_config_ready_handle_s {
   rwdts_api_t *apih;
@@ -4498,12 +4733,14 @@ static void rwdts_api_config_ready_update(
 	/* Things can crash etc! */
 	rwdts_api_config_ready_handle->in_running_state--;
       }
+      rwdts_api_config_ready->state = publish_state->state;
+      
     }
     if (!rwdts_api_config_ready_handle->notified &&
         (rwdts_api_config_ready_handle->in_running_state == 
         rwdts_api_config_ready_handle->manifest_count)) {
       rwdts_api_config_ready_handle->notified = true;
-      RWTRACE_CRIT(rwdts_api_config_ready_handle->apih->rwtrace_instance,
+      RWTRACE_CRITINFO(rwdts_api_config_ready_handle->apih->rwtrace_instance,
                    RWTRACE_CATEGORY_RWTASKLET,
                    "%s being notified running state of %d components",
                    rwdts_api_config_ready_handle->apih->client_path, rwdts_api_config_ready_handle->in_running_state);
@@ -4574,9 +4811,18 @@ static rwdts_member_rsp_code_t rwdts_api_config_ready_prepare(
   rwdts_xact_t *xact = rwdts_xact_info_get_xact(xact_info);
   rwdts_member_reg_handle_t regh = xact_info->regh;
 
-  RW_ASSERT(api != NULL);
-  RW_ASSERT(xact != NULL);
-  RW_ASSERT(regh != NULL);
+  RW_ASSERT_MESSAGE((api != NULL), "rwdts_api_config_ready_prepare:invalid api");
+  if (api == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
+  RW_ASSERT_MESSAGE((xact != NULL), "rwdts_api_config_ready_prepare:invalid xact");
+  if (xact == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
+  RW_ASSERT_MESSAGE((regh != NULL),"rwdts_api_config_ready_prepare:invalid regh");
+  if (regh == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *publish_state = 
    (RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *)msg;
@@ -4608,9 +4854,9 @@ rwdts_api_config_ready_register(
   rwdts_api_config_ready_handle->config_ready_cb = config_ready_cb;
   rwdts_api_config_ready_handle->userdata = userdata;
   rwdts_api_config_ready_handle->apih = apih;
-  RWTRACE_CRIT(apih->rwtrace_instance,
+  RWTRACE_CRITINFO(apih->rwtrace_instance,
                RWTRACE_CATEGORY_RWTASKLET,
-               "%s registering for components runnning state",
+               "%s registering for components running state",
                apih->client_path);
    
   rwdts_api_config_ready_handle->warning_timer = rwdts_member_timer_create(apih,
@@ -4646,6 +4892,29 @@ rwdts_api_config_ready_register(
   return (rwdts_api_config_ready_data_ptr_t)rwdts_api_config_ready_handle;
 }
 
+static void rwdts_api_update_element_reg_ready(
+    rwdts_member_reg_handle_t  regh,
+    rw_status_t                rs,
+    void*                      user_data)
+{
+  rw_keyspec_path_t *elem_ks = NULL;
+  rwdts_member_cursor_t *cur = rwdts_member_data_get_current_cursor(NULL, regh);
+  rwdts_member_registration_t *reg = (rwdts_member_registration_t *)regh;
+  RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *publish_state = NULL;
+  while ((publish_state = (RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState)*) rwdts_member_reg_handle_get_next_element(
+                                                                                                regh,
+                                                                                                cur,
+                                                                                                NULL,
+                                                                                                &elem_ks))) {
+    reg->cach_at_reg_ready++;
+  }
+  reg->reg_ready_done = true;
+  if (reg->pub_bef_reg_ready) {
+    rwdts_member_reg_handle_solicit_advise(regh);
+  }
+  return;
+}
+
 static void rwdts_api_update_element_async_f(void *ctx)
 {
   rwdts_api_update_element_async_t *update_element_async_p = 
@@ -4660,8 +4929,15 @@ static void rwdts_api_update_element_async_f(void *ctx)
         NULL,
         RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_NO_PREP_READ|RWDTS_FLAG_CACHE,
         RW_DTS_SHARD_FLAVOR_NULL, NULL, 0, -1, 0, 0,
-        NULL, NULL, NULL, NULL, NULL, NULL,
+        rwdts_api_update_element_reg_ready, NULL, NULL, NULL, NULL, NULL,
         update_element_async_p->regh_p);
+  }
+  rwdts_member_registration_t *reg = (rwdts_member_registration_t *)(*update_element_async_p->regh_p);
+  if (reg->reg_ready_done) {
+    reg->pub_aft_reg_ready++;
+  }
+  else {
+    reg->pub_bef_reg_ready++;
   }
   rwdts_member_reg_handle_update_element_xpath(
       *(update_element_async_p->regh_p),
@@ -4684,7 +4960,11 @@ rwdts_config_ready_publish(rwdts_api_config_ready_data_t *config_ready_data)
   bool config_ready = config_ready_data->config_ready;
   RWPB_E(RwBase_StateType) state = config_ready_data->state;
 
-  RW_ASSERT(xpath);
+  RW_ASSERT_MESSAGE(xpath, "rwdts_config_ready_publish:invalid xpath");
+  if (xpath == NULL) {
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "rwdts_config_ready_publish:Invalid xpath");
+    return;
+  }
 
   RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *publish_state = 
       (RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState)*)RW_MALLOC0(sizeof(*publish_state));
@@ -4711,3 +4991,26 @@ rwdts_config_ready_publish(rwdts_api_config_ready_data_t *config_ready_data)
   return;
 }
 
+/*
+ *  return associated api handle
+ *
+ */
+rwdts_api_t*
+rwdts_api_find_dtshandle(const rwtasklet_info_t*      tasklet)
+{
+  RW_ASSERT(tasklet);
+  return (tasklet->apih);
+}
+
+rwdts_member_reg_handle_t
+rwdts_api_find_reg_handle_for_xpath (rwdts_api_t *apih,
+                                     const char  *xpath)
+{
+  rwdts_member_registration_t *reg;
+  RW_SKLIST_FOREACH(reg, rwdts_member_registration_t, &apih->reg_list, element) {
+    if(!strncmp(reg->keystr, xpath, strlen(reg->keystr))) {
+      break;
+    }
+  }
+  return (rwdts_member_reg_handle_t) reg;
+}

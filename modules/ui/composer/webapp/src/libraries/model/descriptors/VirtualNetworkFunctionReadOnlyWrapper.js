@@ -12,7 +12,7 @@
 import DescriptorModel from '../DescriptorModel'
 import DescriptorModelFactory from '../DescriptorModelFactory'
 
-export default class VirtualNetworkFunctionReadOnlyWrapper extends DescriptorModel{
+export default class VirtualNetworkFunctionReadOnlyWrapper extends DescriptorModel {
 
 	constructor(model, parent) {
 		super(model, parent);

@@ -1861,12 +1861,14 @@ static status_t
 *
 * Module Search order:
 *   1) filespec == try that only and exit
-*   2) current directory
-*   3) YUMA_MODPATH environment var (or set by modpath CLI var)
-*   4) HOME/modules directory
-*   5) YUMA_HOME/modules directory
-*   6) YUMA_INSTALL/modules directory OR
-*   7) default install module location, which is '/usr/share/yuma/modules'
+*   2)IF
+*       YUMA_MODPATH environment var (or set by modpath CLI var)
+*     ELSE
+*     a) current directory
+*     b) HOME/modules directory
+*     c) YUMA_HOME/modules directory
+*     d) YUMA_INSTALL/modules directory OR
+*     e) default install module location, which is '/usr/share/yuma/modules'
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -1987,68 +1989,68 @@ static status_t
         *buff = 0;
     }
 
-    /* 2) try alt_path variable if set; used by yangdiff */
-    if ( instance->ncxmod_alt_path) {
-        res = check_module_path(instance,  instance->ncxmod_alt_path, buff, bufflen, modname, 
-                                 revision, pcb, ptyp, TRUE, &done );
-    }
-
-    if (ncx_get_cwd_subdirs(instance)) {
-        /* CHECK THE CURRENT DIR AND ANY SUBDIRS
-         * 3) try cur working directory and subdirs if the subdirs parameter
-         *    is true
-         * check before the modpath, which can cause the wrong version to be 
-         * picked, depending * on the CWD used by the application.  */
-        if (!done) {
-            res = check_module_pathlist(instance,  (const xmlChar *)".", buff, bufflen,
-                                         modname, revision, pcb, ptyp, &done );
-        }
+    if (instance->ncxmod_mod_path) {
+      /* try YUMA_MODPATH environment variable if set */
+        res = check_module_pathlist(instance, instance->ncxmod_mod_path, buff, bufflen, modname,
+                                    revision, pcb, ptyp, &done );
     } else {
-        /* CHECK THE CURRENT DIR BUT NOT ANY SUBDIRS
-         * 3a) try as module in current dir, YANG format */
-        if (!done) {
-            res = try_module(instance,  buff, bufflen, NULL, NULL, modname, revision, 
+      /* 1) try alt_path variable if set; used by yangdiff */
+      if ( instance->ncxmod_alt_path) {
+          res = check_module_path(instance,  instance->ncxmod_alt_path, buff, bufflen, modname, 
+                                  revision, pcb, ptyp, TRUE, &done );
+      }
+
+      if (ncx_get_cwd_subdirs(instance)) {
+          /* CHECK THE CURRENT DIR AND ANY SUBDIRS
+          * 2) try cur working directory and subdirs if the subdirs parameter
+          *    is true
+          * check before the modpath, which can cause the wrong version to be 
+          * picked, depending * on the CWD used by the application.  */
+          if (!done) {
+              res = check_module_pathlist(instance,  (const xmlChar *)".", buff, bufflen,
+                                         modname, revision, pcb, ptyp, &done );
+          }
+      } else {
+          /* CHECK THE CURRENT DIR BUT NOT ANY SUBDIRS
+           * 2a) try as module in current dir, YANG format */
+          if (!done) {
+              res = try_module(instance,  buff, bufflen, NULL, NULL, modname, revision, 
                               NCXMOD_MODE_YANG, FALSE, &done, pcb, ptyp );
-        }
+          }
 
-        /* 3b) try as module in current dir, YIN format  */
-        if (!done) {
-            res = try_module(instance,  buff, bufflen, NULL, NULL, modname, revision,
+          /* 2b) try as module in current dir, YIN format  */
+          if (!done) {
+              res = try_module(instance,  buff, bufflen, NULL, NULL, modname, revision,
                               NCXMOD_MODE_YIN, FALSE, &done, pcb, ptyp);
-        }
-    }
+          }
+      }
 
-    /* 4) try YUMA_MODPATH environment variable if set */
-    if (!done && instance->ncxmod_mod_path) {
-        res = check_module_pathlist(instance,  instance->ncxmod_mod_path, buff, bufflen, modname, 
-                                     revision, pcb, ptyp, &done );
-    }
-
-    /* 5) HOME/modules directory */
-    if (!done && instance->ncxmod_home) {
-        res = check_module_path(instance,  instance->ncxmod_home, buff, bufflen, modname,
+      /* 4) HOME/modules directory */
+      if (!done && instance->ncxmod_home) {
+          res = check_module_path(instance,  instance->ncxmod_home, buff, bufflen, modname,
                                  revision, pcb, ptyp, FALSE, &done );
-    }
+      } 
 
-    /* 6) YUMA_HOME/modules directory */
-    if (!done && instance->ncxmod_yuma_home) {
-        res = check_module_path(instance,  instance->ncxmod_yuma_home, buff, bufflen, modname, 
+      /* 5) YUMA_HOME/modules directory */
+      if (!done && instance->ncxmod_yuma_home) {
+          res = check_module_path(instance,  instance->ncxmod_yuma_home, buff, bufflen, modname, 
                                  revision, pcb, ptyp, FALSE, &done );
-    }
+      }
 
-    /* 7) YUMA_INSTALL/modules directory or default install path
-     *    If this envvar is set then the default install path will not
-     *    be tried
-     */
-    if (!done) {
-        if (instance->ncxmod_env_install) {
-            res = check_module_path(instance,  instance->ncxmod_env_install, buff, bufflen, modname,
+      /* 6) YUMA_INSTALL/modules directory or default install path
+       *    If this envvar is set then the default install path will not
+       *    be tried
+       */
+      if (!done) {
+          if (instance->ncxmod_env_install) {
+              res = check_module_path(instance,  instance->ncxmod_env_install, buff, bufflen, modname,
                                      revision, pcb, ptyp, FALSE, &done );
-        } else {
-            res = check_module_path(instance,  NCXMOD_DEFAULT_INSTALL, buff, bufflen, 
+          } else {
+              res = check_module_path(instance,  NCXMOD_DEFAULT_INSTALL, buff, bufflen, 
                                      modname, revision, pcb, ptyp, FALSE, 
                                      &done );
-        }
+          }
+      }
     }
 
     if (res != NO_ERR || !done) {
@@ -2686,7 +2688,7 @@ status_t
 
     instance->ncxmod_run_path_cli = NULL;
 
-    instance->ncxmod_subdirs = TRUE;
+    instance->ncxmod_subdirs = FALSE;
 
     instance->ncxmod_init_done = TRUE;
 
@@ -2759,10 +2761,13 @@ void
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -2839,10 +2844,13 @@ status_t
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -2918,10 +2926,12 @@ status_t
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -3007,10 +3017,13 @@ ncxmod_search_result_t *
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) HOME/modules directory
-* 3) YUMA_HOME/modules directory
-* 4) YUMA_INSTALL/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) HOME/modules directory
+* 2) YUMA_HOME/modules directory
+* 3) YUMA_INSTALL/modules directory
 *
 * INPUTS:
 *   resultQ == address of Q to stor malloced search results
@@ -3052,48 +3065,50 @@ status_t
                                      instance->ncxmod_mod_path,
                                      search_subtree_callback,
                                      resultQ);
-    }
+    } else {
 
-    /* 2) HOME/modules directory */
-    if (res == NO_ERR && instance->ncxmod_home) {
-        res = search_module_path(instance,
-                                 instance->ncxmod_home,
-                                 buff,
-                                 bufflen,
-                                 search_subtree_callback,
-                                 resultQ);
-    }
-
-    /* 3) YUMA_HOME/modules directory */
-    if (res == NO_ERR && instance->ncxmod_yuma_home) {
-        res = search_module_path(instance,
-                                 instance->ncxmod_yuma_home,
-                                 buff,
-                                 bufflen,
-                                 search_subtree_callback,
-                                 resultQ);
-    }
-
-    /* 4) YUMA_INSTALL/modules directory or default install path
-     *    If this envvar is set then the default install path will not
-     *    be tried
-     */
-    if (res == NO_ERR) {
-        if (instance->ncxmod_env_install) {
-            res = search_module_path(instance, 
-                                     instance->ncxmod_env_install, 
-                                     buff,
-                                     bufflen,
-                                     search_subtree_callback,
-                                     resultQ);
-        } else {
-            res = search_module_path(instance, 
-                                     NCXMOD_DEFAULT_INSTALL, 
-                                     buff,
-                                     bufflen,
-                                     search_subtree_callback,
-                                     resultQ);
+        /* 2) HOME/modules directory */
+        if (res == NO_ERR && instance->ncxmod_home) {
+            res = search_module_path(instance,
+                                    instance->ncxmod_home,
+                                    buff,
+                                    bufflen,
+                                    search_subtree_callback,
+                                    resultQ);
         }
+
+        /* 3) YUMA_HOME/modules directory */
+        if (res == NO_ERR && instance->ncxmod_yuma_home) {
+            res = search_module_path(instance,
+                                    instance->ncxmod_yuma_home,
+                                    buff,
+                                    bufflen,
+                                    search_subtree_callback,
+                                    resultQ);
+        }
+
+        /* 4) YUMA_INSTALL/modules directory or default install path
+         *    If this envvar is set then the default install path will not
+         *    be tried
+        */
+        if (res == NO_ERR) {
+            if (instance->ncxmod_env_install) {
+                res = search_module_path(instance, 
+                                        instance->ncxmod_env_install, 
+                                        buff,
+                                        bufflen,
+                                        search_subtree_callback,
+                                        resultQ);
+            } else {
+                res = search_module_path(instance, 
+                                        NCXMOD_DEFAULT_INSTALL, 
+                                        buff,
+                                        bufflen,
+                                        search_subtree_callback,
+                                        resultQ);
+            }
+        }
+
     }
 
     m__free(instance, buff);
@@ -3111,10 +3126,13 @@ status_t
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   devname == deviation module name with 
@@ -3205,10 +3223,13 @@ status_t
 *
 * Module Search order:
 *
-* 1) YUMA_MODPATH environment var (or set by modpath CLI var)
-* 2) current dir or absolute path
-* 3) YUMA_HOME/modules directory
-* 4) HOME/modules directory
+* IF
+*   YUMA_MODPATH environment var (or set by modpath CLI var)
+*   is set, search only that path.
+* ELSE
+* 1) current dir or absolute path
+* 2) YUMA_HOME/modules directory
+* 3) HOME/modules directory
 *
 * INPUTS:
 *   modname == module name with no path prefix or file extension
@@ -4866,21 +4887,7 @@ status_t
         return ERR_INTERNAL_MEM;
     }
 
-    /* 1) current directory */
-    xml_strcpy(instance, buff, (const xmlChar *)"./");
-    res = list_subdirs(instance, 
-                       buff, 
-                       bufflen,
-                       SEARCH_TYPE_MODULE,
-                       helpmode,
-                       logstdout,
-                       FALSE);
-    if (res != NO_ERR) {
-        m__free(instance, buff);
-        return res;
-    }
-
-    /* 2) try the NCX_MODPATH environment variable */
+    /* 1) try the NCX_MODPATH environment variable */
     if (instance->ncxmod_mod_path) {
         res = list_pathlist(instance, 
                             instance->ncxmod_mod_path, 
@@ -4893,79 +4900,93 @@ status_t
             m__free(instance, buff);
             return res;
         }
-    }
+    } else {
+        /* 2) current directory */
+        xml_strcpy(instance, buff, (const xmlChar *)"./");
+        res = list_subdirs(instance,
+                           buff,
+                           bufflen,
+                           SEARCH_TYPE_MODULE,
+                           helpmode,
+                           logstdout,
+                           FALSE);
+        if (res != NO_ERR) {
+            m__free(instance, buff);
+            return res;
+        }
 
-    /* 3) HOME/modules directory */
-    if (instance->ncxmod_home) {
-        pathlen = xml_strlen(instance, instance->ncxmod_home);
-        if (pathlen + 9 < bufflen) {
-            p = buff;
-            p += xml_strcpy(instance, p, instance->ncxmod_home);
-            *p++ = NCXMOD_PSCHAR;
-            p += xml_strcpy(instance, p, (const xmlChar *)"modules");
-            *p++ = NCXMOD_PSCHAR;
-            *p = '\0';
+        /* 3) HOME/modules directory */
+        if (instance->ncxmod_home) {
+            pathlen = xml_strlen(instance, instance->ncxmod_home);
+            if (pathlen + 9 < bufflen) {
+                p = buff;
+                p += xml_strcpy(instance, p, instance->ncxmod_home);
+                *p++ = NCXMOD_PSCHAR;
+                p += xml_strcpy(instance, p, (const xmlChar *)"modules");
+                *p++ = NCXMOD_PSCHAR;
+                *p = '\0';
 
-            res = list_subdirs(instance, 
-                               buff, 
-                               bufflen, 
-                               SEARCH_TYPE_MODULE,
-                               helpmode,
-                               logstdout,
-                               TRUE);
-            if (res != NO_ERR) {
-                m__free(instance, buff);
-                return res;
+                res = list_subdirs(instance, 
+                                   buff, 
+                                   bufflen, 
+                                   SEARCH_TYPE_MODULE,
+                                   helpmode,
+                                   logstdout,
+                                   TRUE);
+                if (res != NO_ERR) {
+                    m__free(instance, buff);
+                    return res;
+                }
             }
         }
-    }
 
-    /* 4) YUMA_HOME/modules directory */
-    if (instance->ncxmod_yuma_home) {
-        pathlen = xml_strlen(instance, instance->ncxmod_yuma_home);;
-        if (pathlen + 9 < bufflen) {
-            p = buff;
-            p += xml_strcpy(instance, p, instance->ncxmod_yuma_home);
-            *p++ = NCXMOD_PSCHAR;
-            p += xml_strcpy(instance, p, (const xmlChar *)"modules");
-            *p++ = NCXMOD_PSCHAR;
-            *p = '\0';
+        /* 4) YUMA_HOME/modules directory */
+        if (instance->ncxmod_yuma_home) {
+            pathlen = xml_strlen(instance, instance->ncxmod_yuma_home);;
+            if (pathlen + 9 < bufflen) {
+                p = buff;
+                p += xml_strcpy(instance, p, instance->ncxmod_yuma_home);
+                *p++ = NCXMOD_PSCHAR;
+                p += xml_strcpy(instance, p, (const xmlChar *)"modules");
+                *p++ = NCXMOD_PSCHAR;
+                *p = '\0';
 
-            res = list_subdirs(instance, 
-                               buff, 
-                               bufflen, 
-                               SEARCH_TYPE_MODULE,
-                               helpmode,
-                               logstdout,
-                               TRUE);
-            if (res != NO_ERR) {
-                m__free(instance, buff);
-                return res;
+                res = list_subdirs(instance, 
+                                   buff, 
+                                   bufflen, 
+                                   SEARCH_TYPE_MODULE,
+                                   helpmode,
+                                   logstdout,
+                                   TRUE);
+                if (res != NO_ERR) {
+                    m__free(instance, buff);
+                    return res;
+                }
             }
         }
-    }
 
-    /* 5) YUMA_INSTALL/modules directory */
-    if (instance->ncxmod_env_install) {
-        pathlen = xml_strlen(instance, instance->ncxmod_env_install);;
-        if (pathlen + 9 < bufflen) {
-            p = buff;
-            p += xml_strcpy(instance, p, instance->ncxmod_env_install);
-            *p++ = NCXMOD_PSCHAR;
-            p += xml_strcpy(instance, p, (const xmlChar *)"modules");
-            *p++ = NCXMOD_PSCHAR;
-            *p = '\0';
+        /* 5) YUMA_INSTALL/modules directory */
+        if (instance->ncxmod_env_install) {
+            pathlen = xml_strlen(instance, instance->ncxmod_env_install);;
+            if (pathlen + 9 < bufflen) {
+                p = buff;
+                p += xml_strcpy(instance, p, instance->ncxmod_env_install);
+                *p++ = NCXMOD_PSCHAR;
+                p += xml_strcpy(instance, p, (const xmlChar *)"modules");
+                *p++ = NCXMOD_PSCHAR;
+                *p = '\0';
 
-            res = list_subdirs(instance, 
-                               buff, 
-                               bufflen, 
-                               SEARCH_TYPE_MODULE,
-                               helpmode,
-                               logstdout,
-                               TRUE);
-            if (res != NO_ERR) {
-                m__free(instance, buff);
-                return res;
+                res = list_subdirs(instance, 
+                                   buff, 
+                                   bufflen, 
+                                   SEARCH_TYPE_MODULE,
+                                   helpmode,
+                                   logstdout,
+                                   TRUE);
+                if (res != NO_ERR) {
+                    m__free(instance, buff);
+                    return res;
+                }
             }
         }
     }

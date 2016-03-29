@@ -54,6 +54,12 @@ module rw-vcs
         type string;
         mandatory true;
       }
+
+      leaf recover {
+        description "Recover the component";
+        type boolean;
+        default false;
+      }
     }
 
     output {
@@ -82,6 +88,25 @@ module rw-vcs
 
     output {
       rwpb:msg-new "VStopOutput";
+      leaf rw_status {
+        description "Return status of the stop operation";
+        type uint32;
+      }
+    }
+  }
+
+  rpc vcrash {
+    input {
+      rwpb:msg-new "VCrashInput";
+      leaf instance-name {
+        description "Instance-name of instance to crash";
+        type string;
+        mandatory true;
+      }
+    }
+
+    output {
+      rwpb:msg-new "VCrashOutput";
       leaf rw_status {
         description "Return status of the stop operation";
         type uint32;

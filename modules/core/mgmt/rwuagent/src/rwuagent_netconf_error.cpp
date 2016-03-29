@@ -207,8 +207,10 @@ bool NetconfErrorList::to_xml(
 
   reply.n_rpc_error = errors_.size();
   reply.rpc_error = rpc_errors;
-  for (unsigned i = 0; i < errors_.size(); i++) {
-    reply.rpc_error[i] = errors_[i].get_pb_error();
+
+  size_t idx = 0;
+  for (auto& error : errors_) {
+    reply.rpc_error[idx++] = error.get_pb_error();
   }
 
   rw_status_t ret = xml_mgr->pb_to_xml_unrooted(&(reply.base), xml);
@@ -216,7 +218,7 @@ bool NetconfErrorList::to_xml(
   return (ret == RW_STATUS_SUCCESS);
 }
 
-const std::vector<NetconfError>& NetconfErrorList::get_errors() const
+const std::list<NetconfError>& NetconfErrorList::get_errors() const
 {
   return errors_;
 }

@@ -6,6 +6,12 @@
  */
 @import 'variables';
 
+path[data-outline-indicator-svg-outline-path] {
+	stroke-dasharray: 0;
+	stroke: #b58900;
+	stroke-width: 5px;
+}
+
 $font-path: '../assets';
 $robo-black: $font-path + '/Roboto-Black-webfont.woff';
 $robo-black-italic: $font-path + '/Roboto-BlackItalic-webfont.woff';
@@ -150,7 +156,7 @@ html, body {
 }
 
 ::-webkit-scrollbar {
-	display: none;
+	//display: none;
 }
 
 html {
@@ -184,17 +190,13 @@ h1 {
 	text-transform: uppercase;
 }
 
+img {
+	vertical-align: middle;
+}
+
 button,
 input[type="image"] {
-	/*font-variant: small-caps;
-	text-transform: lowercase;
-	text-align: center;
-	margin: 4px 0;
-	border-radius: 0;
-	border-collapse: collapse;
-	padding: 2px 24px;
-	outline: none;
-	background-color: transparent;*/
+
     box-shadow: 2px 2px rgba(0, 0, 0, 0.15);
     color: #000000;
     display: inline-block;
@@ -215,6 +217,7 @@ input[type="image"] {
 	&.-selected {
 		background-color: rgb(159, 196, 244);
 	}
+
 }
 
 input[type="image"] {
@@ -224,6 +227,94 @@ input[type="image"] {
 	border: 0;
 	border-radius: 4px;
 	padding: 4px;
+}
+
+input,
+select,
+textarea {
+	height: 25px;
+	line-height: 25px;
+	max-width: 100%;
+	min-width: 100%;
+	margin: 0;
+	padding: 0 8px;
+	border: 1px solid $field-background-color !important;;
+	border-radius: $field-border-radius;
+	color: #002b36;
+	background-color: $field-background-color !important;
+	vertical-align: top;
+	&:focus {
+		color: #002b36;
+		background-color: white !important;
+	}
+	&::-webkit-input-placeholder {
+		color: #eee8d5 !important;
+	}
+
+	&:-moz-placeholder { /* Firefox 18- */
+		color: #eee8d5 !important;
+	}
+
+	&::-moz-placeholder {  /* Firefox 19+ */
+		color: #eee8d5 !important;
+	}
+
+	&:-ms-input-placeholder {
+		color: #eee8d5 !important;
+	}
+}
+
+select {
+	padding-right: 0;
+	margin-right: 0;
+	-moz-appearance: none;
+	text-indent: 0.01px;
+	text-overflow: '';
+	-webkit-appearance: none;
+	-webkit-border-radius: $field-border-radius;
+	&.-value-not-set {
+		color: #eee8d5;
+	}
+}
+
+select {
+	appearance: none; // using -prefix-free http://leaverou.github.io/prefixfree/
+	background: $field-background-color url(../images/arrow614.svg) no-repeat right 6px center;
+	background-size: 10px;
+	border: {
+		color: $field-background-color;
+		radius: $field-border-radius;
+		style: solid;
+		width: 1px;
+	}
+}
+
+// Removes default arrow for IE10+
+// IE 8/9 get dafault arrow which covers caret image
+// as long as caret image is small than and positioned
+// behind default arrow
+select::-ms-expand {
+	display: none;
+}
+
+textarea {
+	height: 50px;
+}
+
+input[name$="id"],
+input.-is-guid {
+	font-size: 10px;
+	font-family: monospace;
+}
+
+.ContentEditableDiv {
+	margin: 0;
+	border: 0;
+	padding: 0;
+	overflow: hidden;
+	border-radius: $field-border-radius;
+	height: 25px;
+	line-height: 25px;
 }
 
 .btn-group {
@@ -251,15 +342,6 @@ input[type="image"] {
 	}
 }
 .panel-header {
-	/*position: absolute;
-	top: 0;
-	left: 0;
-	right: 0;
-	height: 50px;
-	padding: 8px;
-	background-color: $panel-bg-color-contrast;
-	border-bottom: 1px solid $panel-border-color-light;
-	white-space: nowrap;*/
 	h1 {
 		padding: 16px;
 		white-space: nowrap;
@@ -268,7 +350,10 @@ input[type="image"] {
 }
 .panel-body {
 	position: absolute;
-	overflow: scroll;
+	overflow: hidden;
+	&:hover {
+		overflow: auto;
+	}
 	-ms-overflow-style: -ms-autohiding-scrollbar;
 	top: 111px;
 	bottom: 0px;
@@ -308,7 +393,7 @@ input[type="image"] {
 .menu {
 	display: inline-flex;
 	position: relative;
-	z-index: 2;
+	z-index: 9999;
 	> .Button:after {
 		content: "ˇ";
 		position: absolute;
@@ -350,13 +435,6 @@ input[type="image"] {
 			fill: white;/* font color */
 			stroke: white !important;/* font color */
 		}
-	}
-}
-
-input {
-	&:focus {
-		color: white;
-		background: #000 !important;
 	}
 }
 

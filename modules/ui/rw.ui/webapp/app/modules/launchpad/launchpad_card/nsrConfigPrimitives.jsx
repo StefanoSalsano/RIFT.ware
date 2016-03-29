@@ -128,9 +128,10 @@ export default class NsrConfigPrimitives extends React.Component {
                 nsConfigPrimitiveIndex: nsConfigPrimitiveIndex
              });
             //Need a better way to reset
-            this.setState({
-                nsConfigPrimitives: null
-            })
+            //Reset disabled per TEF request
+            // this.setState({
+            //     nsConfigPrimitives: null
+            // })
         }
     }
     handleOptionalCheck = (parameterGroupIndex, nsConfigPrimitiveIndex, event) => {
@@ -157,18 +158,26 @@ export default class NsrConfigPrimitives extends React.Component {
                         <TabPanel key={nsConfigPrimitiveIndex + '-panel'}>
                             {nsConfigPrimitive['parameter'] && nsConfigPrimitive['parameter'].map((parameter, parameterIndex) => {
                                 let optionalField = '';
+                                let displayField = '';
 								let defaultValue = parameter['default-value'] || '';
+                                let isFieldHidden = (parameter['hidden'] && parameter['hidden'] == 'true') || false;
+                                let isFieldReadOnly = (parameter['read-only'] && parameter['read-only'] == 'true') || false;
                                 if (parameter.mandatory == mandatoryFieldValue) {
                                     optionalField = <span className="required">*</span>
                                 }
+                                if (isFieldReadOnly) {
+                                    displayField = <div className='readonly'>{parameter.value || defaultValue}</div>
+                                } else {
+                                    displayField = <input required={(parameter.mandatory == mandatoryFieldValue)} className="" type="text" defaultValue={defaultValue} value={parameter.value} onChange={this.handleNsParamChange.bind(this, parameterIndex, nsConfigPrimitiveIndex)} />
+                                }
                                 return (
-                                    <div key={parameterIndex} className="nsConfigPrimitiveParameters">
+                                    <div key={parameterIndex} className="nsConfigPrimitiveParameters" style={{display: isFieldHidden ? 'none':'inherit'}}>
                                         <ul>
                                         {
                                             <li key={parameterIndex} className="">
                                                 <label data-required={(parameter.mandatory == mandatoryFieldValue)}>
                                                     {parameter.name}
-                                                        <input required={(parameter.mandatory == mandatoryFieldValue)} className="" type="text" defaultValue={defaultValue} value={parameter.value} onChange={this.handleNsParamChange.bind(this, parameterIndex, nsConfigPrimitiveIndex)} />
+                                                    {displayField}
                                                 </label>
 
                                             </li>
@@ -197,18 +206,29 @@ export default class NsrConfigPrimitives extends React.Component {
 
                                                     {parameterGroup['parameter'] && parameterGroup['parameter'].map((parameter, parameterIndex) => {
                                                         let optionalField = '';
+                                                        let displayField = '';
                                                         let defaultValue = parameter['default-value'] || '';
+                                                        let isFieldHidden = (parameter['hidden'] && parameter['hidden'] == 'true') || false;
+                                                        let isFieldReadOnly = (parameter['read-only'] && parameter['read-only'] == 'true') || false;
+                                                        if (parameter.mandatory == mandatoryFieldValue) {
+                                                            optionalField = <span className="required">*</span>
+                                                        }
+                                                        if (isFieldReadOnly) {
+                                                            displayField = <div className='readonly'>{parameter.value || defaultValue}</div>
+                                                        } else {
+                                                            displayField = <input required={(parameter.mandatory == mandatoryFieldValue)} className="" disabled={inputIsDiabled} type="text" defaultValue={defaultValue} value={parameter.value} onChange={this.handleNsParamGroupParamChange.bind(this, parameterIndex, parameterGroupIndex, nsConfigPrimitiveIndex)} />
+                                                        }
                                                         if (parameter.mandatory == mandatoryFieldValue) {
                                                             optionalField = <span className="required">*</span>
                                                         }
                                                         return (
-                                                            <div key={parameterIndex} className="nsConfigPrimitiveParameters">
+                                                            <div key={parameterIndex} className="nsConfigPrimitiveParameters" style={{display: isFieldHidden ? 'none':'inherit'}}>
                                                                 <ul>
                                                                 {
                                                                     <li key={parameterIndex} className="">
                                                                         <label className={inputIsDiabled && 'disabled'} data-required={(parameter.mandatory == mandatoryFieldValue)}>
                                                                             {parameter.name}
-                                                                                <input required={(parameter.mandatory == mandatoryFieldValue)} className="" disabled={inputIsDiabled} type="text" defaultValue={defaultValue} value={parameter.value} onChange={this.handleNsParamGroupParamChange.bind(this, parameterIndex, parameterGroupIndex, nsConfigPrimitiveIndex)} />
+                                                                            {displayField}
                                                                         </label>
 
                                                                     </li>
@@ -236,15 +256,23 @@ export default class NsrConfigPrimitives extends React.Component {
                                                         {
                                                             inputGroup.parameter.map((input, inputIndex) => {
                                                                 let optionalField = '';
+                                                                let displayField = '';
 																let defaultValue = input['default-value'] || '';
+                                                                let isFieldHidden = (input['hidden'] && input['hidden'] == 'true') || false;
+                                                                let isFieldReadOnly = (input['read-only'] && input['read-only'] == 'true') || false;
                                                                 if (input.mandatory == mandatoryFieldValue) {
                                                                     optionalField = <span className="required">*</span>
                                                                 }
+                                                                if (isFieldReadOnly) {
+                                                                    displayField = <div className='readonly'>{input.value || defaultValue}</div>
+                                                                } else {
+                                                                    displayField = <input required={(input.mandatory == mandatoryFieldValue)} className="" type="text" defaultValue={defaultValue} value={input.value} onChange={this.handleParamChange.bind(this, inputIndex, inputGroupIndex, vnfGroupIndex, nsConfigPrimitiveIndex)}/>
+                                                                }
                                                                 return (
-                                                                    <li key={inputIndex}>
+                                                                    <li key={inputIndex} style={{display: isFieldHidden ? 'none':'inherit'}}>
                                                                         <label data-required={(input.mandatory == mandatoryFieldValue)}>
                                                                                 {input.name}
-                                                                                <input required={(input.mandatory == mandatoryFieldValue)} className="" type="text" defaultValue={defaultValue} value={input.value} onChange={this.handleParamChange.bind(this, inputIndex, inputGroupIndex, vnfGroupIndex, nsConfigPrimitiveIndex)}/>
+                                                                                {displayField}
                                                                         </label>
 
                                                                     </li>
@@ -277,20 +305,24 @@ export default class NsrConfigPrimitives extends React.Component {
 
         let tabList = [];
         let tabPanels = [];
+        let isConfiguring = (this.props.data['config-status'] && this.props.data['config-status'] != 'configured') || false;
+        let displayConfigStatus = isConfiguring ? '(Disabled - Configuring)': '';
 
         this.constructConfigPrimitiveTabs(tabList, tabPanels);
 
         return (
             <div className="nsConfigPrimitives">
                 <div className="launchpadCard_title">
-                  CONFIG-PRIMITIVES
+                  CONFIG-PRIMITIVES {displayConfigStatus}
                 </div>
-                <Tabs onSelect={this.handleSelect}>
-                    <TabList>
-                        {tabList}
-                    </TabList>
-                    {tabPanels}
-                </Tabs>
+                <div className={isConfiguring ? 'configuring': ''}>
+                    <Tabs onSelect={this.handleSelect}>
+                        <TabList>
+                            {tabList}
+                        </TabList>
+                        {tabPanels}
+                    </Tabs>
+                </div>
             </div>
 
         );

@@ -1458,6 +1458,22 @@ rwdts_api_new(const rwtasklet_info_t*        tasklet,
               GDestroyNotify                 api_destroyed);
 
 /*!
+ Delete the DTS API handle.
+
+ @apih API handle
+ */
+/// @cond GI_SCANNER
+/**
+ * rwdts_api_deinit:
+ * @apih:
+ * returns: (type RwTypes.RwStatus) (transfer none)
+ */
+/// @endcond
+rw_status_t
+rwdts_api_deinit(rwdts_api_t* apih);
+
+
+/*!
    Conveniently execute a single query transaction.
 
   @param flags Or bitset of options; see enum RWDtsFlag
@@ -2689,7 +2705,7 @@ rwdts_api_group_create_gi(rwdts_api_t* apih,
                           xact_deinit_callback  xact_deinit,
                           xact_event_callback   xact_event,
                           void*                 ctx,
-        rwdts_group_t**       group,
+                          rwdts_group_t**       group,
                           GDestroyNotify        xact_init_dtor,
                           GDestroyNotify        xact_deinit_dtor,
                           GDestroyNotify        xact_event_dtor);
@@ -6050,4 +6066,39 @@ rwdts_api_config_ready_register(
 
 __END_DECLS
 
+/*!
+ * Return the associated DTS Api Handle of tasklet Info
+ *
+ * @param tasklet The tasklet for which this DTS instance is being initialized
+ * @return API associated with the tasklet_info
+ */
+/// @cond GI_SCANNER
+/**
+ * rwdts_api_find_dtshandle:
+ * @tasklet:       (type RwTasklet.Info)
+ * Returns: (transfer none)
+ *
+ */
+/// @endcond
+rwdts_api_t*
+rwdts_api_find_dtshandle(const rwtasklet_info_t*        tasklet);
+/*!
+ * Return the associated DTS Reg handle for keystr
+ *
+ * @param apih: api handle 
+ * @param xpath: xpath of the reg handle to be lookedup
+ * @return reg handle associated with the xpath
+ */
+/// @cond GI_SCANNER
+/**
+ * rwdts_api_find_reg_handle_for_xpath
+ * @apih: (transfer none)
+ * @xpath:
+ * Returns: regh (transfer none)
+ *
+ */
+/// @endcond
+rwdts_member_reg_handle_t
+rwdts_api_find_reg_handle_for_xpath (rwdts_api_t *apih,
+                                     const char  *xpath);
 #endif /* __RWDTS_API_GI_H__ */

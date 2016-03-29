@@ -205,15 +205,15 @@ module rw-conman
           type record-state;
         }
         container mgmt-interface {
-          leaf cfg-type {
-            type string;
-          }
           leaf ip-address {
             type inet:ip-address;
           }
           leaf port {
             type inet:port-number;
           }
+        }
+        leaf cfg-type {
+          type string;
         }
         leaf cfg-location {
           type inet:uri;

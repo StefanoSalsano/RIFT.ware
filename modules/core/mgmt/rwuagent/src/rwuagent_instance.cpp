@@ -12,9 +12,7 @@
  * Management agent instance.
  */
 
-#include <cstdio> // for sprintf
 #include <memory>
-
 
 #include "rwvcs.h"
 #include "rw_pb_schema.h"
@@ -137,11 +135,11 @@ Instance::Instance(rwuagent_instance_t rwuai)
           "Instance",
           reinterpret_cast<intptr_t>(this)),
       rwuai_(rwuai),
-      //ATTN: startup_hndler could be either for Confd or
+      //ATTN: management system handler could be either for Confd or
       // libnetconf server. Currently defaulting to 
       // Confd.
       initializing_composite_schema_(true),
-      startup_handler_(new ConfdStartupHandler(this))      
+      mgmt_handler_(new ConfdMgmtSystem(this))      
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "Instance constructor");
   RW_CF_TYPE_VALIDATE(rwuai_, rwuagent_instance_t);
@@ -149,6 +147,12 @@ Instance::Instance(rwuagent_instance_t rwuai)
   // ATTN: stdout?  is that for error logs?  Don't we want to capture that?
   confd_init ("rwUagent", stdout, CONFD_DEBUG);
 
+  // Create a concurrent dispatch queue for multi-threading.
+  concurrent_q_ = rwsched_dispatch_queue_create(
+      rwsched_tasklet(), 
+      "agent-cc-queue", 
+      RWSCHED_DISPATCH_QUEUE_CONCURRENT);
+  
   upgrade_ctxt_.serial_upgrade_q_ = rwsched_dispatch_queue_create(
       rwsched_tasklet(),
       "upgrade-queue",
@@ -157,6 +161,11 @@ Instance::Instance(rwuagent_instance_t rwuai)
   schema_load_q_ = rwsched_dispatch_queue_create(
       rwsched_tasklet(),
       "schema-load-queue",
+      RWSCHED_DISPATCH_QUEUE_SERIAL);
+
+  serial_q_ = rwsched_dispatch_queue_create(
+      rwsched_tasklet(),
+      "agent-serial-queue",
       RWSCHED_DISPATCH_QUEUE_SERIAL);
 }
 
@@ -179,20 +188,36 @@ Instance::~Instance()
 
 void Instance::async_start(void *ctxt)
 {
-  auto* self = reinterpret_cast<Instance*>(ctxt);
+  auto* self = static_cast<Instance*>(ctxt);
+  RW_ASSERT (self);
   auto& memlog_buf = self->memlog_buf_;
 
   RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "setup dom" );
   self->setup_dom("rw-mgmtagt-composite");
 
   RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "load schema" );
+
+#if 0 // RIFT-10722
+  char* err_str = nullptr;
+  rw_yang_validate_schema("rw-mgmtagt-composite", &err_str);
+  
+  if (err_str) {
+    RW_MA_INST_LOG(self, InstanceError, err_str);
+    free (err_str);
+  }
+#endif
+
   // Load the schema specified at boot time
   self->ypbc_schema_ = rw_load_schema("librwuagent_yang_gen.so", "rw-mgmtagt-composite");
   RW_ASSERT(self->ypbc_schema_);
 
   RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "register schema" );
   self->yang_model()->load_schema_ypbc(self->ypbc_schema_);
-  self->yang_model()->register_ypbc_schema(self->ypbc_schema_);
+
+  rw_status_t status = self->yang_model()->register_ypbc_schema(self->ypbc_schema_);
+  if ( RW_STATUS_SUCCESS != status ) {
+    RW_MA_INST_LOG(self, InstanceCritInfo, "Error while registering for ypbc schema.");
+  }
 
   rwsched_dispatch_async_f(self->rwsched_tasklet(),
                            rwsched_dispatch_get_main_queue(self->rwsched()),
@@ -203,7 +228,8 @@ void Instance::async_start(void *ctxt)
 
 void Instance::async_start_dts(void *ctxt)
 {
-  auto* self = reinterpret_cast<Instance*>(ctxt);
+  auto* self = static_cast<Instance*>(ctxt);
+  RW_ASSERT (self);
   auto& memlog_buf = self->memlog_buf_;
 
   RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "start dts member" );
@@ -235,7 +261,7 @@ void Instance::async_start_dts(void *ctxt)
 
   if (self->confd_addr_) {
     RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "configure confd proc" );
-    self->startup_handler_->create_proxy_manifest_config();
+    self->mgmt_handler_->create_proxy_manifest_config();
   }
 
   // Instantiate the rw-msg interfaces
@@ -251,7 +277,8 @@ void Instance::async_start_dts(void *ctxt)
 
 void Instance::async_start_confd(void* ctxt)
 {
-  auto* self = reinterpret_cast<Instance*>(ctxt);
+  auto* self = static_cast<Instance*>(ctxt);
+  RW_ASSERT (self);
   auto& memlog_buf = self->memlog_buf_;
 
   if (self->initializing_composite_schema_) {
@@ -276,17 +303,20 @@ void Instance::async_start_confd(void* ctxt)
     RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "attempt confd connection" );
     self->try_confd_connection();
   }
+
+  // Register for logrotate config subscription
+  RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "register logrotate cfg subscription" );
+  self->confd_daemon_->confd_log()->register_config();
 }
 
 
 void Instance::dyn_schema_dts_registration(void *ctxt)
 {
-  auto *self = reinterpret_cast<Instance*>(ctxt);
-  
-  while (self->tmp_models_.size() > 0) {
-    self->dts_->load_registrations(self->tmp_models_.back().get());
-    self->tmp_models_.pop_back();
-  }
+  auto *self = static_cast<Instance*>(ctxt);
+  RW_ASSERT (self);
+
+  self->dts_->load_registrations(self->yang_model());
+
   self->initializing_composite_schema_ = false;
 }
 
@@ -301,19 +331,7 @@ void Instance::start()
   char **argv = NULL;
   gboolean ret;
 
-  auto vcs_inst = rwvcs();
-  if(   vcs_inst
-        && vcs_inst->pb_rwmanifest
-        && vcs_inst->pb_rwmanifest->bootstrap_phase
-        && vcs_inst->pb_rwmanifest->bootstrap_phase->rwbaseschema
-        && vcs_inst->pb_rwmanifest->bootstrap_phase->rwbaseschema->schema_name) {
-    yang_schema_ = vcs_inst->pb_rwmanifest->bootstrap_phase->rwbaseschema->schema_name;
-  } else {
-    yang_schema_ = "rw-composite";
-  }
-
   yang_schema_ = "rwuagent";
-
   std::string log_string;
   RW_MA_INST_LOG(this, InstanceInfo, (log_string = "Schema configured is " + yang_schema_).c_str());
 
@@ -332,105 +350,14 @@ void Instance::start()
   ret = g_shell_parse_argv(cmdargs_str, &argc, &argv, NULL);
   RW_ASSERT(ret == TRUE);
 
-  for (int j = 0; j < argc; ++j) {
-    const char* arg = argv[j];
-    RW_ASSERT(arg);
-    char* cmd = nullptr;
-    char* data = nullptr;
-    char eos = '\0';
-    int st = sscanf(arg, "%m[a-z_]:%ms%c", &cmd, &data, &eos);
-    bool ok = false;
-    if (st == 2 && cmd && cmd[0] && data && data[0]) {
-      RW_ASSERT(cmd);
-      RW_ASSERT(data);
-      if (0 == strcmp (cmd, "module")) {
-        ok = true;
-        modules_.push_back (data);
-        // load the module specified
-      } else if (0 == strcmp (cmd, "confd_ws")) {
-        ok = true;
-        unique_ws_ = true;
-        mgmt_workspace_ = data;
-      }else if (0 == strcmp (cmd, "confd")) {
-        unsigned v = 0;
-        st = sscanf(data, "%u%c", &v, &eos);
-        if (st == 1 && v > 0 && v < 65536) {
-          confd_port_ = v;
-          ok = true;
-        } else if (0 == strcmp(data,"UID")) {
-          confd_port_ = getuid() + CONFD_PORT;
-          ok = true;
-        } else if (0 == strcmp (data, "DEFAULT")) {
-          confd_port_ = CONFD_PORT;
-          ok = true;
-        } else if (0 == strncmp (data, "AF_UNIX:", strlen("AF_UNIX:"))) {
-          confd_unix_socket_ = data + strlen ("AF_UNIX:");
-          if (   confd_unix_socket_.length()
-                 && confd_unix_socket_.length() < sizeof (confd_unix_addr_.sun_path)) {
-            memset (&confd_unix_addr_, 0, sizeof (confd_unix_addr_));
-            strcpy (confd_unix_addr_.sun_path, confd_unix_socket_.c_str());
-            confd_unix_addr_.sun_family = AF_UNIX;
-
-            confd_addr_ = (struct sockaddr *) &confd_unix_addr_;
-            confd_addr_size_ = sizeof (confd_unix_addr_);
-            ok = true;
-          }
-        } else if (0 == strncmp(data, "AF_INET:", sizeof("AF_INET:")-1)) {
-          char* ipstr = data + sizeof("AF_INET:")-1;
-          char* portstr = strchr(ipstr, ':');
-          if (portstr) {
-            *portstr = 0;
-            ++portstr;
-            st = inet_aton(ipstr, &confd_inet_addr_.sin_addr);
-            if (st != 0) {
-              st = sscanf(portstr, "%u%c", &v, &eos);
-              if (st == 1 && v > 0 && v < 65536) {
-                confd_inet_addr_.sin_port = htons(v);
-                ok = true;
-              } else if (0 == strcmp(portstr,"UID")) {
-                confd_inet_addr_.sin_port = htons(getuid() + CONFD_PORT);
-                ok = true;
-              } else if (0 == strcmp(portstr, "DEFAULT")) {
-                confd_inet_addr_.sin_port = htons(CONFD_PORT);
-                ok = true;
-              }
-              if (ok) {
-                confd_inet_addr_.sin_family = AF_INET;
-                confd_addr_ = (struct sockaddr *)&confd_inet_addr_;
-                confd_addr_size_ = sizeof(confd_inet_addr_);
-              }
-            }
-          }
-        }
-      } else if ((0 == strcmp (cmd, "ipport")) ||
-                 (0 == strcmp (cmd, "sockpath")) ) {
-        ok = true;
-        // Not being used currently
-      }
-
-      if (confd_port_ && !confd_addr_) {
-        confd_inet_addr_.sin_family = AF_INET;
-        confd_inet_addr_.sin_port = htons(confd_port_);
-        confd_inet_addr_.sin_addr.s_addr = INADDR_ANY;
-
-        confd_addr_ = (struct sockaddr *) &confd_inet_addr_;
-        confd_addr_size_ = sizeof (confd_inet_addr_);
-      }
-    }
-    if (data) {
-      free(data);
-    }
-    if (cmd) {
-      free(cmd);
-    }
-
-    if (!ok) {
-      log_str = "Bad uAgent init command in manifest";
-      log_str += arg;
-
-      RW_MA_INST_LOG(this, InstanceError, log_str.c_str());
-    }
+  rwyangutil::ArgumentParser arg_parser(argv, argc);
+  ret = parse_cmd_args(arg_parser);
+  if (!ret) {
+    RW_MA_INST_LOG (this, InstanceError, "Bad arguments given to Agent."
+        "Using default arguments");
   }
+
+  g_strfreev (argv);
 
   // set rift environment variables for rw.cli to connect to confd
   // ATTN: this should be read from the manifest when the agent generates confd.conf at runtime (RIFT-5059)
@@ -445,15 +372,6 @@ void Instance::start()
   // Set the instance name
   instance_name_ = rwtasklet()->identity.rwtasklet_name;
 
-  // Create a concurrent dispatch queue for multi-threading.
-  cc_dispatchq_ = rwsched_dispatch_queue_create(
-      rwsched_tasklet(), "uagent-cc-queue", RWSCHED_DISPATCH_QUEUE_CONCURRENT);
-
-  RW_ASSERT(cc_dispatchq_);
-
-  /* ATTN: Can we free the argv strings */
-  // g_strfreev(argv);
-  //
   rwsched_dispatch_async_f(rwsched_tasklet(),
                            schema_load_q_,
                            this,
@@ -461,9 +379,77 @@ void Instance::start()
 }
 
 
+bool Instance::parse_cmd_args(const rwyangutil::ArgumentParser& arg_parser)
+{
+  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "parse cmd args");
+  bool status = true;
+
+  std::string proto;
+  if (arg_parser.exists("--confd-proto")) {
+    proto = arg_parser.get_param("--confd-proto");
+  } else {
+    RW_MA_INST_LOG(this, InstanceError, "Confd proto not provided. Taking default as AF_INET");
+    proto = "AF_INET";
+    status = false;
+  }
+
+  if (proto == "AF_INET") {
+    if (arg_parser.exists("--confd-ip")) {
+      auto ret = inet_aton(arg_parser.get_param("--confd-ip").c_str(), 
+                           &confd_inet_addr_.sin_addr);
+      if (ret == 0) {
+        std::string log;
+        log = "Incorrect IP address passed: " + arg_parser.get_param("--confd-ip");
+        RW_MA_INST_LOG (this, InstanceError, log.c_str());
+        inet_aton("127.0.0.1", &confd_inet_addr_.sin_addr);
+        status = false;
+      }
+    } else {
+      auto ret = inet_aton("127.0.0.1", &confd_inet_addr_.sin_addr);
+      if (ret == 0) {
+        RW_MA_INST_LOG (this, InstanceError, "Failed to convert localhost to network byte");
+        status = false;
+      }
+    }
+    uint32_t port = CONFD_PORT;
+    if (arg_parser.exists("--confd-port")) {
+      port = atoi(arg_parser.get_param("--confd-port").c_str());
+      if (port == 0 || port > 65535) {
+        RW_MA_INST_LOG (this, InstanceError, "Port must be between 0 and 65536");
+        port = CONFD_PORT;
+        status = false;
+      }
+    }
+    confd_inet_addr_.sin_port = htons(port);
+    confd_inet_addr_.sin_family = AF_INET;
+    confd_inet_addr_.sin_addr.s_addr = INADDR_ANY;
+    confd_addr_ = (struct sockaddr *) &confd_inet_addr_;
+    confd_addr_size_ = sizeof (confd_inet_addr_);
+  } 
+  else if (proto == "AF_UNIX") {
+    if (arg_parser.exists("--confd-unix-path")) {
+      confd_unix_socket_ = arg_parser.get_param("--confd-unix-path");
+
+      memset (&confd_unix_addr_, 0, sizeof (confd_unix_addr_));
+      strcpy (confd_unix_addr_.sun_path, confd_unix_socket_.c_str());
+      confd_unix_addr_.sun_family = AF_UNIX;
+
+      confd_addr_ = (struct sockaddr *) &confd_unix_addr_;
+      confd_addr_size_ = sizeof (confd_unix_addr_);
+    }
+  }
+
+  if (arg_parser.exists("--confd_ws")) {
+    unique_ws_ = true;
+    mgmt_workspace_ = arg_parser.get_param("--confd_ws");
+  }
+
+  return status;
+}
+
+
 rw_status_t Instance::handle_dynamic_schema_update(const int batch_size,
-                                                   const char * const * module_names,
-                                                   const char * const * so_filenames)
+                                                   rwdynschema_module_t * modules)
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "handle dynamic schema");
 
@@ -471,10 +457,15 @@ rw_status_t Instance::handle_dynamic_schema_update(const int batch_size,
   update_dyn_state(RW_MGMT_SCHEMA_APPLICATION_STATE_WORKING);
 
   for (int i = 0; i < batch_size; ++i) {
-    RW_ASSERT(module_names[i]);
-    RW_ASSERT(so_filenames[i]);
+    RW_ASSERT(modules[i].module_name);
+    RW_ASSERT(modules[i].so_filename);
 
-    pending_schema_modules_.emplace_front(std::make_pair(module_names[i], so_filenames[i]));
+    module_details_t mod;
+    mod.module_name = modules[i].module_name;
+    mod.so_filename = modules[i].so_filename;
+    mod.exported    = modules[i].exported;
+
+    pending_schema_modules_.emplace_front(mod);
   }
   // start confd in-service upgrade
   // ATTN: Signature to be changed based upon
@@ -496,26 +487,25 @@ rw_status_t Instance::perform_dynamic_schema_update()
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "perform dynamic schema");
 
-  tmp_models_.reserve(pending_schema_modules_.size());                      
+  for (const module_details_t& module : pending_schema_modules_) {
+    auto module_name = module.module_name.c_str();
+    auto so_filename = module.so_filename.c_str();
 
-  for (const auto& mod_pair : pending_schema_modules_) {
-    auto module_name = mod_pair.first.c_str();
-    auto so_filename = mod_pair.second.c_str();
-
-    const rw_yang_pb_schema_t* new_schema =  rw_load_schema(so_filename, module_name);
+    const rw_yang_pb_schema_t* new_schema = rw_load_schema(so_filename, module_name);
     RW_ASSERT(new_schema);
     
-    // Scope for registering new keys in the module with
-    // DTS
+    // make a temporary model in case of failure
     auto *tmp_model = rw_yang::YangModelNcx::create_model();
     RW_ASSERT(tmp_model);
-      
+
     tmp_model->load_schema_ypbc(new_schema);
-    tmp_model->register_ypbc_schema(new_schema);
-    tmp_models_.emplace_back(tmp_model);
-    
+    rw_status_t status = tmp_model->register_ypbc_schema(new_schema);
+    if ( RW_STATUS_SUCCESS != status ) {
+      RW_MA_INST_LOG(this, InstanceCritInfo, "Error while registering for ypbc schema.");
+    }
+
     // Create new schema
-    auto *merged_schema = rw_schema_merge(nullptr, ypbc_schema_, new_schema);
+    const rw_yang_pb_schema_t * merged_schema = rw_schema_merge(nullptr, ypbc_schema_, new_schema);
 
     if (!merged_schema) {
       std::string log_str;
@@ -531,10 +521,19 @@ rw_status_t Instance::perform_dynamic_schema_update()
     load_module(module_name);
     // Overwrite the old schema with new
     ypbc_schema_ = merged_schema;
-  }
 
-  xml_mgr_->get_yang_model()->load_schema_ypbc(ypbc_schema_);
-  xml_mgr_->get_yang_model()->register_ypbc_schema(ypbc_schema_);
+    if (module.exported) {
+      exported_modules_.emplace(module.module_name);
+    }
+
+    tmp_models_.emplace_back(tmp_model);
+    yang_model()->load_schema_ypbc(merged_schema);
+
+    status = yang_model()->register_ypbc_schema(merged_schema);
+    if ( RW_STATUS_SUCCESS != status ) {
+      RW_MA_INST_LOG(this, InstanceCritInfo, "Error while registering for ypbc schema.");
+    }
+  }
 
   rwdts_api_set_ypbc_schema( dts_api(), ypbc_schema_ );
 
@@ -584,10 +583,7 @@ void Instance::close_cf_socket(rwsched_CFSocketRef s)
   rwsched_CFRunLoopRef runloop = rwsched_tasklet_CFRunLoopGetCurrent(tasklet);
 
   cf_src_map_t::iterator src = cf_srcs_.find (s);
-  if (src == cf_srcs_.end()) {
-    RW_MA_INST_LOG (this, InstanceError, "CF Socket not found in map");
-    return;
-  }
+  RW_ASSERT (src != cf_srcs_.end());
 
   rwsched_tasklet_CFRunLoopRemoveSource(tasklet,runloop,src->second,sched->main_cfrunloop_mode);
   cf_srcs_.erase(src);
@@ -706,3 +702,7 @@ void Instance::update_stats(RwMgmtagt_SbReqType type,
   recalculate_mean (&pt->response_parse_time, success, sbreq_stats->response_parse_time);
 }
 
+bool Instance::module_is_exported(std::string const & module_name)
+{
+  return exported_modules_.count(module_name) > 0;
+}

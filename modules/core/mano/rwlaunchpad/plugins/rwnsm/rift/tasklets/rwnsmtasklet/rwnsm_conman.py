@@ -9,9 +9,16 @@ import ncclient
 import ncclient.asyncio_manager
 import re
 
+import gi
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwNsmYang', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwConmanYang', '1.0')
 from gi.repository import (
     RwYang,
     RwNsmYang as nsmY,
+    NsrYang as nsrY,
     RwDts as rwdts,
     RwTypes,
     RwConmanYang as conmanY
@@ -39,6 +46,38 @@ class ROServiceOrchif(object):
 
     @asyncio.coroutine
     def connect(self):
+        @asyncio.coroutine
+        def update_ns_cfg_state(self):
+            xpath="/cm-state"
+            while True:
+                try:
+                    response = yield from self._manager.get(filter=('xpath', xpath))
+                    response_xml = response.data_xml.decode()
+                    cm_state = conmanY.CmOpdata()
+                    cm_state.from_xml_v2(self._model, response_xml)
+                    cm_state_d = cm_state.as_dict()
+                    #print("##>> Got NSR config state from RIFT-CM:", cm_state_d)
+                    # Go in loop and update state for each NS
+                    if cm_state_d and 'cm_nsr' in cm_state_d:
+                        for nsr in cm_state_d['cm_nsr']:
+                            if 'cm_vnfr' in nsr:
+                                # Fill in new state to all vnfrs
+                                for vnfr in nsr['cm_vnfr']:
+                                    vnfrid = vnfr['id']
+                                    if vnfrid in self._parent.nsm._vnfrs:
+                                        # Need a consistent derivable way of checking state (hard coded for now)
+                                        if (vnfr['state'] == 'ready'):
+                                            if not self._parent.nsm._vnfrs[vnfrid].is_configured():
+                                                yield from self._parent.nsm._vnfrs[vnfrid].set_config_status(nsrY.ConfigStates.CONFIGURED)
+                                        elif vnfr['state'] != 'ready_no_cfg':
+                                            if self._parent.nsm._vnfrs[vnfrid]._config_status != nsrY.ConfigStates.CONFIGURING:
+                                                yield from self._parent.nsm._vnfrs[vnfrid].set_config_status(nsrY.ConfigStates.CONFIGURING)
+                                
+                except Exception as e:
+                    self._log.error("Failed to get NS cfg state (may have been terminated) e=%s", str(e))
+                    return
+                yield from asyncio.sleep(5, loop=self._loop)
+                
         so_endp = self._parent.cm_endpoint
         try:
             self._log.info("Attemping Resource Orchestrator netconf connection.")
@@ -51,6 +90,8 @@ class ROServiceOrchif(object):
                                                                                 look_for_keys=False,
                                                                                 hostkey_verify=False)
             self._log.info("Connected to Service Orchestrator netconf @%s", so_endp['cm_ip_address'])
+            # Start the executor loop to monitor configuration status for this NS
+            yield from self._loop.create_task(update_ns_cfg_state(self))
             return True
         except Exception as e:
             self._log.error("Netconf connection to Service Orchestrator ip %s failed: %s",
@@ -63,6 +104,7 @@ class ROServiceOrchif(object):
         return xml
 
     def send_nsr_update(self, nsrid):
+
         self._log.debug("Attempting to send NSR id: %s", nsrid)
         msg = conmanY.SoConfig()
         addnsr = msg.nsr.add()
@@ -127,11 +169,11 @@ class ROServiceOrchif(object):
         return
         
 class ROServiceOrchConfig(object):
-    def __init__(self, log, loop, dts):
+    def __init__(self, log, loop, dts, parent):
         self._log = log
         self._loop = loop
         self._dts = dts
-        #self._parent = parent
+        self.nsm = parent
         self._ro_config_xpath = "C,/ro-config/cm-endpoint"
         self.soif = None
         self._active_nsr = []

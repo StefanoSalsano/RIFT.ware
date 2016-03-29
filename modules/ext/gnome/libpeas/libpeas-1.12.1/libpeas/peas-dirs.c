@@ -4,19 +4,19 @@
  *
  * Copyright (C) 2008 Ignacio Casal Quinteiro
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -157,7 +157,7 @@ peas_dirs_get_lib_dir (void)
 }
 
 gchar *
-peas_dirs_get_plugin_loaders_dir (void)
+peas_dirs_get_plugin_loader_dir (const gchar *loader_name)
 {
   const gchar *env_var;
   gchar *lib_dir;
@@ -165,7 +165,7 @@ peas_dirs_get_plugin_loaders_dir (void)
 
   env_var = g_getenv ("PEAS_PLUGIN_LOADERS_DIR");
   if (env_var != NULL)
-    return g_strdup (env_var);
+    return g_build_filename (env_var, loader_name, NULL);
 
   lib_dir = peas_dirs_get_lib_dir ();
   loader_dir = g_build_filename (lib_dir, "loaders", NULL);

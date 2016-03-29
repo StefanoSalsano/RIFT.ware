@@ -13,12 +13,29 @@
 #include <glib-object.h>
 
 #include "rwdts.h"
+#include "rwvcs.h"
 #include "rwmemlog.h"
 #include "yangmodel.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+  typedef enum _RwdynschemaAppType {
+    RWDYNSCHEMA_APP_TYPE_NORTHBOUND = 0,
+    RWDYNSCHEMA_APP_TYPE_OTHER = 1,
+    RWDYNSCHEMA_APP_TYPE_AGENT = 2
+  } RwdynschemaAppType;
+
+  struct rwdynschema_module_s {
+    char * module_name;
+    char * fxs_filename;
+    char * so_filename;
+    char * yang_filename;
+    char * metainfo_filename;
+    size_t exported;    
+  };
+  typedef struct rwdynschema_module_s rwdynschema_module_t;
 
   /*!
    * 
@@ -28,19 +45,13 @@ extern "C" {
    * rwdynschema_app_sub_cb:
    * @app_instance: (type gpointer)
    * @numel:  
-   * @module_names: (transfer full) (array length=numel) (allow-none):
-   * @fxs_filenames: (transfer full) (array length=numel) (allow-none):
-   * @so_filenames: (transfer full) (array length=numel) (allow-none):
-   * @yang_filenames: (transfer full) (array length=numel) (allow-none):
+   * @modules: (transfer none) (array length=numel) (allow-none):
    */
   /// @endcond
   typedef void (*rwdynschema_app_sub_cb)(
       void * app_instance,
-      const int numel,
-      char **module_names,
-      char **fxs_filenames,
-      char **so_filenames,
-      char **yang_filenames);
+      int const numel,
+      rwdynschema_module_t * modules);
 
   struct rwdynschema_dynamic_schema_registration_s {
 #ifndef __GI_SCANNER__
@@ -54,24 +65,27 @@ extern "C" {
 
     int batch_size;
     int batch_capacity;
-    char ** module_names;
-    char ** fxs_filenames;
-    char ** so_filenames;
-    char ** yang_filenames;
+    rwdynschema_module_t * modules;
+
+    RwdynschemaAppType app_type;
+    char * northbound_listing;
+
 
     rwmemlog_instance_t * memlog_instance;
     rwmemlog_buffer_t * memlog_buffer;
-#endif // __GI_SCANNER__
+#endif //__GI_SCANNER__
   };
-
   typedef struct rwdynschema_dynamic_schema_registration_s rwdynschema_dynamic_schema_registration_t;
+
 
 #ifndef __GI_SCANNER__
   rwdynschema_dynamic_schema_registration_t *
   rwdynschema_dynamic_schema_registration_new(char const * app_name,
                                               rwdts_api_t * dts_handle,
                                               void * app_instance,
-                                              rwdynschema_app_sub_cb app_sub_cb);
+                                              rwdynschema_app_sub_cb app_sub_cb,
+                                              RwdynschemaAppType app_type,
+                                              char * northbound_listing);
 #endif // __GI_SCANNER__
 
   GType rwdynschema_dynamic_schema_registration_get_type(void);
@@ -85,6 +99,7 @@ extern "C" {
    * @dts_handle: (type RwDts.Api)
    * @app_sub_cb: (scope notified) (destroy app_instance_destructor) (closure app_instance)
    * @app_name:
+   * @app_type:
    * @app_instance: (type gpointer)
    * @app_instance_destructor: (scope async) (nullable)
    * Returns: (transfer none)
@@ -93,53 +108,22 @@ extern "C" {
   rwdynschema_dynamic_schema_registration_t *
   rwdynschema_instance_register(rwdts_api_t * dts_handle,
                                 rwdynschema_app_sub_cb app_sub_cb,
-                                const char * app_name,
+                                char const * app_name,
+                                RwdynschemaAppType app_type,
                                 void * app_instance,
                                 GDestroyNotify app_instance_destructor);
 
 #ifndef __GI_SCANNER__
-  /// @cond GI_SCANNER
-  /**
-   * rwdynschema_create_instance:
-   * @app_sub_cb: (scope notified) (destroy app_instance_destructor) (closure app_instance)
-   * @app_name:
-   * @app_instance: (type gpointer)
-   * @app_instance_destructor: (scope async) (nullable)
-   * Returns: (transfer none)
-   */
-  /// @endcond
-  void
-  rwdynschema_register_instance(rwdynschema_dynamic_schema_registration_t * app_data,
-                                rwdts_api_t * dts_handle);
-
-  /// @cond GI_SCANNER
-  /**
-   * rwdynschema_create_instance:
-   * @app_sub_cb: (scope notified) (destroy app_instance_destructor) (closure app_instance)
-   * @app_name:
-   * @app_instance: (type gpointer)
-   * @app_instance_destructor: (scope async) (nullable)
-   * Returns: (transfer none)
-   */
-  /// @endcond
-  rwdynschema_dynamic_schema_registration_t *
-  rwdynschema_create_instance(rwdynschema_app_sub_cb app_sub_cb,                              
-                              const char * app_name,
-                              void * app_instance,
-                              GDestroyNotify app_instance_destructor);
 
   void rw_run_file_update_protocol(rwsched_instance_ptr_t sched,
                                    rwtasklet_info_ptr_t tinfo,
                                    rwsched_tasklet_ptr_t tasklet,
                                    rwdynschema_dynamic_schema_registration_t* app_data);
 
-  bool rw_create_runtime_schema_dir();
+  bool rw_create_runtime_schema_dir(char const * northbound_schema_listing);
 
   void rwdynschema_add_module_to_batch(rwdynschema_dynamic_schema_registration_t * reg,
-                                       const char * module_name,
-                                       const char * fxs_filename,
-                                       const char * so_filename,
-                                       const char * yang_filename);
+                                       const rwdynschema_module_t* module_info);
 #endif
 
 #ifdef __cplusplus

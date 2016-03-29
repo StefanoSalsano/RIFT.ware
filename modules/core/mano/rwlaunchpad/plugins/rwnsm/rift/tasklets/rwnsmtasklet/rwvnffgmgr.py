@@ -73,7 +73,11 @@ class VnffgMgr(object):
             sdn_account.name = account.name
             self._account[account.name] = sdn_account
             self._log.debug("Account set is %s , %s",type(self._account), self._account)
-          
+
+    def del_sdn_account(self, name):
+        self._log.debug("Account deleted is %s , %s", type(self._account), name)
+        del self._account[name]
+
 
     def get_sdn_account(self, name):
         """
@@ -284,6 +288,12 @@ class SDNAccountDtsHandler(object):
         self._sdn_account[account.name]  = account
         self._parent.set_sdn_account(account)
 
+    def _del_sdn_account(self, account_name):
+        self._log.info("Deleting sdn account: {}".format(account_name))
+        del self._sdn_account[account_name]
+
+        self._parent.del_sdn_account(account_name)
+
     @asyncio.coroutine
     def register(self):
         def apply_config(dts, acg, xact, action, _):
@@ -304,12 +314,15 @@ class SDNAccountDtsHandler(object):
             fref.goto_whole_message(msg.to_pbcm())
 
             if fref.is_field_deleted():
-                # Delete an NSD record
-                self._log.warning("Deleting sdn account not yet supported")
+                # Delete the sdn account record
+                self._del_sdn_account(msg.name)
             else:
                 if msg.name in self._sdn_account:
                     msg = "Cannot update a SDN account that already was set."
                     self._log.error(msg)
+                    xact_info.send_error_xpath(RwTypes.RwStatus.FAILURE,
+                                               SDNAccountDtsHandler.XPATH,
+                                               msg)
                     raise SdnAccountExistsError(msg)
 
                 # Set the sdn account record

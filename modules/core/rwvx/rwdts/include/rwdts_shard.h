@@ -31,6 +31,7 @@
 #include <rwdts_member_api.h>
 #include <uthash.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 #include "rw-dts-api-log.pb-c.h"
 #include "rw-dts-router-log.pb-c.h"
 #include "rw-dts.pb-c.h"

@@ -1358,14 +1358,6 @@ static inline void rte_pktmbuf_reset(struct rte_mbuf *m)
 	m->vlan_tci_outer = 0;
 	m->nb_segs = 1;
 	m->port = 0xff;
-#ifdef RTE_LIBRW_PIOT
-        m->rw_data.payload = 0;
-        m->rw_data.vf_encap = 0;
-        m->rw_data.mdata_flag = 0;
-        m->rw_data.quick_flags = 0;
-        m->rw_data.local_flags = 0;
-        m->rw_data.quick_flags &= ~RW_FPATH_PKT_INCLUDE_L2_HEADER;
-#endif
 	m->ol_flags = 0;
 	m->packet_type = 0;
 	m->data_off = (RTE_PKTMBUF_HEADROOM <= m->buf_len) ?

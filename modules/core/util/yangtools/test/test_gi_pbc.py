@@ -17,6 +17,8 @@ import xmlrunner
 import gi
 import re
 import gc
+import gi
+gi.require_version('TestPyGiPbYang', '1.0')
 from gi.repository import TestPyGiPbYang
 
 logger = logging.getLogger(__name__)

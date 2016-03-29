@@ -13,6 +13,9 @@ compose a particular type of tasklet.
 
 import weakref
 
+import gi
+gi.require_version('RwDts', '1.0')
+
 from gi.repository import RwDts
 
 

@@ -20,6 +20,10 @@ import multiprocessing
 import os
 import subprocess
 import tempfile
+import gi
+
+gi.require_version('RwlogMgmtYang', '1.0')
+gi.require_version('RwLogYang', '1.0')
 
 import gi.repository.RwlogMgmtYang as rwlogmgmt
 import gi.repository.RwLogYang as rwlog
@@ -117,10 +121,11 @@ class SyslogSink(SinkInterface):
         3. Refreshes the rsyslog process
         """
         rift_install = os.environ['RIFT_INSTALL']
+        rift_root = os.environ['RIFT_ROOT']
         rift_artifacts = os.environ['RIFT_ARTIFACTS']
         TEMPLATE_PATH = os.path.join(rift_install, "etc/syslog_template.conf")
         DEST_PATH = "/etc/rsyslog.d/rift.conf"
-        ssh = "/usr/rift/bin/ssh_root"
+        ssh = os.path.join(rift_root, "scripts/env/ssh_root")
         try:
             with open(TEMPLATE_PATH) as template_file:
                 config_data = template_file.read().format(port=self.port)

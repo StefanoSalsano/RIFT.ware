@@ -18,6 +18,7 @@ set(PKG_LONG_NAME ${PKG_NAME}-${PKG_VERSION})
 # By default the directories are appended onto the current list of directories
 ##
 include_directories(BEFORE
+  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwlog/rwlogd/sinkapi/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwmsg/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwvcs/include
@@ -29,6 +30,7 @@ add_library(rwlogd_syslog_sink SHARED
   rwlogd_syslog_sink.cpp
   )
 target_link_libraries(rwlogd_syslog_sink
+  rwdts_api
   rwschema_yang_gen
   rwcmdargs
   rwlib

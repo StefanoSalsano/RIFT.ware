@@ -55,6 +55,15 @@ module nsr
       "Derived from earlier versions of base YANG files";
   }
 
+  typedef config-states {
+    type enumeration {
+      enum init;
+      enum configuring;
+      enum configured;
+      enum failed;
+    }
+  }
+      
   container ns-instance-config {
 
     list nsr {
@@ -452,18 +461,7 @@ module nsr
             configuring: At least one of the VNFs in this instance is in configuring state
             configured:  All the VNFs in this NS instance are configured or config-not-needed state
           ";
-
-        type enumeration {
-          enum configuring {
-            value 1;
-          }
-          enum configured {
-            value 2;
-          }
-          enum failed {
-            value 3;
-          }
-        }
+        type config-states;
       }
 
       uses manotypes:monitoring-param;

@@ -65,6 +65,9 @@ rw_status_t rwlog_app_filter_setup(rwlog_ctx_t *ctxt)
   static rwlog_category_filter_t category_filter;
 
   RW_ASSERT(ctxt->rwlog_shm);
+  if (!ctxt->rwlog_shm) {
+    return RW_STATUS_FAILURE;
+  }
   rwlog_shm = ctxt->rwlog_shm;
 
   shm_fd =  shm_open(rwlog_shm,oflags,perms);
@@ -74,7 +77,7 @@ rw_status_t rwlog_app_filter_setup(rwlog_ctx_t *ctxt)
     ctxt->error_code |= RWLOG_ERR_FILTER_SHM_FD;
     RWLOG_FILTER_DEBUG_PRINT("Error Open %s for  SHM%s\n", 
                              strerror(errno), rwlog_shm);
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   rwlogd_shm_ctrl =
@@ -85,7 +88,7 @@ rw_status_t rwlog_app_filter_setup(rwlog_ctx_t *ctxt)
     ctxt->error_code |= RWLOG_ERR_FILTER_MMAP;
     RWLOG_FILTER_DEBUG_PRINT("Error mmap %s for  SHM%s\n", 
                              strerror(errno), rwlog_shm);
-    RW_ASSERT(0);
+    RW_CRASH();
     close(shm_fd);
     return RW_STATUS_FAILURE;
   }
@@ -95,7 +98,7 @@ rw_status_t rwlog_app_filter_setup(rwlog_ctx_t *ctxt)
   {
     fprintf(stderr,"ftruncate of rwlog shm for fd %d failed\n",shm_fd); 
     ctxt->error_code |= RWLOG_ERR_FILTER_NOMEM;
-    RW_ASSERT(0);
+    RW_CRASH();
     munmap(rwlogd_shm_ctrl,RWLOG_FILTER_SHM_SIZE);
     close(shm_fd);
     return RW_STATUS_FAILURE;

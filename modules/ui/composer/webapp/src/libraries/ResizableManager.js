@@ -160,6 +160,8 @@ function createEvent(e, eventName = 'resize') {
 	return new CustomEvent(eventName, data);
 }
 
+const defaultHandleOffset = [0, 0, 0, 0]; // top, right, bottom, left
+
 class ResizableManager {
 
 	constructor(target = document, dragZones = resizeDragZones) {
@@ -168,7 +170,7 @@ class ResizableManager {
 		this.lastResizable = null;
 		this.activeResizable = null;
 		this.resizeDragZones = dragZones;
-		this.defaultDragZoneWidth = 10;
+		this.defaultDragZoneWidth = 5;
 		this.isPaused = false;
 		this.addAllEventListeners();
 	}
@@ -183,6 +185,10 @@ class ResizableManager {
 			this.addAllEventListeners();
 			this.isPaused = false;
 		}
+	}
+
+	static isResizing() {
+		return document.body.classList.contains('resizing');
 	}
 
 	addAllEventListeners() {
@@ -235,7 +241,6 @@ class ResizableManager {
 	dispatchResize(e) {
 		if (this.resizing && !this.resizeLimitReached) {
 			e.preventDefault();
-			e.stopPropagation();
 			const resizeEvent = createEvent.call(this, e, 'resize');
 			this.resizing.target.dispatchEvent(resizeEvent)
 		}
@@ -245,7 +250,6 @@ class ResizableManager {
 		if (this.resizing) {
 			document.body.classList.add('resizing');
 			e.preventDefault();
-			e.stopPropagation();
 			const resizeEvent = createEvent.call(this, e, 'resize-start');
 			this.resizing.target.dispatchEvent(resizeEvent)
 		}
@@ -255,9 +259,8 @@ class ResizableManager {
 		if (this.resizing) {
 			document.body.classList.remove('resizing');
 			e.preventDefault();
-			e.stopPropagation();
 			const resizeEvent = createEvent.call(this, e, 'resize-stop');
-			this.resizing.target.dispatchEvent(resizeEvent)
+			this.resizing.target.dispatchEvent(resizeEvent);
 			this.lastResizable = this.resizing;
 		} else {
 			this.lastResizable = this.activeResizable;
@@ -282,10 +285,7 @@ class ResizableManager {
 		const zoomFactor = getZoomFactor();
 		const x = e.clientX / zoomFactor;
 		const y = e.clientY / zoomFactor;
-		const resizables = Array.prototype.slice.call(
-			// convert NodeList to Array
-			document.querySelectorAll('[resizable], [data-resizable]')
-		);
+		const resizables = Array.from(document.querySelectorAll('[resizable], [data-resizable]'));
 		if (this.isResizing()) {
 			const others = resizables.filter(d => d !== this.activeResizable.target);
 			this.resizeLimitReached = this.checkResizeLimitReached(x, y, others);
@@ -298,18 +298,35 @@ class ResizableManager {
 		for (resizable of resizables) {
 			const result = this.isCoordinatesOnDragZone(x, y, resizable);
 			if (result.side === 'inside' || result.side === 'outside') {
-				document.body.style.cursor = '';
 				this.clearActiveResizable();
+				// todo IE cursor flickers - now sure why might need to reduce the amount of classList updates
+				document.body.classList.remove('-is-show-resize-cursor-col-resize');
+				document.body.classList.remove('-is-show-resize-cursor-row-resize');
+				document.body.classList.remove('-is-show-resize-cursor-nesw-resize');
+				document.body.classList.remove('-is-show-resize-cursor-nwse-resize');
+				document.body.style.cursor = '';
 				continue
 			}
 			if (result.side === 'right' || result.side === 'left') {
-				document.body.style.cursor = 'col-resize';
+				if (!document.body.classList.contains('-is-show-resize-cursor-col-resize')) {
+					document.body.classList.add('-is-show-resize-cursor-col-resize');
+					document.body.style.cursor = 'col-resize';
+				}
 			} else if (result.side === 'top' || result.side === 'bottom') {
-				document.body.style.cursor = 'row-resize';
+				if (!document.body.classList.contains('-is-show-resize-cursor-row-resize')) {
+					document.body.classList.add('-is-show-resize-cursor-row-resize');
+					document.body.style.cursor = 'row-resize';
+				}
 			} else if (result.side === 'top-right' || result.side === 'bottom-left') {
-				document.body.style.cursor = 'nesw-resize';
+				if (!document.body.classList.contains('-is-show-resize-cursor-nesw-resize')) {
+					document.body.classList.add('-is-show-resize-cursor-nesw-resize');
+					document.body.style.cursor = 'nesw-resize';
+				}
 			} else if (result.side === 'top-left' || result.side === 'bottom-right') {
-				document.body.style.cursor = 'nwse-resize';
+				if (!document.body.classList.contains('-is-show-resize-cursor-nwse-resize')) {
+					document.body.classList.add('-is-show-resize-cursor-nwse-resize');
+					document.body.style.cursor = 'nwse-resize';
+				}
 			}
 			this.makeResizableActive(result);
 			break
@@ -349,7 +366,14 @@ class ResizableManager {
 		const check = this.resizeDragZones;
 		const sides = element.dataset.resizable || 'top,right,bottom,left';
 		const zoneWidth = element.dataset.resizableDragZoneWidth || this.defaultDragZoneWidth;
-		const position = element.getBoundingClientRect();
+		const zoneOffsets = this.parseHandleOffsets(element.dataset.resizableHandleOffset);
+		const rect = element.getBoundingClientRect();
+		const position = {
+			top: rect.top + zoneOffsets[0],
+			right: rect.right + zoneOffsets[1],
+			bottom: rect.bottom + zoneOffsets[2],
+			left: rect.left + zoneOffsets[3]
+		};
 		const temp = [];
 		if (check.outside && check.outside(position, x, y, zoneWidth)) {
 			result.side = 'outside';
@@ -368,6 +392,23 @@ class ResizableManager {
 			return result;
 		}
 		return result;
+	}
+
+	parseHandleOffsets(str) {
+		const val = String(str).trim().split(' ');
+		if (val.length === 0) {
+			return defaultHandleOffset.splice();
+		}
+		return defaultHandleOffset.map((defaultOffset, i) => {
+			let offset = parseFloat(val[i]);
+			if (isNaN(offset)) {
+				offset = parseFloat(val[i - 2]);
+				if (isNaN(offset)) {
+					return defaultHandleOffset[i];
+				}
+			}
+			return offset;
+		});
 	}
 
 }

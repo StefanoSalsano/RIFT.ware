@@ -11,8 +11,11 @@ import subprocess
 import time
 import uuid
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwcalYang', '1.0')
+
 from gi.repository import (
-    RwCompositeYang,
     RwDts as rwdts,
     RwcalYang,
 )
@@ -43,7 +46,7 @@ class ContainerManager(rift.tasklets.Tasklet):
         self.log.debug("Registering with dts")
         self._dts = rift.tasklets.DTS(
                 self.tasklet_info,
-                RwCompositeYang.get_schema(),
+                RwcalYang.get_schema(),
                 self.loop,
                 self.on_dts_state_change
                 )
@@ -177,7 +180,8 @@ class ResourceProvisioning(object):
     def create(self):
         """Create all of the necessary resources"""
 
-        image = self.create_image("/net/sharedfiles/home1/common/vm/R0.4/rift-mano-devel-latest.qcow2")
+        rift_root = os.environ['RIFT_ROOT']
+        image = self.create_image("%s/images/rift-root-latest.qcow2" % (rift_root))
 
         # Create a VM
         for index in range(self.nvms):

@@ -17,6 +17,13 @@ import collections
 import pprint
 import logging
 
+import gi
+gi.require_version('CF', '1.0')
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwVcsYang', '1.0')
 from gi.repository import (
         CF,
         RwBaseYang,

@@ -14,7 +14,11 @@ import subprocess
 import shlex
 import netifaces
 
+from rift.rwlib.util import certs
+import rift.rwcal.cloudsim
+import rift.rwcal.cloudsim.net
 import rift.vcs
+import rift.vcs.core as core
 import rift.vcs.demo
 import rift.vcs.vms
 
@@ -31,7 +35,10 @@ class NsmTasklet(rift.vcs.core.Tasklet):
     This class represents a network services manager tasklet.
     """
 
-    def __init__(self, name='network-services-manager', uid=None):
+    def __init__(self, name='network-services-manager', uid=None,
+                 config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 ):
         """
         Creates a NsmTasklet object.
 
@@ -39,7 +46,10 @@ class NsmTasklet(rift.vcs.core.Tasklet):
             name  - the name of the tasklet
             uid   - a unique identifier
         """
-        super(NsmTasklet, self).__init__(name=name, uid=uid)
+        super(NsmTasklet, self).__init__(name=name, uid=uid,
+                                         config_ready=config_ready,
+                                         recovery_action=recovery_action,
+                                        )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwnsmtasklet')
     plugin_name = ClassProperty('rwnsmtasklet')
@@ -50,7 +60,10 @@ class VnsTasklet(rift.vcs.core.Tasklet):
     This class represents a network services manager tasklet.
     """
 
-    def __init__(self, name='virtual-network-service', uid=None):
+    def __init__(self, name='virtual-network-service', uid=None,
+                 config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 ):
         """
         Creates a VnsTasklet object.
 
@@ -58,7 +71,10 @@ class VnsTasklet(rift.vcs.core.Tasklet):
             name  - the name of the tasklet
             uid   - a unique identifier
         """
-        super(VnsTasklet, self).__init__(name=name, uid=uid)
+        super(VnsTasklet, self).__init__(name=name, uid=uid,
+                                         config_ready=config_ready,
+                                         recovery_action=recovery_action,
+                                        )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwvnstasklet')
     plugin_name = ClassProperty('rwvnstasklet')
@@ -69,7 +85,10 @@ class VnfmTasklet(rift.vcs.core.Tasklet):
     This class represents a virtual network function manager tasklet.
     """
 
-    def __init__(self, name='virtual-network-function-manager', uid=None):
+    def __init__(self, name='virtual-network-function-manager', uid=None,
+                 config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 ):
         """
         Creates a VnfmTasklet object.
 
@@ -77,7 +96,10 @@ class VnfmTasklet(rift.vcs.core.Tasklet):
             name  - the name of the tasklet
             uid   - a unique identifier
         """
-        super(VnfmTasklet, self).__init__(name=name, uid=uid)
+        super(VnfmTasklet, self).__init__(name=name, uid=uid,
+                                          config_ready=config_ready,
+                                          recovery_action=recovery_action,
+                                         )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwvnfmtasklet')
     plugin_name = ClassProperty('rwvnfmtasklet')
@@ -88,7 +110,10 @@ class ResMgrTasklet(rift.vcs.core.Tasklet):
     This class represents a Resource Manager tasklet.
     """
 
-    def __init__(self, name='Resource-Manager', uid=None):
+    def __init__(self, name='Resource-Manager', uid=None,
+                 config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 ):
         """
         Creates a ResMgrTasklet object.
 
@@ -96,7 +121,10 @@ class ResMgrTasklet(rift.vcs.core.Tasklet):
             name  - the name of the tasklet
             uid   - a unique identifier
         """
-        super(ResMgrTasklet, self).__init__(name=name, uid=uid)
+        super(ResMgrTasklet, self).__init__(name=name, uid=uid,
+                                            config_ready=config_ready,
+                                            recovery_action=recovery_action,
+                                           )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwresmgrtasklet')
     plugin_name = ClassProperty('rwresmgrtasklet')
@@ -107,7 +135,10 @@ class MonitorTasklet(rift.vcs.core.Tasklet):
     This class represents a tasklet that is used to monitor NFVI metrics.
     """
 
-    def __init__(self, name='nfvi-metrics-monitor', uid=None):
+    def __init__(self, name='nfvi-metrics-monitor', uid=None,
+                 config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 ):
         """
         Creates a MonitorTasklet object.
 
@@ -116,34 +147,63 @@ class MonitorTasklet(rift.vcs.core.Tasklet):
             uid   - a unique identifier
 
         """
-        super(MonitorTasklet, self).__init__(name=name, uid=uid)
+        super(MonitorTasklet, self).__init__(name=name, uid=uid,
+                                             config_ready=config_ready,
+                                             recovery_action=recovery_action,
+                                            )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwmonitor')
     plugin_name = ClassProperty('rwmonitor')
 
 
+def get_ui_ssl_args():
+    """Returns the SSL parameter string for launchpad UI processes"""
+
+    try:
+        use_ssl, certfile_path, keyfile_path = certs.get_bootstrap_cert_and_key()
+    except certs.BootstrapSslMissingException:
+        logger.error('No bootstrap certificates found.  Disabling UI SSL')
+        use_ssl = False
+
+    # If we're not using SSL, no SSL arguments are necessary
+    if not use_ssl:
+        return ""
+
+    return "--enable-https --keyfile-path=%s --certfile-path=%s" % (keyfile_path, certfile_path)
+
+
 class UIServer(rift.vcs.NativeProcess):
-    def __init__(self, name="RW.MC.UI"):
+    def __init__(self, name="RW.MC.UI",
+                 config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 ):
         super(UIServer, self).__init__(
                 name=name,
                 exe="./usr/share/rw.ui/webapp/scripts/launch_ui.sh",
+                config_ready=config_ready,
+                recovery_action=recovery_action,
                 )
 
     @property
     def args(self):
-        return ' '
+        return get_ui_ssl_args()
 
 
 class ComposerUI(rift.vcs.NativeProcess):
-    def __init__(self, name="RW.COMPOSER.UI"):
+    def __init__(self, name="RW.COMPOSER.UI",
+                 config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 ):
         super(ComposerUI, self).__init__(
                 name=name,
                 exe="./usr/share/composer/scripts/launch_composer.sh",
+                config_ready=config_ready,
+                recovery_action=recovery_action,
                 )
 
     @property
     def args(self):
-        return ' '
+        return get_ui_ssl_args()
 
 
 class ConfigManagerTasklet(rift.vcs.core.Tasklet):
@@ -151,7 +211,10 @@ class ConfigManagerTasklet(rift.vcs.core.Tasklet):
     This class represents a Resource Manager tasklet.
     """
 
-    def __init__(self, name='Configuration-Manager', uid=None):
+    def __init__(self, name='Configuration-Manager', uid=None,
+                 config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 ):
         """
         Creates a ConfigManagerTasklet object.
 
@@ -159,7 +222,10 @@ class ConfigManagerTasklet(rift.vcs.core.Tasklet):
             name  - the name of the tasklet
             uid   - a unique identifier
         """
-        super(ConfigManagerTasklet, self).__init__(name=name, uid=uid)
+        super(ConfigManagerTasklet, self).__init__(name=name, uid=uid,
+                                                   config_ready=config_ready,
+                                                   recovery_action=recovery_action,
+                                                  )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwconmantasklet')
     plugin_name = ClassProperty('rwconmantasklet')
@@ -170,13 +236,16 @@ class Demo(rift.vcs.demo.Demo):
 
         procs = [
             rift.vcs.RiftCli(),
+            rift.vcs.uAgentTasklet(),
             rift.vcs.DtsRouterTasklet(),
             rift.vcs.MsgBrokerTasklet(),
             rift.vcs.RestconfTasklet(),
+            rift.vcs.Watchdog(),
             rift.vcs.RestPortForwardTasklet(),
             rift.vcs.CalProxy(),
+            MonitorTasklet(),
             NsmTasklet(),
-            VnfmTasklet(),
+            #VnfmTasklet(recovery_action=core.RecoveryType.RESTART.value,),
             VnsTasklet(),
             MonitorTasklet(),
             UIServer(),
@@ -186,6 +255,9 @@ class Demo(rift.vcs.demo.Demo):
             ResMgrTasklet(),
             ]
 
+        restart_procs = [
+            VnfmTasklet(recovery_action=core.RecoveryType.RESTART.value,),
+            ]
         if with_cntr_mgr:
             procs.append(rift.vcs.ContainerManager())
 
@@ -200,10 +272,8 @@ class Demo(rift.vcs.demo.Demo):
                                     rift.vcs.VirtualMachine(
                                         name='vm-launchpad',
                                         ip='127.0.0.1',
-                                        tasklets=[
-                                            rift.vcs.uAgentTasklet(),
-                                            ],
                                         procs=procs,
+                                        restart_procs=restart_procs,
                                         ),
                                     ]
                                 )
@@ -286,11 +356,17 @@ def main(argv=sys.argv[1:]):
         rift.rwcal.cloudsim.net.virsh_initialize_default()
         clear_salt_keys()
 
+    # Remove the persistant DTS recovery files 
+    for f in os.listdir(os.environ["INSTALLDIR"]):
+        if f.endswith(".db"):
+            os.remove(os.path.join(os.environ["INSTALLDIR"], f))
+
     #load demo info and create Demo object
     demo = Demo(args.with_cntr_mgr)
 
     # Create the prepared system from the demo
-    system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args)
+    system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args, 
+              northbound_listing="cli_rwmc_schema_listing.txt")
 
     confd_ip = socket.gethostbyname(socket.gethostname())
     intf = netifaces.ifaddresses('eth0')

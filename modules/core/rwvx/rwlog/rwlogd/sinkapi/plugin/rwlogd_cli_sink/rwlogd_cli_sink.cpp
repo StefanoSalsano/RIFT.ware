@@ -57,6 +57,9 @@ public:
 
     int r = asprintf (&cli_dest_path, "/R/%s/%d", hostname, port);
     RW_ASSERT(r);
+    if (!r) {
+      return;
+    }
     // Create Destination
     dest = rwmsg_destination_create(
         inst_data->rwtasklet_info->rwmsg_endpoint,
@@ -87,6 +90,9 @@ public:
     rwlogd_register_req__init(req);
     req->my_key = strdup(string);
     RW_ASSERT(req); 
+    if (!req) {
+      return (0);
+    }
     //Now send the message
     char *env = getenv("__RWLOG_CLI_SINK_GTEST_PRINT_LOG__");
     if (!env)

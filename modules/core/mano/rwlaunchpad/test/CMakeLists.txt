@@ -43,10 +43,10 @@ rift_py3test(rwmano_utest
   ${CMAKE_CURRENT_SOURCE_DIR}/mano_ut.py
   )
 
-rift_py3test(rwmano_error_utest
-  TEST_ARGS
-  ${CMAKE_CURRENT_SOURCE_DIR}/mano_error_ut.py
-  )
+#rift_py3test(rwmano_error_utest
+#  TEST_ARGS
+#  ${CMAKE_CURRENT_SOURCE_DIR}/mano_error_ut.py
+#  )
 
 rift_py3test(utest_rwmonitor
   TEST_ARGS

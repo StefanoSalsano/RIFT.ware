@@ -10,6 +10,9 @@ import rift.auto.proxy
 import rift.vcs
 import sys
 
+import gi
+gi.require_version('RwYang', '1.0')
+
 from gi.repository import NsdYang, VldYang, VnfdYang, RwYang
 
 logging.basicConfig(level=logging.DEBUG)

@@ -242,7 +242,7 @@ string EnumFieldGenerator::GetGiGetterParameterList() const
   return param_list;
 }
 
-string EnumFieldGenerator::GetGiParameterAnnotations() const
+string EnumFieldGenerator::GetGiSetterAnnotations() const
 {
   std::string annotations = "";
 

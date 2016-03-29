@@ -1,9 +1,9 @@
 {
   "test_name":"TC_MISSION_CONTROL_OPENSTACK",
-  "commandline":"./mission_control_systest --cloud-type 'openstack' --cloud-host '10.66.4.115'",
+  "commandline":"./mission_control_systest --cloud-type 'openstack' --cloud-host '10.66.4.115' --sysinfo",
   "test_description":"System test for mission control(Openstack)",
   "run_as_root": false,
-  "status":"working",
+  "status":"broken",
   "keywords":["nightly","smoke","MANO","openstack"],
   "timelimit": 1800,
   "networks":[],

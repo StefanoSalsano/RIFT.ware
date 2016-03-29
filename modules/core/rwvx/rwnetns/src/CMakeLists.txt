@@ -17,7 +17,7 @@ include_directories(BEFORE ${RIFT_LIBNL_INCLUDE_DIRS})
 ##
 # rwnetns library targets
 ##
-set(C_SOURCES rwnetns.c rwnetlink.c)
+set(C_SOURCES rwnetns.c rwnetlink.c rwudev.c)
 
 add_library(rwnetns SHARED ${C_SOURCES})
 target_link_libraries(rwnetns PRIVATE
@@ -35,6 +35,7 @@ install(TARGETS rwnetns  LIBRARY
 
 set(INSTALL_HFILES
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwnetns/include/riftware/rwnetns.h
+  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwnetns/include/riftware/rwudev.h
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwnetns/include/riftware/rwnetlink.h)
 
 install(FILES ${INSTALL_HFILES} 

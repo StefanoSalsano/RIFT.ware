@@ -5,6 +5,14 @@
 
 import asyncio
 import logging
+import sys
+
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     RwYang,
@@ -92,6 +100,12 @@ class ResourceManager(object):
         return resource
 
     @asyncio.coroutine
+    def reallocate_virtual_network(self, event_id, cloud_account_name, request, resource):
+        self._log.info("Received network resource allocation request with event-id: %s", event_id)
+        resource = yield from self.core.reallocate_virtual_resource(event_id, cloud_account_name, request, 'network', resource)
+        return resource
+
+    @asyncio.coroutine
     def release_virtual_network(self, event_id):
         self._log.info("Received network resource release request with event-id: %s", event_id)
         yield from self.core.release_virtual_resource(event_id, 'network')
@@ -108,7 +122,17 @@ class ResourceManager(object):
                        "(cloud account: %s) with event-id: %s",
                        cloud_account_name, event_id)
         resource = yield from self.core.allocate_virtual_resource(
-                event_id, cloud_account_name, request, 'compute'
+                event_id, cloud_account_name, request, 'compute',
+                )
+        return resource
+
+    @asyncio.coroutine
+    def reallocate_virtual_compute(self, event_id, cloud_account_name, request, resource):
+        self._log.info("Received compute resource allocation request "
+                       "(cloud account: %s) with event-id: %s",
+                       cloud_account_name, event_id)
+        resource = yield from self.core.reallocate_virtual_resource(
+                event_id, cloud_account_name, request, 'compute', resource, 
                 )
         return resource
 
@@ -143,6 +167,13 @@ class ResMgrTasklet(rift.tasklets.Tasklet):
                                       self.on_dts_state_change)
 
         self.log.debug("Created DTS Api GI Object: %s", self._dts)
+
+    def stop(self):
+      try:
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in RESMGR stop:", sys.exc_info()[0])
+         raise
 
     def on_instance_started(self):
         self.log.debug("Got instance started callback")

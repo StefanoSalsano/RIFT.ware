@@ -1,4 +1,3 @@
-
 /*
  * 
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
@@ -29,27 +28,27 @@ general.uptime = function(req) {
   return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.data,
-        {
-            'Authorization': req.get('Authorization')
-        });
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
+      });
     request({
-      url: utils.confdPort(api_server) + '/api/operational/mission-control/uptime',
-      type: 'GET',
-      headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    },
-    function(error, response, body) {
-      if (utils.validateResponse('general.get', error, response, body, resolve, reject)) {
-        try {
-          data = JSON.parse(response.body);
-        } catch(e) {
-          return reject({});
-        }
-        return resolve(data)
+        url: utils.confdPort(api_server) + '/api/operational/mission-control/uptime',
+        type: 'GET',
+        headers: requestHeaders,
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false
+      },
+      function(error, response, body) {
+        if (utils.validateResponse('general.get', error, response, body, resolve, reject)) {
+          try {
+            data = JSON.parse(response.body);
+          } catch (e) {
+            return reject({});
+          }
+          return resolve(data)
 
-      }
-    })
+        }
+      })
   })
 }
 
@@ -58,27 +57,27 @@ general.createTime = function(req) {
   return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.data,
-        {
-            'Authorization': req.get('Authorization')
-        });
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
+      });
     request({
-      url: utils.confdPort(api_server) + '/api/operational/mission-control/create-time',
-      type: 'GET',
-      headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    },
-    function(error, response, body) {
-      if (utils.validateResponse('general.get', error, response, body, resolve, reject)) {
-        try {
-          data = JSON.parse(response.body);
-        } catch(e) {
-          return reject({});
-        }
-        return resolve(data)
+        url: utils.confdPort(api_server) + '/api/operational/mission-control/create-time',
+        type: 'GET',
+        headers: requestHeaders,
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false
+      },
+      function(error, response, body) {
+        if (utils.validateResponse('general.get', error, response, body, resolve, reject)) {
+          try {
+            data = JSON.parse(response.body);
+          } catch (e) {
+            return reject({});
+          }
+          return resolve(data)
 
-      }
-    })
+        }
+      })
   })
 }
 
@@ -91,66 +90,66 @@ mgmtDomain.get = function(req) {
 
   if (!id) {
     // Get all mgmt-domains
-    return new Promise(function (resolve, reject) {
+    return new Promise(function(resolve, reject) {
       var requestHeaders = {};
       _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.collection,
-        {
-            'Authorization': req.get('Authorization')
+        constants.HTTP_HEADERS.accept.collection, {
+          'Authorization': req.get('Authorization')
         });
       request({
-        url: utils.confdPort(api_server) + '/api/operational/mgmt-domain/domain?deep',
-        type: 'GET',
-        headers: requestHeaders,
-        forever: constants.FOREVER_ON
-      },
-      function(error, response, body) {
-        var data;
+          url: utils.confdPort(api_server) + '/api/operational/mgmt-domain/domain?deep',
+          type: 'GET',
+          headers: requestHeaders,
+          forever: constants.FOREVER_ON,
+          rejectUnauthorized: false
+        },
+        function(error, response, body) {
+          var data;
 
-        if (utils.validateResponse('mgmtDomain.get', error, response, body, resolve, reject)) {
-          try {
-            data = JSON.parse(response.body).collection['rw-mc:domain'];
-          } catch(e) {
-            return reject({});
+          if (utils.validateResponse('mgmtDomain.get', error, response, body, resolve, reject)) {
+            try {
+              data = JSON.parse(response.body).collection['rw-mc:domain'];
+            } catch (e) {
+              return reject({});
+            }
+
+            return resolve(data);
           }
-
-          return resolve(data);
-        }
-      });
+        });
     });
   } else {
     // Get specific mgmt-domain
-    return new Promise(function (resolve, reject) {
+    return new Promise(function(resolve, reject) {
       var requestHeaders = {};
       _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.data,
-        {
-            'Authorization': req.get('Authorization')
+        constants.HTTP_HEADERS.accept.data, {
+          'Authorization': req.get('Authorization')
         });
       request({
-        url: utils.confdPort(api_server) + '/api/operational/mgmt-domain/domain/' + id,
-        type: 'GET',
-        headers: requestHeaders,
-        forever: constants.FOREVER_ON
-      },
-      function(error, response, body) {
-        var data;
+          url: utils.confdPort(api_server) + '/api/operational/mgmt-domain/domain/' + id,
+          type: 'GET',
+          headers: requestHeaders,
+          forever: constants.FOREVER_ON,
+          rejectUnauthorized: false
+        },
+        function(error, response, body) {
+          var data;
 
-        if (utils.validateResponse('mgmtDomain.get', error, response, body, resolve, reject)) {
-          try {
-            data = JSON.parse(response.body)['rw-mc:domain'];
-          } catch(e) {
-            console.log('Problem with "mgmtDomain.get for id="', id, e);
-            var err = {};
-            err.statusCode = 500;
-            err.errorMessage = {
-              error: 'Problem with "mgmtDomain.get": ' + e.toString()
+          if (utils.validateResponse('mgmtDomain.get', error, response, body, resolve, reject)) {
+            try {
+              data = JSON.parse(response.body)['rw-mc:domain'];
+            } catch (e) {
+              console.log('Problem with "mgmtDomain.get for id="', id, e);
+              var err = {};
+              err.statusCode = 500;
+              err.errorMessage = {
+                error: 'Problem with "mgmtDomain.get": ' + e.toString()
+              }
+              return reject(err);
             }
-            return reject(err);
+            return resolve(data);
           }
-          return resolve(data);
-        }
-      });
+        });
     });
   }
 
@@ -178,7 +177,7 @@ mgmtDomain.create = function(req) {
     });
   }
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
       "domain": [{
         "name": data.name,
@@ -203,9 +202,8 @@ mgmtDomain.create = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -213,8 +211,9 @@ mgmtDomain.create = function(req) {
       method: 'POST',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('mgmtDomain.create', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       };
@@ -239,19 +238,19 @@ mgmtDomain.delete = function(req) {
     });
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
     request({
       url: utils.confdPort(api_server) + '/api/config/mgmt-domain/domain/' + id,
       method: 'DELETE',
       headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    }, function(error, response, body){
+      forever: constants.FOREVER_ON,
+      rejectUnauthorized: false
+    }, function(error, response, body) {
       if (utils.validateResponse('mgmtDomain.delete', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       };
@@ -284,7 +283,7 @@ mgmtDomain.update = function(req) {
     });
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
       "rw-mc:domain": {
         "name": data.name,
@@ -309,9 +308,8 @@ mgmtDomain.update = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -319,8 +317,9 @@ mgmtDomain.update = function(req) {
       method: 'PUT',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('mgmtDomain.update', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       };
@@ -334,7 +333,7 @@ mgmtDomain.startLaunchpad = function(req) {
   var api_server = req.query["api_server"];
   var name = req.params.name;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
       "input": {
         "mgmt-domain": name
@@ -344,9 +343,8 @@ mgmtDomain.startLaunchpad = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -354,8 +352,9 @@ mgmtDomain.startLaunchpad = function(req) {
       method: 'POST',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('mgmtDomain.startLaunchpad', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       };
@@ -369,7 +368,7 @@ mgmtDomain.stopLaunchpad = function(req) {
   var api_server = req.query["api_server"];
   var name = req.params.name;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
       "input": {
         "mgmt-domain": name
@@ -379,9 +378,8 @@ mgmtDomain.stopLaunchpad = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -389,8 +387,9 @@ mgmtDomain.stopLaunchpad = function(req) {
       method: 'POST',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('mgmtDomain.stopLaunchpad', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       };
@@ -407,74 +406,74 @@ Cloud.get = function(req) {
 
   if (!id) {
     // Get all cloud accounts
-    return new Promise(function (resolve, reject) {
+    return new Promise(function(resolve, reject) {
 
       var requestHeaders = {};
       _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.collection,
-        {
+        constants.HTTP_HEADERS.accept.collection, {
           'Authorization': req.get('Authorization')
         });
 
       request({
-        url: utils.confdPort(api_server) + '/api/operational/cloud/account',
-        type: 'GET',
-        headers: requestHeaders,
-        forever: constants.FOREVER_ON
-      },
-      function(error, response, body) {
-        var data;
-        if (utils.validateResponse('Cloud.get', error, response, body, resolve, reject)) {
-          try{
-            data = JSON.parse(response.body).collection['rw-mc:account']
-          } catch(e) {
-            console.log('Problem with "Cloud.get"', e);
-            var err = {};
-            err.statusCode = 500;
-            err.errorMessage = {
-              error: 'Problem with "Cloud.get": ' + e.toString()
+          url: utils.confdPort(api_server) + '/api/operational/cloud/account',
+          type: 'GET',
+          headers: requestHeaders,
+          forever: constants.FOREVER_ON,
+          rejectUnauthorized: false
+        },
+        function(error, response, body) {
+          var data;
+          if (utils.validateResponse('Cloud.get', error, response, body, resolve, reject)) {
+            try {
+              data = JSON.parse(response.body).collection['rw-mc:account']
+            } catch (e) {
+              console.log('Problem with "Cloud.get"', e);
+              var err = {};
+              err.statusCode = 500;
+              err.errorMessage = {
+                error: 'Problem with "Cloud.get": ' + e.toString()
+              }
+              return reject(err);
             }
-            return reject(err);
-          }
 
-          return resolve(self.poolAggregate(data));
-        };
-      });
+            return resolve(self.poolAggregate(data));
+          };
+        });
     });
   } else {
     //Get a specific cloud account
-    return new Promise(function (resolve, reject) {
+    return new Promise(function(resolve, reject) {
       var requestHeaders = {};
       _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.data,
-        {
+        constants.HTTP_HEADERS.accept.data, {
           'Authorization': req.get('Authorization')
         });
 
       request({
-        url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + id,
-        type: 'GET',
-        headers: requestHeaders,
-        forever: constants.FOREVER_ON
-      },
-      function (error, response, body) {
-        var data;
-        if (utils.validateResponse('Cloud.get', error, response, body, resolve, reject)) {
-          try {
-            data = JSON.parse(response.body)['rw-mc:account'];
-          } catch (e) {
-            console.log('Problem with "Cloud.get"', e);
-            var err = {};
-            err.statusCode = 500;
-            err.errorMessage = {
-              error: 'Problem with "Cloud.get": ' + e.toString()
+          url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + id,
+          type: 'GET',
+          headers: requestHeaders,
+          forever: constants.FOREVER_ON,
+          rejectUnauthorized: false
+        },
+        function(error, response, body) {
+          var data;
+          if (utils.validateResponse('Cloud.get', error, response, body, resolve, reject)) {
+            try {
+              data = JSON.parse(response.body)['rw-mc:account'];
+            } catch (e) {
+              console.log('Problem with "Cloud.get"', e);
+              var err = {};
+              err.statusCode = 500;
+              err.errorMessage = {
+                error: 'Problem with "Cloud.get": ' + e.toString()
+              }
+              return reject(err);
             }
-            return reject(err);
-          }
 
-          return resolve(data);
-        }
-      });
+            return resolve(data);
+          }
+        });
     });
   }
 };
@@ -484,9 +483,9 @@ Cloud.create = function(req) {
   var api_server = req.query["api_server"];
   var data = req.body;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
-      "account":Array.isArray(data)?data:[data]
+      "account": Array.isArray(data) ? data : [data]
     };
 
     console.log('Creating with', JSON.stringify(jsonData));
@@ -494,9 +493,8 @@ Cloud.create = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -504,8 +502,9 @@ Cloud.create = function(req) {
       method: 'POST',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('Cloud.create', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       };
@@ -519,7 +518,7 @@ Cloud.update = function(req) {
   var id = req.params.id;
   var data = req.body;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
       "rw-mc:account": data
     };
@@ -529,9 +528,8 @@ Cloud.update = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -539,8 +537,9 @@ Cloud.update = function(req) {
       method: 'PUT',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('Cloud.update', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       };
@@ -565,19 +564,19 @@ Cloud.delete = function(req) {
     });
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
     request({
       url: utils.confdPort(api_server) + '/api/config/cloud/account/' + id,
       method: 'DELETE',
       headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    }, function(error, response, body){
+      forever: constants.FOREVER_ON,
+      rejectUnauthorized: false
+    }, function(error, response, body) {
       if (utils.validateResponse('Cloud.delete', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       };
@@ -590,40 +589,41 @@ Cloud.getResources = function(req) {
   var api_server = req.query["api_server"];
   var cloudAccount = req.query["cloud_account"];
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
+
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
-      url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + cloudAccount + '/resources?deep',
-      type: 'GET',
-      headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    },
-    function(error, response, body) {
-      var data;
-      if (utils.validateResponse('Cloud.getResources', error, response, body, resolve, reject)) {
-        try {
-          data = JSON.parse(response.body)['rw-mc:resources']
-        } catch(e) {
-          console.log('Problem with "Cloud.getResources"', e);
+        url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + cloudAccount + '/resources?deep',
+        type: 'GET',
+        headers: requestHeaders,
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false
+      },
+      function(error, response, body) {
+        var data;
+        if (utils.validateResponse('Cloud.getResources', error, response, body, resolve, reject)) {
+          try {
+            data = JSON.parse(response.body)['rw-mc:resources']
+          } catch (e) {
+            console.log('Problem with "Cloud.getResources"', e);
 
-          var err = {};
-          err.statusCode = 500;
-          err.errorMessage = {
-            error: 'Problem with "Cloud.getResources": ' + e.toString()
+            var err = {};
+            err.statusCode = 500;
+            err.errorMessage = {
+              error: 'Problem with "Cloud.getResources": ' + e.toString()
+            }
+
+            return reject(err);
           }
 
-          return reject(err);
-        }
-
-        return resolve(data);
-      };
-    });
+          return resolve(data);
+        };
+      });
   });
 };
 
@@ -632,40 +632,40 @@ Cloud.getPools = function(req) {
   var api_server = req.query["api_server"];
   var cloudAccount = req.query["cloud-account"];
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
 
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
-      url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + cloudAccount + '/pools',
-      type: 'GET',
-      headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    },
-    function(error, response, body) {
-      var data;
-      if (utils.validateResponse('Cloud.getPools', error, response, body, resolve, reject)) {
-        try {
-          data = JSON.parse(response.body)['rw-mc:pools']
-        } catch(e) {
-          console.log('Problem with "Cloud.getPools"', e);
-          var err = {};
-          err.statusCode = 500;
-          err.errorMessage = {
-            error: 'Problem with "Cloud.getPools": ' + e.toString()
+        url: utils.confdPort(api_server) + '/api/operational/cloud/account/' + cloudAccount + '/pools',
+        type: 'GET',
+        headers: requestHeaders,
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false
+      },
+      function(error, response, body) {
+        var data;
+        if (utils.validateResponse('Cloud.getPools', error, response, body, resolve, reject)) {
+          try {
+            data = JSON.parse(response.body)['rw-mc:pools']
+          } catch (e) {
+            console.log('Problem with "Cloud.getPools"', e);
+            var err = {};
+            err.statusCode = 500;
+            err.errorMessage = {
+              error: 'Problem with "Cloud.getPools": ' + e.toString()
+            }
+
+            return reject(err);
           }
 
-          return reject(err);
+          return resolve(data);
         }
-
-        return resolve(data);
-      }
-    });
+      });
   });
 }
 
@@ -693,76 +693,76 @@ Sdn.get = function(req) {
   var self = this;
   if (!id) {
     // Get all sdn accounts
-    return new Promise(function (resolve, reject) {
+    return new Promise(function(resolve, reject) {
       var requestHeaders = {};
       _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.collection,
-        {
-            'Authorization': req.get('Authorization')
+        constants.HTTP_HEADERS.accept.collection, {
+          'Authorization': req.get('Authorization')
         });
       request({
-        url: utils.confdPort(api_server) + '/api/operational/sdn-account?deep',
-        type: 'GET',
-        headers: requestHeaders,
-        forever: constants.FOREVER_ON
-      },
-      function(error, response, body) {
-        var data;
-        if (utils.validateResponse('SDN.Get', error, response, body, resolve, reject)) {
-          try{
-            data = JSON.parse(response.body).collection['rw-sdn:sdn-account']
-          } catch(e) {
-            console.log('Problem with "Sdn.get"', e);
+          url: utils.confdPort(api_server) + '/api/operational/sdn/account',
+          type: 'GET',
+          headers: requestHeaders,
+          forever: constants.FOREVER_ON,
+          rejectUnauthorized: false
+        },
+        function(error, response, body) {
+          var data;
+          if (utils.validateResponse('Cloud.delete', error, response, body, resolve, reject)) {
+            try {
+              data = JSON.parse(response.body).collection['rw-mc:account']
+            } catch (e) {
+              console.log('Problem with "Sdn.get"', e);
 
-            var err = {};
-            err.statusCode = 500;
-            err.errorMessage = {
-              error: 'Problem with "Sdn.get": ' + e.toString()
+              var err = {};
+              err.statusCode = 500;
+              err.errorMessage = {
+                error: 'Problem with "Sdn.get": ' + e.toString()
+              }
+
+              return reject(err);
             }
 
-            return reject(err);
+            return resolve(data);
           }
-
-          return resolve(data);
-        }
-      });
+        });
     });
   } else {
     //Get a specific sdn account
-    return new Promise(function (resolve, reject) {
+    return new Promise(function(resolve, reject) {
       var requestHeaders = {};
       _.extend(requestHeaders,
-        constants.HTTP_HEADERS.accept.data,
-        {
-            'Authorization': req.get('Authorization')
+        constants.HTTP_HEADERS.accept.data, {
+          'Authorization': req.get('Authorization')
         });
 
       request({
-        url: utils.confdPort(api_server) + '/api/operational/sdn-account/' + id + '?deep',
-        type: 'GET',
-        headers: requestHeaders,
-        forever: constants.FOREVER_ON
-      },
-      function (error, response, body) {
-        var data;
-        if (utils.validateResponse('Sdn.get by id', error, response, body, resolve, reject)) {
-          try {
-            data = JSON.parse(response.body)['rw-sdn:sdn-account'];
-          } catch (e) {
-            console.log('Problem with "Sdn.get"', e);
+          url: utils.confdPort(api_server) + '/api/operational/sdn/account/' + id,
+          type: 'GET',
+          headers: requestHeaders,
+          forever: constants.FOREVER_ON,
+          rejectUnauthorized: false
+        },
+        function(error, response, body) {
+          var data;
+          if (utils.validateResponse('Sdn.get', error, response, body, resolve, reject)) {
+            try {
+              data = JSON.parse(response.body)['rw-mc:account'];
+            } catch (e) {
+              console.log('Problem with "Sdn.get"', e);
 
-            var err = {};
-            err.statusCode = 500;
-            err.errorMessage = {
-              error: 'Problem with "Sdn.get": ' + e.toString()
+              var err = {};
+              err.statusCode = 500;
+              err.errorMessage = {
+                error: 'Problem with "Sdn.get": ' + e.toString()
+              }
+
+              return reject(err);
             }
 
-            return reject(err);
+            return resolve(data);
           }
-
-          return resolve(data);
-        }
-      });
+        });
     });
   }
 };
@@ -772,9 +772,9 @@ Sdn.create = function(req) {
   var api_server = req.query["api_server"];
   var data = req.body;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
-      "sdn-account":Array.isArray(data)?data:[data]
+      "account": Array.isArray(data) ? data : [data]
     };
 
     console.log('Creating with', JSON.stringify(jsonData));
@@ -782,18 +782,18 @@ Sdn.create = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
-      url: utils.confdPort(api_server) + '/api/config/sdn-account',
+      url: utils.confdPort(api_server) + '/api/config/sdn',
       method: 'POST',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('Sdn.create', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -807,9 +807,9 @@ Sdn.update = function(req) {
   var id = req.params.id;
   var data = req.body;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
-      "rw-sdn:sdn-account": data
+      "rw-mc:account": data
     };
 
     console.log('Updating ', id, ' with', JSON.stringify(jsonData));
@@ -817,18 +817,18 @@ Sdn.update = function(req) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
-      url: utils.confdPort(api_server) + '/api/config/sdn-account/' + id,
+      url: utils.confdPort(api_server) + '/api/config/sdn/account/' + id,
       method: 'PUT',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('Sdn.update', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -853,21 +853,21 @@ Sdn.delete = function(req) {
     });
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
 
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
       url: utils.confdPort(api_server) + '/api/config/sdn/account/' + id,
       method: 'DELETE',
       headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    }, function(error, response, body){
+      forever: constants.FOREVER_ON,
+      rejectUnauthorized: false
+    }, function(error, response, body) {
       if (utils.validateResponse('Sdn.delete', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -881,50 +881,45 @@ Sdn.delete = function(req) {
  * @return {Array} vm-pools
  */
 vmPool.get = function(req) {
-  var api_server = req.query["api_server"];
-  var self = this;
-  return new Promise(function (resolve, reject) {
-    var requestHeaders = {};
-    var url = utils.confdPort(api_server) + '/api/operational/vm-pool/pool';
-    if(req.params.poolId) {
-      url = url + '/' + req.params.poolId
-    }
-    url = url + '?deep'
-    console.log(url)
-    _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.collection,
-      {
-          'Authorization': req.get('Authorization')
-      });
-    request({
-      url: url,
-      type: 'GET',
-      headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    },
-    function(error, response, body) {
-      var data;
-      if (utils.validateResponse('vmPool.get', error, response, body, resolve, reject)) {
-        try{
-          data = JSON.parse(response.body).collection['rw-mc:pool'];
-            data.forEach(function (pool, index) {
-              pools.decorateAssignedProperty(pool);
-            });
-        } catch(e) {
-          console.log('Problem with "vmPool.get"', e);
 
-          var err = {};
-          err.statusCode = 500;
-          err.errorMessage = {
-            error: 'Problem with "vmPool.get"' + e.toString()
+  var api_server = req.query["api_server"];
+
+  var self = this;
+  return new Promise(function(resolve, reject) {
+    var requestHeaders = {};
+    _.extend(requestHeaders,
+      constants.HTTP_HEADERS.accept.collection, {
+        'Authorization': req.get('Authorization')
+      });
+
+    request({
+        url: utils.confdPort(api_server) + '/api/operational/vm-pool/pool',
+        type: 'GET',
+        headers: requestHeaders,
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false
+      },
+      function(error, response, body) {
+        var data;
+
+        if (utils.validateResponse('Sdn.get', error, response, body, resolve, reject)) {
+          try {
+            data = JSON.parse(response.body).collection['rw-mc:pool']
+          } catch (e) {
+            console.log('Problem with "vmPool.get"', e);
+
+            var err = {};
+            err.statusCode = 500;
+            err.errorMessage = {
+              error: 'Problem with "vmPool.get"' + e.toString()
+            }
+
+            return reject(err);
           }
 
-          return reject(err);
+          return resolve(data);
         }
-
-        return resolve(data);
-      }
-    });
+      });
   });
 };
 
@@ -939,17 +934,16 @@ vmPool.create = function(req) {
     'dynamic-scaling': req.body['dynamic-scaling']
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
-      "pool":Array.isArray(data)?data:[data]
+      "pool": Array.isArray(data) ? data : [data]
     };
 
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -957,8 +951,9 @@ vmPool.create = function(req) {
       method: 'POST',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('vmPool.create', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -971,12 +966,11 @@ vmPool.delete = function(req) {
   var api_server = req.query["api_server"];
   var name = req.body.name;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.data, {
+        'Authorization': req.get('Authorization')
       });
     console.log(name)
     console.log(utils.confdPort(api_server) + '/api/running/vm-pool/pool/' + name)
@@ -985,7 +979,8 @@ vmPool.delete = function(req) {
       method: 'DELETE',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
-    }, function(error, response, body){
+      rejectUnauthorized: false,
+    }, function(error, response, body) {
       if (utils.validateResponse('vmPool.delete', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -1003,17 +998,16 @@ vmPool.edit = function(req) {
     "dynamic-scaling": req.body['dynamic-scaling']
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
-      "rw-mc:pool":Array.isArray(data)?data:[data]
+      "rw-mc:pool": Array.isArray(data) ? data : [data]
     };
 
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -1021,8 +1015,9 @@ vmPool.edit = function(req) {
       method: 'PUT',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('vmPool.edit', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -1040,17 +1035,16 @@ networkPool.create = function(req) {
     'dynamic-scaling': req.body['dynamic-scaling']
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
-      "pool":Array.isArray(data)?data:[data]
+      "pool": Array.isArray(data) ? data : [data]
     };
 
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -1058,8 +1052,9 @@ networkPool.create = function(req) {
       method: 'POST',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('networkPool.create', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -1072,20 +1067,20 @@ networkPool.delete = function(req) {
   var api_server = req.query["api_server"];
   var name = req.body.name;
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
     request({
       url: utils.confdPort(api_server) + '/api/config/network-pool/pool/' + name,
       method: 'DELETE',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
-    }, function(error, response, body){
+      rejectUnauthorized: false,
+    }, function(error, response, body) {
       if (utils.validateResponse('networkPool.create', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -1103,17 +1098,16 @@ networkPool.edit = function(req) {
     "dynamic-scaling": req.body['dynamic-scaling']
   };
 
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var jsonData = {
-      "rw-mc:pool":Array.isArray(data)?data:[data]
+      "rw-mc:pool": Array.isArray(data) ? data : [data]
     };
 
     var requestHeaders = {};
     _.extend(requestHeaders,
       constants.HTTP_HEADERS.accept.data,
-      constants.HTTP_HEADERS.content_type.data,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.content_type.data, {
+        'Authorization': req.get('Authorization')
       });
 
     request({
@@ -1121,8 +1115,9 @@ networkPool.edit = function(req) {
       method: 'PUT',
       headers: requestHeaders,
       forever: constants.FOREVER_ON,
+      rejectUnauthorized: false,
       json: jsonData,
-    }, function(error, response, body){
+    }, function(error, response, body) {
       if (utils.validateResponse('networkPool.edit', error, response, body, resolve, reject)) {
         return resolve(JSON.stringify(response.body));
       }
@@ -1141,48 +1136,39 @@ networkPool.get = function(req) {
   var api_server = req.query["api_server"];
 
   var self = this;
-  return new Promise(function (resolve, reject) {
+  return new Promise(function(resolve, reject) {
     var requestHeaders = {};
     _.extend(requestHeaders,
-      constants.HTTP_HEADERS.accept.collection,
-      {
-          'Authorization': req.get('Authorization')
+      constants.HTTP_HEADERS.accept.collection, {
+        'Authorization': req.get('Authorization')
       });
-    var url = utils.confdPort(api_server) + '/api/operational/network-pool/pool';
-    if(req.params.poolId) {
-      url = url + '/' + req.params.poolId
-    }
-    url = url + '?deep'
-    console.log(url)
     request({
-      url: url,
-      type: 'GET',
-      headers: requestHeaders,
-      forever: constants.FOREVER_ON
-    },
-    function(error, response, body) {
-      var data;
-      if (utils.validateResponse('Sdn.delete', error, response, body, resolve, reject)) {
-        try{
-          data = JSON.parse(response.body).collection['rw-mc:pool'];
-          data.forEach(function (pool, index) {
-            pools.decorateAssignedProperty(pool);
-          });
-        } catch(e) {
-          console.log('Problem with "networkPool.get"', e);
+        url: utils.confdPort(api_server) + '/api/operational/network-pool/pool',
+        type: 'GET',
+        headers: requestHeaders,
+        forever: constants.FOREVER_ON,
+        rejectUnauthorized: false
+      },
+      function(error, response, body) {
+        var data;
+        if (utils.validateResponse('Sdn.delete', error, response, body, resolve, reject)) {
+          try {
+            data = JSON.parse(response.body).collection['rw-mc:pool']
+          } catch (e) {
+            console.log('Problem with "networkPool.get"', e);
 
-          var err = {};
-          err.statusCode = 500;
-          err.errorMessage = {
-            error: 'Problem with "networkPool.get": ' + e.toString()
+            var err = {};
+            err.statusCode = 500;
+            err.errorMessage = {
+              error: 'Problem with "networkPool.get": ' + e.toString()
+            }
+
+            return reject(err);
           }
 
-          return reject(err);
+          return resolve(data);
         }
-
-        return resolve(data);
-      }
-    });
+      });
   });
 };
 
@@ -1198,34 +1184,19 @@ pools.get = function(req) {
 
   return new Promise(function(resolve, reject) {
     Promise.all([
-      vmPool.get(req),
-      networkPool.get(req)
-    ])
-    .then(function(results) {
-      var poolsObject = {};
-      poolsObject.vmPools = results[0];
-      poolsObject.networkPools = results[1];
-      resolve(poolsObject);
-    }, function(error) {
-      console.log('error getting pools', error);
-    });
+        vmPool.get(req),
+        networkPool.get(req)
+      ])
+      .then(function(results) {
+        var poolsObject = {};
+        poolsObject.vmPools = results[0];
+        poolsObject.networkPools = results[1];
+        resolve(poolsObject);
+      }, function(error) {
+        console.log('error getting pools', error);
+      });
   });
 };
-
-pools.decorateAssignedProperty = function (pool) {
-    var assignedObj = {};
-    if (pool['assigned-detail']) {
-        pool['assigned-detail'].forEach(function (r, i) {
-          assignedObj[r.id] = r['resource-info']['vm-name'];
-        });
-    };
-    if (pool.assigned) {
-          pool.assigned.forEach(function (r, i) {
-            r['name'] = assignedObj[r.id];
-          });
-    }
-    return pool;
-  }
 
 
 
@@ -1238,6 +1209,3 @@ mc["pools"] = pools;
 mc["general"] = general;
 
 module.exports = mc;
-
-
-

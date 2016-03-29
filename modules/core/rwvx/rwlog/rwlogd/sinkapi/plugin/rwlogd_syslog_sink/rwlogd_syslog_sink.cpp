@@ -186,7 +186,7 @@ private:
         set_server_ip(address_list[i]);
         return RW_STATUS_SUCCESS;
     }
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   void set_server_ip (struct in_addr *ip_address)

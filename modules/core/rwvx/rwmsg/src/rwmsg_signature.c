@@ -52,7 +52,7 @@ rwmsg_signature_t *rwmsg_signature_create(rwmsg_endpoint_t *ep,
   case RWMSG_PAYFMT_PBAPI:
     break;
   default:
-    RW_ASSERT(0);
+    RW_CRASH();
     break;
   }
 

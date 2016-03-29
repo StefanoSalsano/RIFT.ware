@@ -41,7 +41,7 @@ rwsched_dispatch_queue_create(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
   return NULL;
 }
 
@@ -73,7 +73,7 @@ rwsched_dispatch_set_target_queue(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 rwsched_dispatch_queue_t
@@ -105,7 +105,7 @@ rwsched_dispatch_get_global_queue(rwsched_tasklet_ptr_t sched_tasklet,
       return instance->global_rwqueue[i].rwq;
     }
   }
-  RW_ASSERT(0);
+  RW_CRASH();
   return NULL;
 }
 
@@ -158,7 +158,7 @@ rwsched_dispatch_async_f(rwsched_tasklet_ptr_t sched_tasklet,
     RW_ASSERT(queue->header.libdispatch_object._dq);
     if (queue == instance->main_rwqueue &&
         sched_tasklet->blocking_mode.blocked) {
-      //RW_ASSERT(0);
+      //RW_CRASH();
       rwsched_dispatch_what_ptr_t what = (rwsched_dispatch_what_ptr_t) RW_MALLOC0_TYPE(sizeof(*what), rwsched_dispatch_what_ptr_t); /* always leaked! */
       what->type = RWSCHED_DISPATCH_ASYNC;
       what->closure.handler = handler;
@@ -180,7 +180,7 @@ rwsched_dispatch_async_f(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -201,7 +201,7 @@ rwsched_dispatch_after_f(rwsched_tasklet_ptr_t sched_tasklet,
     RW_ASSERT(queue->header.libdispatch_object._dq);
     if (queue == instance->main_rwqueue &&
         sched_tasklet->blocking_mode.blocked) {
-      //RW_ASSERT(0);
+      //RW_CRASH();
       rwsched_dispatch_what_ptr_t what = (rwsched_dispatch_what_ptr_t) RW_MALLOC0_TYPE(sizeof(*what), rwsched_dispatch_what_ptr_t); /* always leaked! */
       what->type = RWSCHED_DISPATCH_ASYNC;
       what->closure.handler = handler;
@@ -223,7 +223,7 @@ rwsched_dispatch_after_f(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -245,5 +245,5 @@ rwsched_dispatch_sync_f(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }

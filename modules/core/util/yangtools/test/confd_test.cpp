@@ -84,7 +84,7 @@ class XMLNoListCopier
           node->get_yang_node()->get_type()->get_leaf_type() != RW_YANG_LEAF_TYPE_EMPTY && 
           text.find_first_not_of("\t\n\v\f\r ") != std::string::npos) {
         if (text.find_first_of ("http")) {
-          RW_ASSERT(0);
+          RW_CRASH();
         }
         
         curr_node_ = to_node_->add_child(node->get_yang_node(), node->get_text_value().c_str());

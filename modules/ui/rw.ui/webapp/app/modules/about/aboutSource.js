@@ -15,7 +15,7 @@ var aboutSource = {
       remote: function(state) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/about?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/about?api_server=' + API_SERVER,
             type:'GET',
             beforeSend: Utils.addAuthorizationStub,
             contentType: "application/json",
@@ -44,7 +44,7 @@ var aboutSource = {
       remote: function(state) {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':3000/mission-control/create-time?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':3000/mission-control/create-time?api_server=' + API_SERVER,
             type:'GET',
             beforeSend: Utils.addAuthorizationStub,
             contentType: "application/json",

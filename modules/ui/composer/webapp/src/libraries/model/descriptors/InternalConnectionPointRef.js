@@ -22,14 +22,28 @@ export default class InternalConnectionPointRef extends DescriptorModel {
 		return 'InternalConnectionPointRef';
 	}
 
-	constructor(model, parent) {
-		super(typeof model === 'string' ? {id: model} : model, parent);
-		this.className = InternalConnectionPointRef.className;
+	static get qualifiedType() {
+		return 'vnfd.internal-vld.' + InternalConnectionPointRef.type;
+	}
+
+	constructor(m, parent) {
+		super(!m || typeof m === 'string' ? {id: m, isLeaf: true} : m, parent);
+		this.uid = this.id;
 		this.type = InternalConnectionPointRef.type;
+		this.uiState['qualified-type'] = InternalConnectionPointRef.qualifiedType;
+		this.className = InternalConnectionPointRef.className;
 	}
 
 	toString() {
-		return this.model.id;
+		return this.valueOf();
+	}
+
+	remove() {
+		return this.parent.removeInternalConnectionPointRefForId(this.id);
+	}
+
+	valueOf() {
+		return this.id;
 	}
 
 }

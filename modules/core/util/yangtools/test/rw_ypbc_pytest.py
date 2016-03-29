@@ -18,6 +18,8 @@ import unittest
 import xmlrunner
 import gi
 import re
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwmanifestDYang', '1.0')
 from gi.repository import RwYang
 from gi.repository import RwYangPb
 from gi.repository import RwmanifestDYang

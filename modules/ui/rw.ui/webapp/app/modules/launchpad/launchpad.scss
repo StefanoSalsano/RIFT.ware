@@ -12,6 +12,9 @@
 .lp-react-launch {
     display: flex;
 }
+.app-body.create-fleet {
+        height: 100%;
+}
 .name-input input {
     width: 350px;
     height: 35px;
@@ -21,4 +24,10 @@
     background:white !important;
     margin: 0;
     margin-top: 0.25rem;
+}
+
+.lp_dashboard {
+    .dashboardCard {
+        // height: 450px;
+    }
 }

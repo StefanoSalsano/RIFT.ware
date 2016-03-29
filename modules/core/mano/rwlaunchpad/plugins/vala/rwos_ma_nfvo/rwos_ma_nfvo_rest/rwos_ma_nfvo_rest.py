@@ -8,6 +8,10 @@ import logging
 import rw_status
 import rwlogger
 import subprocess, os
+
+import gi
+gi.require_version('RwOsMaNfvo', '1.0')
+gi.require_version('RwTypes', '1.0')
 from gi.repository import (
     GObject,
     RwOsMaNfvo,

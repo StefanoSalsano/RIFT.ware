@@ -2,6 +2,7 @@
  * Created by onvelocity on 2/10/16.
  */
 import alt from '../../../alt'
+import _ from 'lodash'
 import d3 from 'd3'
 import math from '../math'
 import ClassNames from 'classnames'
@@ -19,6 +20,7 @@ import DescriptorGraphSelection from '../DescriptorGraphSelection'
 import GraphVirtualDeploymentUnit from '../GraphVirtualDeploymentUnit'
 import GraphRecordServicePath from '../GraphRecordServicePath'
 import GraphInternalVirtualLink from '../GraphInternalVirtualLink'
+import TooltipManager from '../../TooltipManager'
 
 function onCutDelegateToRemove(container) {
 	function onCut(event) {
@@ -118,7 +120,7 @@ export default function RelationsAndNetworksLayout() {
 			height: containerHeight,
 			top(container, layouts) {
 				const positionIndex = layouts.nsd.list.length + this.list.length;
-				return (positionIndex * (this.height * 1.5)) + 20;
+				return (positionIndex * (this.height * 1.5)) + 120;
 			},
 			left(container, layouts) {
 				return 10;
@@ -173,17 +175,13 @@ export default function RelationsAndNetworksLayout() {
 			width: containerWidth,
 			height: 38,
 			top(container) {
-				return (countAncestors(container) * 100) + 100;
+				return (countAncestors(container) * 100) + 180;
 			},
 			left() {
-				const positionIndex = this.list.reduce((count, d) => {
-					const root = d.getRoot();
-					if (root && root.uiState.containerPositionMap && !root.uiState.containerPositionMap[d.key]) {
-						count++;
-					}
-					return count;
-				}, 0);
-				return (positionIndex * (containerWidth * 1.5)) + ((containerWidth * 1.5) / 2) + ((containerHeight * 1.5) / 2);
+				const positionIndex = this.list.length;
+				const marginOffsetFactor = 1.5;
+				const gutterOffsetFactor = 1.5;
+				return (positionIndex * (this.width * gutterOffsetFactor)) + ((this.width * marginOffsetFactor) / 2) + leftOffset;
 			},
 			renderRelationPath: renderRelationPath,
 			renderConnectionPath: renderConnectionPath
@@ -193,19 +191,13 @@ export default function RelationsAndNetworksLayout() {
 			width: containerWidth,
 			height: 38,
 			top(container, containerLayouts) {
-				const maxVDUCount = containerList.reduce((maxCount, d) => {
-					if (d.vdu) {
-						return Math.max(maxCount, d.vdu.length);
-					}
-					return maxCount;
-				}, 0);
-				return (maxVDUCount + 1) * (containerLayouts.vdu.height + containerLayouts.vdu.gutter) + 225;
+				return (countAncestors(container) * 100) + 100;
 			},
 			left() {
 				const positionIndex = this.list.length;
 				const marginOffsetFactor = 1.5;
 				const gutterOffsetFactor = 1.5;
-				return (positionIndex * (this.width * gutterOffsetFactor)) + ((this.width * marginOffsetFactor) / 2);
+				return (positionIndex * (this.width * gutterOffsetFactor)) + ((this.width * marginOffsetFactor) / 2) + leftOffset;
 			},
 			renderRelationPath: renderRelationPath,
 			renderConnectionPath: renderConnectionPath
@@ -216,20 +208,11 @@ export default function RelationsAndNetworksLayout() {
 			height: containerHeight,
 			gutter: 30,
 			top(container) {
-				const rowTop = (countAncestors(container) * 100) + 100;
-				const positionIndex = this.list.reduce((a, d) => {
-					if (d.parent === container.parent) {
-						return a + 1;
-					}
-					return a;
-				}, 0);
-				return rowTop + (positionIndex * (this.height + this.gutter));
+				return (countAncestors(container) * 100) + 10;
 			},
 			left(container) {
-				if (container.parent.uiState.defaultLayoutPosition) {
-					return container.parent.uiState.defaultLayoutPosition.left;
-				}
-				return container.parent.position.left;
+				const positionIndex = this.list.length;
+				return (positionIndex * (this.width * 1.5)) + leftOffset;
 			},
 			renderRelationPath: renderRelationPath,
 			renderConnectionPath: renderConnectionPath
@@ -252,7 +235,7 @@ export default function RelationsAndNetworksLayout() {
 		const connectionPointRefList = [];
 		containerList.filter(container => container.connection).forEach(container => {
 			container.uiState.hasConnection = false;
-			container.connection.forEach(cpRef => {
+			container.connection.filter(d => d.key).forEach(cpRef => {
 				const source = connectionPointMap[cpRef.key];
 				const destination = container;
 				source.uiState.hasConnection = true;
@@ -369,9 +352,14 @@ export default function RelationsAndNetworksLayout() {
 			},
 			'data-tip': d => {
 				const info = d.displayData;
-				return info.name + '<br />' + info.type;
+				return Object.keys(info).reduce((r, key) => {
+					if (info[key]) {
+						return r + `<div class="${key}"><i>${key}</i><val>${info[key]}</val></div>`;
+					}
+					return r;
+				}, '');
 			},
-			'data-offset': d => {
+			'data-tip-offset': d => {
 				if (d.type === 'internal-connection-point') {
 					return '{"top": -7, "left": -9}';
 				}
@@ -390,6 +378,24 @@ export default function RelationsAndNetworksLayout() {
 				}
 				return internalConnectionPointSymbolBottom();
 			}
+		}).on('cut', (container) => {
+
+			let success = false;
+
+			if (container && container.remove) {
+				success = container.remove();
+			}
+
+			if (success) {
+				CatalogItemsActions.catalogItemDescriptorChanged.defer(container.getRoot());
+			} else {
+				d3.event.preventDefault();
+			}
+
+			d3.event.stopPropagation();
+
+		}).on('mouseenter', () => {
+			TooltipManager.showTooltip(d3.event.target);
 		});
 
 		points.exit().remove();
@@ -449,6 +455,8 @@ export default function RelationsAndNetworksLayout() {
 			container.position.move(Math.max(props.padding, left), Math.max(props.padding, top));
 			graph.saveContainerPosition(container);
 			delete container.uiState.dropCoordinates;
+		} else {
+			graph.saveContainerPosition(container);
 		}
 	}
 
@@ -507,6 +515,7 @@ export default function RelationsAndNetworksLayout() {
 					}
 					d.position.move(newLeftEdge, newTopEdge);
 					graph.saveContainerPosition(d);
+					const connectionPointRefs = getConnectionPointEdges();
 					d3.select(this).attr({
 						transform: () => {
 							const x = d.position.left;
@@ -514,7 +523,6 @@ export default function RelationsAndNetworksLayout() {
 							return 'translate(' + x + ', ' + y + ')';
 						}
 					});
-					const connectionPointRefs = getConnectionPointEdges();
 					requestAnimationFrame(() => {
 						drawConnectionPointsAndPaths(graph, connectionPointRefs);
 						layout.renderers.forEach(d => d.render());

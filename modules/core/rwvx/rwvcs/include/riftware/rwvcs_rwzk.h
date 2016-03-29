@@ -198,23 +198,6 @@ bool
 rwvcs_rwzk_test_component_type(rw_component_info * component, void * userdata);
 
 /*
- * Find the instance name of the lead VM for the specified instance.  If the
- * instance does not have a leader, then RW_STATUS_NOTFOUND will be returned.
- *
- * @param rwvcs         - rwvcs instance
- * @param instance_name - instance name of component for which to find a leader
- * @param leader_id     - on successful lookup, the instance name of the the
- *                        component's leader, NULL otherwise.
- * @return              - RW_STATUS_SUCCESS,
- *                        RW_STATUS_NOTFOUND if the component does not have a leader.
- */
-rw_status_t
-rwvcs_rwzk_get_leader(
-    rwvcs_instance_ptr_t rwvcs,
-    const char * instance_name,
-    char ** leader_id);
-
-/*
  * Find the instance name of the nearest leader.  Given any component, the nearest
  * leader is the leader of the first grouping that both contains this component and
  * has a defined leader.
@@ -436,21 +419,39 @@ rwvcs_rwzk_update_config_ready(
     bool         config_ready);
 
 /*
- * starts a watcher - Blocking Call
+ * Update a component's recovery_action state from action start
  *
  * @param rwvcs         - rwvcs instance
- * @param path          - path on which watcher is set
- * @param cb            - callback routine
- * @param ud            - userdata for callback
+ * @param instance_name - name of the component to reparent
+ * @param recovery_action  - component recovery action 
  * @return              - RW_STATUS_SUCCESS
  *                        RW_STATUS_NOTFOUND if any component is not found
  *                        RW_STATUS_FAILURE otherwise
  */
 rw_status_t
+rwvcs_rwzk_update_recovery_action(
+    rwvcs_instance_ptr_t rwvcs,
+    const char * instance_name,
+    vcs_recovery_type recovery_action);
+
+/*
+ * starts a watcher - Blocking Call
+ *
+ * @param rwvcs         - rwvcs instance
+ * @param path          - path on which watcher is set
+ * @param sched_tasklet_p  - sched tasklet ptr
+ * @param rwq           - dispatch serial queue for dispatch callback
+ * @param cb            - callback routine
+ * @param ud            - userdata for callback
+ * @return              - rwcal closure if allocated - NULL otherwise
+ */
+rwcal_closure_ptr_t
 rwvcs_rwzk_watcher_start(
     rwvcs_instance_ptr_t rwvcs,
     const char * path,
-    rw_status_t (*cb)(void* ud),
+    rwsched_tasklet_ptr_t sched_tasklet_ptr,
+    rwsched_dispatch_queue_t rwq,
+    void (*cb)(void* ud),
     void *ud);
 
 /*
@@ -485,6 +486,116 @@ rwvcs_rwzk_get(
     rwvcs_instance_ptr_t rwvcs,
     const char * path,
     char ** data);
+
+/*
+ * set data at specified path
+ *
+ * @param rwvcs   - rwvcs instance.
+ * @param path    - path to which data need to be set
+ * @param data    - data that needs to be stored
+ * @return        - RW_STATUS_SUCCESS
+ *                  RW_STATUS_FAILURE otherwise.
+ */
+rw_status_t
+rwvcs_rwzk_set(
+    rwvcs_instance_ptr_t rwvcs, 
+    const char * path,
+    const char * data);
+
+/*
+ * Delete a instance data node from the zookeeper
+ *
+ * @param rwvcs         - rwvcs instance
+ * @param instance_name - name of instance to delete
+ * @return              - rw_status_t
+ */
+rw_status_t
+rwvcs_rwzk_delete_node(rwvcs_instance_ptr_t rwvcs, const char * instance_name);
+
+/*
+ * create the specified path
+ *
+ * @param rwvcs   - rwvcs instance.
+ * @param path    - path to which data need to be set
+ * @return        - RW_STATUS_SUCCESS
+ *                  RW_STATUS_FAILURE otherwise.
+ */
+rw_status_t
+rwvcs_rwzk_create(
+    rwvcs_instance_ptr_t rwvcs, 
+    const char * path);
+
+/*
+ * check if specified path exist
+ *
+ * @param rwvcs   - rwvcs instance.
+ * @param path    - path to which data need to be set
+ * @return        - True if the instance is in the zookeeper, false otherwise
+ */
+rw_status_t
+rwvcs_rwzk_exists(
+    rwvcs_instance_ptr_t rwvcs, 
+    const char * path);
+
+/*
+ * Lock the zookeeper store for the specified path
+ *
+ * @param rwvcs   - rwvcs instance.
+ * @param path    - path for which lock is to be taken
+ * @param timeout - maximum time to wait for the lock.
+ * @return        - RW_STATUS_SUCCESS
+ *                  RW_STATUS_TIMEDOUT if timeout hit
+ *                  RW_STATUS_NOTFOUND if not found
+ *                  RW_STATUS_FAILURE otherwise.
+ */
+rw_status_t
+rwvcs_rwzk_lock_path(rwvcs_instance_ptr_t rwvcs, const char *path, struct timeval * timeout);
+
+/*
+ * Unlock the zookeeper store for the specified path
+ *
+ * @param rwvcs   - rwvcs instance.
+ * @param path    - path to which lock is to be released
+ * @return        - RW_STATUS_SUCCESS
+ *                  RW_STATUS_NOTFOUND if not found
+ *                  RW_STATUS_FAILURE otherwise.
+ */
+rw_status_t
+rwvcs_rwzk_unlock_path(rwvcs_instance_ptr_t rwvcs, const char * path);
+
+/*
+ * Delete a path from the zookeeper
+ *
+ * @param rwvcs         - rwvcs instance
+ * @param path          - path to delete
+ * @return              - rw_status_t
+ */
+rw_status_t
+rwvcs_rwzk_delete_path(rwvcs_instance_ptr_t rwvcs, const char * path);
+
+/*
+ * stops a watcher - Blocking Call
+ *
+ * @param rwvcs         - rwvcs instance
+ * @param path          - path on which watcher is set
+ * @param closure       - pointer to the closure returned by watcher_start
+ * @return              - RW_STATUS_SUCCESS
+ *                        RW_STATUS_NOTFOUND if path is not found
+ *                        RW_STATUS_FAILURE otherwise
+ */
+rw_status_t
+rwvcs_rwzk_watcher_stop(
+    rwvcs_instance_ptr_t rwvcs,
+    const char * path,
+    rwcal_closure_ptr_t *closure);
+
+/*
+ * start the zookeeper client or zake client
+ *
+ * @param rwvcvs  - rwvcs instance.
+ * @return        - RW_STATUS_SUCCESS.
+ */
+rw_status_t rwvcs_rwzk_client_start(rwvcs_instance_ptr_t rwvcs);
 
 __END_DECLS
 

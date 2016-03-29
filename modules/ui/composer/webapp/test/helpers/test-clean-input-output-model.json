@@ -14,9 +14,9 @@
 				"name": "ping-pong-nsd",
 				"short-name": "ping-pong-nsd",
 				"vendor": "RIFT.io",
+				"logo": "rift.png",
 				"description": "Toy NS",
 				"version": "1.0",
-				"logo": "rift.png",
 				"connection-point": [
 					{
 						"name": "ping-pong-nsd/cp0"
@@ -92,49 +92,53 @@
 							"id": "1-a5b8-45b5-8163-f2577555d561",
 							"name": "classifier-1",
 							"rsp-id-ref": "a10b372d-19a1-4d84-a246-82bfceddae12",
-							"match-attributes": {
+							"match-attributes": [{
+								"id": "1",
 								"ip-proto": "123.0.0.1",
 								"source-ip-address": "10.4.0.1",
 								"destination-ip-address": "10.4.0.2",
 								"source-port": "1234",
 								"destination-port": "4321"
-							}
+							}]
 						},
 						{
 							"id": "2-a5b8-45b5-8163-f2577555d561",
 							"name": "classifier-2",
 							"rsp-id-ref": "a10b372d-19a1-4d84-a246-82bfceddae12",
-							"match-attributes": {
+							"match-attributes": [{
+								"id": "1",
 								"ip-proto": "123.0.0.1",
 								"source-ip-address": "10.4.0.1",
 								"destination-ip-address": "10.4.0.2",
 								"source-port": "1234",
 								"destination-port": "4321"
-							}
+							}]
 						},
 						{
 							"id": "3-a5b8-45b5-8163-f2577555d561",
 							"name": "classifier-3",
 							"rsp-id-ref": "a10b372d-19a1-4d84-a246-82bfceddae12",
-							"match-attributes": {
+							"match-attributes": [{
+								"id": "1",
 								"ip-proto": "123.0.0.1",
 								"source-ip-address": "10.4.0.1",
 								"destination-ip-address": "10.4.0.2",
 								"source-port": "1234",
 								"destination-port": "4321"
-							}
+							}]
 						},
 						{
 							"id": "4-a5b8-45b5-8163-f2577555d561",
 							"name": "classifier-4",
 							"rsp-id-ref": "a10b372d-19a1-4d84-a246-82bfceddae12",
-							"match-attributes": {
+							"match-attributes": [{
+								"id": "1",
 								"ip-proto": "123.0.0.1",
 								"source-ip-address": "10.4.0.1",
 								"destination-ip-address": "10.4.0.2",
 								"source-port": "1234",
 								"destination-port": "4321"
-							}
+							}]
 						}
 
 					]

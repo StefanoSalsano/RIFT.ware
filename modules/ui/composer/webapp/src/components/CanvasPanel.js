@@ -7,6 +7,7 @@
 'use strict';
 
 import _ from 'lodash'
+import cc from 'change-case'
 import React from 'react'
 import PureRenderMixin from 'react-addons-pure-render-mixin'
 import utils from '../libraries/utils'
@@ -18,8 +19,9 @@ import CanvasEditorActions from '../actions/CanvasEditorActions'
 import ComposerAppActions from '../actions/ComposerAppActions'
 import CanvasZoom from './CanvasZoom'
 import CanvasPanelTray from './CanvasPanelTray'
-import ForwardingGraphCanvasEditor from './ForwardingGraphPathsEditor'
+import EditForwardingGraphPaths from './EditorForwardingGraph/EditForwardingGraphPaths'
 import SelectionManager from '../libraries/SelectionManager'
+import DescriptorModelIconFactory from '../libraries/model/IconFactory'
 
 import '../styles/CanvasPanel.scss'
 
@@ -42,12 +44,11 @@ const CanvasPanel = React.createClass({
 	componentWillMount() {
 	},
 	componentDidMount() {
-		SelectionManager.addEventListeners();
 	},
 	componentDidUpdate() {
+		SelectionManager.refreshOutline();
 	},
 	componentWillUnmount() {
-		SelectionManager.removeEventListeners();
 	},
 	render() {
 		var style = {
@@ -58,9 +59,10 @@ const CanvasPanel = React.createClass({
 		const hasNoCatalogs = this.props.hasNoCatalogs;
 		const bodyComponent = hasItem ? <CatalogItemCanvasEditor zoom={this.props.zoom} isShowingMoreInfo={this.props.showMore} containers={this.props.containers}/> : messages.canvasWelcome();
 		return (
-			<div className="CanvasPanel" style={style} onDragOver={this.onDragOver} onDrop={this.onDrop}>
-				<div className="CanvasPanelHeader panel-header" data-resizable="limit_bottom">
+			<div id="canvasPanelDiv" className="CanvasPanel" style={style} onDragOver={this.onDragOver} onDrop={this.onDrop}>
+				<div onDoubleClick={this.onDblClickOpenFullScreen}  className="CanvasPanelHeader panel-header" data-resizable="limit_bottom">
 					<h1>
+						{hasItem ? <img src={DescriptorModelIconFactory.getUrlForType(this.props.containers[0].type, 'black')} width="20px" /> : null}
 						<span className="model-name">{this.props.title}</span>
 					</h1>
 				</div>
@@ -69,7 +71,7 @@ const CanvasPanel = React.createClass({
 				</div>
 				<CanvasZoom zoom={this.props.zoom} style={{bottom: this.props.layout.bottom + 20}}/>
 				<CanvasPanelTray layout={this.props.layout} show={isEditingNSD}>
-					<ForwardingGraphCanvasEditor containers={this.props.containers} />
+					<EditForwardingGraphPaths containers={this.props.containers} />
 				</CanvasPanelTray>
 			</div>
 		);
@@ -93,12 +95,13 @@ const CanvasPanel = React.createClass({
 		}
 	},
 	handleDropCanvasAction(event, data) {
-		if (data.action === 'add-vld') {
-			event.preventDefault();
-			this.addVirtualLink({clientX: event.clientX, clientY: event.clientY});
-		} else if (data.action === 'add-vnffgd') {
-			event.preventDefault();
-			this.addForwardingGraph({clientX: event.clientX, clientY: event.clientY});
+		const action = cc.camel('on-' + data.action);
+		if (typeof this[action] === 'function') {
+			if (this[action]({clientX: event.clientX, clientY: event.clientY})) {
+				event.preventDefault();
+			}
+		} else {
+			console.warn(`no action defined for drop event ${data.action}. Did you forget to add CanvasPanel.${action}() event handler?`);
 		}
 	},
 	handleDropCatalogItem(event, data) {
@@ -112,10 +115,10 @@ const CanvasPanel = React.createClass({
 			// so add the item to the nsd and re-render the canvas
 			switch (data.item.uiState.type) {
 			case 'vnfd':
-				this.addVirtualNetworkFunction(data.item, {clientX: event.clientX, clientY: event.clientY});
+				this.onAddVnfd(data.item, {clientX: event.clientX, clientY: event.clientY});
 				break;
 			case 'pnfd':
-				this.addPhysicalNetworkFunction(data.item, {clientX: event.clientX, clientY: event.clientY});
+				this.onAddPnfd(data.item, {clientX: event.clientX, clientY: event.clientY});
 				break;
 			default:
 				console.warn(`Unknown catalog-item type. Expect type "nsd", "vnfd" or "pnfd" but got ${data.item.uiState.type}.`);
@@ -129,15 +132,23 @@ const CanvasPanel = React.createClass({
 			CatalogItemsActions.editCatalogItem(openItem);
 		}
 	},
-	addVirtualLink(dropCoordinates) {
+	onAddVdu(dropCoordinates) {
 		const currentItem = this.props.containers[0];
-		if (DescriptorModelFactory.isNetworkService(currentItem)) {
+		if (DescriptorModelFactory.isVirtualNetworkFunction(currentItem)) {
+			const vdu = currentItem.createVdu();
+			vdu.uiState.dropCoordinates = dropCoordinates;
+			CatalogItemsActions.catalogItemDescriptorChanged(currentItem);
+		}
+	},
+	onAddVld(dropCoordinates) {
+		const currentItem = this.props.containers[0];
+		if (DescriptorModelFactory.isNetworkService(currentItem) || DescriptorModelFactory.isVirtualNetworkFunction(currentItem)) {
 			const vld = currentItem.createVld();
 			vld.uiState.dropCoordinates = dropCoordinates;
 			CatalogItemsActions.catalogItemDescriptorChanged(currentItem);
 		}
 	},
-	addForwardingGraph(dropCoordinates) {
+	onAddVnffgd(dropCoordinates) {
 		const currentItem = this.props.containers[0];
 		if (DescriptorModelFactory.isNetworkService(currentItem)) {
 			const vld = currentItem.createVnffgd();
@@ -145,16 +156,16 @@ const CanvasPanel = React.createClass({
 			CatalogItemsActions.catalogItemDescriptorChanged(currentItem);
 		}
 	},
-	addVirtualNetworkFunction(model, dropCoordinates) {
+	onAddVnfd(model, dropCoordinates) {
 		const currentItem = this.props.containers[0];
-		if (DescriptorModelFactory.isNetworkService(currentItem)) {
+		if (DescriptorModelFactory.isNetworkService(currentItem) || DescriptorModelFactory.isVirtualNetworkFunction(currentItem)) {
 			const vnfd = DescriptorModelFactory.newVirtualNetworkFunction(model);
 			const cvnfd = currentItem.createConstituentVnfdForVnfd(vnfd);
 			cvnfd.uiState.dropCoordinates = dropCoordinates;
 			CatalogItemsActions.catalogItemDescriptorChanged(currentItem);
 		}
 	},
-	addPhysicalNetworkFunction(model, dropCoordinates) {
+	onAddPnfd(model, dropCoordinates) {
 		const currentItem = this.props.containers[0];
 		if (DescriptorModelFactory.isNetworkService(currentItem)) {
 			const pnfd = DescriptorModelFactory.newPhysicalNetworkFunction(model);
@@ -162,6 +173,10 @@ const CanvasPanel = React.createClass({
 			currentItem.createPnfd(pnfd);
 			CatalogItemsActions.catalogItemDescriptorChanged(currentItem);
 		}
+	},
+	onDblClickOpenFullScreen(event) {
+		event.stopPropagation();
+		ComposerAppActions.enterFullScreenMode();
 	}
 });
 

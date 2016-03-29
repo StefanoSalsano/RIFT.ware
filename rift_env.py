@@ -224,7 +224,7 @@ def main(argv=sys.argv[1:]):
     env['PYTHON_INSTALL_DIR'] = os.path.join(env['RIFT_INSTALL'], "usr/lib/python2.7/site-packages")
     env['RIFT_PYTHON_INSTALL_DIR'] = os.path.join(env['PYTHON_INSTALL_DIR'], "rift")
     env['PLUGINDIR'] = os.path.join(env['RIFT_INSTALL'], 'usr/lib/rift/plugins')
-    env['RW_XSD_PATH'] = os.path.join(env['RIFT_INSTALL'], 'usr/data/xsd')
+    env['RIFT_XSD_PATH'] = os.path.join(env['RIFT_INSTALL'], 'usr/data/xsd')
     env['PEAS_PLUGIN_LOADERS_DIR'] = os.path.join(env['RIFT_INSTALL'],
             'usr/lib/libpeas-1.0/loaders')
 
@@ -337,10 +337,6 @@ def main(argv=sys.argv[1:]):
     env['YUMA_MODPATH'] = append_to_path_variable(
             env['YUMA_MODPATH'],
             yang_dirs)
-
-    env['RW_XSD_PATH'] = prepend_to_path_variable(
-            env['RW_XSD_PATH'],
-            yang_build_dirs)
 
     # write the environment to .rift-env
     build = os.path.join(root, '.build')

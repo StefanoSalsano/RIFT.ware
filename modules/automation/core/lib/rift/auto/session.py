@@ -3,15 +3,21 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
+import functools
 import logging
 import lxml.etree as etree
-import functools
+import os
 import re
 import requests
 import time
 import ncclient.manager
+
+from rift.rwlib.util import certs
 import rift.gi_utils
 
+from gi import require_version
+require_version('RwKeyspec', '1.0')
+require_version('RwYang', '1.0')
 from gi.repository import (
     RwKeyspec,
     RwYang,
@@ -203,7 +209,8 @@ class Proxy(object):
         '''
         # Remove xml declaration in order to be parsed by etree.fromstring().
         xml.replace(Proxy.XML_DECLARATION, '')
-        xml_root = etree.fromstring(xml.encode('ascii'))
+        parser = etree.XMLParser(huge_tree=True)
+        xml_root = etree.XML(xml.encode('ascii'), parser)
 
         rpc_response_element = etree.Element(
             rpc_name,
@@ -233,6 +240,7 @@ class Proxy(object):
         # 1. If a name space'd XML is used then the "[^:>]*:{elem}" regex will
         #    be used.
         # 2. Otherwise we will directly used the new_root name.
+        unrooted_xml = None
         tag_name = "(?:(?=.+?:{elem})[^:>]*:{elem}|(?!:{elem}){elem})"
         re_evil = "<{tag}(?: [^>]*>|>)".format(tag=tag_name)
         re_evil += "(.*?)"
@@ -250,30 +258,30 @@ class Proxy(object):
             # Include root element
             match = re.search(re_evil.format(elem=newroot), xml, re.MULTILINE|re.DOTALL)
             if match:
-                new_xml = match.group(0)
+                unrooted_xml = match.group(0)
         else:
             # Don't include root element
             match = re.search(re_evil.format(elem=newroot), xml, re.MULTILINE|re.DOTALL)
             if match:
-                new_xml = match.group(1)
+                unrooted_xml = match.group(1)
 
-        if new_xml is None:
+        if unrooted_xml is None:
             raise ProxyParseError('Failed to modify root of xml document')
 
         if preserve_namespace:
-            prefixes = set(re.findall(r'[\<\ ]\/?([^:\<\>]*?):', new_xml, re.MULTILINE|re.DOTALL))
+            prefixes = set(re.findall(r'[\<\ ]\/?([^:\<\>]*?):', unrooted_xml, re.MULTILINE|re.DOTALL))
             for prefix in prefixes:
                 if not re.match('^[-\w]+$', prefix, re.MULTILINE|re.DOTALL):
                     continue
                 re_namespace = r'(xmlns:{}\=[^\ >]*)'.format(prefix)
-                if not re.search(re_namespace, new_xml, re.MULTILINE|re.DOTALL):
+                if not re.search(re_namespace, unrooted_xml, re.MULTILINE|re.DOTALL):
                     match = re.search(re_namespace, xml, re.MULTILINE|re.DOTALL)
                     if match:
                         namespace_decl = match.group(1)
-                        pos = new_xml.index('>')
-                        new_xml = new_xml[:pos] + " {}".format(namespace_decl) + new_xml[pos:]
+                        pos = unrooted_xml.index('>')
+                        unrooted_xml = unrooted_xml[:pos] + " {}".format(namespace_decl) + unrooted_xml[pos:]
 
-        return new_xml
+        return unrooted_xml
 
     def __init__(self, proxy_impl):
         '''Initialize an instance of the Proxy class
@@ -346,7 +354,7 @@ class Proxy(object):
 
         return True
 
-    def wait_for(self, xpath, expected, timeout, fail_on=None, compare=None, list_obj=False):
+    def wait_for(self, xpath, expected, timeout, fail_on=None, compare=None, list_obj=False, retry_interval=10):
         '''Get operational data from the supplied xpath until the
         comparison operation succeeds or the time elapsed exceeds
         the supplied timeout
@@ -361,6 +369,7 @@ class Proxy(object):
             compare   - method to compare expected to query result
             list_obj  - set to true if xpath points to a list node to
                           retrieve the full list
+            retry_interval  - interval between comparison attempts
 
         Returns:
             A GI object representing the requested resource
@@ -372,8 +381,7 @@ class Proxy(object):
             ProxyWaitforError       - if a failure case is encountered
         '''
         match = False
-        elapsed = 0
-        start = time.time()
+        start_time = time.time()
 
         failure_cases = []
         if fail_on:
@@ -387,7 +395,7 @@ class Proxy(object):
         else:
             compare_method = Proxy._default_compare
 
-        while elapsed < timeout:
+        while True:
             response = self.get(xpath, list_obj=list_obj)
 
             for failure_case in failure_cases:
@@ -402,12 +410,13 @@ class Proxy(object):
             if match:
                 break
 
-            time.sleep(2)
-            elapsed = time.time() - start
+            time_elapsed = time.time() - start_time
+            time_remaining = timeout - time_elapsed
+            if time_remaining <= 0:
+                msg = 'Timed out after %d seconds while waiting for %s to reach expected state: %s'
+                raise ProxyExpectTimeoutError(msg % (time_elapsed, xpath, expected))
 
-        if elapsed >= timeout:
-            msg = 'Timedout waiting for %s to reach expected state: %s'
-            raise ProxyExpectTimeoutError(msg % (xpath, expected))
+            time.sleep(min(time_remaining, retry_interval))
 
         return response
 
@@ -692,7 +701,10 @@ class NetconfProxy(Proxy):
             response_obj.from_xml_v2(self.model, response_xml)
         else:
             # Response obj is not a gi object, if we aren't in a corner case that means the xpath refers to a leaf element
-            response_obj = Proxy._unroot_xml(xpath, response_xml, preserve_root=False, preserve_namespace=False)
+            try:
+                response_obj = Proxy._unroot_xml(xpath, response_xml, preserve_root=False, preserve_namespace=False)
+            except ProxyParseError:
+                response_obj = None
 
         return response_obj
 
@@ -734,7 +746,10 @@ class NetconfProxy(Proxy):
             response_obj.from_xml_v2(self.model, response_xml)
         else:
             # Response obj is not a gi object, if we aren't in a corner case that means the xpath refers to a leaf element
-            response_obj = Proxy._unroot_xml(xpath, response_xml, preserve_root=False, preserve_namespace=False)
+            try:
+                response_obj = Proxy._unroot_xml(xpath, response_xml, preserve_root=False, preserve_namespace=False)
+            except ProxyParseError:
+                response_obj = None
 
         return response_obj
 
@@ -922,11 +937,6 @@ class NetconfProxy(Proxy):
 class RestconfProxy(Proxy):
     '''Restconf based implementation of Proxy interface'''
 
-    RESTCONF_PROXY_HEADERS = {
-        'Accept':'application/vnd.yang.data+xml',
-        'Content-Type':'application/vnd.yang.data+xml',
-    }
-
     @staticmethod
     def _xpath_to_rcpath(xpath):
         '''Convert an xpath to a restconf path
@@ -958,9 +968,7 @@ class RestconfProxy(Proxy):
                 'operational',
                 self._xpath_to_rcpath(xpath))
         uri += '?deep'
-        response = requests.get(uri, auth=self.session.auth,
-                                headers=self.RESTCONF_PROXY_HEADERS,
-                                timeout=self.OPERATION_TIMEOUT_SECS)
+        response = self.session.request("GET", uri)
         response_xml = response.text
 
         logger.debug("Response: (len: %s)", len(response_xml))
@@ -989,7 +997,10 @@ class RestconfProxy(Proxy):
             response_obj.from_xml_v2(self.model, response_xml)
         else:
             # Response obj is not a gi object, if we aren't in a corner case that means the xpath refers to a leaf element
-            response_obj = Proxy._unroot_xml(xpath, response_xml, preserve_root=False, preserve_namespace=False)
+            try:
+                response_obj = Proxy._unroot_xml(xpath, response_xml, preserve_root=False, preserve_namespace=False)
+            except ProxyParseError:
+                response_obj = None
 
         return response_obj
 
@@ -1000,9 +1011,7 @@ class RestconfProxy(Proxy):
                 source,
                 self._xpath_to_rcpath(xpath))
         uri += '?deep'
-        response = requests.get(uri, auth=self.session.auth,
-                                headers=self.RESTCONF_PROXY_HEADERS,
-                                timeout=self.OPERATION_TIMEOUT_SECS)
+        response = self.session.request("GET", uri)
         response_xml = response.text
 
         logger.debug("Response: (len: %s)", len(response_xml))
@@ -1031,7 +1040,10 @@ class RestconfProxy(Proxy):
             response_obj.from_xml_v2(self.model, response_xml)
         else:
             # Response obj is not a gi object, if we aren't in a corner case that means the xpath refers to a leaf element
-            response_obj = Proxy._unroot_xml(xpath, response_xml, preserve_root=False, preserve_namespace=False)
+            try:
+                response_obj = Proxy._unroot_xml(xpath, response_xml, preserve_root=False, preserve_namespace=False)
+            except ProxyParseError:
+                response_obj = None
 
         return response_obj
 
@@ -1049,9 +1061,7 @@ class RestconfProxy(Proxy):
 
         logger.debug("Request EDIT CONFIG create %s %s", rctarget, xpath)
         logger.debug("Request Content: %s", xml)
-        response = requests.post(uri, data=xml, auth=self.session.auth,
-                                 headers=self.RESTCONF_PROXY_HEADERS,
-                                 timeout=self.OPERATION_TIMEOUT_SECS)
+        response = self.session.request("POST", uri, data=xml)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
         logger.debug("Response Content: %s", response_xml)
@@ -1075,9 +1085,7 @@ class RestconfProxy(Proxy):
                 self._xpath_to_rcpath(xpath))
         logger.debug("Request EDIT CONFIG merge %s %s", rctarget, xpath)
         logger.debug("Request Content: %s", xml)
-        response = requests.patch(uri, data=xml, auth=self.session.auth,
-                                  headers=self.RESTCONF_PROXY_HEADERS,
-                                  timeout=self.OPERATION_TIMEOUT_SECS)
+        response = self.session.request("PATCH", uri, data=xml)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
         logger.debug("Response Content: %s", response_xml)
@@ -1101,9 +1109,7 @@ class RestconfProxy(Proxy):
                 self._xpath_to_rcpath(xpath))
         logger.debug("Request EDIT CONFIG replace %s %s", rctarget, xpath)
         logger.debug("Request Content: %s", xml)
-        response = requests.put(uri, data=xml, auth=self.session.auth,
-                                headers=self.RESTCONF_PROXY_HEADERS,
-                                timeout=self.OPERATION_TIMEOUT_SECS)
+        response = self.session.request("PUT", uri, data=xml)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
         logger.debug("Response Content: %s", response_xml)
@@ -1124,9 +1130,7 @@ class RestconfProxy(Proxy):
                 rctarget,
                 self._xpath_to_rcpath(xpath))
         logger.debug("Request EDIT CONFIG delete %s %s", rctarget, xpath)
-        response = requests.delete(uri, auth=self.session.auth,
-                                   headers=self.RESTCONF_PROXY_HEADERS,
-                                   timeout=self.OPERATION_TIMEOUT_SECS)
+        response = self.session.request("DELETE", uri)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
         logger.debug("Response Content: %s", response_xml)
@@ -1183,9 +1187,7 @@ class RestconfProxy(Proxy):
 
         logger.debug("Request RPC %s", xpath)
         logger.debug("Request Content: %s", xml)
-        response = requests.post(uri, data=xml, auth=self.session.auth,
-                                 headers=self.RESTCONF_PROXY_HEADERS,
-                                 timeout=self.OPERATION_TIMEOUT_SECS)
+        response = self.session.request("POST", uri, data=xml)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
         logger.debug("Response Content: %s", response_xml)
@@ -1282,7 +1284,7 @@ class NetconfSession(object):
             if time_remaining <= 0:
                 break
 
-            time.sleep(min(time_remaining, 5))
+            time.sleep(min(time_remaining, 10))
 
 
         raise ProxyConnectionError("Could not connect to Confd ({}) ssh port ({}): within the timeout {} sec.".format(
@@ -1346,14 +1348,21 @@ class RestconfSession(object):
     DEFAULT_PORT = 8008
     DEFAULT_USERNAME = 'admin'
     DEFAULT_PASSWORD = 'admin'
-    URI_FORMAT = 'http://{}:{}/api/{}/{}'
+    URI_FORMAT = '{}://{}:{}/api/{}/{}'
+    OPERATION_TIMEOUT_SECS = Proxy.OPERATION_TIMEOUT_SECS
+    RESTCONF_HEADERS = {
+        'Accept':'application/vnd.yang.data+xml',
+        'Content-Type':'application/vnd.yang.data+xml',
+    }
 
     def __init__(
             self,
             host='127.0.0.1',
             port=DEFAULT_PORT,
             username=DEFAULT_USERNAME,
-            password=DEFAULT_PASSWORD):
+            password=DEFAULT_PASSWORD,
+            use_https=None,
+            cert=None):
         '''Initialize a new Restconf Session instance
 
         Arguments:
@@ -1361,6 +1370,10 @@ class RestconfSession(object):
             port - host port
             username - credentials for accessing the host, username
             password - credentials for accessing the host, password
+            use_https - If set, https scheme will be used.
+            cert - (Optional) if set, this cert will be used for https requests.
+                    Defaults to the certificate & key provided by
+                    rift.rwlib.util.certs library.
 
         Returns:
             A newly initialized Restconf session instance
@@ -1370,7 +1383,40 @@ class RestconfSession(object):
         self.username = username
         self.password = password
         self.auth = (self.username, self.password)
-        self.uri_format = self.URI_FORMAT.format(self.host, self.port, '{}', '{}')
+        https = False
+        if use_https is None:
+            https = True if os.environ['RIFT_BOOT_WITH_HTTPS'] else False
+        scheme = "https" if https else "http"
+        self.uri_format = self.URI_FORMAT.format(scheme, self.host, self.port, '{}', '{}')
+
+        self.session = requests.Session()
+        self.session.auth = self.auth
+        self.session.timeout = self.OPERATION_TIMEOUT_SECS
+        self.session.headers = self.RESTCONF_HEADERS
+
+        if https and cert is None:
+            # If no certifcate is available, then get the certificates used in
+            # the manifest using the certs lib.
+            self.session.verify = False
+
+            # Ignore the SSL flag, we want the session to configure the option.
+            _, cert, key = certs.get_bootstrap_cert_and_key()
+            self.session.cert = (cert, key)
+
+    def request(self, method, url, **kwargs):
+        """Trigger the http/https request
+
+        Arguments:
+            method - Request method (GET, PUT ...)
+            url (str): Url of the request
+            **kwargs: Any other kwargs to be passed to requests library.
+
+        Returns:
+            request.Response
+        """
+        response = self.session.request(method, url, **kwargs)
+
+        return response
 
     def connect(self, timeout=DEFAULT_CONNECTION_TIMEOUT):
         '''Connect Restconf Session

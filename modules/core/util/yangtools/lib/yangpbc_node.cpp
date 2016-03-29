@@ -588,6 +588,12 @@ std::string PbNode::get_schema_element_type() const
   return schema_element_type;
 }
 
+std::string PbNode::get_yang_description() const
+{
+  RW_ASSERT(ynode_);
+  return ynode_->get_description();
+}
+
 std::string PbNode::get_yang_fieldname() const
 {
   RW_ASSERT(ynode_);
@@ -1080,8 +1086,10 @@ bool PbNode::is_equivalent(
           && (*reason = "yang key"))
       || (flat_ != other_pbnode->flat_
           && (*reason = "flat extension"))
+#if 0
       || (0 != strcmp(ynode_->get_prefix(), other_pbnode->ynode_->get_prefix())
           && (*reason = "yang namespace prefix"))
+#endif
       || (0 != strcmp(ynode_->get_name(), other_pbnode->ynode_->get_name())
           && (*reason = "yang element name"))
      // ATTN: Also other yang refine targets: mandatory, config, presence, num-elements

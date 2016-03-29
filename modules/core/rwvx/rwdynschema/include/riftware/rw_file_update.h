@@ -94,7 +94,6 @@ private:
 
 private: // Not part of state mc directly
 
-  void cleanup_tmp_files();
   bool create_new_version_dir();
 
 public:
@@ -187,55 +186,6 @@ struct watcher_app_info {
   rwsched_dispatch_source_t source_ = 0;
   rwsched_CFRunLoopTimerRef monitor_timer_ = 0;
 };
-
-inline
-void FileUpdateProtocol::set_state(State curr_state, State nxt_state)
-{
-  state_.first = curr_state;
-  state_.second = nxt_state;
-}
-
-inline
-rwlog_ctx_t* FileUpdateProtocol::rwlog() const noexcept
-{
-  RW_ASSERT(tinfo_->rwlog_instance);
-  return tinfo_->rwlog_instance;
-}
-
-inline
-rwsched_tasklet_ptr_t FileUpdateProtocol::tasklet() const noexcept
-{
-  return tasklet_;
-}
-
-inline
-rwsched_instance_ptr_t FileUpdateProtocol::sched() const noexcept
-{
-  return sched_;
-}
-
-inline
-void FileUpdateProtocol::app_callback()
-{
-  RW_LOG(this, Debug, "Calling application callback");
-      app_data_->app_sub_cb(app_data_->app_instance,
-                            app_data_->batch_size,
-                            app_data_->module_names,
-                            app_data_->fxs_filenames,
-                            app_data_->so_filenames,
-                            app_data_->yang_filenames);
-  fini_state();
-}
-
-inline
-const char* owning_app_info::lock_file() const noexcept {
-  return parent_->lock_file_.c_str();
-}
-
-inline
-const char* watcher_app_info::lock_file() const noexcept {
-  return parent_->lock_file_.c_str();
-}
 
 };
 

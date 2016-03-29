@@ -1,4 +1,4 @@
-/*global SVGSVGElement, SVGPathElement*/
+/*global SVGSVGElement, SVGPathElement, SVGGElement*/
 /**
  * Created by onvelocity on 2/6/16.
  */
@@ -18,28 +18,18 @@ const SELECTIONS = '::private::selections';
  * 	1) given DescriptorModel instances mark them as 'selected'
  * 	2) given DOM elements draw an outline around them
  *
- * Note that the consumer must call addSelection(descriptor) and outlineElement(dom) seperately. This allows for complex
+ * Note that the consumer must call addSelection(descriptor) and outlineElement(dom) separately. This allows for complex
  * selections to be separate from the outline indicator. It also allows for selection sets that do not have a visual
  * outline associated with them.
  */
 class SelectionManager {
 
-	static get paused() {
-		return this._paused;
+	static disableOutlineChanges() {
+		SelectionManager._disableOutlineChanges = true;
 	}
 
-	static set paused(v) {
-		this._paused = v;
-	}
-
-	static pause() {
-		SelectionManager.paused = true;
-		SelectionManager.removeEventListeners();
-	}
-
-	static resume() {
-		SelectionManager.paused = false;
-		SelectionManager.addEventListeners(SelectionManager.element);
+	static enableOutlineChanges() {
+		SelectionManager._disableOutlineChanges = false;
 	}
 
 	static select(obj) {
@@ -48,76 +38,6 @@ class SelectionManager {
 			SelectionManager.clearSelectionAndRemoveOutline();
 			SelectionManager.addSelection(obj);
 			return true;
-		}
-	}
-
-	static get reactPauseResumeMixin() {
-		return {
-			get preventDeselectOnClick () {
-				return {
-					onMouseDownCapture: () => {
-						SelectionManager.pause();
-					},
-					// slight delay is to prevent a click from clearing the selection
-					onMouseUp: () => {
-						setTimeout(() => SelectionManager.resume(), 200);
-					}
-				};
-			}
-		};
-	}
-
-	static addEventListeners(element) {
-		SelectionManager.removeEventListeners();
-		this.element = element || this.element || document.body;
-		this.element.addEventListener('mousedown', SelectionManager.onMouseDown);
-		this.element.addEventListener('mousemove', SelectionManager.onMouseMove);
-		this.element.addEventListener('click', SelectionManager.onClickCaptureUpdateSelection);
-	}
-
-	static removeEventListeners() {
-		if (this.element) {
-			this.element.removeEventListener('click', SelectionManager.onClickCaptureUpdateSelection);
-			this.element.removeEventListener('mousedown', SelectionManager.onMouseDown);
-			this.element.removeEventListener('mousemove', SelectionManager.onMouseMove);
-		}
-	}
-
-	static onClickCaptureUpdateSelection(event) {
-		if (event.defaultPrevented) {
-			return
-		}
-		const target = SelectionManager.getClosestElementWithUID(event.target);
-		if (SelectionManager.isSelected(target)) {
-			return
-		}
-		if (SelectionManager.getSelections().length) {
-			SelectionManager.clearSelectionAndRemoveOutline();
-		}
-
-		delete this._mouseDownPosition;
-
-	}
-
-	static onMouseDown(event) {
-		this._mouseDownPosition = {
-			clientX: event.clientX,
-			clientY: event.clientY,
-			timeStamp: event.timeStamp
-		};
-	}
-
-	static onMouseMove(event) {
-		if (!this._mouseDownPosition) {
-			return;
-		}
-		const target = SelectionManager.getClosestElementWithUID(event.target);
-		if (!SelectionManager.isSelected(target)) {
-			return
-		}
-		if (this._mouseDownPosition.clientX - event.clientX ||
-			this._mouseDownPosition.clientY - event.clientY) {
-			SelectionManager.moveOutline();
 		}
 	}
 
@@ -133,9 +53,6 @@ class SelectionManager {
 	}
 
 	static addSelection(obj) {
-		if (this.paused) {
-			return;
-		}
 		const uid = UID.from(obj);
 		if (uid) {
 			SelectionManager[SELECTIONS].add(uid);
@@ -151,55 +68,59 @@ class SelectionManager {
 	}
 
 	static removeSelection(obj) {
-		if (this.paused) {
-			return;
-		}
 		const uid = UID.from(obj);
 		if (uid) {
 			SelectionManager[SELECTIONS].delete(uid);
 		}
 	}
 
-	static clearSelectionAndRemoveOutline() {
-		if (this.paused) {
-			return;
+	static get onClearSelection() {
+		return this._onClearSelection;
+	}
+
+	static set onClearSelection(callback) {
+		if (!this._onClearSelection) {
+			this._onClearSelection = new Set();
 		}
+		if (typeof callback !== 'function') {
+			throw new TypeError('onClearSelection only takes functions');
+		}
+		this._onClearSelection.add(callback);
+	}
+
+	static clearSelectionAndRemoveOutline() {
 		SelectionManager.removeOutline();
 		const unselected = SelectionManager.getSelections();
 		if (unselected.length) {
 			SelectionManager[SELECTIONS].clear();
+			if (SelectionManager.onClearSelection) {
+				SelectionManager.onClearSelection.forEach(callback => callback(unselected));
+			}
 		}
 		return unselected;
 	}
 
 	static removeOutline() {
-		if (this.paused) {
-			return;
-		}
 		Array.from(document.querySelectorAll('[data-outline-indicator-outline]')).forEach(n => d3.select(n).remove());
 	}
 
 	static refreshOutline() {
-		setTimeout(() => {
-			SelectionManager.resume();
-			SelectionManager.removeOutline();
-			SelectionManager.getSelections().forEach(uid => {
-				Array.from(this.element.querySelectorAll(`[data-uid="${uid}"]`)).forEach(SelectionManager.outline.bind(this));
-			});
+		clearTimeout(SelectionManager.timeoutId);
+		SelectionManager.moveOutline();
+		SelectionManager.timeoutId = setTimeout(() => {
+			// note the timeout is to wait for the react digest to complete
+			// in the case this method is called from an Alt action....
+			SelectionManager.moveOutline();
 		}, 100);
 	}
 
 	static moveOutline() {
 		SelectionManager.getSelections().forEach(uid => {
-			Array.from(this.element.querySelectorAll(`[data-uid="${uid}"]`)).forEach(SelectionManager.outline.bind(this));
+			Array.from(document.body.querySelectorAll(`[data-uid="${uid}"]`)).forEach(SelectionManager.outline.bind(this));
 		});
 	}
 
 	static outline(dom) {
-
-		if (this.paused) {
-			return;
-		}
 
 		const elements = Array.isArray(dom) ? dom : [dom];
 
@@ -217,7 +138,15 @@ class SelectionManager {
 
 	static outlineSvg(element) {
 
+		if (SelectionManager._disableOutlineChanges) {
+			return
+		}
+
 		const svg = element.viewportElement;
+
+		if (!svg) {
+			return
+		}
 
 		const path = new PathBuilder();
 
@@ -231,12 +160,27 @@ class SelectionManager {
 
 		let square = path.M(5, 5).L(w, 5).L(w, h).L(5, h).L(5, 5).Z.toString();
 
-		if (element instanceof SVGPathElement) {
+		let border = element;
+
+		// strategy copy the element to use as a foreground mask
+		// - this allows the item to appear above other items and
+		// - it makes the outline apear outside the element
+
+		const mask = d3.select(element.cloneNode(true));
+
+		if (border instanceof SVGPathElement) {
 			const t = d3.transform(d3.select(element).attr('transform')).translate;
 			square = d3.select(element).attr('d');
 			top = t[1];
 			left = t[0];
+		} else if (border instanceof SVGGElement) {
+			const t = d3.transform(d3.select(element).attr('transform')).translate;
+			border = d3.select(element).select('path.border');
+			square = border.attr('d');
+			top = t[1];
+			left = t[0];
 		}
+
 
 		const data = {
 			top: top,
@@ -248,34 +192,82 @@ class SelectionManager {
 
 		const outline = d3.select(indicator).selectAll('[data-outline-indicator-outline]').data([data]);
 
+		outline.exit().remove();
+
+		// move to top of z-order
+		element.parentNode.appendChild(element);
+
 		outline.enter().append('g').attr({
 			'data-outline-indicator-outline': true,
+			'class': '-with-transitions'
 		}).style({
 			'pointer-events': 'none'
-		}).append('path').attr({
-			stroke: 'red',
-			fill: 'transparent',
-			'stroke-width': '1.5px',
-			'stroke-linejoin': 'round',
-			'stroke-dasharray': '4',
-			d: d => d.path
-		});
+		}).append('g');
 
 		outline.attr({
 			transform: d => `translate(${d.left}, ${d.top})`
 		});
 
-		outline.exit().remove();
+		outline.select('g').append('path').attr({
+			'data-outline-indicator-svg-outline-path': true,
+			'stroke': 'red',
+			'fill': 'transparent',
+			'fill-rule': 'evenodd',
+			'stroke-width': 5,
+			'stroke-linejoin': 'round',
+			'stroke-dasharray': '4',
+			'opacity': 1,
+			d: d => d.path
+		}).transition().style({'stroke-width': 15});
+
+		const g = outline.select('g').node();
+		const children = Array.from(mask.node().childNodes);
+		if (children.length) {
+
+			children.forEach(child => {
+				g.appendChild(child);
+			});
+
+			// ensure the outline moves with the item during drag operations
+			const observer = new MutationObserver(function(mutations) {
+				mutations.forEach(function(mutation) {
+					const transform = d3.select(mutation.target).style('opacity', 0).attr('transform');
+					outline.attr({
+						transform: transform
+					});
+				});
+			});
+
+			const config = {attributes: true, attributeOldValue: true, attributeFilter: ['transform']};
+
+			observer.observe(element, config);
+
+		} else {
+
+			if (mask.classed('connection')) {
+				element.parentNode.appendChild(outline.node());
+				element.parentNode.appendChild(element);
+			} else {
+				//mask.attr('transform', null);
+				element.parentNode.appendChild(outline.node());
+				element.parentNode.appendChild(element);
+			}
+
+		}
 
 	}
 
 	static outlineDom(element) {
 
+		if (SelectionManager._disableOutlineChanges) {
+			return
+		}
+
 		element = SelectionManager.getClosestElementWithUID(element);
 
 		const offsetParent = SelectionManager.offsetParent(element);
 
-		const dim = element.getBoundingClientRect();
+		const dim = SelectionManager.offsetDimensions(element);
 		const w = dim.width + 11;
 		const h = dim.height + 11;
 
@@ -283,28 +275,34 @@ class SelectionManager {
 		const path = new PathBuilder();
 		const square = path.M(5, 5).L(w, 5).L(w, h).L(5, h).L(5, 5).Z.toString();
 
-		let parentDim;
-
-		parentDim = SelectionManager.offsetDimensions(offsetParent);
+		const parentDim = SelectionManager.offsetDimensions(offsetParent);
 
 		const top = dim.top - parentDim.top;
 		const left = dim.left - parentDim.left;
-		const svg = d3.select(offsetParent).append('svg').attr({
+		const svg = d3.select(offsetParent).selectAll('[data-outline-indicator-outline]').data([{}]);
+		svg.enter().append('svg').attr({
 			'data-outline-indicator-outline': true,
-			width: dim.width + 20,
-			height: dim.height + 23,
+			width: parentDim.width + 20,
+			height: parentDim.height + 23,
 			style: `pointer-events: none; position: absolute; z-index: 999; top: ${top - 8}px; left: ${left - 8}px; background: transparent;`
-
 		}).append('g').append('path').attr({
-
-			stroke: 'red',
-			fill: 'transparent',
+			'data-outline-indicator-dom-outline-path': true,
+			'stroke': 'red',
+			'fill': 'transparent',
 			'stroke-width': '1.5px',
 			'stroke-linejoin': 'round',
 			'stroke-dasharray': '4',
-			d: square // 'M 4 4 L 30 4 L 30 30 L 4 30 L 4 4 Z'
-
+			d: square
 		});
+
+		svg.select('svg').attr({
+			width: parentDim.width + 20,
+			height: parentDim.height + 23,
+		}).select('path').attr({
+			d: square
+		});
+
+		svg.exit().remove();
 
 	}
 
@@ -334,12 +332,12 @@ class SelectionManager {
 	/**
 	 * Util for determining the widest child of an offsetParent that is scrolled.
 	 *
-	 * @param element
+	 * @param offsetParent
 	 * @returns {{top: Number, right: Number, bottom: Number, left: Number, height: Number, width: Number}}
 	 */
-	static offsetDimensions (element) {
+	static offsetDimensions (offsetParent) {
 
-		const elementDim = element.getBoundingClientRect();
+		const elementDim = offsetParent.getBoundingClientRect();
 		const dim = {
 			top: elementDim.top,
 			right: elementDim.right,
@@ -349,14 +347,11 @@ class SelectionManager {
 			width: elementDim.width
 		};
 
-		if (element.dataset && element.dataset.offsetWidth) {
-			const widthSelector = element.dataset.offsetWidth;
-			const overrideWidth = Array.from(element.querySelectorAll(widthSelector));
-			dim.width = overrideWidth.reduce((width, child) => {
-				const dim = child.getBoundingClientRect();
-				return Math.max(width, dim.width);
-			}, elementDim.width);
-		}
+		const overrideWidth = Array.from(offsetParent.querySelectorAll('[data-offset-width]'));
+		dim.width = overrideWidth.reduce((width, child) => {
+			const dim = child.getBoundingClientRect();
+			return Math.max(width, dim.width);
+		}, elementDim.width);
 
 		return dim;
 

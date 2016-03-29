@@ -14,6 +14,7 @@
  */
 
 #include "rwdts_kv_light_api.h"
+#include "rwdts_kv_light_api_gi.h"
 
 rwdts_db_fn_table_t rwdts_fn_table[MAX_DB]  =
 {
@@ -78,13 +79,13 @@ rwdts_db_fn_table_t rwdts_fn_table[MAX_DB]  =
   }
 };
 
-void *
+rwdts_kv_handle_t *
 rwdts_kv_allocate_handle(rwdts_avail_db_t db)
 {
   rwdts_kv_handle_t *handle;
   handle =  (rwdts_kv_handle_t *)malloc(sizeof(rwdts_kv_handle_t));
   handle->db_type = db;
-  return (void *)handle;
+  return handle;
 }
 
 rw_status_t
@@ -110,14 +111,15 @@ rwdts_kv_light_db_connect(rwdts_kv_handle_t *handle,
 }
 
 rw_status_t
-rwdts_kv_light_open_db(rwdts_kv_handle_t *handle, const char *file_name,
-                       const char *program_name, FILE *error_file_pointer)
+rwdts_kv_handle_open_db(rwdts_kv_handle_t *handle, const char *file_name,
+                       const char *program_name, void *error_file_pointer)
 {
+  strcpy(handle->file_name, file_name);
   if (rwdts_fn_table[handle->db_type].rwdts_db_open_api) {
     return rwdts_fn_table[handle->db_type].rwdts_db_open_api(handle,
                                                              file_name,
                                                              program_name,
-                                                             error_file_pointer);
+                                                             (FILE *)error_file_pointer);
   }
   return RW_STATUS_FAILURE;
 }
@@ -385,7 +387,7 @@ void rwdts_kv_light_table_xact_delete_abort(rwdts_kv_table_handle_t *tab_handle,
 }
 
 rw_status_t
-rwdts_kv_light_file_set_keyval(rwdts_kv_handle_t *handle,
+rwdts_kv_handle_file_set_keyval(rwdts_kv_handle_t *handle,
                                char *key, int key_len, char *val, int val_len)
 {
   rw_status_t rs = RW_STATUS_FAILURE;
@@ -400,7 +402,7 @@ rwdts_kv_light_file_set_keyval(rwdts_kv_handle_t *handle,
 }
 
 rw_status_t
-rwdts_kv_light_file_get_keyval(rwdts_kv_handle_t *handle,
+rwdts_kv_handle_file_get_keyval(rwdts_kv_handle_t *handle,
                                char *key, int key_len, char **val, int *val_len)
 {
   rw_status_t rs = RW_STATUS_FAILURE;
@@ -415,7 +417,7 @@ rwdts_kv_light_file_get_keyval(rwdts_kv_handle_t *handle,
 }
 
 rw_status_t
-rwdts_kv_light_file_del_keyval(rwdts_kv_handle_t *handle,
+rwdts_kv_handle_file_del_keyval(rwdts_kv_handle_t *handle,
                                char *key, int key_len)
 {
   rw_status_t rs = RW_STATUS_FAILURE;
@@ -429,7 +431,7 @@ rwdts_kv_light_file_del_keyval(rwdts_kv_handle_t *handle,
 }
 
 void*
-rwdts_kv_light_file_get_cursor(rwdts_kv_handle_t *handle)
+rwdts_kv_handle_file_get_cursor(rwdts_kv_handle_t *handle)
 {
   if (rwdts_fn_table[handle->db_type].rwdts_file_db_get_cursor) {
     return rwdts_fn_table[handle->db_type].rwdts_file_db_get_cursor(handle->kv_conn_instance, handle->file_name);
@@ -438,19 +440,18 @@ rwdts_kv_light_file_get_cursor(rwdts_kv_handle_t *handle)
 }
 
 rw_status_t
-rwdts_kv_light_file_getnext(rwdts_kv_handle_t *handle, void **dbc, uint8_t **key,
-                            size_t *key_len, uint8_t **val, size_t *val_len)
+rwdts_kv_handle_file_getnext(rwdts_kv_handle_t *handle, void *cursor, char **key,
+                             int *key_len, char **val, int *val_len, void **out_cursor)
 {
   if (rwdts_fn_table[handle->db_type].rwdts_file_db_getnext) {
-    return rwdts_fn_table[handle->db_type].rwdts_file_db_getnext(handle->kv_conn_instance,
-                                                                 dbc, key, key_len,
-                                                                 val, val_len);
+    return rwdts_fn_table[handle->db_type].rwdts_file_db_getnext(handle->kv_conn_instance, cursor, key, key_len,
+                                                              val, val_len, out_cursor);
   }
   return RW_STATUS_FAILURE;
 }
 
 rw_status_t
-rwdts_kv_light_file_remove(rwdts_kv_handle_t *handle)
+rwdts_kv_handle_file_remove(rwdts_kv_handle_t *handle)
 {
   rw_status_t res = RW_STATUS_FAILURE;
   if (rwdts_fn_table[handle->db_type].rwdts_file_db_remove) {
@@ -463,12 +464,59 @@ rwdts_kv_light_file_remove(rwdts_kv_handle_t *handle)
 }
 
 rw_status_t
-rwdts_kv_light_file_close(rwdts_kv_handle_t *handle)
+rwdts_kv_handle_file_close(rwdts_kv_handle_t *handle)
 {
   rw_status_t res = RW_STATUS_FAILURE;
-  if (rwdts_fn_table[handle->db_type].rwdts_file_db_close) {
+  if (handle->kv_conn_instance && rwdts_fn_table[handle->db_type].rwdts_file_db_close) {
     res = rwdts_fn_table[handle->db_type].rwdts_file_db_close(handle->kv_conn_instance);
     handle->kv_conn_instance = NULL;
   }
   return res;
 }
+
+static const GEnumValue _rwdts_avail_db_enum_values[] = {
+  { REDIS_DB, "REDIS_DB", "REDIS_DB" },
+  { BK_DB,    "BK_DB",    "BK_DB"   },
+  { 2, NULL, NULL}
+};
+
+/* Registers the Enum resulting in a GType,
+ * this also tells it the names and values for the enum.
+ *
+ * This defines rwdts_avail_db_get_type()
+ */
+GType rwdts_avail_db_get_type(void)
+{
+  static GType type = 0; /* G_TYPE_INVALID */
+
+  if (!type)
+    type = g_enum_register_static("rwdts_avail_db_t",
+                                  _rwdts_avail_db_enum_values);
+
+  return type;
+}
+
+static rwdts_kv_handle_t *rwdts_kv_handle_ref(rwdts_kv_handle_t *handle)
+{
+
+  rwdts_kv_handle_t* dup_handle = RW_MALLOC0(sizeof(rwdts_kv_handle_t));
+  memcpy((char *)dup_handle, (char *)handle, sizeof(rwdts_kv_handle_t));
+  return handle;
+}
+
+static void rwdts_kv_handle_unref(rwdts_kv_handle_t *handle)
+{
+  RW_FREE(handle);
+  return;
+}
+
+/* Registers the Boxed struct resulting in a GType,
+ * this also tells it how to manage the memory using either
+ * a ref/unref pair or a copy/free pair.
+ *
+ * This defines rwdts_kv_handle_get_type()
+ */
+G_DEFINE_BOXED_TYPE(rwdts_kv_handle_t,
+                    rwdts_kv_handle,
+                    rwdts_kv_handle_ref,
+                    rwdts_kv_handle_unref);

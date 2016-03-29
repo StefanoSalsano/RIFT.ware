@@ -9,6 +9,8 @@ from gi.repository.RwTypes import RwStatus
 import argparse
 import logging
 import rwlogger
+import boto3
+import botocore
 
 persistent_resources = {
     'vms'      : [],
@@ -18,7 +20,7 @@ persistent_resources = {
 MISSION_CONTROL_NAME = 'mission-control'
 LAUNCHPAD_NAME = 'launchpad'
 
-RIFT_IMAGE_AMI = 'ami-bd1642d7'
+RIFT_IMAGE_AMI = 'ami-7070231a'
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger('rift.cal.awsresources')
@@ -50,7 +52,8 @@ def get_cal_account(**kwargs):
     account.aws.key = kwargs['key']
     account.aws.secret = kwargs['secret']
     account.aws.region = kwargs['region']
-    account.aws.ssh_key = kwargs['ssh_key']
+    if 'ssh_key' in kwargs and kwargs['ssh_key'] is not None:
+        account.aws.ssh_key = kwargs['ssh_key']
     account.aws.availability_zone = kwargs['availability_zone']
     if 'vpcid' in kwargs and kwargs['vpcid'] is not None: 
         account.aws.vpcid =  kwargs['vpcid']
@@ -142,12 +145,18 @@ class AWSResources(object):
         vdu.allocate_public_address = True
         vdu.vdu_init.userdata = "#cloud-config\n\nruncmd:\n - echo Sleeping for 5 seconds and attempting to start salt-master\n - sleep 5\n - /bin/systemctl restart salt-master.service\n"
 
-        resp=self._cal.create_vdu(self._acct,vdu)
-        self._mc_id = resp[1]
+        rc,rs=self._cal.create_vdu(self._acct,vdu)
+        assert rc == RwStatus.SUCCESS
+        self._mc_id = rs
 
-        resp=self._cal.get_vdu(self._acct,self._mc_id)
-        self._mc_public_ip = resp[1].public_ip
-        self._mc_private_ip = resp[1].connection_points[0].ip_address
+        driver = self._cal._get_driver(self._acct)
+        inst=driver.get_instance(self._mc_id)
+        inst.wait_until_running()
+
+        rc,rs =self._cal.get_vdu(self._acct,self._mc_id)
+        assert rc == RwStatus.SUCCESS
+        self._mc_public_ip = rs.public_ip
+        self._mc_private_ip = rs.management_ip
         
         logger.info("Started Mission Control VM with id %s and IP Address %s\n",self._mc_id, self._mc_public_ip)
 
@@ -186,13 +195,35 @@ class AWSResources(object):
                                           lxcname = node_id)
         vdu.node_id = node_id
 
-        resp=self._cal.create_vdu(self._acct,vdu)
-        self._lp_id = resp[1]
+        rc,rs=self._cal.create_vdu(self._acct,vdu)
+        assert rc == RwStatus.SUCCESS
+        self._lp_id = rs
 
-        resp=self._cal.get_vdu(self._acct,self._lp_id)
-        self._lp_public_ip = resp[1].public_ip
-        self_lp_private_ip = resp[1].connection_points[0].ip_address
+        driver = self._cal._get_driver(self._acct)
+        inst=driver.get_instance(self._lp_id)
+        inst.wait_until_running()
+
+        rc,rs =self._cal.get_vdu(self._acct,self._lp_id)
+        assert rc == RwStatus.SUCCESS
+
+        self._lp_public_ip = rs.public_ip
+        self._lp_private_ip = rs.management_ip
         logger.info("Started Launchpad VM with id %s and IP Address %s\n",self._lp_id, self._lp_public_ip)
+         
+    def upload_ssh_key_to_ec2(self):
+        """
+         Upload SSH key to EC2 region
+        """
+        driver = self._cal._get_driver(self._acct)
+        key_name = os.getlogin() + '-' + 'sshkey' 
+        key_path = '%s/.ssh/id_rsa.pub' % (os.environ['HOME'])
+        if os.path.isfile(key_path):
+            logger.info("Uploading ssh public key file in path %s with keypair name %s", key_path,key_name)
+            with open(key_path) as fp:
+                driver.upload_ssh_key(key_name,fp.read())
+        else:
+            logger.error("Valid Public key file %s not found", key_path)
+
 
 def main():
     """
@@ -265,14 +296,20 @@ def main():
                         type = str,
                         help = 'Perform resource cleanup for AWS installation. \n Possible options are {all, mc, lp,  vms, networks }')
 
+    parser.add_argument('--upload-ssh-key',
+                         action = 'store_true',
+                         dest = 'upload_ssh_key',
+                         help = 'Upload users SSH public key ~/.ssh/id_rsa.pub')  
+
     argument = parser.parse_args()
 
     if (argument.aws_key is None or argument.aws_secret is None or argument.aws_region is None or
-       argument.aws_az is None or argument.aws_sshkey is None):
+       argument.aws_az is None):
         logger.error("Missing mandatory params. AWS Key, Secret, Region, AZ and SSH key are mandatory params")
         sys.exit(-1)
 
-    if argument.cleanup is None and argument.mission_control is None and argument.launchpad is None:
+    if (argument.cleanup is None and argument.mission_control is None and argument.launchpad is None 
+        and argument.upload_ssh_key is None):
         logger.error('Insufficient parameters')
         sys.exit(-1)
 
@@ -281,6 +318,9 @@ def main():
     drv = AWSResources(key=argument.aws_key, secret=argument.aws_secret, region=argument.aws_region, availability_zone = argument.aws_az, 
                        ssh_key = argument.aws_sshkey, vpcid = argument.aws_vpcid, default_subnet_id = argument.aws_default_subnet)
     logger.info("Instantiating cloud-abstraction-layer.......[Done]")
+
+    if argument.upload_ssh_key:
+         drv.upload_ssh_key_to_ec2()
 
     if argument.cleanup is not None:
         for r_type in argument.cleanup:

@@ -9,6 +9,12 @@ import sys
 import os
 import argparse
 import uuid
+
+import gi
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwVnfdYang', '1.0')
+gi.require_version('RwvcsTypesYang', '1.0')
+
 from gi.repository import (
     RwYang,
     RwVnfdYang,

@@ -20,7 +20,6 @@ var _ = require('underscore');
 var constants = require('./common/constants.js');
 var Promise = require('promise');
 
-
 var Subscriptions = function(){
   this.ID = 1;
   this.socketServers = {};
@@ -30,7 +29,10 @@ var Subscriptions = function(){
   };
 };
 
-
+Subscriptions.prototype.configure = function(config) {
+  this.config = config;
+  this.ready = true;
+}
 
 /**
  * [subscribe description]
@@ -41,19 +43,25 @@ var Subscriptions = function(){
  *                                      through the socket. Receives one
  *                                      argument, which is the data
  *                                      returned from the subscription.
- * @param  {Function} callback Function that will receive the SubscriptionData reference object
- * @return {Object}   SubscriptionReference  An object containing the subscription information.
+ * @return {Object} SubscriptionReference  An object containing the subscription information.
  * @return {Number} SubscriptionReference.id The subscription ID
  * @return {Number} SubscriptionReference.port The subscription port
  * @return {String} SubscriptionReference.socketPath The path the to socket.
  */
-Subscriptions.prototype.subscribe = function(req, callback) {
+Subscriptions.prototype.subscribe = function(req) {
   var self = this;
   var URL = req.body.url;
   var SubscriptionReference;
   var sessionId = req.session.id;
 
   return new Promise(function(resolve, reject) {
+
+    if (!self.ready) {
+      return reject({
+        statusCode: 500,
+        errorMessage: 'SocketManager not configured yet. Cannot proceed'
+      })
+    }
 
     if (!self.socketServers.hasOwnProperty(sessionId)) {
       self.createWebSocketServer().then(function(successData) {
@@ -62,11 +70,13 @@ Subscriptions.prototype.subscribe = function(req, callback) {
 
         //Check for more generix regex
         switch(URL.match(/(.{2,5}):\/\//)[1]) {
-          case 'http' : self.socketInstance(req, self.socketServers[sessionId].wss, PollingSocket);
+          case 'http' : self.socketInstance(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, PollingSocket);
             break;
-          case 'https' : self.socketInstance(req, self.socketServers[sessionId].wss, PollingSocket);
+          case 'https' : self.socketInstance(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, PollingSocket);
             break;
-          case 'ws' : self.socketPassThrough(req, self.socketServers[sessionId].wss, WebSocket);
+          case 'ws' : self.socketPassThrough(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, WebSocket);
+            break;
+          case 'wss' : self.socketPassThrough(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, WebSocket);
             break;
         }
 
@@ -114,22 +124,41 @@ Subscriptions.prototype.createWebSocketServer = function() {
     }
     var port = self.freePorts.shift();
     var socketPath = '/ws/' + self.ID;
-    //Error handling for already used port?
-    var wss = new WebSocketServer({
+    
+    var http = require('http');
+    var https = require('https');
+    var express = require('express');
+    var app = express();
+
+    var httpServer = null;
+    var wss = null;
+
+    if (self.config && self.config.httpsConfigured) {
+      httpServer = https.createServer(self.config.sslOptions, app);
+    } else {
+      httpServer = http.createServer(app);
+    }
+
+    httpServer.listen(port);
+
+    wss = new WebSocketServer({
       path: socketPath,
-      port: port
+      server: httpServer
     });
+
     self.ID++;
+
     return resolve({
       id: self.ID,
       port: port,
       socketPath: socketPath,
-      wss: wss
+      wss: wss,
+      httpServer: httpServer
     });
   });
 };
 
-Subscriptions.prototype.socketInstance = function(req, wss, Type) {
+Subscriptions.prototype.socketInstance = function(req, wss, httpServer, Type) {
   console.log('Creating a new socketInstance for:', req.body.url, 'sessionId:', req.session.id);
     var self = this;
     var Socket = null;
@@ -137,8 +166,14 @@ Subscriptions.prototype.socketInstance = function(req, wss, Type) {
     var Index = 0;
     var sessionId = req.session.id;
     var wssRef = wss;
+    var httpServerRef = httpServer;
 
     wss.on('connection', function(ws) {
+
+      ws.on('message', function(msg) {
+        console.log('Received message from client', msg);
+      });
+
       if (!Socket) {
         Socket = new Type(req, 1000, req.body);
       }
@@ -154,6 +189,7 @@ Subscriptions.prototype.socketInstance = function(req, wss, Type) {
             self.freePorts.unshift(self.socketServers[sessionId].port);
             delete self.socketServers[sessionId];
             wssRef.close();
+            httpServer.close();
           } catch (e) {
             console.log('Error: ', e);
           }
@@ -219,6 +255,8 @@ function PollingSocket(req, interval, config) {
       method: config.method || 'GET',
       headers: requestHeaders,
       json: config.payload,
+      rejectUnauthorized: false,
+      forever: constants.FOREVER_ON
     }, function(error, response, body) {
       if (error) {
         console.log('Error polling: ' + req.body.url);

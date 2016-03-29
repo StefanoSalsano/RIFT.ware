@@ -40,7 +40,7 @@ const DescriptorModelSerializer = {
 		function clean(m) {
 			Object.keys(m).forEach(k => {
 				const isEmptyObject = typeof m[k] === 'object' && _.isEmpty(m[k]);
-				if (typeof m[k] === 'undefined' || isEmptyObject) {
+				if (typeof m[k] === 'undefined' || isEmptyObject || m[k] === '') {
 					delete m[k];
 				}
 				const isMetaAllowed = /^nsd|vnfd$/.test(m.uiState && m.uiState.type);

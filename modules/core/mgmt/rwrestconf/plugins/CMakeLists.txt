@@ -17,6 +17,18 @@ rift_install_python_plugin(
 
 rift_add_yang_target(
   TARGET
+    ietf_restconf_monitoring
+  YANG_FILES
+    ietf-restconf-monitoring.yang
+  COMPONENT
+    rwrestconf
+  LIBRARIES
+    rwmanifest_yang_gen
+    rw_vcs_yang_gen
+  )
+
+rift_add_yang_target(
+  TARGET
     rwrestconf_yang
   YANG_FILES
     rw-restconf.yang
@@ -25,6 +37,7 @@ rift_add_yang_target(
   LIBRARIES
     rwmanifest_yang_gen
     rw_vcs_yang_gen
+    ietf_restconf_monitoring_gen
   )
 
 rift_install_python_plugin(

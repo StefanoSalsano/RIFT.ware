@@ -27,7 +27,7 @@ function getPathForType(type) {
 
 const modelMetaByPropertyNameMap = Object.keys(DescriptorModelMetaJSON).reduce((map, key) => {
 	function mapProperties(parentMap, parentObj) {
-		parentMap[':uiState'] = parentObj;
+		parentMap[':meta'] = parentObj;
 		const properties = parentObj && parentObj.properties ? parentObj.properties : [];
 		properties.forEach(p => {
 			parentMap[p.name] = mapProperties({}, assign(p, {':qualified-type': parentObj[':qualified-type'] + '.' + p.name}));
@@ -41,7 +41,10 @@ const modelMetaByPropertyNameMap = Object.keys(DescriptorModelMetaJSON).reduce((
 
 (() => {
 	// initialize the UI centric properties that CONFD could care less about
-	utils.assignPathValue(modelMetaByPropertyNameMap, 'nsd.constituent-vnfd.vnf-configuration.config-template.:uiState.preserve-line-breaks', true);
+	utils.assignPathValue(modelMetaByPropertyNameMap, 'nsd.meta.:meta.preserve-line-breaks', true);
+	utils.assignPathValue(modelMetaByPropertyNameMap, 'vnfd.meta.:meta.preserve-line-breaks', true);
+	utils.assignPathValue(modelMetaByPropertyNameMap, 'vnfd.vdu.cloud-init.:meta.preserve-line-breaks', true);
+	utils.assignPathValue(modelMetaByPropertyNameMap, 'nsd.constituent-vnfd.vnf-configuration.config-template.:meta.preserve-line-breaks', true);
 })();
 
 export default {
@@ -53,7 +56,7 @@ export default {
 		// resolve paths like 'nsd' or 'vnfd.vdu' or 'nsd.constituent-vnfd'
 		const found = utils.resolvePath(modelMetaByPropertyNameMap, getPathForType(typeOrPath));
 		if (found) {
-			const uiState = _.cloneDeep(found[':uiState']);
+			const uiState = _.cloneDeep(found[':meta']);
 			uiState.properties = uiState.properties.filter(filterProperties);
 			return uiState;
 		}
@@ -63,7 +66,7 @@ export default {
 		// resolve paths like 'nsd' or 'vnfd.vdu' or 'nsd.constituent-vnfd'
 		const found = utils.resolvePath(modelMetaByPropertyNameMap, getPathForType(typeOrPath));
 		if (found) {
-			return found[':uiState'].properties.map(p => p.name);
+			return found[':meta'].properties.map(p => p.name);
 		}
 		console.warn('no model uiState found for type', typeOrPath);
 	}

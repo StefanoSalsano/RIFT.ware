@@ -19,6 +19,12 @@ import tempfile
 import xml.etree.ElementTree
 import yaml
 
+import gi
+gi.require_version('RwVnfdYang', '1.0')
+gi.require_version('NsdYang', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('RwYang', '1.0')
+
 import gi.repository.RwVnfdYang as rwvnfd
 import gi.repository.NsdYang as rwnsd
 import gi.repository.RwManifestYang as rwmanifest
@@ -145,12 +151,13 @@ class Demo(object):
                        collapsed=True,
                        mock_cli=False,
                        multi_broker=True,
-                       multi_dtsrouter=False,
+                       multi_dtsrouter=True,
                        dtsperfmgr=False,
                        ip_list=None,
                        valgrind=None,
                        verbose=False,
                        use_gdb=False,
+                       northbound_listing="rwbase_schema_listing.txt"
                        ):
         """Returns a PreparedSystem object encapsulating the SystemInfo and PortNetwork objects
 
@@ -170,6 +177,7 @@ class Demo(object):
             valgrind - a list of component names to execute under valgrind
             verbose - enable debug logging
             use_gdb - riftware launched under gdb
+            northbound_listing - The northbound schema list.
 
         Raises:
             An UnsupportedModeError is raised if the specified mode is not in
@@ -188,6 +196,7 @@ class Demo(object):
 
         sysinfo.mode = mode
         sysinfo.collapsed = collapsed
+        sysinfo.northbound_listing = northbound_listing
         sysinfo.multi_broker = multi_broker
         sysinfo.multi_dtsrouter = multi_dtsrouter
         sysinfo.dtsperfmgr = dtsperfmgr
@@ -428,7 +437,7 @@ class PreparedSystem(object):
                  resources_file=None,
 		 bootstrap_log_period = 30,
 		 bootstrap_log_severity = 6,
-		 console_log_severity =3,
+		 console_log_severity =3
                  ):
         """ Creates an instance of PreparedSystem
 
@@ -513,7 +522,6 @@ class PreparedSystem(object):
         """
         # Compile the manifest
         self._sysinfo, self._manifest = self._compiler.compile(self.sysinfo)
-
         self._manifest.traceLevel = self._trace_level
         self._manifest.bootstrapLogPeriod = self._bootstrap_log_period
         self._manifest.bootstrapLogSeverity = self._bootstrap_log_severity
@@ -809,8 +817,9 @@ class PreparedSystem(object):
         # a sub-component under a component with "config_ready" can still not
         # be ready to start (i.e, "config_readiness" is False)
         for component in self.manifest:
-            for descendant in component.descendents():
-                descendant.config_ready = descendant.config_ready and component.config_ready
+            if isinstance(component, rift.vcs.manifest.RaVm) or isinstance(component, rift.vcs.manifest.RaProc):
+                for descendant in component.descendents():
+                    descendant.config_ready = descendant.config_ready and component.config_ready
 
         self.vcs.manifest_generate_xml(self.manifest, xml_output)
 
@@ -853,7 +862,7 @@ class PreparedSystem(object):
         self.vcs.exec_rwmain(xml_output, use_gdb=self._use_gdb)
 
 
-def prepared_system_from_demo_and_args(demo, args):
+def prepared_system_from_demo_and_args(demo, args, northbound_listing="rwbase_schema_listing.txt"):
     """ Creates a PreparedSystem from a Demo instance and DemoArgParser namespace.
 
     Arguments:
@@ -870,7 +879,8 @@ def prepared_system_from_demo_and_args(demo, args):
             ip_list=args.ip_list,
             valgrind=args.valgrind,
             verbose=args.verbose,
-            use_gdb=args.gdb)
+            use_gdb=args.gdb,
+            northbound_listing=northbound_listing)
 
     prepared_system_params = {"sysinfo": sysinfo,
                               "port_network": port_network}
@@ -959,7 +969,6 @@ class DemoArgParser(argparse.ArgumentParser):
                           help="Defines the mode that the system is lauched in. "
                                "Acceptable values are: ethsim, rawsocket, pci, and custom (default: 'ethsim').")
 
-
         self.add_argument('--no-huge',
                           action='store_true',
                           help="Add --no-huge to the fastpath cmdargs")
@@ -986,9 +995,9 @@ class DemoArgParser(argparse.ArgumentParser):
                           action='store_true',
                           help="Replace the real Cli with non-functional Mock")
 
-        self.add_argument('--multi-dtsrouter',
+        self.add_argument('--single-dtsrouter',
                           dest='multi_dtsrouter',
-                          action='store_true',
+                          action='store_false',
                           help="Enable a per-VM dtsrouter")
 
         self.add_argument("--skip-prepare-vm",
@@ -1022,7 +1031,6 @@ class DemoArgParser(argparse.ArgumentParser):
         self.add_argument('--valgrind',
                           nargs='+',
                           help="Runs the specified components under valgrind")
-
 
         self.add_argument('-v', '--verbose',
                           action='store_true',

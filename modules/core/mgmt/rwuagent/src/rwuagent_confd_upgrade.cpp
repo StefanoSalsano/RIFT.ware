@@ -123,6 +123,17 @@ void Instance::start_upgrade(size_t n_modules, char** module_name)
      };
    *
    */
+  // Check if upgrade needs to be done
+  // If current version is same as highest version
+  // in lank farm, then no need to upgrade
+  if (upgrade_ctxt_.schema_version_ == 
+              rw_yang::ConfdUpgradeMgr().get_max_version_linked())
+  {
+    RW_MA_INST_LOG(this, InstanceCritInfo, 
+        "Upgrade not required as versions are same");
+    update_dyn_state(RW_MGMT_SCHEMA_APPLICATION_STATE_READY);
+    return;
+  }
 
   if (confd_unix_socket_.size() > 0) {
     RW_MA_INST_LOG(this, InstanceError, "Upgrade not supported for UNIX Domain sockets");

@@ -275,8 +275,7 @@ class AWSDriver(object):
         Returns a dictionary object describing the Image identified by ImageId
         """
         try:
-            response = list(self._ec2_resource_handle.images.filter(ImageIds = [ImageId],
-                                                                    Owners = [self._account_id]))
+            response = list(self._ec2_resource_handle.images.filter(ImageIds = [ImageId]))
         except Exception as e:
             logger.error("AWSDriver: List image operation failed with exception: %s" %(repr(e)))
             raise
@@ -941,6 +940,24 @@ class AWSDriver(object):
                     aws_table.INSTANCE_TYPES[inst]['disk'] > disk):
                    return inst
         return 't2.micro'  
-         
+
+    def upload_ssh_key(self,key_name,public_key):
+        """
+        Method to upload Public Key to AWS
+          Arguments:
+            - keyname (String): Name for the key pair
+            - public_key (String): Base 64 encoded public key
+          Returns  None
+        """
+        self._ec2_resource_handle.import_key_pair(KeyName=key_name,PublicKeyMaterial=public_key) 
+
+    def delete_ssh_key(self,key_name):
+        """
+        Method to delete Public Key from AWS
+          Arguments:
+            - keyname (String): Name for the key pair
+          Returns  None
+        """
+        self._ec2_client_handle.delete_key_pair(KeyName=key_name) 
  
              

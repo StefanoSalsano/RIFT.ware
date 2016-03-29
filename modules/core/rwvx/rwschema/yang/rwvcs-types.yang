@@ -41,6 +41,16 @@ module rwvcs-types
     }
   }
 
+  typedef recovery-type {
+    type enumeration {
+      enum NONE;
+      enum RESTART;
+      enum FAILCRITICAL;
+      enum IGNORE;
+      enum CUSTOM;
+    }
+  }
+
   grouping rwvcs-variable-list {
     leaf-list python-variable {
       description 
@@ -136,6 +146,11 @@ module rwvcs-types
                   "Config readiness check enable";
               type boolean;
               default true;
+            }
+            leaf recovery-action {
+              description 
+                  "Define recovery action if this component fail";
+              type recovery-type;
             }
           }
         }
@@ -265,6 +280,12 @@ module rwvcs-types
               "Config readiness check enable";
           type boolean;
           default true;
+        }
+
+        leaf recovery-action {
+          description 
+              "Define recovery action if this component fail";
+          type recovery-type;
         }
 
         uses rwvcs-variable-list;

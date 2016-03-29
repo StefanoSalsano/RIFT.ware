@@ -13,9 +13,13 @@ import logging
 import os
 import sys
 import importlib
+import gi
 
 import mmap
 import struct
+
+gi.require_version('RwLog', '1.0')
+gi.require_version('RwGenericYang', '1.0')
 
 from gi.repository import RwLog
 import six
@@ -183,7 +187,7 @@ class RwLogger(logging.Handler):
             rwlogd_pid = struct.unpack('I',self._shm_data[16:20])[0]
             try:
                 os.kill(rwlogd_pid,0)
-            except ProcessLookupError as e:
+            except OSError as e:
                 # Rwlogd is not yet initialised;
                 self._rwlogd_inited = False
             except Exception:

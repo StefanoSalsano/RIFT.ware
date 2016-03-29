@@ -7,10 +7,20 @@
 # -*- coding: utf-8 -*-
 # ex:set ts=4 et sw=4 ai:
 
+import gi
+gi.require_version('CF', '1.0')
+gi.require_version('RwTaskletPlugin', '1.0')
+gi.require_version('RwTasklet', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwDtsToyTaskletYang', '1.0')
+gi.require_version('RwVcsYang', '1.0')
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwTypes', '1.0')
+
 import time
 from gi.repository import GObject, RwTaskletPlugin
 from gi.repository import CF, RwTasklet, RwDts, RwDtsToyTaskletYang
-from gi.repository import RwVcsYang, RwCompositeYang
+from gi.repository import RwVcsYang
 from gi.repository import RwBaseYang, RwTypes
 
 """This is a basic example of python tasklet. The name

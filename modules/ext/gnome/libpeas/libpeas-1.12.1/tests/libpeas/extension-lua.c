@@ -4,19 +4,19 @@
  *
  * Copyright (C) 2014 - Garrett Regier
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -40,7 +40,7 @@
 static void
 set_garbage_collector_state (PeasEngine     *engine,
                              PeasPluginInfo *info,
-                             gboolean        running)
+                             gboolean        start)
 {
   PeasExtension *extension;
 
@@ -48,7 +48,7 @@ set_garbage_collector_state (PeasEngine     *engine,
                                             PEAS_TYPE_ACTIVATABLE,
                                             NULL);
 
-  if (running)
+  if (start)
     {
       /* collectgarbage('restart') */
       peas_activatable_activate (PEAS_ACTIVATABLE (extension));
@@ -149,24 +149,12 @@ test_extension_lua_activatable_subject_refcount (PeasEngine     *engine,
 }
 
 static void
-test_extension_lua_nonexistent (void)
-{
-  g_test_trap_subprocess (EXTENSION_TEST_NAME (lua5.1,
-                                               "nonexistent/subprocess"),
-                          0, G_TEST_SUBPROCESS_INHERIT_STDERR);
-  g_test_trap_assert_passed ();
-  g_test_trap_assert_stderr ("");
-}
-
-static void
-test_extension_lua_nonexistent_subprocess (PeasEngine *engine)
+test_extension_lua_nonexistent (PeasEngine *engine)
 {
   PeasPluginInfo *info;
 
-  testing_util_push_log_hook ("Error failed to load Lua module "
-                              "'extension-lua51-nonexistent'*");
   testing_util_push_log_hook ("Error loading plugin "
-                              "'extension-lua51-nonexistent'");
+                              "'extension-lua51-nonexistent'*");
 
   info = peas_engine_get_plugin_info (engine, "extension-lua51-nonexistent");
 
@@ -201,9 +189,7 @@ main (int   argc,
   EXTENSION_TEST (lua5.1, "instance-refcount", instance_refcount);
   EXTENSION_TEST (lua5.1, "activatable-subject-refcount",
                   activatable_subject_refcount);
-
-  EXTENSION_TEST_FUNC (lua5.1, "nonexistent", nonexistent);
-  EXTENSION_TEST (lua5.1, "nonexistent/subprocess", nonexistent_subprocess);
+  EXTENSION_TEST (lua5.1, "nonexistent", nonexistent);
 
   return testing_extension_run_tests ();
 }

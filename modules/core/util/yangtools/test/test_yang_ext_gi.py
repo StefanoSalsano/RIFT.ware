@@ -17,6 +17,10 @@ import sys
 import unittest
 import xmlrunner
 import gi
+gi.require_version('RwFpathDYang', '1.0')
+gi.require_version('CompanyYang', '1.0')
+gi.require_version('YangModelPlugin', '1.0')
+
 from gi.repository import RwFpathDYang, GLib
 from gi.repository import CompanyYang, RwYang
 import rw_peas

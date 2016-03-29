@@ -170,7 +170,7 @@ public:
   void show_schemas(std::ostream& os);
 
 public:
-  const char* CONFIG_ROOT_MODEL = "config_root";
+  const char* RW_BASE_MODEL = "rw-base";
 
   /**
    * Stores the loaded schemas

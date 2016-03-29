@@ -347,6 +347,9 @@ int
 rw_piot_set_mc_addr_list(rw_piot_api_handle_t api_handle,
                          struct ether_addr *mc_addr_set,
                          uint32_t nb_mc_addr);
+int
+rw_piot_get_extended_stats(rw_piot_api_handle_t api_handle,
+                           struct rte_eth_xstats *xstats, unsigned n);
 __END_DECLS
 
 #endif

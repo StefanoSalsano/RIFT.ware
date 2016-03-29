@@ -16,6 +16,7 @@ import tornado.ioloop
 import tornado.platform.asyncio
 import tornado.web
 import tornado.websocket
+import urllib
 
 from ..translation import (
     convert_netconf_response_to_json,
@@ -23,14 +24,24 @@ from ..translation import (
     convert_rpc_to_xml_output,
     convert_xml_to_collection,
 )
+
 from ..util import (
     create_xpath_from_url,
-    is_config
+    is_config,
+    is_schema_api,
+    find_child_by_name,
+    find_target_node
 )
+
 from .netconf_wrapper import Result
 
+from ..util import (
+    WatchdogStatus,
+)
+
+
 class HttpHandler(tornado.web.RequestHandler):
-    def initialize(self, logger, netconf_connection_manager, schema_root, confd_url_converter, xml_to_json_translator, asyncio_loop, configuration, statistics):
+    def initialize(self, logger, netconf_connection_manager, schema_root, confd_url_converter, xml_to_json_translator, asyncio_loop, configuration, statistics, watchdog_connector):
         # ATTN: can't call it _log becuase the base class has a _log instance already
         self.__log = logger
         self._asyncio_loop = asyncio_loop
@@ -42,6 +53,7 @@ class HttpHandler(tornado.web.RequestHandler):
         self._default_accept_type = "application/vnd.yang.data+xml"
         self._statistics = statistics
         self._netconf_connection_manager = netconf_connection_manager
+        self._watchdog_connector = watchdog_connector
 
     def _get_encoded_username_and_password(self):
         auth_header = self.request.headers.get("Authorization")        
@@ -51,6 +63,29 @@ class HttpHandler(tornado.web.RequestHandler):
             raise ValueError("only supoprt for basic authorization")
 
         return auth_header[6:]
+
+    def _respond_with_json_schema(self, url, accept_type):
+        result = Result.OK
+        actual_url = urllib.parse.urlsplit(url)[2];
+        url_parts = actual_url.split('/');
+        if url_parts[-1] == '':
+            del(url_parts[-1])
+
+        if len(url_parts) == 3:
+            # Convert the entire schema
+            json_resp = ""
+            target_node = self._schema_root.get_first_child()
+            while target_node is not None:
+                json_resp += target_node.to_json(True)
+                target_node = target_node.get_next_sibling()
+
+            return 200, accept_type, json_resp
+        else:
+            target_node = find_target_node(self._schema_root, url_parts[3:])
+            if target_node is None:
+                return 501, accept_type, "{\"Conversion failed\"}"
+
+            return 200, accept_type, target_node.to_json(True)
 
     @asyncio.coroutine
     def connect(self):
@@ -67,8 +102,10 @@ class HttpHandler(tornado.web.RequestHandler):
         self._statistics._del_req += 1
         if self._configuration.log_timing:        
             start_time = time.clock_gettime(time.CLOCK_REALTIME)
-            #self.__log.debug("get start time: %s " % start_time)
+            self.__log.debug("get start time: %s " % start_time)
             
+        self._watchdog_connector.write(WatchdogStatus.DeleteRequest)
+
         @asyncio.coroutine
         def impl():
             try:
@@ -79,7 +116,7 @@ class HttpHandler(tornado.web.RequestHandler):
                 return 401, "text/html", "must supply BasicAuth"
 
             url = self.request.uri
-            #self.__log.debug("DELETE: %s" % (url))
+            self.__log.debug("DELETE: %s" % (url))
 
             accept_type = self.request.headers.get("Accept")
             if accept_type is None:
@@ -93,21 +130,21 @@ class HttpHandler(tornado.web.RequestHandler):
             try:
                 converted_url = self._confd_url_converter.convert("DELETE", url, None)
             except Exception as e:
-                #self.__log.debug("invalid url requested %s" % url)
+                self.__log.debug("invalid url requested %s" % url)
                 self._statistics._del_404_rsp += 1
                 return 404, "text/html", self._base_error_message % "Resource target or resource node not found"
 
-            #self.__log.debug("converted url: %s" % converted_url)
+            self.__log.debug("converted url: %s" % converted_url)
 
             if self._configuration.log_timing:
                 netconf_start_time = time.clock_gettime(time.CLOCK_REALTIME)
-                #self.__log.debug("delete netconf start time: %s " % netconf_start_time)
+                self.__log.debug("delete netconf start time: %s " % netconf_start_time)
 
             result, netconf_response = yield from self._netconf.delete(converted_url)
                     
             if self._configuration.log_timing:
                 netconf_end_time = time.clock_gettime(time.CLOCK_REALTIME)
-                #self.__log.debug("delete netconf end time: %s " % netconf_end_time)
+                self.__log.debug("delete netconf end time: %s " % netconf_end_time)
 
             if result != Result.OK:
                 if result == Result.Upgrade_Performed:
@@ -133,7 +170,7 @@ class HttpHandler(tornado.web.RequestHandler):
 
             if "json" in accept_type:
                 response = convert_netconf_response_to_json(bytes(netconf_response,"utf-8"))
-                #self.__log.debug("converted json: %s" % response)
+                self.__log.debug("converted json: %s" % response)
                 return return_code, accept_type, response
 
             return return_code, accept_type, netconf_response
@@ -148,15 +185,19 @@ class HttpHandler(tornado.web.RequestHandler):
         self.write(message)
         if self._configuration.log_timing:
             end_time = time.clock_gettime(time.CLOCK_REALTIME)
-            #self.__log.debug("delete end time: %s " % end_time)
+            self.__log.debug("delete end time: %s " % end_time)
+
+        self._watchdog_connector.write(WatchdogStatus.DeleteReply)
 
     @tornado.gen.coroutine
     def get(self, *args, **kwargs):
         self._statistics._get_req += 1
         if self._configuration.log_timing:        
             start_time = time.clock_gettime(time.CLOCK_REALTIME)
-            #self.__log.debug("get start time: %s " % start_time)
-            
+            self.__log.debug("get start time: %s " % start_time)
+           
+        self._watchdog_connector.write(WatchdogStatus.GetRequest)
+ 
         @asyncio.coroutine
         def impl():
             try:
@@ -174,20 +215,23 @@ class HttpHandler(tornado.web.RequestHandler):
 
             is_collection = "collection" in accept_type
                 
-            #self.__log.debug("GET: %s %s" % (url, accept_type))
+            self.__log.debug("GET: %s %s" % (url, accept_type))
+
+            if is_schema_api(url):
+                return self._respond_with_json_schema(url, accept_type)
 
             try:
                 converted_url = self._confd_url_converter.convert("GET", url, None)
             except Exception as e:
-                #self.__log.debug("invalid url requested %s" % url)
+                self.__log.debug("invalid url requested %s" % url)
                 self._statistics._get_404_rsp += 1
                 return 404, "text/html", self._base_error_message % "Resource target or resource node not found"
 
-            #self.__log.debug("converted url: %s" % converted_url)
+            self.__log.debug("converted url: %s" % converted_url)
 
             if self._configuration.log_timing:
                 netconf_start_time = time.clock_gettime(time.CLOCK_REALTIME)
-                #self.__log.debug("get netconf start time: %s " % netconf_start_time)
+                self.__log.debug("get netconf start time: %s " % netconf_start_time)
 
             if is_config(url):
                 result, netconf_response = yield from self._netconf.get_config(converted_url)
@@ -196,7 +240,7 @@ class HttpHandler(tornado.web.RequestHandler):
 
             if self._configuration.log_timing:
                 netconf_end_time = time.clock_gettime(time.CLOCK_REALTIME)
-                #self.__log.debug("get netconf end time: %s " % netconf_end_time)
+                self.__log.debug("get netconf end time: %s " % netconf_end_time)
 
             if result != Result.OK:
                 if result == Result.Upgrade_Performed:
@@ -218,7 +262,7 @@ class HttpHandler(tornado.web.RequestHandler):
             if "json" not in accept_type:
                 if is_collection:
                     response = convert_xml_to_collection(url, netconf_response)
-                    #self.__log.debug("collection xml: %s" % response)
+                    self.__log.debug("collection xml: %s" % response)
                 else:
                     # strip off <data></data> tags
 
@@ -226,7 +270,7 @@ class HttpHandler(tornado.web.RequestHandler):
                     try:
                         lxml.etree.tostring(root[0])
                     except:
-                        #self.__log.debug("empty response from confd")
+                        self.__log.debug("empty response from confd")
                         self._statistics._get_204_rsp += 1
                         return 204, "", ""
                     response = netconf_response
@@ -238,18 +282,18 @@ class HttpHandler(tornado.web.RequestHandler):
                     root = lxml.etree.fromstring(netconf_response)
                     lxml.etree.tostring(root[0])
                 except:
-                    #self.__log.debug("empty response from confd")
+                    self.__log.debug("empty response from confd")
                     self._statistics._get_204_rsp += 1
                     return 204, "", ""
 
                 try:
                     response = self._xml_to_json_translator.convert(is_collection, url, xpath, netconf_response)
-                    #self.__log.debug("converted json: %s" % response)
+                    self.__log.debug("converted json: %s" % response)
                 except IndexError:
                     self._statistics._get_204_rsp += 1
                     return 204, "", ""
                 except Exception as e:
-                    #self.__log.debug("malformed response from confd: %s %s" % (netconf_response,e))
+                    self.__log.debug("malformed response from confd: %s %s" % (netconf_response,e))
                     self._statistics._get_500_rsp += 1
                     return 500, "application/vnd.yang.data+xml", str(netconf_response)
 
@@ -269,15 +313,18 @@ class HttpHandler(tornado.web.RequestHandler):
 
         if self._configuration.log_timing:
             end_time = time.clock_gettime(time.CLOCK_REALTIME)
-            #self.__log.debug("get end time: %s " % end_time)
+            self.__log.debug("get end time: %s " % end_time)
             
+        self._watchdog_connector.write(WatchdogStatus.GetReply)
 
     @tornado.gen.coroutine
     def put(self, *args, **kwargs):
         self._statistics._put_req += 1
         if self._configuration.log_timing:
             start_time = time.clock_gettime(time.CLOCK_REALTIME)
-            #self.__log.debug("put start time: %s " % start_time)
+            self.__log.debug("put start time: %s " % start_time)
+
+        self._watchdog_connector.write(WatchdogStatus.PutRequest)
 
         @asyncio.coroutine
         def impl():
@@ -289,7 +336,7 @@ class HttpHandler(tornado.web.RequestHandler):
                 return 401, "text/html", "must supply BasicAuth"
 
             url = self.request.uri
-            #self.__log.debug("PUT: %s" % url)
+            self.__log.debug("PUT: %s" % url)
 
             body = self.request.body.decode("utf-8")
             body_header = self.request.headers.get("Content-Type")
@@ -297,22 +344,22 @@ class HttpHandler(tornado.web.RequestHandler):
             try:
                 converted_url = self._confd_url_converter.convert("PUT", url, (body,body_header))
             except:
-                #self.__log.debug("invalid url requested %s" % url)
+                self.__log.debug("invalid url requested %s" % url)
                 self._statistics._put_404_rsp += 1
                 return 404, "text/html", self._base_error_message % "Resource target or resource node not found"
 
-            #self.__log.debug("converted url: %s" % converted_url)
+            self.__log.debug("converted url: %s" % converted_url)
 
             if self._configuration.log_timing:
                 netconf_start_time = time.clock_gettime(time.CLOCK_REALTIME)
-                #self.__log.debug("put netconf start time: %s " % netconf_start_time)
+                self.__log.debug("put netconf start time: %s " % netconf_start_time)
 
 
             result, netconf_response =  yield from self._netconf.put(converted_url)
 
             if self._configuration.log_timing:
                 netconf_end_time = time.clock_gettime(time.CLOCK_REALTIME)
-                #self.__log.debug("put netconf end time: %s " % netconf_end_time)
+                self.__log.debug("put netconf end time: %s " % netconf_end_time)
 
             if result != Result.OK:
                 if result == Result.Upgrade_Performed:
@@ -346,7 +393,7 @@ class HttpHandler(tornado.web.RequestHandler):
 
             if "json" in accept_type:
                 response = convert_netconf_response_to_json(bytes(netconf_response,"utf-8"))
-                #self.__log.debug("converted json: %s" % response)
+                self.__log.debug("converted json: %s" % response)
                 return return_code, accept_type, response
 
             return return_code, accept_type, netconf_response
@@ -362,14 +409,18 @@ class HttpHandler(tornado.web.RequestHandler):
 
         if self._configuration.log_timing:
             end_time = time.clock_gettime(time.CLOCK_REALTIME)
-            #self.__log.debug("put end time: %s " % end_time)
+            self.__log.debug("put end time: %s " % end_time)
+
+        self._watchdog_connector.write(WatchdogStatus.PutReply)
 
     @tornado.gen.coroutine
     def post(self, *args, **kwargs):
         self._statistics._post_req += 1
         if self._configuration.log_timing:
             start_time = time.clock_gettime(time.CLOCK_REALTIME)
-            #self.__log.debug("post start time: %s " % start_time)
+            self.__log.debug("post start time: %s " % start_time)
+
+        self._watchdog_connector.write(WatchdogStatus.PostRequest)
 
         @asyncio.coroutine
         def impl():
@@ -381,7 +432,7 @@ class HttpHandler(tornado.web.RequestHandler):
                 return 401, "text/html", "must supply BasicAuth"
 
             url = self.request.uri
-            #self.__log.debug("POST: %s" % url)
+            self.__log.debug("POST: %s" % url)
 
             body = self.request.body.decode("utf-8")
             body_header = self.request.headers.get("Content-Type")
@@ -390,23 +441,23 @@ class HttpHandler(tornado.web.RequestHandler):
             try:
                 pass
             except:
-                #self.__log.debug("invalid url requested %s" % url)
+                self.__log.debug("invalid url requested %s" % url)
                 self._statistics._post_404_rsp += 1
                 return 404, "text/html", self._base_error_message % "Resource target or resource node not found"
 
             is_operation = "/api/operations" in url
 
-            #self.__log.debug("converted url: %s" % converted_url)
+            self.__log.debug("converted url: %s" % converted_url)
 
             if self._configuration.log_timing:
                 netconf_start_time = time.clock_gettime(time.CLOCK_REALTIME)
-                #self.__log.debug("post netconf start time: %s " % netconf_start_time)
+                self.__log.debug("post netconf start time: %s " % netconf_start_time)
 
             result, netconf_response = yield from self._netconf.post(converted_url, is_operation)
 
             if self._configuration.log_timing:
                 netconf_end_time = time.clock_gettime(time.CLOCK_REALTIME)
-                #self.__log.debug("post netconf end time: %s " % netconf_end_time)
+                self.__log.debug("post netconf end time: %s " % netconf_end_time)
 
             if result != Result.OK:
                 if result == Result.Upgrade_Performed:
@@ -419,20 +470,20 @@ class HttpHandler(tornado.web.RequestHandler):
                 elif result == Result.Upgrade_In_Progress:
                     return_code = 405
                 elif result == Result.Operation_Failed:
-                    #self.__log.debug("operation failed")
+                    self.__log.debug("operation failed")
                     return_code = 405
                 elif result == Result.Data_Exists:
                     return_code = 409
-                    self._statistics._put_409_rsp += 1
+                    self._statistics._post_409_rsp += 1
                 elif result == Result.Rpc_Error:
-                    #self.__log.debug("rpc error")
-                    self._statistics._put_405_rsp += 1
+                    self.__log.debug("rpc error")
+                    self._statistics._post_405_rsp += 1
                     return_code = 405
                 else:
                     return_code = 500
             else:
                 return_code = 201
-                self._statistics._put_201_rsp += 1
+                self._statistics._post_201_rsp += 1
 
             accept_type = self.request.headers.get("Accept")
             if accept_type is None:
@@ -442,7 +493,7 @@ class HttpHandler(tornado.web.RequestHandler):
 
             if "json" in accept_type:
                 response = convert_netconf_response_to_json(bytes(netconf_response,"utf-8"))
-                #self.__log.debug("converted json: %s" % response)
+                self.__log.debug("converted json: %s" % response)
             else:
                 response = netconf_response
                 
@@ -465,4 +516,6 @@ class HttpHandler(tornado.web.RequestHandler):
 
         if self._configuration.log_timing:
             end_time = time.clock_gettime(time.CLOCK_REALTIME)
-            #self.__log.debug("post end time: %s " % end_time)
+            self.__log.debug("post end time: %s " % end_time)
+
+        self._watchdog_connector.write(WatchdogStatus.PostReply)

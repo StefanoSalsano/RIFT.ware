@@ -246,6 +246,10 @@ static gboolean yangmodel_plugin__node__is_rpc_input(YangmodelPluginNode * n, gu
     return (gboolean)rw_yang_node_is_rpc_input((rw_yang_node_t *)node);
 }
 
+static void yangmodel_plugin__node__to_json(YangmodelPluginNode * n, guint64 node, gchar ** str, gboolean pretty_print) {
+    rw_yang_node_to_json((rw_yang_node_t *)node, (char **)str, (bool)pretty_print);
+}
+
 /* Key interface */
 static guint64 yangmodel_plugin__key__list_node(YangmodelPluginKey * k, guint64 key) {
     return (guint64)rw_yang_key_get_list_node((rw_yang_key_t *)key);

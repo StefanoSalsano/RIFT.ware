@@ -8,8 +8,10 @@
 
 source $RIFT_INSTALL/usr/rift/systemtest/util/mano/mano_common.sh
 
-SCRIPT_TEST="py.test -v \
-            ${PYTEST_DIR}/mission_control/test_mission_control_negative.py"
+SCRIPT_TEST="py.test -v -p no:cacheprovider \
+            ${PYTEST_DIR}/mission_control/test_mission_control_negative_vmpool.py \
+            ${PYTEST_DIR}/mission_control/test_mission_control_negative_cloud_account.py \
+            ${PYTEST_DIR}/mission_control/test_mission_control_negative_mgmt_domain.py"
 
 test_prefix="mission_control_negative_systest"
 test_cmd=""

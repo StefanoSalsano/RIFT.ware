@@ -6,6 +6,12 @@
 import asyncio
 import sys
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     RwYang,
@@ -42,7 +48,6 @@ class ResourceMgrEvent(object):
         yield from asyncio.wait([self._link_reg_event.wait(), self._vdu_reg_event.wait()],
                                 timeout=timeout, loop=self._loop)
 
-    @asyncio.coroutine
     def create_record_dts(self, regh, xact, path, msg):
         """
         Create a record in DTS with path and message
@@ -51,7 +56,6 @@ class ResourceMgrEvent(object):
                         xact, path, msg)
         regh.create_element(path, msg)
 
-    @asyncio.coroutine
     def delete_record_dts(self, regh, xact, path):
         """
         Delete a VNFR record in DTS with path and message
@@ -60,9 +64,54 @@ class ResourceMgrEvent(object):
                         xact, path)
         regh.delete_element(path)
 
-
     @asyncio.coroutine
     def register(self):
+        @asyncio.coroutine
+        def onlink_event(dts, g_reg, xact, xact_event, scratch_data):
+            @asyncio.coroutine
+            def instantiate_realloc_vn(link):
+                """Re-populate the virtual link information after restart
+
+                Arguments:
+                    vlink 
+
+                """
+                # wait for 3 seconds
+                yield from asyncio.sleep(3, loop=self._loop)
+
+                response_info = yield from self._parent.reallocate_virtual_network(link.event_id,
+                                                                                 link.cloud_account,
+                                                                                 link.request_info, link.resource_info,
+                                                                                 )
+            if (xact_event == rwdts.MemberEvent.INSTALL):
+              link_cfg = self._link_reg.elements
+              for link in link_cfg:
+                self._loop.create_task(instantiate_realloc_vn(link))
+            return rwdts.MemberRspCode.ACTION_OK
+
+        @asyncio.coroutine
+        def onvdu_event(dts, g_reg, xact, xact_event, scratch_data):
+            @asyncio.coroutine
+            def instantiate_realloc_vdu(vdu):
+                """Re-populate the VDU information after restart
+
+                Arguments:
+                    vdu 
+
+                """
+                # wait for 3 seconds
+                yield from asyncio.sleep(3, loop=self._loop)
+
+                response_info = yield from self._parent.reallocate_virtual_compute(vdu.event_id,
+                                                                                 vdu.cloud_account,
+                                                                                 vdu.request_info, vdu.resource_info,
+                                                                                 )
+            if (xact_event == rwdts.MemberEvent.INSTALL):
+              vdu_cfg = self._vdu_reg.elements
+              for vdu in vdu_cfg:
+                self._loop.create_task(instantiate_realloc_vdu(vdu))
+            return rwdts.MemberRspCode.ACTION_OK
+
         def on_link_request_commit(xact_info):
             """ The transaction has been committed """
             self._log.debug("Received link request commit (xact_info: %s)", xact_info)
@@ -83,9 +132,11 @@ class ResourceMgrEvent(object):
                 response_info = yield from self._parent.allocate_virtual_network(pathentry.key00.event_id,
                                                                                  request_msg.cloud_account,
                                                                                  request_msg.request_info)
-                #self.create_record_dts(self._link_reg, xact_info, response_xpath, response_info)
+                request_msg.resource_info = response_info
+                self.create_record_dts(self._link_reg, None, ks_path.to_xpath(RwResourceMgrYang.get_schema()), request_msg)
             elif action == rwdts.QueryAction.DELETE:
                 yield from self._parent.release_virtual_network(pathentry.key00.event_id)
+                self.delete_record_dts(self._link_reg, None, ks_path.to_xpath(RwResourceMgrYang.get_schema()))
             elif action == rwdts.QueryAction.READ:
                 response_info = yield from self._parent.read_virtual_network_info(pathentry.key00.event_id)
             else:
@@ -152,9 +203,11 @@ class ResourceMgrEvent(object):
                 if response_info.resource_state == 'pending':
                     asyncio.ensure_future(monitor_vdu_state(response_xpath, pathentry),
                                           loop = self._loop)
-
+                request_msg.resource_info = response_info
+                self.create_record_dts(self._vdu_reg, None, ks_path.to_xpath(RwResourceMgrYang.get_schema()), request_msg)
             elif action == rwdts.QueryAction.DELETE:
                 yield from self._parent.release_virtual_compute(pathentry.key00.event_id)
+                self.delete_record_dts(self._vdu_reg, None, ks_path.to_xpath(RwResourceMgrYang.get_schema()))
             elif action == rwdts.QueryAction.READ:
                 response_info = yield from self._parent.read_virtual_compute_info(pathentry.key00.event_id)
             else:
@@ -179,23 +232,26 @@ class ResourceMgrEvent(object):
             else:
                 self._log.error("Unknown registration ready event: %s", registration)
 
-
-        with self._dts.group_create() as group:
+        link_handlers = rift.tasklets.Group.Handler(on_event=onlink_event,)
+        with self._dts.group_create(handler=link_handlers) as link_group:
             self._log.debug("Registering for Link Resource Request using xpath: %s",
                             ResourceMgrEvent.VLINK_REQUEST_XPATH)
 
-            self._link_reg = group.register(xpath=ResourceMgrEvent.VLINK_REQUEST_XPATH,
+            self._link_reg = link_group.register(xpath=ResourceMgrEvent.VLINK_REQUEST_XPATH,
                                             handler=rift.tasklets.DTS.RegistrationHandler(on_ready=on_request_ready,
                                                                                           on_commit=on_link_request_commit,
                                                                                           on_prepare=on_link_request_prepare),
-                                            flags=rwdts.Flag.PUBLISHER)
+                                            flags=rwdts.Flag.PUBLISHER | rwdts.Flag.FILE_DATASTORE,)
+
+        vdu_handlers = rift.tasklets.Group.Handler(on_event=onvdu_event, )
+        with self._dts.group_create(handler=vdu_handlers) as vdu_group:
 
             self._log.debug("Registering for VDU Resource Request using xpath: %s",
                             ResourceMgrEvent.VDU_REQUEST_XPATH)
 
-            self._vdu_reg = group.register(xpath=ResourceMgrEvent.VDU_REQUEST_XPATH,
+            self._vdu_reg = vdu_group.register(xpath=ResourceMgrEvent.VDU_REQUEST_XPATH,
                                            handler=rift.tasklets.DTS.RegistrationHandler(on_ready=on_request_ready,
                                                                                          on_commit=on_vdu_request_commit,
                                                                                          on_prepare=on_vdu_request_prepare),
-                                           flags=rwdts.Flag.PUBLISHER)
+                                           flags=rwdts.Flag.PUBLISHER | rwdts.Flag.FILE_DATASTORE,)
 

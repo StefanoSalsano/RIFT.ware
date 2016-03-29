@@ -189,23 +189,21 @@ rwdts_rsp_add_err_and_trace (rwdts_xact_t *xact,
   return RW_STATUS_SUCCESS;
 }
 
-bool rwdts_member_allow_add_block(rwdts_xact_t *xact,
+void rwdts_member_notify_newblock(rwdts_xact_t *xact,
                                   rwdts_xact_block_t *block)
 {
-  if (!(HASH_CNT(hh, xact->queries))) {
-    return true;
-  }
-  else if ((HASH_CNT(hh, xact->queries) &&
-        (xact->mbr_state == RWDTS_MEMB_XACT_ST_PREPARE))) {
+  if (HASH_CNT(hh, xact->queries) 
+      && (block->newblockadd_notify == RWDTS_NEWBLOCK_TO_NOTIFY)
+      && (xact->mbr_state == RWDTS_MEMB_XACT_ST_PREPARE)) {
     xact->n_member_new_blocks++;
     xact->member_new_blocks = 
-        RW_REALLOC(xact->member_new_blocks, sizeof(xact->member_new_blocks[0]) * xact->n_member_new_blocks);
+        RW_REALLOC(xact->member_new_blocks, 
+                   sizeof(xact->member_new_blocks[0]) * xact->n_member_new_blocks);
     RW_ASSERT(xact->member_new_blocks);
     xact->member_new_blocks[xact->n_member_new_blocks - 1] = block;
+    block->newblockadd_notify = RWDTS_NEWBLOCK_NOTIFY;
     rwdts_xact_block_ref(block, __PRETTY_FUNCTION__, __LINE__);  
-    return true;
   }
-  return false;
 }
 
 void rwdts_respond_router_f(void *arg)
@@ -249,6 +247,7 @@ void rwdts_respond_router_f(void *arg)
       rsp->new_blocks[i] = (RWDtsXactBlkID*) RW_MALLOC0(sizeof(RWDtsXactBlkID));
       rwdts_xact_blk_id__init((RWDtsXactBlkID *)rsp->new_blocks[i]);
       protobuf_c_message_memcpy(&rsp->new_blocks[i]->base, &(member_new_blocks->subx.block->base));
+      member_new_blocks->newblockadd_notify = RWDTS_NEWBLOCK_NOTIFIED;
       rwdts_xact_block_unref(member_new_blocks, __PRETTY_FUNCTION__, __LINE__);
     }
     RW_FREE(xact->member_new_blocks);

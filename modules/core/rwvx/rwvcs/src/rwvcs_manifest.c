@@ -21,8 +21,7 @@
  * @param bootstrap         - manifest bootstrap-phase to validate
  * @return                  - RW_STATUS_SUCCESS or RW_STATUS_FAILURE if validation fails
  */
-static rw_status_t validate_bootstrap_phase(
-    vcs_manifest_bootstrap * bootstrap)
+rw_status_t validate_bootstrap_phase(vcs_manifest_bootstrap * bootstrap)
 {
   vcs_manifest_trace *rwtrace;
   vcs_manifest_init_tasklet *rwtasklet;
@@ -74,7 +73,6 @@ rw_status_t rwvcs_manifest_load(
   status = rw_xml_manager_xml_to_pb(rwvcs->xml_mgr, xml_str, &rwvcs->pb_rwmanifest->base, NULL);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-  status = validate_bootstrap_phase(rwvcs->pb_rwmanifest->bootstrap_phase);
 
   return status;
 }
@@ -93,6 +91,9 @@ rw_status_t rwvcs_manifest_component_lookup(
   RW_ASSERT(m_component);
   inventory = instance->pb_rwmanifest->inventory;
 
+  if (inventory == NULL) {
+    return RW_STATUS_NOTFOUND;
+  }
   // Search for a component by name in the selected manifest profile
   *m_component = NULL;
   for (i = 0 ; i < inventory->n_component ; i++) {

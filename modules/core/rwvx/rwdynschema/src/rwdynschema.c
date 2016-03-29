@@ -20,6 +20,11 @@
 #include "rwdynschema.h"
 #include "rwdynschema_load_schema.h"
 
+char * extract_northbound_listing_from_manifest(rwdts_api_t * dts_handle)
+{
+  return dts_handle->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwbaseschema->northbound_listing;
+}
+
 static rwdynschema_dynamic_schema_registration_t *
 rwdynschema_dynamic_schema_registration_ref(rwdynschema_dynamic_schema_registration_t * boxed);
 static void
@@ -46,16 +51,17 @@ rwdynschema_dynamic_schema_registration_unref(rwdynschema_dynamic_schema_registr
 
   int i = 0;
   for (; i < boxed->batch_size; ++i) {
-    RW_FREE(boxed->module_names[i]);
-    RW_FREE(boxed->fxs_filenames[i]);
-    RW_FREE(boxed->so_filenames[i]);
-    RW_FREE(boxed->yang_filenames[i]);
+    RW_FREE(boxed->modules[i].module_name);
+    RW_FREE(boxed->modules[i].fxs_filename);
+    RW_FREE(boxed->modules[i].so_filename);
+    RW_FREE(boxed->modules[i].yang_filename);
+    RW_FREE(boxed->modules[i].metainfo_filename);
   }
-  RW_FREE(boxed->module_names);
-  RW_FREE(boxed->fxs_filenames);
-  RW_FREE(boxed->so_filenames);
-  RW_FREE(boxed->yang_filenames);
-  
+
+  RW_FREE(boxed->modules);
+  RW_FREE(boxed->northbound_listing);
+  RW_FREE(boxed->app_name);
+
   g_free(boxed);
 }
 
@@ -63,7 +69,9 @@ rwdynschema_dynamic_schema_registration_t *
 rwdynschema_dynamic_schema_registration_new(char const * app_name,
                                             rwdts_api_t * dts_handle,
                                             void * app_instance,
-                                            rwdynschema_app_sub_cb app_sub_cb)
+                                            rwdynschema_app_sub_cb app_sub_cb,
+                                            RwdynschemaAppType app_type,
+                                            char * northbound_listing)
 {
   rwdynschema_dynamic_schema_registration_t *boxed =
       (rwdynschema_dynamic_schema_registration_t *)g_new0(rwdynschema_dynamic_schema_registration_t, 1);
@@ -77,10 +85,10 @@ rwdynschema_dynamic_schema_registration_new(char const * app_name,
   boxed->batch_size = 0;
   boxed->batch_capacity = 128;
 
-  boxed->module_names = RW_MALLOC(boxed->batch_capacity * sizeof(char *));
-  boxed->fxs_filenames = RW_MALLOC(boxed->batch_capacity * sizeof(char *));
-  boxed->so_filenames = RW_MALLOC(boxed->batch_capacity * sizeof(char *));
-  boxed->yang_filenames = RW_MALLOC(boxed->batch_capacity * sizeof(char *));  
+  boxed->modules = RW_MALLOC(boxed->batch_capacity * sizeof(rwdynschema_module_t));
+
+  boxed->app_type = app_type;
+  boxed->northbound_listing = RW_STRDUP(northbound_listing);
 
   boxed->app_name = RW_STRDUP(app_name);
   boxed->memlog_instance = rwmemlog_instance_alloc(app_name, 0, 200);
@@ -96,33 +104,29 @@ void rwdynschema_grow_module_array(rwdynschema_dynamic_schema_registration_t * r
   
   reg->batch_capacity = reg->batch_capacity * 2;
 
-  reg->module_names = RW_REALLOC(reg->module_names, reg->batch_capacity * sizeof(char *));
-  reg->fxs_filenames = RW_REALLOC(reg->fxs_filenames, reg->batch_capacity * sizeof(char *));
-  reg->so_filenames = RW_REALLOC(reg->so_filenames, reg->batch_capacity * sizeof(char *));
-  reg->yang_filenames = RW_REALLOC(reg->yang_filenames, reg->batch_capacity * sizeof(char *));  
+  reg->modules = RW_REALLOC(reg->modules, reg->batch_capacity * sizeof(rwdynschema_module_t));
 }
 
 void rwdynschema_add_module_to_batch(rwdynschema_dynamic_schema_registration_t * reg,
-                                     const char * module_name,
-                                     const char * fxs_filename,
-                                     const char * so_filename,
-                                     const char * yang_filename)
+                                     const rwdynschema_module_t* module_info)
 {
   if (reg->batch_size >= reg->batch_capacity) {
     rwdynschema_grow_module_array(reg);
   }
 
-  reg->module_names[reg->batch_size] = RW_STRDUP(module_name);
-  reg->fxs_filenames[reg->batch_size] = RW_STRDUP(fxs_filename);
-  reg->so_filenames[reg->batch_size] = RW_STRDUP(so_filename);
-  reg->yang_filenames[reg->batch_size] = RW_STRDUP(yang_filename);
+  reg->modules[reg->batch_size].module_name   = RW_STRDUP(module_info->module_name);
+  reg->modules[reg->batch_size].fxs_filename  = RW_STRDUP(module_info->fxs_filename);
+  reg->modules[reg->batch_size].so_filename   = RW_STRDUP(module_info->so_filename);
+  reg->modules[reg->batch_size].yang_filename = RW_STRDUP(module_info->yang_filename);
+  reg->modules[reg->batch_size].metainfo_filename = RW_STRDUP(module_info->metainfo_filename);
+  reg->modules[reg->batch_size].exported = module_info->exported;
 
   ++reg->batch_size;
 }
 
-rwdts_member_rsp_code_t rwdynschema_app_commit(const rwdts_xact_info_t * xact_info,
+rwdts_member_rsp_code_t rwdynschema_app_commit(rwdts_xact_info_t const * xact_info,
                                                uint32_t n_crec,
-                                               const rwdts_commit_record_t** crec)
+                                               rwdts_commit_record_t const ** crec)
 {
   RW_ASSERT(xact_info);
   rwdts_xact_t *xact = xact_info->xact;
@@ -143,10 +147,10 @@ rwdts_member_rsp_code_t rwdynschema_app_commit(const rwdts_xact_info_t * xact_in
 }
 
 rwdts_member_rsp_code_t
-rwdynschema_app_prepare(const rwdts_xact_info_t * xact_info,
+rwdynschema_app_prepare(rwdts_xact_info_t const * xact_info,
                         RWDtsQueryAction action,
-                        const rw_keyspec_path_t * keyspec,
-                        const ProtobufCMessage * msg,
+                        rw_keyspec_path_t const * keyspec,
+                        ProtobufCMessage const * msg,
                         uint32_t credits,
                         void * get_next_key)
 {
@@ -165,11 +169,15 @@ rwdynschema_app_prepare(const rwdts_xact_info_t * xact_info,
   RWPB_T_MSG(RwMgmtSchema_data_RwMgmtSchemaState_DynamicModules) * dynamic_modules
       = (RWPB_T_MSG(RwMgmtSchema_data_RwMgmtSchemaState_DynamicModules) *) msg;
 
-  rwdynschema_add_module_to_batch(app_data,
-                                  dynamic_modules->name,
-                                  dynamic_modules->module->fxs_filename,
-                                  dynamic_modules->module->so_filename,
-                                  dynamic_modules->module->yang_filename);
+  rwdynschema_module_t mod_info;
+  mod_info.module_name   = dynamic_modules->name;
+  mod_info.fxs_filename  = dynamic_modules->module->fxs_filename;
+  mod_info.so_filename   = dynamic_modules->module->so_filename;
+  mod_info.yang_filename = dynamic_modules->module->yang_filename;
+  mod_info.metainfo_filename = dynamic_modules->module->metainfo_filename;
+  mod_info.exported = dynamic_modules->module->exported;
+
+  rwdynschema_add_module_to_batch(app_data, &mod_info);
   
   return RWDTS_ACTION_OK;
 }
@@ -177,7 +185,8 @@ rwdynschema_app_prepare(const rwdts_xact_info_t * xact_info,
 rwdynschema_dynamic_schema_registration_t *
 rwdynschema_instance_register(rwdts_api_t * dts_handle,
                               rwdynschema_app_sub_cb app_sub_cb,
-                              const char * app_name,
+                              char const * app_name,
+                              RwdynschemaAppType app_type,
                               void * app_instance,
                               GDestroyNotify app_instance_destructor)
 {
@@ -186,9 +195,11 @@ rwdynschema_instance_register(rwdts_api_t * dts_handle,
       rwdynschema_dynamic_schema_registration_new(app_name,
                                                   dts_handle,
                                                   app_instance,
-                                                  app_sub_cb);
+                                                  app_sub_cb,
+                                                  app_type,
+                                                  extract_northbound_listing_from_manifest(dts_handle));
 
-  const rw_yang_pb_schema_t* mgmt_schema = rw_load_schema("librwschema_yang_gen.so", "rw-mgmt-schema");
+  rw_yang_pb_schema_t const * mgmt_schema = rw_load_schema("librwschema_yang_gen.so", "rw-mgmt-schema");
   rwdts_api_add_ypbc_schema(dts_handle, mgmt_schema);
 
   // register with DTS

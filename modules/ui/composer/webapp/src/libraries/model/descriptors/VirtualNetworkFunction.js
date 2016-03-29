@@ -12,6 +12,7 @@
 import utils from '../../utils'
 import DescriptorModel from '../DescriptorModel'
 import DescriptorModelFactory from '../DescriptorModelFactory'
+import DescriptorModelMetaFactory from '../DescriptorModelMetaFactory'
 
 export default class VirtualNetworkFunction extends DescriptorModel {
 
@@ -35,10 +36,17 @@ export default class VirtualNetworkFunction extends DescriptorModel {
 	}
 
 	set vdu(obj) {
-		const onAddNew = (vdu) => {
-			vdu.model['name'] = this.vdu.map(utils.suffixAsInteger('name')).reduce(utils.toBiggestValue, this.vdu.length);
-		};
-		this.updateModelList('vdu', obj, DescriptorModelFactory.VirtualDeploymentUnit, onAddNew);
+		this.updateModelList('vdu', obj, DescriptorModelFactory.VirtualDeploymentUnit);
+	}
+
+	createVdu() {
+		const model = DescriptorModelMetaFactory.createModelInstanceForType('vnfd.vdu');
+		return this.vdu = DescriptorModelFactory.newVirtualDeploymentUnit(model, this);
+	}
+
+	removeVirtualDeploymentUnit(vdu) {
+		vdu.connectors.forEach(cp => this.removeAnyConnectionsForConnector(cp));
+		return this.vdu = this.vdu.filter(d => d.id !== vdu.id);
 	}
 
 	get vld() {
@@ -47,27 +55,34 @@ export default class VirtualNetworkFunction extends DescriptorModel {
 	}
 
 	set vld(obj) {
-		const onAddNew = (vld) => {
-			vld.model['name'] = this.vld.map(utils.suffixAsInteger('name')).reduce(utils.toBiggestValue, this.vdu.length);
-		};
-		this.updateModelList('internal-vld', obj, DescriptorModelFactory.InternalVirtualLink, onAddNew);
+		this.updateModelList('internal-vld', obj, DescriptorModelFactory.InternalVirtualLink);
 	}
 
 	createVld() {
-		return this.vld = DescriptorModelFactory.newInternalVirtualLink({}, this);
+		const model = DescriptorModelMetaFactory.createModelInstanceForType('vnfd.internal-vld');
+		return this.vld = DescriptorModelFactory.newInternalVirtualLink(model, this);
 	}
 
+	/**
+	 * @deprecated use `removeInternalVirtualLink()`
+	 * @param vld
+	 * @returns {*}
+	 */
 	removeVld(vld) {
-		this.removeModelListItem('vld', vld);
+		return this.removeModelListItem('vld', vld);
 	}
 
 	get connectionPoint() {
 		const list = this.model['connection-point'] || (this.model['connection-point'] = []);
-		return list.map(d => DescriptorModelFactory.newConnectionPoint(d, this));
+		return list.map(d => DescriptorModelFactory.newVirtualNetworkFunctionConnectionPoint(d, this));
 	}
 
 	set connectionPoint(obj) {
-		this.updateModelList('connection-point', obj, DescriptorModelFactory.ConnectionPoint);
+		return this.updateModelList('connection-point', obj, DescriptorModelFactory.VirtualNetworkFunctionConnectionPoint);
+	}
+
+	removeConnectionPoint(cp) {
+		return this.removeModelListItem('connectionPoint', cp);
 	}
 
 	get connectors() {
@@ -82,10 +97,12 @@ export default class VirtualNetworkFunction extends DescriptorModel {
 	}
 
 	removeAnyConnectionsForConnector(cpc) {
-		debugger;
 		this.vld.forEach(vld => vld.removeInternalConnectionPointRefForId(cpc.id));
 	}
 
+	removeInternalVirtualLink(ivl) {
+		return this.removeModelListItem('vld', ivl);
+	}
 
 }
 

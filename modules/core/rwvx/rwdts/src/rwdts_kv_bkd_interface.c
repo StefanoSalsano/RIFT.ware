@@ -218,24 +218,35 @@ rwdts_kv_get_bkd_cursor(void *instance, char *file_name)
 }
 
 rw_status_t
-rwdts_kv_get_next_bkd_api(void *instance, void **dbc, uint8_t **key, size_t *key_len,
-                          uint8_t **val, size_t *val_len)
+rwdts_kv_get_next_bkd_api(void *instance, void *cursor, char **key, int *key_len,
+                          char **val, int *val_len, void **out_cursor)
 {
   int db_ret;
   DBT db_key, data;
 
-  DBC *dbcp = (DBC *)(*dbc);
+  if (!cursor) {
+    return RW_STATUS_FAILURE;
+  }
+
+  DBC *dbcp = (DBC *)cursor;
 
   memset(&db_key, 0, sizeof(db_key));
   memset(&data, 0, sizeof(data));
 
+  *key = NULL;
+  *key_len = 0;
+  *val = NULL;
+  *val_len = 0;
   if ((db_ret = dbcp->c_get(dbcp, &db_key, &data,
                             DB_FIRST|DB_NEXT)) != 0) {
     if (db_ret == DB_NOTFOUND) {
+      *out_cursor = NULL; 
+      dbcp->c_close(dbcp); 
       return RW_STATUS_FAILURE;
     }
   }
 
+  *out_cursor = (void *)dbcp;
   *key = db_key.data;
   *key_len = db_key.size;
   *val = data.data;

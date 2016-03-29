@@ -30,4 +30,8 @@ module rw-vcs-annotation
   tailf:annotate "/vcs:vstop" {
     tailf:actionpoint rw_action;
   }
+
+  tailf:annotate "/vcs:vcrash" {
+    tailf:actionpoint rw_action;
+  }
 }

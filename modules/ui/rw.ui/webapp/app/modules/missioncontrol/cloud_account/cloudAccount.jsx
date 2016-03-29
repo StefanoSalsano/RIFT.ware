@@ -6,12 +6,14 @@
 
 import React from 'react/addons';
 import AppHeaderActions from '../../components/header/headerActions.js';
+import Button from '../../components/button/rw.button.js';
 import './cloudAccount.scss';
 // var CloudAccountStore = require('./cloudAccountStore')
 // var CloudAccountActions = require('./cloudAccountActions')
 class CloudAccount extends React.Component {
     constructor(props) {
         super(props);
+        this.props.store.resetState();
         this.state = this.props.store.getState();
         this.props.store.listen(this.storeListener);
         this.state.actions = this.props.actions;
@@ -54,9 +56,11 @@ class CloudAccount extends React.Component {
             }
             loc.push('dashboard');
             window.location.hash = loc.join('/');
+        this.state.store.resetState();
         });
     }
-    update() {
+    update(e) {
+        e.preventDefault();
         var self = this;
 
         if (self.state.cloud.name == "") {
@@ -92,7 +96,7 @@ class CloudAccount extends React.Component {
                 loc.push('/');
                 window.location.hash = loc.join('/');
             } else {
-                this.state.store.unlisten(self.storeListener);
+                // this.state.store.unlisten(self.storeListener);
                 self.cancel();
             }
          });
@@ -121,6 +125,17 @@ class CloudAccount extends React.Component {
             }
         }
         window.location.hash = loc.join('/');
+    }
+    preventDefault = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    evaluateSubmit = (e) => {
+        if (e.keyCode == 13) {
+            this.update(e);
+            e.preventDefault();
+            e.stopPropagation();
+        }
     }
     componentWillReceiveProps(nextProps) {}
     shouldComponentUpdate(nextProps) {
@@ -182,15 +197,15 @@ class CloudAccount extends React.Component {
         // This section builds elements that only show up on the create page.
         var name = <label>Name <input type="text" onChange={this.handleNameChange.bind(this)} style={{'text-align':'left'}} /></label>
         var buttons = [
-            <a role="button" onClick={this.cancel} class="cancel">Cancel</a>,
-            <a role="button" onClick={this.create.bind(this)} className="save">Save</a>
+            <a onClick={this.cancel} class="cancel">Cancel</a>,
+            <Button role="button" onClick={this.create.bind(this)} className="save" label="Save" />
         ]
         if (this.props.edit) {
             name = <label>{this.state.cloud.name}</label>
             var buttons = [
-                <a role="button" onClick={this.handleDelete} ng-click="create.delete(create.cloud)" className="delete">Remove Account</a>,
-                    <a role="button" onClick={this.cancel} class="cancel">Cancel</a>,
-                    <a role="button" onClick={this.update.bind(this)} className="update">UPdate</a>
+                <a  onClick={this.handleDelete} ng-click="create.delete(create.cloud)" className="delete">Remove Account</a>,
+                    <a  onClick={this.cancel} class="cancel">Cancel</a>,
+                    <Button role="button" onClick={this.update.bind(this)} className="update" label="Update" />
             ]
             let selectAccount = null;
             let params = null;
@@ -228,7 +243,6 @@ class CloudAccount extends React.Component {
                 </div>
             );
         }
-        console.log(this.state.cloud)
         if (this.state.cloud['sdn-account'] && this.props.edit) {
             sdnAccounts = (
                 <div className="associateSdnAccount">
@@ -289,9 +303,9 @@ class CloudAccount extends React.Component {
         if (this.props.edit) {
             name = <label>{this.state.cloud.name}</label>
             var buttons = [
-                <a role="button" onClick={this.handleDelete} ng-click="create.delete(create.cloud)" className="delete">Remove Account</a>,
-                    <a role="button" onClick={this.cancel} class="cancel">Cancel</a>,
-                    <a role="button" onClick={this.update.bind(this)} className="update">UPdate</a>
+                <a  onClick={this.handleDelete} ng-click="create.delete(create.cloud)" className="delete">Remove Account</a>,
+                    <a onClick={this.cancel} class="cancel">Cancel</a>,
+                    <Button role="button" onClick={this.update.bind(this)} className="update" label="Update" type="submit"/>
             ]
             let selectAccount = null;
             let params = null;
@@ -299,7 +313,7 @@ class CloudAccount extends React.Component {
 
         var html = (
 
-              <div className="app-body create cloudAccount">
+              <form className="app-body create cloudAccount" onSubmit={this.preventDefault} onKeyDown={this.evaluateSubmit}>
                   <h2 className="create-management-domain-header name-input">
                        {name}
                   </h2>
@@ -311,7 +325,7 @@ class CloudAccount extends React.Component {
                   <div className="form-actions">
                       {buttons}
                   </div>
-              </div>
+              </form>
         )
         return html;
     }

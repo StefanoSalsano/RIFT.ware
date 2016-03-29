@@ -282,23 +282,22 @@ TEST(RwDtsFileDB, FileBkDB)
   rwdts_kv_handle_t* handle = (rwdts_kv_handle_t*)rwdts_kv_allocate_handle(BK_DB);
   RW_ASSERT(handle);
   char *val, *key;
-  size_t val_len = 0, key_len = 0;
-  void* cursor = NULL;
+  int val_len = 0, key_len = 0;
+  void *cursor = NULL, *out_cursor = NULL;
   int count = 0, i;
-  strcpy(handle->file_name, "test_client.db");
 
-  res = rwdts_kv_light_open_db(handle, handle->file_name, NULL, NULL);
+  res = rwdts_kv_handle_open_db(handle, "test_client.db", NULL, NULL);
   EXPECT_EQ(res, RW_STATUS_SUCCESS);
 
   for (i = 0; i< 19; i++) {
-    res = rwdts_kv_light_file_set_keyval(handle, (char *)key_entry[i],
+    res = rwdts_kv_handle_file_set_keyval(handle, (char *)key_entry[i],
                                          strlen(key_entry[i]), (char *)tab_entry[i], strlen(tab_entry[i]));
     EXPECT_EQ(res, RW_STATUS_SUCCESS);
   }
 
   for (i = 0; i < 19; i++) {
     char res_val[50];
-    res = rwdts_kv_light_file_get_keyval(handle, (char *)key_entry[i], strlen(key_entry[i]),
+    res = rwdts_kv_handle_file_get_keyval(handle, (char *)key_entry[i], strlen(key_entry[i]),
                                          &val, (int *)&val_len);
     EXPECT_EQ(res, RW_STATUS_SUCCESS);
     strncpy(res_val, val, val_len);
@@ -307,11 +306,11 @@ TEST(RwDtsFileDB, FileBkDB)
     EXPECT_STREQ(res_val, tab_entry[i]);
   }
 
-  cursor = rwdts_kv_light_file_get_cursor(handle);
+  cursor = rwdts_kv_handle_file_get_cursor(handle);
   RW_ASSERT(cursor);
 
-  while ((res = rwdts_kv_light_file_getnext(handle, &cursor, (uint8_t **)&key, &key_len,
-                                     (uint8_t **)&val, &val_len)) == RW_STATUS_SUCCESS) {
+  while ((res = rwdts_kv_handle_file_getnext(handle, cursor, (char **)&key, &key_len,
+                                             (char **)&val, &val_len, &out_cursor)) == RW_STATUS_SUCCESS) {
     char res_val[50];
     char res_key[50];
     strncpy(res_val, val, val_len);
@@ -320,24 +319,25 @@ TEST(RwDtsFileDB, FileBkDB)
     res_key[key_len] = '\0';
     fprintf(stderr, "res_key = %s, res_val = %s\n", res_val, res_key); 
     count++;
+    cursor = out_cursor; out_cursor = NULL;
   }
 
   EXPECT_EQ(count, 19);
 
   for (i=0; i < 5; i++) {
-    res = rwdts_kv_light_file_del_keyval(handle, (char *)key_entry[i],
+    res = rwdts_kv_handle_file_del_keyval(handle, (char *)key_entry[i],
                                          strlen(key_entry[i]));
     EXPECT_EQ(res, RW_STATUS_SUCCESS);
   }
 
-  cursor = rwdts_kv_light_file_get_cursor(handle);
+  cursor = rwdts_kv_handle_file_get_cursor(handle);
   RW_ASSERT(cursor);
   count = 0;
 
   fprintf(stderr, "After Delete \n\n\n");
 
-  while ((res = rwdts_kv_light_file_getnext(handle, &cursor, (uint8_t **)&key, &key_len,
-                                     (uint8_t **)&val, &val_len)) == RW_STATUS_SUCCESS) {
+  while ((res = rwdts_kv_handle_file_getnext(handle, cursor, (char **)&key, &key_len,
+                                             (char **)&val, &val_len, &out_cursor)) == RW_STATUS_SUCCESS) {
     char res_val[50];
     char res_key[50];
     strncpy(res_val, val, val_len);
@@ -346,11 +346,12 @@ TEST(RwDtsFileDB, FileBkDB)
     res_key[key_len] = '\0';
     fprintf(stderr, "res_key = %s, res_val = %s\n", res_val, res_key);
     count++;
+    cursor = out_cursor; out_cursor = NULL;
   }
 
   EXPECT_EQ(count, 14);
 
-  res = rwdts_kv_light_file_remove(handle);
+  res = rwdts_kv_handle_file_remove(handle);
   EXPECT_EQ(res, RW_STATUS_SUCCESS);
 }  
 

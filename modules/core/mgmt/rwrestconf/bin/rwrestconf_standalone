@@ -40,11 +40,6 @@ def main():
         required=False,
         default="2022",
         help="port number of NETCONF server")
-    parser.add_argument(
-        "--schema",
-        required=False,
-        default="rw-composite",
-        help="Schema to be used")
     arguments = parser.parse_args()
 
     asyncio_loop = asyncio.get_event_loop()
@@ -61,6 +56,17 @@ def main():
 
 
     xml = '''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0">
+<dyn-schema-test-a xmlns="http://riftio.com/ns/riftware-1.0/rw-dyn-schema-test-a">
+<hello-world-a>
+test
+</hello-world-a>
+</dyn-schema-test-a>
+</config>
+    '''
+    '''<dyn-schema-test-a xmlns="http://riftio.com/ns/riftware-1.0/rw-dyn-schema-test-a"/>
+    '''
+    ''' 
 <cloud xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">
   <account xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">
     <name>openstack</name>
@@ -109,12 +115,12 @@ testing
 
     '''
 
-    #print(nc_mgr.edit_config(target="running",
-    #                         config=xml))
+    print(nc_mgr.edit_config(target="running",
+                             config=xml))
 
     #print(nc_mgr.dispatch(lxml.etree.fromstring(xml)))
     #print(nc_mgr.get_config(source="running", filter=('subtree',xml)))
-    print(nc_mgr.get(('subtree',xml)))
+    #print(nc_mgr.get(('subtree',xml)))
 
 if __name__ == "__main__":
     main()

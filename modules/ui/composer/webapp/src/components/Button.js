@@ -18,7 +18,7 @@ import SelectionManager from '../libraries/SelectionManager'
 import '../styles/Button.scss'
 
 const Button = React.createClass({
-	mixins: [PureRenderMixin, SelectionManager.reactPauseResumeMixin],
+	mixins: [PureRenderMixin],
 	getInitialState: function () {
 		return {};
 	},
@@ -46,7 +46,7 @@ const Button = React.createClass({
 		const draggable = this.props.draggable;
 		const className = ClassNames(this.props.className, 'Button');
 		return (
-			<div className={className} {...this.preventDeselectOnClick} onClick={this.props.onClick} title={title} draggable={draggable} onDragStart={this.props.onDragStart}>
+			<div className={className} onClick={this.props.onClick} title={title} draggable={draggable} onDragStart={this.props.onDragStart}>
 				<img src={src} />
 				<span>{label}</span>
 			</div>

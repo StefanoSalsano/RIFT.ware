@@ -77,12 +77,29 @@ SbReqEditConfig::SbReqEditConfig(
 SbReqEditConfig::SbReqEditConfig(
     Instance* instance,
     NbReq* nbreq,
+    UniquePtrKeySpecPath::uptr_t delete_ks)
+  : SbReq(
+      instance,
+      nbreq,
+      RW_MGMTAGT_SB_REQ_TYPE_EDITCONFIG,
+      "SbReqEditConfigDeleteKS")
+{
+  RW_MA_SBREQ_LOG (this, __FUNCTION__, "for direct delete");
+
+  delta_ = std::move(instance_->xml_mgr()->create_document(instance_->yang_model()->get_root_node()));
+  delete_ks_.push_back(std::move(delete_ks));
+  update_stats(RW_UAGENT_NETCONF_PARSE_REQUEST);
+}
+
+SbReqEditConfig::SbReqEditConfig(
+    Instance* instance,
+    NbReq* nbreq,
     XMLBuilder *builder)
 : SbReq(
     instance,
     nbreq,
     RW_MGMTAGT_SB_REQ_TYPE_EDITCONFIG,
-    "SbReqEditConfigDom" )
+    "SbReqEditConfigDom")
 {
   delta_ = std::move(builder->merge_);
   delete_ks_.splice (delete_ks_.begin(), builder->delete_ks_);
@@ -201,32 +218,44 @@ void SbReqEditConfig::commit_cb(rwdts_xact_t *xact)
     default:
     case RWDTS_XACT_FAILURE:
     case RWDTS_XACT_ABORTED: {
+
       RW_MA_SBREQ_LOG (this, __FUNCTION__, "RWDTS_XACT_ABORTED");
       rw_status_t rs;
-      char *err_str = NULL;
-      char *xpath = NULL;
+      char *err_str = nullptr;
+      char *xpath = nullptr;
+      NetconfErrorList nc_errors;
+
       if (RW_STATUS_SUCCESS ==
           rwdts_xact_get_error_heuristic(xact, 0, &xpath, &rs, &err_str)) {
         RWMEMLOG(memlog_buf_, RWMEMLOG_MEM6, "Error response",
                  RWMEMLOG_ARG_PRINTF_INTPTR("sbreq=0x%" PRIX64,(intptr_t)this),
                  RWMEMLOG_ARG_PRINTF_INTPTR("dts xact=0x%" PRIXPTR, (intptr_t)xact) );
-        NetconfErrorList nc_errors;
+
         NetconfError& err = nc_errors.add_error();
         if (xpath) {
           err.set_error_path(xpath);
           RW_FREE(xpath);
-          xpath = NULL;
+          xpath = nullptr;
         }
         err.set_rw_error_tag(rs);
         if (err_str) {
           err.set_error_message(err_str);
           RW_FREE(err_str);
-          err_str = NULL;
+          err_str = nullptr;
         }
-        done_with_error(&nc_errors);
-        return;
       }
-      done_with_error( "Distributed transaction aborted or failed" );
+
+      if (!nc_errors.length()) {
+        nc_errors.add_error()
+                 .set_error_message( "Distributed transaction aborted or failed" );
+      }
+
+      if (instance_->mgmt_handler()->is_under_reload()) {
+        // Merge delta with configuration DOM
+        instance_->dom()->merge(delta_.get());
+      }
+
+      done_with_error (&nc_errors);
       return;
     }
   }

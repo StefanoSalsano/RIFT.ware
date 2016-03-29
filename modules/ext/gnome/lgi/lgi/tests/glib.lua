@@ -115,3 +115,21 @@ function glib.markup_error2()
    check(err.message == 'snafu 1')
    check(saved_err:matches(err))
 end
+
+function glib.gsourcefuncs()
+   local GLib = lgi.GLib
+
+   local called
+   local source_funcs = GLib.SourceFuncs {
+      prepare = function(source, timeout)
+	 called = source
+	 return true, 42
+      end
+   }
+
+   local source = GLib.Source(source_funcs)
+   local res, timeout  = source_funcs.prepare(source)
+   check(res == true)
+   check(timeout == 42)
+   check(called == source)
+end

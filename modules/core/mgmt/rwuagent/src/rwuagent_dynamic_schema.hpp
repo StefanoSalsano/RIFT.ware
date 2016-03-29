@@ -41,19 +41,18 @@ struct Module {
   std::string fxs_filename;
   std::string so_filename;
   std::string yang_filename;
+  std::string metainfo_filename;
   std::string revision;
+  bool exported;
 
-  Module(std::string module_name_,
-         std::string fxs_filename_,
-         std::string so_filename_,
-         std::string yang_filename_,
-         std::string revision_);
+  Module(const std::string& module_name_,
+         const std::string& fxs_filename_,
+         const std::string& so_filename_,
+         const std::string& yang_filename_,
+         const std::string& metainfo_filename_,
+         const std::string& revision_,
+         bool exported_);
 
-  Module(char * module_name_,
-         char * fxs_filename_,
-         char * so_filename_,
-         char * yang_filename_,
-         char * revision_);
 };
 
 class PendingLoad
@@ -176,12 +175,9 @@ private:
 public:
   static rw_status_t register_for_dynamic_schema(Instance* agent_inst);
 
-  static void dynamic_schema_reg_cb(void       *app_instance,
+  static void dynamic_schema_reg_cb(void * app_instance,
                                     int numel,
-                                    char **module_name,
-                                    char **fxs_filename,
-                                    char **so_filename,
-                                    char **yang_filename);
+                                    rwdynschema_module_t * modules);
 
   static rwdts_member_rsp_code_t dynamic_schema_tasklet_state_cb(
       const rwdts_xact_info_t    *xact_info,

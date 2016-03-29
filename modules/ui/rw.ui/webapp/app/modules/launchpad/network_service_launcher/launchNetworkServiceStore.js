@@ -6,6 +6,7 @@
 import NetworkServiceActions from './launchNetworkServiceActions.js';
 import NetworkServiceSource from './launchNetworkServiceSource.js';
 import GUID from '../../../assets/js/guid.js';
+import AppHeaderActions from '../../components/header/headerActions.js';
 var alt = require('../../core/alt');
 
 
@@ -154,7 +155,7 @@ class LaunchNetworkServiceStore {
             id: guuid,
             "nsd-ref": this.state.selectedNSDid,
             "name": name,
-            "short-name": "name",
+            "short-name": name,
             "description": "a description for " + guuid,
             "admin-status": launch ? "ENABLED" : "DISABLED"
         }
@@ -195,12 +196,11 @@ class LaunchNetworkServiceStore {
         });
         return window.location.hash = 'launchpad/' + tokenizedHash[2];
     }
-    launchNSRError() {
-        let tokenizedHash = window.location.hash.split('/');
+    launchNSRError(error) {
+         AppHeaderActions.validateError.defer('Something went wrong while trying to instantiate. Check the error logs for more information');
         this.setState({
             isLoading: false
         });
-        return window.location.hash = 'launchpad/' + tokenizedHash[2];
     }
     updateInputParam = (i, value) => {
         let ip = this['input-parameters'];

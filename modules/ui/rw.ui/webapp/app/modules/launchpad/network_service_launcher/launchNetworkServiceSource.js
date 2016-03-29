@@ -17,7 +17,7 @@ export default {
       remote (state) {
         return new Promise((resolve,reject) => {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/catalog?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/catalog?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function (data) {
@@ -41,7 +41,7 @@ export default {
       remote (state, cb) {
         return new Promise((resolve, reject) => {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' +
+            url: '//' + window.location.hostname + ':' +
               NODE_PORT + '/launchpad/cloud-account?api_server=' +
               API_SERVER,
               type: 'GET',
@@ -64,7 +64,7 @@ export default {
       remote () {
         return new Promise((resolve, reject) => {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' +
+            url: '//' + window.location.hostname + ':' +
               NODE_PORT + '/launchpad/data-centers?api_server=' +
               API_SERVER,
               type: 'GET',
@@ -84,7 +84,7 @@ export default {
       remote (state, VNFDid) {
         return new Promise((resolve,reject) => {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/vnfd?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/vnfd?api_server=' + API_SERVER,
             type: 'POST',
             beforeSend: Utils.addAuthorizationStub,
             dataType:'json',
@@ -109,7 +109,7 @@ export default {
         return new Promise((resolve, reject) => {
           console.log('Attempting to instantiate NSR:', NSR)
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr?api_server=' + API_SERVER,
             type: 'POST',
             beforeSend: Utils.addAuthorizationStub,
             dataType:'json',
@@ -137,7 +137,7 @@ export default {
       remote(state, NSDId) {
         return new Promise((resolve, reject) => {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsd/' + NSDId + '/input-param?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsd/' + NSDId + '/input-param?api_server=' + API_SERVER,
             type: 'GET',
               beforeSend: Utils.addAuthorizationStub,
               success: function (data) {
@@ -153,7 +153,7 @@ export default {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
-            url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/config?api_server=' + API_SERVER,
+            url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/config?api_server=' + API_SERVER,
             type: 'GET',
             beforeSend: Utils.addAuthorizationStub,
             success: function(data) {
@@ -171,7 +171,7 @@ export default {
   //     remote (state) {
   //       return new Promise((resolve,reject) => {
   //         $.ajax({
-  //           url: 'http://' + window.location.hostname + ':' + NODE_PORT + '/launchpad/catalog?api_server=' + API_SERVER,
+  //           url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/catalog?api_server=' + API_SERVER,
   //           success: function (data) {
   //             resolve(
   //                     typeof(data) == "string" ? JSON.parse(data):data

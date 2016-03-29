@@ -4,7 +4,7 @@
  *
  */
 /**
- * Draw edges by dragging a ConnectionPoint to VNFD, VLD or another ConnectionPoint.
+ * Draw edges by dragging a VirtualNetworkFunctionConnectionPoint to VNFD, VLD or another VirtualNetworkFunctionConnectionPoint.
  *
  * If VLD does not exist between two VNFDs then add one.
  *
@@ -34,23 +34,13 @@ function mouseWithinPosition(position, mouseCoordinates, scale = 1) {
 }
 
 function getContainerUnderMouse(comp, element, scale) {
-	// determine if there is a connection point
-	const dstConnectionPoint = comp.connectionPoints().filter(d => {
-		if (d.type === 'connection-point') {
-			return mouseWithinPosition(d.position, d3.mouse(element), scale);
-		}
-	});
-	if (dstConnectionPoint[0].length) {
-		return dstConnectionPoint;
-	} else {
-		// otherwise determine if destination is a VLD
-		const dstVirtualLink = comp.descriptors().filter(d => {
-			return d.type === 'vld' && mouseWithinPosition(d.position, d3.mouse(element), scale);
-		});
-		if (dstVirtualLink[0].length) {
-			return dstVirtualLink;
-		}
-	}
+	const mouseCoordinates = d3.mouse(element);
+	return comp.descriptorsAndConnectionPoints().filter(d => {
+		return DescriptorModelFactory.isConnectionPoint(d) ||
+			DescriptorModelFactory.isInternalConnectionPoint(d) ||
+			DescriptorModelFactory.isVirtualLink(d) ||
+			DescriptorModelFactory.isInternalVirtualLink(d);
+	}).filter(d => mouseWithinPosition(d.position, mouseCoordinates, scale));
 }
 
 export default class DescriptorGraphPathBuilder {
@@ -58,6 +48,10 @@ export default class DescriptorGraphPathBuilder {
 	constructor(graph) {
 		this.graph = graph;
 		this.containers = [];
+	}
+
+	descriptorsAndConnectionPoints() {
+		return this.graph.g.selectAll('.descriptor, .connector');
 	}
 
 	descriptors() {
@@ -76,37 +70,35 @@ export default class DescriptorGraphPathBuilder {
 		this.containers = this.containers.concat(containers);
 	}
 
-	static addConnection(srcSelection, dstSelection) {
+	static addConnection(srcConnector, dstConnector) {
 
 		// return true on success; falsy otherwise to allow the caller to clean up accordingly
 
-		if (srcSelection[0].length === 0 || dstSelection[0].length === 0) {
+		if (!(srcConnector || dstConnector)) {
 			return false;
 		}
 
-		const srcConnector = srcSelection.datum();
-		const dstConnector = dstSelection.datum();
+		if (srcConnector.canConnectTo && srcConnector.canConnectTo(dstConnector)) {
 
-		// dstConnector can be a Connection Point or a VLD - branch accordingly
+			const root = srcConnector.getRoot();
 
-		if (srcConnector.parent === dstConnector.parent) {
-			// connection points cannot connect to same VNFD
-			return false;
-		}
-
-		const root = srcConnector.getRoot();
-
-		if (root) {
-			const vld = root.createVld();
-			root.removeAnyConnectionsForConnector(srcConnector);
-			root.removeAnyConnectionsForConnector(dstConnector);
-			vld.addConnectionPoint(srcConnector);
-			vld.addConnectionPoint(dstConnector);
+			if (DescriptorModelFactory.isVirtualLink(dstConnector) || DescriptorModelFactory.isInternalVirtualLink(dstConnector)) {
+				dstConnector.addConnectionPoint(srcConnector);
+			} else {
+				if (root) {
+					const vld = root.createVld();
+					root.removeAnyConnectionsForConnector(srcConnector);
+					root.removeAnyConnectionsForConnector(dstConnector);
+					vld.addConnectionPoint(srcConnector);
+					vld.addConnectionPoint(dstConnector);
+				}
+			}
 
 			// notify catalog items have changed to force a redraw and update state accordingly
 			CatalogItemsActions.catalogItemDescriptorChanged(root);
 
 			return true;
+
 		}
 
 	}
@@ -150,13 +142,9 @@ export default class DescriptorGraphPathBuilder {
 
 			let hasInitializedMouseMoveHandler = false;
 
-			//SelectionManager.clearSelectionAndRemoveOutline();
-
 			const srcConnectionPoint = comp.connectionPoints().filter(d => {
-				if (/connection-point/.test(d.type)) {
-					return mouseWithinPosition(d.position, d3.mouse(this), comp.graph.scale);
-				}
-			});
+				return DescriptorModelFactory.isConnectionPoint(d) || DescriptorModelFactory.isInternalConnectionPoint(d);
+			}).filter(d => mouseWithinPosition(d.position, d3.mouse(this), comp.graph.scale));
 
 			if (srcConnectionPoint[0].length) {
 
@@ -171,6 +159,7 @@ export default class DescriptorGraphPathBuilder {
 				// create a new path to follow the mouse
 				const path = comp.graph.paths.selectAll('.new-connection').data([srcConnectionPoint.datum()], DescriptorModelFactory.containerIdentity);
 				path.enter().append('path').classed('new-connection', true);
+
 				comp.boundMouseMoveHandler = function () {
 
 					const mouseCoordinates = d3.mouse(this);
@@ -190,7 +179,10 @@ export default class DescriptorGraphPathBuilder {
 					});
 
 					if (!hasInitializedMouseMoveHandler) {
+
 						hasInitializedMouseMoveHandler = true;
+
+						SelectionManager.removeOutline();
 
 						existingPath.style({
 							opacity: 0
@@ -204,40 +196,29 @@ export default class DescriptorGraphPathBuilder {
 
 						// identify which descriptors are a valid drop target
 						comp.descriptors().filter(d => {
-							if (srcConnectionPoint.datum().key === d.key) {
-								return false;
-							}
-							if (d.type === 'vld') {
-								return true;
-							}
-							return false;
+							const validTarget = src.canConnectTo && src.canConnectTo(d);
+							return validTarget;
 						}).classed('-is-valid-drop-target', true);
 
 						// identify which connection points are a valid drop target
 						comp.connectionPoints().filter(d => {
-
-							const src = srcConnectionPoint.datum();
-							const root = src.getRoot();
-							const isNSD = DescriptorModelFactory.isNetworkService(root);
-							if (isNSD) {
-								return !(src.key === d.key || src.parent.key === d.parent.key || d.type === 'internal-connection-point');
-							}
-
-							return true;
-
-							const notOverSelf = src.key !== d.key;
-							const isInternalCP = DescriptorModelFactory.isInternalConnectionPoint(d);
-							const isInternalVLD = DescriptorModelFactory.isInternalVirtualLink(d);
-							return notOverSelf && (isInternalCP || isInternalVLD);
-
+							const validTarget = src.canConnectTo && src.canConnectTo(d);
+							return validTarget;
 						}).classed('-is-valid-drop-target', true);
 
 					}
 
 					const validDropTarget = getContainerUnderMouse(comp, this, comp.graph.scale);
 					comp.graph.g.selectAll('.-is-drag-over').classed('-is-drag-over', false);
+					SelectionManager.removeOutline();
 					if (validDropTarget) {
-						validDropTarget.classed('-is-drag-over', true);
+						validDropTarget
+							.filter(d => src.canConnectTo && src.canConnectTo(d))
+							.classed('-is-drag-over', true)
+							.each(function () {
+								// warn must be a function so 'this' will = the path element
+								SelectionManager.outlineSvg(this);
+							});
 					}
 
 				};
@@ -256,30 +237,12 @@ export default class DescriptorGraphPathBuilder {
 					comp.connectionPoints().classed('-is-valid-drop-target', false);
 					comp.graph.g.selectAll('.-is-drag-over').classed('-is-drag-over', false);
 
+					const dstSelection = getContainerUnderMouse(comp, this, comp.graph.scale);
+
 					// determine if there is a connection point
-					const dstConnectionPoint = comp.connectionPoints().filter(d => {
-						if (/connection-point/.test(d.type)) {
-							return mouseWithinPosition(d.position, d3.mouse(this), comp.graph.scale);
-						}
-					});
-					if (dstConnectionPoint[0].length) {
-						const src = srcConnectionPoint.datum();
-						const dst = dstConnectionPoint.datum();
-						if (src.key !== dst.key) {
-							// do not drop on self
-							if (DescriptorGraphPathBuilder.addConnection(srcConnectionPoint, dstConnectionPoint)) {
-								existingPath.remove();
-							}
-						}
-					} else {
-						// otherwise determine if destination is a VLD
-						const dstVirtualLink = comp.descriptors().filter(d => {
-							return /vld/.test(d.type) && mouseWithinPosition(d.position, d3.mouse(this), comp.graph.scale);
-						});
-						if (dstVirtualLink[0].length) {
-							if (DescriptorGraphPathBuilder.addConnectionToVLD(srcConnectionPoint, dstVirtualLink)) {
-								existingPath.remove();
-							}
+					if (dstSelection[0].length) {
+						if (DescriptorGraphPathBuilder.addConnection(src, dstSelection.datum())) {
+							existingPath.remove();
 						}
 					}
 
@@ -290,6 +253,8 @@ export default class DescriptorGraphPathBuilder {
 
 					// remove the tracer path
 					path.remove();
+
+					SelectionManager.refreshOutline();
 
 				};
 

@@ -21,6 +21,12 @@
 
 namespace rw_uagent {
 
+// Confd transaction timeout for show-system-info RPC
+static const int SSI_CONFD_ACTION_TIMEOUT_SEC = 300; // ATTN:- This has to be changed to periodically push it.
+// Confd transaction timeout for show-agent-logs RPC
+static const int SHOW_LOGS_ACTION_TIMEOUT_SEC = 300;
+ 
+
 
 /*!
  * Management agent southbound request, base class.  This is a pure
@@ -312,6 +318,17 @@ class SbReqEditConfig
       NetconfEditConfigOperations ec=ec_merge);
 
   /*!
+   * Build a DTS EditConfig delete transaction for the provided
+   * keyspec.
+   */
+  SbReqEditConfig (
+      Instance* instance,
+      NbReq* nbreq,
+      UniquePtrKeySpecPath::uptr_t delete_ks /**< [in] The keyspec to be deleted
+                                               called from pb-request delete operation*/
+      );
+
+  /*!
    * Build a DTS EditConfig transaction. Some parts of the intended
    * configuration changes are required for building the DTS transaction. Once
    * a transaction is build, it should be possible to add new xml fragments to
@@ -386,8 +403,7 @@ class SbReqGet
   enum class async_dispatch_t
   {
     DTS_QUERY = 1,
-    DTS_SSD   = 2,
-    DTS_CCB   = 3,
+    DTS_CCB   = 2,
   };
 
   /*!
@@ -438,8 +454,6 @@ class SbReqGet
   void start_dts_xact_int();
 
   StartStatus start_xact_uagent_get_request();
-
-  StartStatus start_xact_show_support_details();
 
   rw_yang_netconf_op_status_t get_dom_refresh_period(rw_yang::XMLNode *node);
   rw_yang_netconf_op_status_t get_confd_daemon(rw_yang::XMLNode *node);

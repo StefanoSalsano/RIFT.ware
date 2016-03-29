@@ -42,6 +42,7 @@ typedef enum {
   RWMSG_BOUNCE_BROKERR,
   RWMSG_BOUNCE_TIMEOUT,
   RWMSG_BOUNCE_RESET,
+  RWMSG_BOUNCE_SRVRST,
   RWMSG_BOUNCE_TERM,		/* server broker channel terminated */
   RWMSG_BOUNCE_BADREQ,
 

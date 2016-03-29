@@ -6,8 +6,8 @@
  */
 import React from 'react';
 import d3 from 'd3';
-
 import DashboardCard from '../dashboard_card/dashboard_card.jsx';
+import './topologyTree.scss';
 
 export default class TopologyTree extends React.Component {
     constructor(props) {
@@ -56,6 +56,7 @@ export default class TopologyTree extends React.Component {
         // this.update(d);
     }
     update(source) {
+        console.log('Calling TopologyTree.update. source=', source);
         // Compute the new tree layout.
         var svg = this.svg;
         var nodes = this.tree.nodes(source).reverse();
@@ -159,9 +160,13 @@ export default class TopologyTree extends React.Component {
         });
     }
     render() {
-        return ( <DashboardCard showHeader={true} title="Topology Tree">
+        let html = (
+            <DashboardCard className="topologyTreeGraph" showHeader={true} title="Topology Tree"
+                headerExtras={this.props.headerExtras} >
                 <div ref="topology"></div>
-                </DashboardCard>)
+            </DashboardCard>
+        );
+        return html;
     }
 }
 

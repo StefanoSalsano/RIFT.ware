@@ -11,6 +11,10 @@ import rw_peas
 import rwlogger
 
 from gi.repository import RwsdnYang
+import gi
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwSdn', '1.0')
+from gi.repository import RwcalYang
 from gi.repository import IetfNetworkYang
 from gi.repository.RwTypes import RwStatus
 

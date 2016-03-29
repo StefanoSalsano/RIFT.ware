@@ -126,15 +126,27 @@ class CloudAccountConfigSubscriber(object):
             self._cloud_callbacks.on_update_apply(account)
 
     def register(self):
+        @asyncio.coroutine
         def apply_config(dts, acg, xact, action, _):
             self._log.debug("Got cloud account apply config (xact: %s) (action: %s)", xact, action)
 
             if xact.xact is None:
-                # When RIFT first comes up, an INSTALL is called with the current config
-                # Since confd doesn't actally persist data this never has any data so
-                # skip this for now.
-                self._log.debug("No xact handle.  Skipping apply config")
-                return
+                if action == rwdts.AppconfAction.INSTALL:
+                   curr_cfg = self._reg.elements
+                   for cfg in curr_cfg:
+                      self._log.debug("Cloud account being re-added after restart.")
+                      if not cfg.has_field('account_type'):
+                         raise CloudAccountError("New cloud account must contain account_type field.")
+                      print(cfg)
+                      print("Adding account .........")
+                      self.add_account(cfg)
+                   return 
+                else:
+                   # When RIFT first comes up, an INSTALL is called with the current config
+                   # Since confd doesn't actally persist data this never has any data so
+                   # skip this for now.
+                   self._log.debug("No xact handle.  Skipping apply config")
+                   return
 
             add_cfgs, delete_cfgs, update_cfgs = get_add_delete_update_cfgs(
                     dts_member_reg=self._reg,

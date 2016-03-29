@@ -36,7 +36,7 @@ def main():
     parser.add_argument(
         "--schema",
         required=False,
-        default="rw-composite",
+        default="rw-reststream",
         help="Schema name which needs to be loaded"
         )
 

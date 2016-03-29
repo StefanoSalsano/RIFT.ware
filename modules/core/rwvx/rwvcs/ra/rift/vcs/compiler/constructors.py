@@ -91,6 +91,7 @@ class GenericComponentCtor(Constructor):
                 name=prototype.name,
                 instance_id=prototype.uid,
                 config_ready=prototype.config_ready,
+                recovery_action=prototype.recovery_action,
                 )
 
         for component in prototype.subcomponents:
@@ -122,6 +123,7 @@ class VirtualMachineCtor(Constructor):
         obj.ipaddress = prototype.ip
         obj.valgrind = prototype.valgrind
         obj.config_ready = prototype.config_ready
+        obj.recovery_action = prototype.recovery_action
 
         for component in prototype.subcomponents:
             obj.add_component(self.compiler.create(component))
@@ -151,6 +153,7 @@ class TaskletCtor(Constructor):
                 plugin_name=prototype.plugin_name,
                 instance_id=prototype.uid,
                 config_ready=prototype.config_ready,
+                recovery_action=prototype.recovery_action,
                 )
 
 
@@ -176,6 +179,7 @@ class NativeProcessCtor(Constructor):
                 args=prototype.args,
                 run_as=prototype.run_as,
                 config_ready=prototype.config_ready,
+                recovery_action=prototype.recovery_action,
                 )
 
         obj.instance_id = prototype.uid
@@ -235,6 +239,7 @@ class LegacyProcCtor(Constructor):
         obj.instance_id = prototype.uid
         obj.valgrind = prototype.valgrind
         obj.config_ready = prototype.config_ready
+        obj.recovery_action = prototype.recovery_action
         for component in prototype.subcomponents:
             obj.add_component(self.compiler.create(component))
 
@@ -279,6 +284,7 @@ class LegacyVmCtor(Constructor):
         obj.leader = prototype.leader
         obj.valgrind = prototype.valgrind
         obj.config_ready = prototype.config_ready
+        obj.recovery_action = prototype.recovery_action
 
         for component in prototype.subcomponents:
             child = self.compiler.create(component)
@@ -308,9 +314,14 @@ class LegacyTaskletCtor(Constructor):
         try:
             # The uagent and message broker both need to have their ports set
             # through the constructor
-            tasklet = self.cls(prototype.name, port=prototype.port, config_ready=prototype.config_ready)
+            tasklet = self.cls(prototype.name, port=prototype.port, 
+                               config_ready=prototype.config_ready,
+                               recovery_action=prototype.recovery_action,
+                              )
         except AttributeError:
-            tasklet = self.cls(prototype.name, config_ready=prototype.config_ready)
+            tasklet = self.cls(prototype.name, config_ready=prototype.config_ready, 
+                               recovery_action=prototype.recovery_action,
+                              )
 
         tasklet.instance_id = prototype.uid
         return tasklet
@@ -355,6 +366,7 @@ class LegacyUAgentCtor(Constructor):
                 confd_ip=self.confd_ip,
                 port=prototype.port,
                 config_ready=prototype.config_ready,
+                recovery_action=prototype.recovery_action,
                 )
         tasklet.instance_id = prototype.uid
 
@@ -401,7 +413,9 @@ class FastpathTaskletCtor(Constructor):
                 memory_model=prototype.memory_model,
                 lcore_workers=prototype.lcore_workers,
                 hashbin_credit=prototype.hashbin_credit,
-                config_ready=prototype.config_ready)
+                config_ready=prototype.config_ready,
+                recovery_action=prototype.recovery_action,
+                )
         tasklet.instance_id = prototype.uid
         return tasklet
 
@@ -444,5 +458,6 @@ class CliTaskletCtor(Constructor):
                 "RW.CLI",
                 manifest_file=manifest_file,
                 config_ready=prototype.config_ready,
+                recovery_action=prototype.recovery_action,
                 )
         return tasklet

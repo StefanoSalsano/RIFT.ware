@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# 
+# (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
+#
+
 generate_uuid(){
    cat /proc/sys/kernel/random/uuid
 }
@@ -71,6 +75,9 @@ install_mc_sw(){
   yum makecache fast
   yum -y update 'rift*'
   yum -y install 'riftware-missioncontrol'
+  # MC doesn't need salt minion
+  systemctl stop salt-minion
+  systemctl disable salt-minion
 }
 
 
@@ -91,8 +98,9 @@ install_lp_sw(){
   lp_ssh_cmd $1 yum makecache fast
   lp_ssh_cmd $1 yum -y upgrade \'rift*\'
   lp_ssh_cmd $1 yum -y install riftware-launchpad
-  
-  
+  # LP doesn't need salt master
+  systemctl stop salt-master
+  systemctl disable salt-master
 }
 
 

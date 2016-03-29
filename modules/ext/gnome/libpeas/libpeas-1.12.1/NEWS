@@ -1,3 +1,123 @@
+Overview of Changes in libpeas 1.17.0
+====================================
+
+* Fix Python plugin loader module paths
+* Do not add pyexecdir to Python's paths at runtime
+* Add support for embedded C plugins
+* Order the PeasEngine:plugin-list by dependencies
+* Keep plugins order in PeasExtensionSet
+* Misc bugfixes
+
+* Translation updates:
+  - Basque
+  - Chinese
+  - Lithuanian
+  - Occitan
+  - Serbian
+  - Serbian (Latin)
+
+Overview of Changes in libpeas 1.16.0
+====================================
+
+* Translation updates:
+  - Brazilian Portuguese
+  - Chinese (Taiwan)
+  - Danish
+  - Finnish
+  - French
+  - Galicians
+  - German
+  - German
+  - Greek
+  - Indonesian
+  - Italian
+  - Kazakh
+  - Korean
+  - Lithuanian
+  - Persian
+  - Polish
+  - Portuguese
+  - Russian
+  - Slovak
+  - Slovenian
+  - Swedish
+  - Thai
+
+Overview of Changes in libpeas 1.15.0
+====================================
+
+* Add g_autoptr() autocleanup support
+* Fix Python tests on OpenBSD
+* Fix libpeas crash on windows
+* Simplify __all__ support in the Python plugin loader
+* Misc bugfixes
+
+* Translation updates:
+  - Czech
+  - Hungarian
+  - Icelandic
+  - Norwegian bokmål
+  - Occitan
+  - Romanian
+  - Spanish
+  - Turkish
+
+Overview of Changes in libpeas 1.14.0
+====================================
+
+* Misc bugfixes
+
+* Translation updates:
+  - Aragonese
+  - Bosnian
+  - Chinese (Taiwan)
+  - Danish
+  - Finnish
+  - French
+  - Greek
+  - Indonesian
+  - Italian
+  - Kazakh
+  - Korean
+  - Korean
+  - Lithuanian
+  - Norwegian bokmål
+  - Polish
+  - Serbian
+  - Slovak
+  - Slovenian
+  - Swedish
+  - Turkish
+
+Overview of Changes in libpeas 1.13.0
+====================================
+
+* Removed support for Seed plugins
+* Added support for Lua 5.1 plugins using the LGI bindings
+* PeasEngine is now thread-safe
+* Added support for non-global plugins loaders
+* Load C plugins with local linkage
+* Use Python to implement the plugin loader's logic
+* Support Python plugins that define __all__
+* Use Lua to implement the plugin loader's logic
+* Prevent the accidental escaping of globals with Lua plugins
+* Misc bugfixes
+
+* Translation updates:
+  - Basque
+  - Brazilian Portuguese
+  - Czech
+  - Friulian
+  - Galician
+  - Hebrew
+  - Hungarian
+  - Japanese
+  - Kannada
+  - Nepali
+  - Russian
+  - Spanish
+  - Turkish
+
 Overview of Changes in libpeas 1.12.1
 ====================================
 

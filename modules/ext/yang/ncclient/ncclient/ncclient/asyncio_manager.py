@@ -133,6 +133,33 @@ class AsyncioManager(manager.Manager):
 
         return rpc._reply
 
+    def register_notification_callback(self, cbk):
+        """ Registers the notification callback which will be invoked when a
+        notification is received.
+
+        Arguments:
+            cbk - notificaion callback having the signature 
+                  def notification_cbk(notification), where the notification
+                  object has the attributes event_time and event_xml
+
+        This notification callback will be invoked in the manager's asyncio loop
+        thead context. Since the subscriptions are tied to Netconf session there
+        can be only one notification callback registered per manager and all
+        notifications that arrive for the Netconf session are reported in the
+        callback.
+        """
+        self._notification_cbk = cbk
+        self._session.register_notification_callback(self._notification_redirect)
+
+    def _notification_redirect(self, notification):
+        """ Internal method used to dispatch the notification callback on the
+        appropriate asyncio loop thread
+
+        Arguments:
+            notification - notification object (see :class:`Notification`)
+        """
+        self._loop.call_soon_threadsafe(self._notification_cbk, notification)
+
 
 @asyncio.coroutine
 def asyncio_connect(loop=None, *args, **kwargs):

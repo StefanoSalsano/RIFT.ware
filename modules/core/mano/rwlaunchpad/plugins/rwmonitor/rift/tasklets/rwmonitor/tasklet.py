@@ -9,11 +9,24 @@ import concurrent.futures
 import os
 import time
 import uuid
+import sys
 
+import gi
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwLog', '1.0')
+gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwMonitorYang', '1.0')
+gi.require_version('RwmonYang', '1.0')
+gi.require_version('RwNsdYang', '1.0')
+gi.require_version('RwNsrYang', '1.0')
+gi.require_version('RwVnfrYang', '1.0')
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwYang', '1.0')
 from gi.repository import (
     NsrYang,
     RwBaseYang,
-    RwCompositeYang,
     RwDts as rwdts,
     RwLaunchpadYang,
     RwLog as rwlog,
@@ -304,6 +317,13 @@ class MonitorTasklet(rift.tasklets.Tasklet):
                 )
 
         self.log.debug("Created DTS Api GI Object: %s", self.dts)
+
+    def stop(self):
+      try:
+         self.dts.deinit()
+      except Exception:
+         print("Caught Exception in RWMON stop:", sys.exc_info()[0])
+         raise
 
     @asyncio.coroutine
     def init(self):

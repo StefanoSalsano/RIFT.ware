@@ -17,6 +17,7 @@
 #include <rwdts_int.h>
 #include <rwdts.h>
 #include <rw_dts_int.pb-c.h>
+#include "rw-dts.pb-c.h"
 
 
 
@@ -103,7 +104,7 @@ static int tr_bytime(const void *a, const void *b) {
 }
 
 void rwdts_dbg_tracert_dump(RWDtsTraceroute *tr,
-                            const rw_yang_pb_schema_t *schema) 
+                            rwdts_xact_t    *xact)
 {
   int e, i, j;
   if (!tr) {
@@ -114,7 +115,11 @@ void rwdts_dbg_tracert_dump(RWDtsTraceroute *tr,
     qsort(tr->ent, tr->n_ent, sizeof(tr->ent[0]), tr_bytime);
   }
 
-  fprintf (stderr,  "Tracert %d entries:\n", (int)tr->n_ent);
+  char xact_str[512] = "";
+  fprintf (stderr,  "Tracert xact-id[%s] %d entries:\n", 
+           (char*)rwdts_xact_id_str(&xact->id, xact_str, sizeof(xact_str)), 
+           (int)tr->n_ent);
+  const rw_yang_pb_schema_t *schema = xact->apih->ypbc_schema;
   for (i=0; i<tr->n_ent; i++) {
     RWDtsTracerouteEnt *ent = tr->ent[i];
     struct timeval zero, tv_ent, delta;
@@ -183,7 +188,20 @@ void rwdts_dbg_tracert_dump(RWDtsTraceroute *tr,
                 rwdts_evtrsp_to_str(ent->res_code),
                 ent->res_count,
                 ent->elapsed_us);
+        break; 
+      case RWDTS_TRACEROUTE_WHAT_PREP_TO:
+
+        fprintf (stderr,  " prepcheck timeout '%s'\n",
+                ent->srcpath);
         break;
+
+
+      case RWDTS_TRACEROUTE_WHAT_END_FLAG:
+        fprintf (stderr,  " END recvd from %s at %s\n",
+                ent->dstpath, ent->srcpath);
+        break;
+
+
       case RWDTS_TRACEROUTE_WHAT_MEMBER_MATCH:
 
         fprintf (stderr,  " member match in '%s'\n"
@@ -752,7 +770,7 @@ rwdts_journal_rmv_inflt_q(rwdts_journal_entry_t *journal_entry,
       RWDTS_JOURNAL_XQUERY_NEXT(journal_entry->inflt_q_tail) = NULL;
     }
     else {
-      RW_ASSERT(0);
+      RW_CRASH();
     }
   }
   else {
@@ -834,6 +852,9 @@ static __inline__ rwdts_journal_q_element_t
   rwdts_journal_q_element_t *done_q_elem = RW_MALLOC0_TYPE(sizeof(*done_q_elem), rwdts_journal_q_element_t);
   done_q_elem->xquery = xquery;
   done_q_elem->evt = evt;
+  done_q_elem->router_idx = xquery->xact->id.router_idx;
+  done_q_elem->client_idx = xquery->xact->id.client_idx;
+  done_q_elem->serialno = xquery->xact->id.serialno;
   rwdts_xact_query_ref(xquery, __PRETTY_FUNCTION__, __LINE__);
   return done_q_elem;
 }
@@ -941,7 +962,9 @@ rw_status_t rwdts_journal_update(rwdts_member_registration_t *reg,
   if (journal && RWDTS_JOURNAL_USED(journal->journal_mode)) {
     RW_ASSERT_TYPE(journal, rwdts_journal_t);
     RWDtsQuery *query = xquery->query;
-    RWDTS_JOURNAL_VALID_QUERY(query);
+    if (!RWDTS_JOURNAL_IS_VALID_QUERY(query)) {
+      return RW_STATUS_SUCCESS;
+    }
 
     rwdts_journal_entry_t *journal_entry = rwdts_journal_find_entry(journal, 
                                                                     RWDTS_JOURNAL_QRY_ID_PTR(query));
@@ -1023,6 +1046,198 @@ rw_status_t rwdts_journal_set_mode(rwdts_member_registration_t *reg,
     rwdts_journal_cleanup(journal);
   }
   journal->journal_mode = journal_mode;
+  return RW_STATUS_SUCCESS;
+}
+
+void rwdts_journal_consume_xquery(rwdts_xact_query_t *xquery,
+                                  rwdts_member_xact_evt_t evt)
+{
+  rwdts_match_info_t *match;
+  rw_status_t rs;
+  for (match = RW_SKLIST_HEAD(&(xquery->reg_matches), rwdts_match_info_t);
+       match;
+       match = RW_SKLIST_NEXT(match, rwdts_match_info_t, match_elt)) {
+    if (((match->evtrsp == RWDTS_EVTRSP_ACK)
+         || (match->evtrsp == RWDTS_EVTRSP_ASYNC))
+        && (xquery->query->flags & RWDTS_FLAG_ADVISE) 
+        && (match->reg->flags & RWDTS_FLAG_SUBSCRIBER)) {
+      rs = rwdts_journal_update(match->reg, xquery, evt);
+      RW_ASSERT(rs == RW_STATUS_SUCCESS);
+    }
+  }
+}
+
+static rwdts_member_rsp_code_t 
+rwdts_journal_show_prepare(const rwdts_xact_info_t* xact_info,
+                            RWDtsQueryAction         action,
+                            const rw_keyspec_path_t*      key,
+                            const ProtobufCMessage*  msg,
+                            uint32_t credits,
+                            void *getnext_ptr)
+{
+  RW_ASSERT(xact_info);
+  rwdts_api_t *apih = (rwdts_api_t *)xact_info->ud;
+
+  rwdts_member_registration_t *reg;
+  int count = 0;
+  for (reg = RW_SKLIST_HEAD (&apih->reg_list, rwdts_member_registration_t);
+       reg;
+       reg = RW_SKLIST_NEXT(reg, rwdts_member_registration_t, element)) {
+    if ((reg->flags & RWDTS_FLAG_SUBSCRIBER)
+        && (reg->flags & RWDTS_FLAG_CACHE)
+        && (reg->journal)) {
+      count++;
+    }
+  }
+
+
+  RWPB_T_MSG(RwDts_data_JournalInfo_Subs) subs, *subs_p;
+  subs_p = &subs;
+  RWPB_F_MSG_INIT(RwDts_data_JournalInfo_Subs, subs_p);
+
+  subs_p->path =  strdup (apih->client_path);
+  subs_p->reg_info =  RW_MALLOC0(sizeof(subs_p->reg_info[0]) * count);
+  rwdts_journal_t *journal;
+  rwdts_journal_entry_t *journal_entry, *nxt_journal_entry;
+  for (reg = RW_SKLIST_HEAD (&apih->reg_list, rwdts_member_registration_t);
+       reg;
+       reg = RW_SKLIST_NEXT(reg, rwdts_member_registration_t, element)) {
+    if ((reg->flags & RWDTS_FLAG_SUBSCRIBER)
+        && (reg->flags & RWDTS_FLAG_CACHE)
+        && (reg->journal)) {
+      RWPB_T_MSG(RwDts_data_JournalInfo_Subs_RegInfo) *reg_info_p = RW_MALLOC0(sizeof(RWPB_T_MSG(RwDts_data_JournalInfo_Subs_RegInfo)));
+      RWPB_F_MSG_INIT(RwDts_data_JournalInfo_Subs_RegInfo, reg_info_p);
+      reg_info_p->id = reg->reg_id;
+      reg_info_p->keystr = strdup (reg->keystr);
+      journal = reg->journal;
+      reg_info_p->has_journal_mode = 1;
+      reg_info_p->journal_mode = reg->journal->journal_mode;
+      reg_info_p->pub_list = RW_MALLOC0(sizeof(reg_info_p->pub_list[0]) * HASH_CNT(hh_journal_entry, journal->journal_entries));
+      HASH_ITER(hh_journal_entry, journal->journal_entries, journal_entry, nxt_journal_entry) {
+        RW_ASSERT_TYPE(journal_entry, rwdts_journal_entry_t);
+        RWPB_T_MSG(RwDts_data_JournalInfo_Subs_RegInfo_PubList) *pub_list_p = RW_MALLOC0(sizeof(RWPB_T_MSG(RwDts_data_JournalInfo_Subs_RegInfo_PubList)));
+        RWPB_F_MSG_INIT(RwDts_data_JournalInfo_Subs_RegInfo_PubList, pub_list_p);
+        pub_list_p->member_id = journal_entry->id.member_id;
+        pub_list_p->router_id = journal_entry->id.router_id;
+        pub_list_p->pub_id = journal_entry->id.pub_id;
+
+        pub_list_p->inflt_query = RW_MALLOC0(sizeof(pub_list_p->inflt_query[0]) * journal_entry->inflt_q_len);
+        rwdts_xact_query_t *inflt_query = journal_entry->inflt_q;
+        while (inflt_query) {
+          RWPB_T_MSG(RwDts_data_JournalInfo_Subs_RegInfo_PubList_InfltQuery) *inflt_query_p = RW_MALLOC0(sizeof(RWPB_T_MSG(RwDts_data_JournalInfo_Subs_RegInfo_PubList_InfltQuery)));
+          RWPB_F_MSG_INIT(RwDts_data_JournalInfo_Subs_RegInfo_PubList_InfltQuery, inflt_query_p);
+
+          int r = asprintf (&inflt_query_p->xact_id, "%lu:%lu:%lu", 
+                            inflt_query->xact->id.router_idx,
+                            inflt_query->xact->id.client_idx,
+                            inflt_query->xact->id.serialno);
+          RW_ASSERT(r != -1);
+          inflt_query_p->query_idx = inflt_query->query->queryidx;
+          inflt_query_p->has_query_action = 1;
+          inflt_query_p->query_action = inflt_query->query->action;
+          inflt_query_p->query_keystr = strdup(inflt_query->query->key->keystr);
+          inflt_query_p->has_corrid = 1;
+          inflt_query_p->corrid = inflt_query->query->corrid;
+          inflt_query_p->has_serial = 1;
+          inflt_query_p->serial = RWDTS_JOURNAL_QRY_SERIAL(inflt_query->query);
+          pub_list_p->inflt_query[pub_list_p->n_inflt_query++] = inflt_query_p;
+          inflt_query = RWDTS_JOURNAL_XQUERY_NEXT(inflt_query);
+        }
+        RW_ASSERT (pub_list_p->n_inflt_query == journal_entry->inflt_q_len);
+        pub_list_p->has_least_inflt_serial = 1;
+        pub_list_p->least_inflt_serial = journal_entry->least_inflt_serial;
+
+        pub_list_p->done_q = RW_MALLOC0(sizeof(pub_list_p->done_q[0]) * journal_entry->done_q_len);
+        rwdts_journal_q_element_t *done_q_elem = journal_entry->done_q;
+        while(done_q_elem) {
+          RWPB_T_MSG(RwDts_data_JournalInfo_Subs_RegInfo_PubList_DoneQ) *done_q_p = RW_MALLOC0(sizeof(RWPB_T_MSG(RwDts_data_JournalInfo_Subs_RegInfo_PubList_DoneQ)));
+          RWPB_F_MSG_INIT(RwDts_data_JournalInfo_Subs_RegInfo_PubList_DoneQ, done_q_p);
+    
+          int r = asprintf (&done_q_p->xact_id, "%lu:%lu:%lu", 
+                            done_q_elem->router_idx,
+                            done_q_elem->client_idx,
+                            done_q_elem->serialno);
+          RW_ASSERT(r != -1);
+          done_q_p->query_idx = done_q_elem->xquery->query->queryidx;
+          done_q_p->has_query_action = 1;
+          done_q_p->query_action = done_q_elem->xquery->query->action;
+          done_q_p->query_keystr = strdup(done_q_elem->xquery->query->key->keystr);
+          done_q_p->has_corrid = 1;
+          done_q_p->corrid = done_q_elem->xquery->query->corrid;
+          done_q_p->has_serial = 1;
+          done_q_p->serial = RWDTS_JOURNAL_QRY_SERIAL(done_q_elem->xquery->query);
+          done_q_p->has_done_event = 1;
+          done_q_p->done_event = done_q_elem->evt;
+          pub_list_p->done_q[pub_list_p->n_done_q++] = done_q_p;
+          done_q_elem = done_q_elem->next;
+        }
+        RW_ASSERT (pub_list_p->n_done_q == journal_entry->done_q_len);
+        pub_list_p->has_least_done_serial = 1;
+        pub_list_p->least_done_serial = journal_entry->least_done_serial;
+
+        reg_info_p->pub_list[reg_info_p->n_pub_list++] = pub_list_p;
+      }
+      subs_p->reg_info[subs_p->n_reg_info++] = reg_info_p;
+    }
+  }
+  rw_keyspec_path_t *ks = NULL;
+  rw_keyspec_path_create_dup(&RWPB_G_PATHSPEC_VALUE(RwDts_data_JournalInfo_Subs)->rw_keyspec_path_t,
+                               &apih->ksi,
+                               &ks);
+  RWPB_T_PATHSPEC(RwDts_data_JournalInfo_Subs) *subs_ks  =
+        (RWPB_T_PATHSPEC(RwDts_data_JournalInfo_Subs)*)ks;
+  subs_ks->has_dompath = 1;
+  subs_ks->dompath.has_path001 = 1;
+  subs_ks->dompath.path001.has_key00 = 1;
+  subs_ks->dompath.path001.key00.path = strdup (apih->client_path);
+
+  rwdts_member_query_rsp_t rsp = {
+    .ks = (rw_keyspec_path_t *)ks,
+    .n_msgs = 1,
+    .msgs = (ProtobufCMessage**)&subs_p,
+    .evtrsp = RWDTS_EVTRSP_ACK
+  };
+
+  rwdts_member_send_response(xact_info->xact, xact_info->queryh, &rsp);
+  protobuf_c_message_free_unpacked_usebody(NULL, (ProtobufCMessage*)subs_p);
+  rw_keyspec_path_free((rw_keyspec_path_t*)ks, &apih->ksi);
+  return RWDTS_ACTION_OK;
+}
+
+rw_status_t rwdts_journal_show_init(rwdts_api_t *apih) 
+{
+    
+  RW_ASSERT_TYPE(apih, rwdts_api_t);
+  rw_keyspec_path_t *ks = NULL;
+  rw_keyspec_path_create_dup(&RWPB_G_PATHSPEC_VALUE(RwDts_data_JournalInfo_Subs)->rw_keyspec_path_t,
+                               &apih->ksi,
+                               &ks);
+  RW_ASSERT(ks);
+  rw_keyspec_path_set_category (ks, &apih->ksi, RW_SCHEMA_CATEGORY_DATA);
+  RWPB_T_PATHSPEC(RwDts_data_JournalInfo_Subs) *subs_ks  =
+        (RWPB_T_PATHSPEC(RwDts_data_JournalInfo_Subs)*)ks;
+  subs_ks->has_dompath = 1;
+  subs_ks->dompath.has_path001 = 1;
+  subs_ks->dompath.path001.has_key00 = 1;
+  subs_ks->dompath.path001.key00.path = strdup (apih->client_path);
+
+  rwdts_member_event_cb_t           callback = { 
+    .cb.prepare = rwdts_journal_show_prepare,
+    .ud = (void*)apih
+  };
+
+
+  apih->journal_regh = rwdts_member_register (
+      NULL,
+      apih,
+      ks,
+      &callback,
+      RWPB_G_MSG_PBCMD(RwDts_data_JournalInfo_Subs),
+      RWDTS_FLAG_PUBLISHER,
+      NULL);
+
+  rw_keyspec_path_free(ks, &apih->ksi);
+
   return RW_STATUS_SUCCESS;
 }
 

@@ -15,6 +15,12 @@ import requests
 import argparse
 import socket
 
+import gi
+gi.require_version('RwMcYang', '1.0')
+gi.require_version('YangModelPlugin', '1.0')
+
+
+
 from gi.repository import RwMcYang
 
 # stress the system using netconf

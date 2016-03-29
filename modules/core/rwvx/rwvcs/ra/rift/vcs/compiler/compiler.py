@@ -165,7 +165,7 @@ class ManifestCompiler(object):
             a manifest object
 
         """
-        manifest = rift.vcs.manifest.RaManifest()
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=sysinfo.northbound_listing)
         for colony in sysinfo.colonies:
             manifest.add_component(self.create(colony))
 

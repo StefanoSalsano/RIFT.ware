@@ -674,6 +674,10 @@
            "description": "Vendor of the VNFD.",
            "type": "string"
           },
+          "logo": {
+           "description": "Vendor logo for the Virtual Network Function",
+           "type": "string"
+          },
           "description": {
            "description": "Description of the VNFD.",
            "type": "string"
@@ -681,6 +685,20 @@
           "version": {
            "description": "Version of the VNFD",
            "type": "string"
+          },
+          "service-function-chain": {
+           "description": "Type of node in Service Function Chaining Architecture",
+           "type": {
+            "enumeration": {
+             "enum": {
+              "UNAWARE": null,
+              "CLASSIFIER": null,
+              "SF": null,
+              "SFF": null
+             }
+            }
+           },
+           "default": "UNAWARE"
           },
           "service-function-type": {
            "description": "Type of Service Function.\nNOTE: This needs to map with Service Function Type in ODL to\nsupport VNFFG. Service Function Type is manadatory param in ODL\nSFC. This is temporarily set to string for ease of use",
@@ -3295,6 +3313,6 @@
    "argument": "value"
   }
  },
- "pkgdir": "/Users/kkashalk/dev/rift/modules/ui/composer/webapp/schemas/yang",
+ "pkgdir": "/Users/onvelocity/rift-composer/webapp/schemas/yang",
  "module": {}
 }

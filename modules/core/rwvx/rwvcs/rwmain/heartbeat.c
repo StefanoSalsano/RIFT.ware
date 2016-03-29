@@ -17,6 +17,7 @@
 #include <rwtrace.h>
 #include <rwvcs_rwzk.h>
 #include <rwvx.h>
+#include <rwvcs_manifest.h>
 
 #include "rwmain.h"
 
@@ -43,7 +44,7 @@ struct stats {
 };
 
 struct subscriber_cls {
-  struct rwmain * rwmain;
+  rwmain_gi_t * rwmain;
   char * instance_name;
   mqd_t mqd;
   uint32_t missed;
@@ -68,7 +69,7 @@ struct max_timer_cls {
 };
 
 struct publisher_cls {
-  struct rwmain * rwmain;
+  rwmain_gi_t * rwmain;
   mqd_t mqd;
   rwsched_CFRunLoopTimerRef timer;
   rwsched_CFRunLoopTimerRef subscriber_timeout;
@@ -100,59 +101,165 @@ static inline double current_time() {
   return (double)ts.tv_sec + (double)ts.tv_nsec / 1E9;
 }
 
-static void kill_process(struct subscriber_cls * cls)
+
+static void dead_process(
+    rwmain_gi_t * rwmain,
+    char *instance_name,
+    rw_component_info *ci)
 {
   int r;
   rw_status_t status;
-  rw_component_info ci;
-  int wait_status;
   char * path;
+  bool restart = ci->has_recovery_action && (ci->recovery_action== RWVCS_TYPES_RECOVERY_TYPE_RESTART);
+  ci->state = restart ? RW_BASE_STATE_TYPE_TO_RECOVER: RW_BASE_STATE_TYPE_CRASHED;
+  status = rwvcs_rwzk_node_update(rwmain->rwvx->rwvcs, ci);
+  if (status != RW_STATUS_SUCCESS && status != RW_STATUS_NOTFOUND) {
+    rwmain_trace_crit(
+        rwmain,
+        "Failed to update %s state to %s",
+        instance_name, restart?"TO_RECOVER":"CRASHED");
+  }
 
-  status = rwvcs_rwzk_lookup_component(cls->rwmain->rwvx->rwvcs, cls->instance_name, &ci);
+  r = asprintf(&path, "/R/%s/%lu", ci->component_name, ci->instance_id);
+  RW_ASSERT(r != -1);
+
+  status = rwdts_member_deregister_path(rwmain->dts, path,
+                                        ci->has_recovery_action? ci->recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+
+  free(path);
+
+  int n;
+  rw_component_info child;
+  for (n=0; n < ci->n_rwcomponent_children; n++) {
+    status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, ci->rwcomponent_children[n], &child);
+    if(status == RW_STATUS_NOTFOUND) continue;
+    bool child_restart = child.has_recovery_action && (child.recovery_action== RWVCS_TYPES_RECOVERY_TYPE_RESTART);
+    status = rwvcs_rwzk_update_state(rwmain->rwvx->rwvcs, ci->rwcomponent_children[n],
+                                     child_restart ? RW_BASE_STATE_TYPE_TO_RECOVER: RW_BASE_STATE_TYPE_CRASHED);
+    if (status != RW_STATUS_SUCCESS && status != RW_STATUS_NOTFOUND) {
+      rwmain_trace_crit(
+          rwmain,
+          "Failed to update %s state to %s",
+          ci->rwcomponent_children[n], child_restart ? "TO_RECOVER": "CRASHED");
+    }
+
+    r = asprintf(&path, "/R/%s/%lu", child.component_name, child.instance_id);
+    RW_ASSERT(r != -1);
+
+    status = rwdts_member_deregister_path(rwmain->dts, path,
+                                          child.has_recovery_action? child.recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    free(path);
+  }
+
+}
+
+static void kill_process(
+    rwmain_gi_t * rwmain,
+    char *instance_name,
+    rw_component_info *ci)
+{
+  int r;
+  rw_status_t status;
+  int wait_status;
+
+  status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, instance_name, ci);
   RW_ASSERT(status == RW_STATUS_SUCCESS || status == RW_STATUS_NOTFOUND);
 
   if (status != RW_STATUS_SUCCESS)
     return;
 
-  r = kill(ci.proc_info->pid, SIGTERM);
+  r = kill(ci->proc_info->pid, SIGTERM);
   if (r != -1) {
     for (size_t i = 0; i < 1000; ++i) {
-      r = kill(ci.proc_info->pid, 0);
+      r = kill(ci->proc_info->pid, 0);
       if (r == -1)
         break;
       usleep(1000);
     }
 
     if (r != -1)
-      kill(ci.proc_info->pid, SIGKILL);
+      kill(ci->proc_info->pid, SIGKILL);
   }
 
-  status = rwvcs_rwzk_update_state(cls->rwmain->rwvx->rwvcs, cls->instance_name, RW_BASE_STATE_TYPE_CRASHED);
-  if (status != RW_STATUS_SUCCESS && status != RW_STATUS_NOTFOUND) {
-    rwmain_trace_crit(
-        cls->rwmain,
-        "Failed to update %s state to CRASHED",
-        cls->instance_name);
-  }
+  int pid = ci->proc_info->pid;
+  dead_process(rwmain, instance_name, ci);
 
-  r = waitpid(ci.proc_info->pid, &wait_status, WNOHANG);
-  if (r != ci.proc_info->pid) {
+  r = waitpid(pid, &wait_status, WNOHANG);
+  if (r != pid) {
     rwmain_trace_crit(
-        cls->rwmain,
+        rwmain,
         "Failed to wait for pid %u, instance-name %s",
-        ci.proc_info->pid,
-        cls->instance_name);
+        pid,
+        instance_name);
+  }
+  return;
+}
+
+
+void restart_process(
+    rwmain_gi_t * rwmain,
+    char *instance_name)
+{
+  rw_component_info ci;
+  rw_status_t status;
+  status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, instance_name, &ci);
+  RW_ASSERT(status == RW_STATUS_SUCCESS || status == RW_STATUS_NOTFOUND);
+
+  dead_process(rwmain, instance_name, &ci);
+
+  bool found = false;
+  struct subscriber_cls * cls = NULL;
+  for (size_t i = 0; rwmain->rwproc_heartbeat->subs[i]; ++i) {
+    if (!strcmp(rwmain->rwproc_heartbeat->subs[i]->instance_name, instance_name)) {
+      found = true;
+      cls = rwmain->rwproc_heartbeat->subs[i];
+    }
+
+    if (found)
+      rwmain->rwproc_heartbeat->subs[i] = rwmain->rwproc_heartbeat->subs[i+1];
   }
 
-  r = asprintf(&path, "/R/%s/%lu", ci.component_name, ci.instance_id);
-  RW_ASSERT(r != -1);
+  if (cls) {
+    if (cls->max_timer_cls != NULL) {
+      rwsched_tasklet_CFRunLoopTimerRelease(
+          cls->rwmain->rwvx->rwsched_tasklet,
+          cls->max_timer_cls->timer);
+      free(cls->max_timer_cls);
+      cls->max_timer_cls = NULL;
+    }
+    rwsched_tasklet_CFRunLoopTimerRelease(cls->rwmain->rwvx->rwsched_tasklet, cls->timer);
+    mq_close(cls->mqd);
+    free(cls->instance_name);
+    free(cls);
+  }
 
-  status = rwdts_member_deregister_path(cls->rwmain->dts, path);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  if (ci.has_recovery_action && (ci.recovery_action== RWVCS_TYPES_RECOVERY_TYPE_RESTART)) {
+    if (ci.component_type == RWVCS_TYPES_COMPONENT_TYPE_RWPROC){
+      vcs_manifest_component *m_component = NULL;
+      rw_status_t status = rwvcs_manifest_component_lookup(
+          rwmain->rwvx->rwvcs,
+          ci.component_name,
+          &m_component);
+      RW_ASSERT (status == RW_STATUS_SUCCESS);
+      char *instance_name = NULL;
+      rwmain_trace_crit(
+          rwmain,
+          "starting recovery of %s",
+          ci.component_name);
 
-  free(path);
-  protobuf_free_stack(ci);
+      start_component(rwmain,
+                      ci.component_name,
+                      NULL,
+                      RW_BASE_ADMIN_COMMAND_RECOVER,
+                      ci.rwcomponent_parent,
+                      &instance_name,
+                      m_component);
+    }
+  }
 }
+
 
 /* Fired after a maximum delay waiting for the subscriber to read enough
  * messages from the queue so that the publisher has room to continue to send
@@ -188,13 +295,13 @@ static void on_subscriber_timeout(rwsched_CFRunLoopTimerRef timer, void * ctx)
       instance_name,
       &self);
   if (status != RW_STATUS_SUCCESS) {
-    RW_ASSERT(0);
+    RW_CRASH();
     exit(1);
   }
 
   status = rwmain_stop_instance(cls->rwmain, &self);
   if (status != RW_STATUS_SUCCESS) {
-    RW_ASSERT(0);
+    RW_CRASH();
     exit(1);
   }
 
@@ -226,7 +333,8 @@ static void on_subscriber_delay_timeout(rwsched_CFRunLoopTimerRef timer, void * 
   rwsched_tasklet_CFRunLoopTimerRelease(
       cls->sub_cls->rwmain->rwvx->rwsched_tasklet,
       cls->sub_cls->timer);
-  kill_process(cls->sub_cls);
+  rw_component_info ci;
+  kill_process(cls->sub_cls->rwmain, cls->sub_cls->instance_name, &ci);
 
   r = asprintf(&path, "/%s", cls->sub_cls->instance_name);
   if (r != -1) {
@@ -242,11 +350,6 @@ static void on_subscriber_delay_timeout(rwsched_CFRunLoopTimerRef timer, void * 
     if (found)
       cls->sub_cls->rwmain->rwproc_heartbeat->subs[i] = cls->sub_cls->rwmain->rwproc_heartbeat->subs[i+1];
   }
-
-  // We could realloc cls->rwmain->rwproc_heartbeat->subs here to fit the new
-  // size, but why bother?  We're hanging out to a tiny bit of memory and if
-  // something is added we'll just have to realloc then.  Better to skip the
-  // risk of memory errors.
 
   free(cls->sub_cls->instance_name);
   mq_close(cls->sub_cls->mqd);
@@ -282,7 +385,7 @@ static void check_mq_heartbeat(rwsched_CFRunLoopTimerRef timer, void * ctx)
     memcpy(&sent_id, buf, sizeof(size_t));
 
     if (unlikely(sent_id != cls->stat_id)) {
-      RW_ASSERT(0);
+      RW_CRASH();
       // Not sure how this could happen, but we better check.  This should be
       // clear in the stats as we'll have some set which have a poll time but
       // no recv time and no missed beats.  Then we've skipped to the one with
@@ -343,7 +446,8 @@ static void check_mq_heartbeat(rwsched_CFRunLoopTimerRef timer, void * ctx)
           cls->instance_name);
 
       rwsched_tasklet_CFRunLoopTimerRelease(cls->rwmain->rwvx->rwsched_tasklet, timer);
-      kill_process(cls);
+      rw_component_info ci;
+      kill_process(cls->rwmain, cls->instance_name, &ci);
 
       found = false;
       for (size_t i = 0; cls->rwmain->rwproc_heartbeat->subs[i]; ++i) {
@@ -354,10 +458,37 @@ static void check_mq_heartbeat(rwsched_CFRunLoopTimerRef timer, void * ctx)
           cls->rwmain->rwproc_heartbeat->subs[i] = cls->rwmain->rwproc_heartbeat->subs[i+1];
       }
 
-      free(cls->instance_name);
       mq_close(cls->mqd);
-      free(cls);
-      exit(-2);
+      if (ci.has_recovery_action && (ci.recovery_action== RWVCS_TYPES_RECOVERY_TYPE_RESTART)) {
+        if (ci.component_type == RWVCS_TYPES_COMPONENT_TYPE_RWPROC){
+          vcs_manifest_component *m_component = NULL;
+          rw_status_t status = rwvcs_manifest_component_lookup(
+              cls->rwmain->rwvx->rwvcs,
+              ci.component_name,
+              &m_component);
+          RW_ASSERT (status == RW_STATUS_SUCCESS);
+          char *instance_name = NULL;
+          rwmain_trace_crit(
+              cls->rwmain,
+              "starting recovery of %s",
+              cls->instance_name);
+
+          start_component(cls->rwmain,
+                          ci.component_name,
+                          NULL,
+                          RW_BASE_ADMIN_COMMAND_RECOVER,
+                          ci.rwcomponent_parent,
+                          &instance_name,
+                          m_component);
+        }
+        free(cls->instance_name);
+        free(cls);
+      }
+      else {
+        free(cls->instance_name);
+        free(cls);
+        exit(-2);
+      }
     }
   }
 }
@@ -379,7 +510,7 @@ static void publish_mq_heartbeat(rwsched_CFRunLoopTimerRef timer, void * ctx)
         cls->rwmain,
         "Failed to get mq attributes: %s",
         strerror(e));
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   if (unlikely(attr.mq_maxmsg == attr.mq_curmsgs)) {
@@ -420,7 +551,7 @@ static void publish_mq_heartbeat(rwsched_CFRunLoopTimerRef timer, void * ctx)
         cls->rwmain,
         "Failed to send heartbeat: %s",
         strerror(e));
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   cls->stats[cls->stat_id].send_time = current_time();
@@ -435,7 +566,7 @@ struct rwproc_heartbeat * rwproc_heartbeat_alloc(uint32_t frequency, uint32_t to
 
   hb = (struct rwproc_heartbeat *)malloc(sizeof(struct rwproc_heartbeat));
   if (!hb) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
 
@@ -445,14 +576,14 @@ struct rwproc_heartbeat * rwproc_heartbeat_alloc(uint32_t frequency, uint32_t to
 
   hb->subs = (struct subscriber_cls **)malloc(sizeof(struct subscriber_cls *));
   if (!hb->subs) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
   hb->subs[0] = NULL;
 
   hb->pubs = (struct publisher_cls **)malloc(sizeof(struct publisher_cls *));
   if (!hb->pubs) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
   hb->pubs[0] = NULL;
@@ -524,7 +655,7 @@ void rwproc_heartbeat_free(struct rwproc_heartbeat * rwproc_heartbeat)
 }
 
 rw_status_t rwproc_heartbeat_subscribe(
-    struct rwmain * rwmain,
+    rwmain_gi_t * rwmain,
     const char * instance_name)
 {
   int r;
@@ -582,7 +713,7 @@ rw_status_t rwproc_heartbeat_subscribe(
         "Failed to create mq %s: %s",
         path,
         strerror(e));
-    RW_ASSERT(0);
+    RW_CRASH();
     status = RW_STATUS_FAILURE;
     goto err;
   }
@@ -590,7 +721,7 @@ rw_status_t rwproc_heartbeat_subscribe(
   r = reaper_client_add_path(rwmain->rwvx->rwvcs->reaper_sock, full_path);
   if (r) {
     rwmain_trace_crit(rwmain, "Failed to add %s to reaper", path);
-    RW_ASSERT(0);
+    RW_CRASH();
     status = RW_STATUS_FAILURE;
     goto err;
   }
@@ -680,7 +811,7 @@ done:
 }
 
 rw_status_t rwproc_heartbeat_publish(
-    struct rwmain * rwmain,
+    rwmain_gi_t * rwmain,
     const char * instance_name)
 {
   int r;
@@ -712,7 +843,7 @@ rw_status_t rwproc_heartbeat_publish(
         "Failed to open mq %s: %s",
         path,
         strerror(e));
-    RW_ASSERT(0);
+    RW_CRASH();
     status = RW_STATUS_FAILURE;
     goto done;
   }
@@ -730,7 +861,7 @@ rw_status_t rwproc_heartbeat_publish(
         "Failed to unlink mq %s: %s",
         path,
         strerror(e));
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   cls->rwmain = rwmain;
@@ -777,7 +908,7 @@ done:
 }
 
 rw_status_t rwproc_heartbeat_reset(
-    struct rwmain * rwmain,
+    rwmain_gi_t * rwmain,
     uint16_t frequency,
     uint32_t tolerance,
     bool enabled)
@@ -872,7 +1003,7 @@ rw_status_t rwproc_heartbeat_reset(
 }
 
 void rwproc_heartbeat_settings(
-    struct rwmain * rwmain,
+    rwmain_gi_t * rwmain,
     uint16_t * frequency,
     uint32_t * tolerance,
     bool * enabled)
@@ -883,7 +1014,7 @@ void rwproc_heartbeat_settings(
 }
 
 rw_status_t rwproc_heartbeat_stats(
-    struct rwmain * rwmain,
+    rwmain_gi_t * rwmain,
     rwproc_heartbeat_stat *** stats,
     size_t * n_stats)
 {
@@ -905,7 +1036,7 @@ rw_status_t rwproc_heartbeat_stats(
 
   ret = (rwproc_heartbeat_stat **)malloc(max_stats * sizeof(void *));
   if (!ret) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto err;
   }
   bzero(ret, max_stats * sizeof(void *));
@@ -913,7 +1044,7 @@ rw_status_t rwproc_heartbeat_stats(
   for (size_t i = 0; i < max_stats; ++i) {
     ret[i] = (rwproc_heartbeat_stat *)malloc(sizeof(rwproc_heartbeat_stat));
     if (!ret[i]) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto free_stats;
     }
 
@@ -921,14 +1052,14 @@ rw_status_t rwproc_heartbeat_stats(
 
     ret[i]->timing = (rwproc_heartbeat_timing **)malloc(HEARTBEAT_HISTORY_SIZE * sizeof(void *));
     if (!ret[i]->timing) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto free_stats;
     }
 
     for (size_t j = 0; j < HEARTBEAT_HISTORY_SIZE; ++j) {
       ret[i]->timing[j] = (rwproc_heartbeat_timing *)malloc(sizeof(rwproc_heartbeat_timing));
       if (!ret[i]->timing[j]) {
-        RW_ASSERT(0);
+        RW_CRASH();
         goto free_stats;
       }
       rwproc_heartbeat_timing__init(ret[i]->timing[j]);
@@ -949,7 +1080,7 @@ rw_status_t rwproc_heartbeat_stats(
 
     stat->instance_name = strdup(cls->instance_name);
     if (!stat->instance_name) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto free_stats;
     }
 
@@ -963,7 +1094,7 @@ rw_status_t rwproc_heartbeat_stats(
 
     stat->missed_histogram = (rwproc_heartbeat_histogram *)malloc(sizeof(rwproc_heartbeat_histogram));
     if (!stat->missed_histogram) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto free_stats;
     }
     rwproc_heartbeat_histogram__init(stat->missed_histogram);
@@ -972,7 +1103,7 @@ rw_status_t rwproc_heartbeat_stats(
     stat->missed_histogram->n_histogram = HEARTBEAT_HISTOGRAM_SIZE;
     stat->missed_histogram->histogram = (uint32_t *)malloc(HEARTBEAT_HISTOGRAM_SIZE  * sizeof(uint32_t));
     if (!stat->missed_histogram->histogram) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto free_stats;
     }
 
@@ -990,7 +1121,7 @@ rw_status_t rwproc_heartbeat_stats(
 
     stat->instance_name = to_instance_name(rwmain->component_name, rwmain->instance_id);
     if (!stat->instance_name) {
-      RW_ASSERT(0);
+      RW_CRASH();
       goto free_stats;
     }
 

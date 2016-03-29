@@ -16,6 +16,10 @@ import logging
 import os
 import sys
 import unittest
+import gi
+gi.require_version('Peas', '1.0')
+gi.require_version('BasicPlugin', '1.0')
+
 from gi.repository import GObject, Peas, GLib, GIRepository
 from gi.repository import BasicPlugin
 

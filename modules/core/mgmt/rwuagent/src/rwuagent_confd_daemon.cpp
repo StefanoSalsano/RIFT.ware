@@ -113,12 +113,25 @@ ConfdDaemon::ConfdDaemon(
   control_fd_ (RWUAGENT_INVALID_SOCK_ID),
   daemon_ctxt_ (nullptr),
   last_alloced_index_(0),
+  confd_log_(new ConfdLog(instance_)),
   memlog_buf_(
     instance->get_memlog_inst(),
     "ConfdDaemon",
     reinterpret_cast<intptr_t>(this))
 {
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "created");
+  size_t cores = RWUAGENT_DAEMON_DEFAULT_POOL_SIZE;
+  dp_q_pool_.reserve(cores);
+
+  for (size_t i = 0; i < cores; i++) {
+    std::string queue_name = "dp-q-" + std::to_string(i);
+    dp_q_pool_.push_back(
+        rwsched_dispatch_queue_create(
+                     instance_->rwsched_tasklet(),
+                     queue_name.c_str(),
+                     RWSCHED_DISPATCH_QUEUE_SERIAL)
+        );
+  }
 }
 
 ConfdDaemon::~ConfdDaemon()
@@ -128,6 +141,10 @@ ConfdDaemon::~ConfdDaemon()
   }
   daemon_ctxt_ = nullptr;
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "destroyed");
+
+  for (auto& q : dp_q_pool_){
+    RW_FREE_TYPE(q, rwsched_dispatch_queue_t);
+  }
 }
 
 rw_status_t ConfdDaemon::setup()
@@ -375,9 +392,9 @@ rw_status_t ConfdDaemon::setup_confd_worker_pool()
   RW_ASSERT(instance_->confd_addr_);
   rwsched_tasklet_ptr_t tasklet = instance_->rwsched_tasklet();
 
-  worker_fd_.reserve(RW_MAX_CONFD_WORKERS);
+  worker_fd_vec_.reserve(RW_MAX_CONFD_WORKERS);
 
-  while (worker_fd_.size() < RW_MAX_CONFD_WORKERS) {
+  while (worker_fd_vec_.size() < RW_MAX_CONFD_WORKERS) {
     RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "create one worker");
 
     int worker_fd = socket(instance_->confd_addr_->sa_family, SOCK_STREAM, 0);
@@ -397,7 +414,7 @@ rw_status_t ConfdDaemon::setup_confd_worker_pool()
                                                  RWSCHED_DISPATCH_SOURCE_TYPE_READ,
                                                  worker_fd,
                                                  0,
-                                                 instance_->cc_dispatchq());
+                                                 get_dp_q(worker_fd));
     RW_ASSERT(ds_workerfd);
 
     auto *dps_ctx = new DispatchSrcContext();
@@ -410,7 +427,7 @@ rw_status_t ConfdDaemon::setup_confd_worker_pool()
         tasklet, ds_workerfd, cfcb_confd_worker_event);
     rwsched_dispatch_resume(tasklet, ds_workerfd);
 
-    worker_fd_.push_back(worker_fd);
+    worker_fd_vec_.push_back(worker_fd);
   }
 
   return RW_STATUS_SUCCESS;
@@ -434,7 +451,7 @@ ConfdDaemon::async_execute_on_main_thread(dispatch_function_t task,
 int ConfdDaemon::assign_confd_worker()
 {
   RW_ASSERT(RW_MAX_CONFD_WORKERS > last_alloced_index_);
-  int worker_fd = worker_fd_[last_alloced_index_];
+  int worker_fd = worker_fd_vec_[last_alloced_index_];
   last_alloced_index_ = (last_alloced_index_ + 1) % RW_MAX_CONFD_WORKERS;
   RW_ASSERT(worker_fd);
   return worker_fd;
@@ -444,12 +461,15 @@ int ConfdDaemon::init_confd_trans(struct confd_trans_ctx *ctxt)
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "New transaction with confd",
     RWMEMLOG_ARG_PRINTF_INTPTR("confdctx=%" PRIu64,(intptr_t)ctxt));
+
   RW_MA_INST_LOG (instance_, InstanceDebug, "New transaction with confd");
-  NbReqConfdDataProvider *dp = new NbReqConfdDataProvider (this, ctxt,
-                                                           instance_->cli_dom_refresh_period_msec_,
-                                                           instance_->nc_rest_refresh_period_msec_);
-  ctxt->t_opaque = dp;
+
   int worker_fd = assign_confd_worker ();
+  NbReqConfdDataProvider *dp = new NbReqConfdDataProvider (this, ctxt,
+                                                     get_dp_q(worker_fd),
+                                                     instance_->cli_dom_refresh_period_msec_,
+                                                     instance_->nc_rest_refresh_period_msec_);
+  ctxt->t_opaque = dp;
   confd_trans_set_fd (ctxt, worker_fd);
 
   if (!strcmp(ctxt->uinfo->context, "system")) {
@@ -570,10 +590,10 @@ void ConfdDaemon::process_confd_data_req(DispatchSrcContext *sctxt)
           int del_sock = dp_ctx->confd_fd_;
           // remove this fd from the worker pool
           // ATTN: there should be a way to avoid erase on vector
-          auto it = std::find(self->worker_fd_.begin(),
-                              self->worker_fd_.end(), del_sock); 
-          if (it != self->worker_fd_.end()) {
-            self->worker_fd_.erase(it);
+          auto it = std::find(self->worker_fd_vec_.begin(),
+                              self->worker_fd_vec_.end(), del_sock); 
+          if (it != self->worker_fd_vec_.end()) {
+            self->worker_fd_vec_.erase(it);
           }
 
           close (del_sock);

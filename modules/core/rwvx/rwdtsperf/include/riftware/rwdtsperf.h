@@ -366,6 +366,9 @@ rwdtsperf_handle_xact(const rwdts_xact_info_t* xact_info,
                       const ProtobufCMessage*  msg,
                       uint32_t credits,
                       void *getnext_ptr);
+void
+rwdtsperf_instance_stop(rwdtsperf_component_ptr_t component,
+			                  rwdtsperf_instance_ptr_t instance);
 __END_DECLS
 
 #endif //__RWDTSPERF_H_

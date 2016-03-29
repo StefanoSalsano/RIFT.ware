@@ -22,6 +22,7 @@
 #include <protobuf-c/rift-protobuf-c.h>
 #include <rwlib.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 
 /*
  * Internal structure to send data between data member APIs for async dispatch

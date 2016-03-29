@@ -90,16 +90,18 @@ StartStatus NbReqInternal::execute()
       instance_->ypbc_schema() );
     RW_ASSERT(msgdesc);
 
-    msg.reset( protobuf_c_message_unpack(
-      nullptr/*instance*/,
-      msgdesc->pbc_mdesc,
-      pb_req_->data.len,
-      pb_req_->data.data ) );
-    if (!msg.get()) {
-      send_error(
-        RW_YANG_NETCONF_OP_STATUS_BAD_ELEMENT,
-        "Bad data" );
-      return StartStatus::Done;
+    if (pb_req_->has_data && pb_req_->data.data) {
+      msg.reset( protobuf_c_message_unpack(
+        nullptr/*instance*/,
+        msgdesc->pbc_mdesc,
+        pb_req_->data.len,
+        pb_req_->data.data ) );
+      if (!msg.get()) {
+        send_error(
+          RW_YANG_NETCONF_OP_STATUS_BAD_ELEMENT,
+          "Bad data" );
+        return StartStatus::Done;
+      }
     }
   } else {
     send_error(
@@ -109,25 +111,41 @@ StartStatus NbReqInternal::execute()
   }
 
   rw_yang_netconf_op_status_t ncs;
-  auto xml_dom(
+  XMLDocument::uptr_t xml_dom {};
+
+  if (pb_req_->has_data && pb_req_->data.data != nullptr) {
+    xml_dom = std::move(
       instance_->xml_mgr()->create_document_from_pbcm(
           msg.get(), ncs, true/*rooted*/, ks.get() ) );
-  if (RW_YANG_NETCONF_OP_STATUS_OK != ncs) {
-    send_error( ncs, "Protobuf conversion failed" );
-    return StartStatus::Done;
+
+    if (RW_YANG_NETCONF_OP_STATUS_OK != ncs) {
+      send_error( ncs, "Protobuf conversion failed" );
+      return StartStatus::Done;
+    }
   }
 
-  SbReq* sbreq;
+  SbReq* sbreq = nullptr;
+  std::string str;
   switch (pb_req_->request_type) {
     case RW_MGMTAGT_PB_REQUEST_TYPE_EDIT_CONFIG: {
       NetconfEditConfigOperations eco = ec_merge;
       if (pb_req_->has_edit_type) {
         switch (pb_req_->edit_type) {
-          case RW_MGMTAGT_PB_EDIT_TYPE_MERGE:
+          case RW_MGMTAGT_PB_EDIT_TYPE_MERGE: {
             eco = ec_merge;
+            str = xml_dom->to_string(); /*ATTN: stupidly expensive!*/
+            sbreq = new SbReqEditConfig( instance_, this, str.c_str(), eco );
+          }
             break;
-          case RW_MGMTAGT_PB_EDIT_TYPE_DELETE:
+          case RW_MGMTAGT_PB_EDIT_TYPE_DELETE: {
             eco = ec_delete;
+            if (!pb_req_->has_data || pb_req_->data.data == nullptr) {
+              sbreq = new SbReqEditConfig( instance_, this, std::move(ks) );
+            } else {
+              str = xml_dom->to_string(); /*ATTN: stupidly expensive!*/
+              sbreq = new SbReqEditConfig( instance_, this, str.c_str(), eco );
+            }
+          }
             break;
           default:
             send_error(
@@ -137,9 +155,7 @@ StartStatus NbReqInternal::execute()
         }
       }
 
-      auto str = xml_dom->to_string(); /*ATTN: stupidly expensive!*/
       RW_MA_NBREQ_LOG( this, ClientDebug, "Internal Request", str.c_str() );
-      sbreq = new SbReqEditConfig( instance_, this, str.c_str(), eco );
 
       RWMEMLOG( memlog_buf_, RWMEMLOG_MEM2, "internal edit",
         RWMEMLOG_ARG_PRINTF_INTPTR("sbreq=0x%" PRIX64,(intptr_t)sbreq),
@@ -148,7 +164,7 @@ StartStatus NbReqInternal::execute()
     }
 
     case RW_MGMTAGT_PB_REQUEST_TYPE_RPC: {
-      auto str = xml_dom->to_string(); /*ATTN: stupidly expensive!*/
+      str = xml_dom->to_string(); /*ATTN: stupidly expensive!*/
       RW_MA_NBREQ_LOG( this, ClientDebug, "Internal RPC", str.c_str() );
       sbreq = new SbReqRpc( instance_, this, str.c_str() );
 

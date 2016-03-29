@@ -37,6 +37,7 @@
 #include "rw_dl.h"
 #include "rw_sklist.h"
 #include "rw_sys.h"
+#include "rwtasklet.h"
 
 #include <unistd.h>
 #include <sys/syscall.h>
@@ -157,7 +158,6 @@ class rwmsg_btenv_t {
 public:
 #define TASKLET_MAX (10)
   rwmsg_btenv_t(int tasklet_ct_in=0) {
-    rw_status_t status;
 
     broport = rwmsg_broport_g(tasklet_ct_in);
 
@@ -180,10 +180,14 @@ public:
       tasklet[i] = rwsched_tasklet_new(rwsched);
     }
     
-    rwcal = rwcal_module_alloc();
+    ti = &ti_s;
+    ti->rwvx = rwvx_instance_alloc();
+    ti->rwsched_instance = rwsched;
+    ti->rwvcs = ti->rwvx->rwvcs;
+    rwcal = ti->rwvx->rwcal_module;
     RW_ASSERT(rwcal);
 
-    status = rwcal_rwzk_zake_init(rwcal);
+    rw_status_t status = rwcal_rwzk_zake_init(rwcal);
     RW_ASSERT(RW_STATUS_SUCCESS == status);
 
   }
@@ -227,13 +231,14 @@ public:
         RW_ASSERT(rs == RW_STATUS_NOTFOUND);
       }
 
-      rwcal_module_free(&rwcal);
       rwcal = NULL;
     }
   }
 
   int broport;
   rwsched_instance_ptr_t rwsched;
+  rwtasklet_info_t ti_s;
+  rwtasklet_info_t *ti;
   int tasklet_ct;
   rwsched_tasklet_ptr_t tasklet[TASKLET_MAX];
   rwcal_module_ptr_t rwcal;
@@ -262,7 +267,8 @@ TEST(RWMsgBroker, CreateBindListen) {
   TEST_DESCRIPTION("Tests creation of scheduler, broker, binding, and listening");
   rwmsg_btenv_t tenv(1);
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   /* Should now accept and ultimately timeout in the broker's acceptor */
   int loopwait = 10;
@@ -282,10 +288,12 @@ TEST(RWMsgBroker, CreateBindListen2Bros) {
   TEST_DESCRIPTION("Tests creation of scheduler, broker, binding, and listening");
   rwmsg_btenv_t tenv(2);
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
   usleep(1000);
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, tenv.ti, &bro2);
   usleep(1000);
 
   double loopwait = 0.1;
@@ -317,11 +325,14 @@ TEST(RWMsgBroker, CreateBindListen3Bros) {
   uint32_t meshcount = 5*3*(3-1); //==30
 
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, tenv.ti, &bro2);
   rwmsg_broker_t *bro3=NULL;
-  rwmsg_broker_main(broport_g, 2, 2, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro3);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 2, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro3);
 
   while (rwmsg_broker_g.exitnow.neg_accepted<meshcount && loopcount++<100)
     rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
@@ -345,13 +356,17 @@ TEST(RWMsgBroker, CreateBindListen4Bros) {
   TEST_DESCRIPTION("Tests creation of scheduler, broker, binding, and listening");
   rwmsg_btenv_t tenv(4);
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, tenv.ti, &bro2);
   rwmsg_broker_t *bro3=NULL;
-  rwmsg_broker_main(broport_g, 2, 2, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro3);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 2, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro3);
   rwmsg_broker_t *bro4=NULL;
-  rwmsg_broker_main(broport_g, 3, 3, tenv.rwsched, tenv.tasklet[3], tenv.rwcal, TRUE, &bro4);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[3];
+  rwmsg_broker_main(broport_g, 3, 3, tenv.rwsched, tenv.tasklet[3], tenv.rwcal, TRUE, tenv.ti, &bro4);
 
   usleep(10*1000);
   /* Should now accept and ultimately timeout in the broker's acceptor */
@@ -391,7 +406,8 @@ TEST(RWMsgBroker, AcceptTimeout) {
   TEST_DESCRIPTION("Tests timeout of accepted connection in broker");
   rwmsg_btenv_t tenv(1);
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   int sk = socket(AF_INET, SOCK_STREAM, 0);
   int fl = fcntl(sk, F_GETFL);
@@ -427,10 +443,12 @@ TEST(RWMsgBroker, AcceptTimeout2Bros) {
   rwmsg_btenv_t tenv(2);
 
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   {
   int sk = socket(AF_INET, SOCK_STREAM, 0);
@@ -471,7 +489,8 @@ TEST(RWMsgBroker, AcceptHandshakeFail) {
   TEST_DESCRIPTION("Tests rejection of failed handshake in broker");
   rwmsg_btenv_t tenv(1);
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   int sk = socket(AF_INET, SOCK_STREAM, 0);
   int fl = fcntl(sk, F_GETFL);
@@ -510,10 +529,12 @@ TEST(RWMsgBroker, AcceptHandshakeFail2Bros) {
   rwmsg_btenv_t tenv(2);
 
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   {
   int sk = socket(AF_INET, SOCK_STREAM, 0);
@@ -583,7 +604,8 @@ TEST(RWMsgBroker, AcceptHandshakeOK) {
   TEST_DESCRIPTION("Tests accepting a handshake in broker");
   rwmsg_btenv_t tenv(1);
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   int sk = socket(AF_INET, SOCK_STREAM, 0);
   int fl = fcntl(sk, F_GETFL);
@@ -630,10 +652,12 @@ TEST(RWMsgBroker, AcceptHandshakeOK2Bros) {
   rwmsg_btenv_t tenv(2);
 
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 1, 1, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   {
   int sk = socket(AF_INET, SOCK_STREAM, 0);
@@ -689,7 +713,8 @@ TEST(RWMsgBroker, AcceptClichan) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -761,7 +786,8 @@ TEST(RWMsgBroker, ClichanConnectionStatus) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -812,11 +838,13 @@ TEST(RWMsgBroker, AcceptClichan2Bros) {
 
   /* Broker-1 is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker-2 is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
   
   {
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -886,7 +914,8 @@ TEST(RWMsgBroker, AcceptClichanAndAgeout_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -941,7 +970,8 @@ TEST(RWMsgBroker, AcceptSrvchanAndAgeout_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -1004,7 +1034,8 @@ TEST(RWMsgBroker, AcceptClichanSleep) {
 
   /* Broker is tasklet 0, not on main queue, although acceptor always is */
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, FALSE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, FALSE, tenv.ti, &bro);
   
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
   rwmsg_endpoint_t *ep;
@@ -1082,11 +1113,13 @@ TEST(RWMsgBroker, AcceptClichanSleep2Bros) {
 
   /* Broker-1 is tasklet 0, not on main queue, although acceptor always is */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, FALSE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, FALSE, tenv.ti, &bro1);
   
   /* Broker-2 is tasklet 2, not on main queue, although acceptor always is */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, FALSE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, FALSE, tenv.ti, &bro2);
   
   {
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -1235,7 +1268,8 @@ TEST(RWMsgBroker, AcceptSrvchan) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
 
   
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -1281,11 +1315,13 @@ TEST(RWMsgBroker, AcceptSrvchan2Bros) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   {
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -1397,7 +1433,8 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanW1Bro_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   double loopwait = 0.1;
   rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
@@ -1593,7 +1630,8 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanTOBnc) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   double loopwait = 0.1;
   rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
@@ -1733,7 +1771,8 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanNoPeerBnc) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   double loopwait = 0.1;
   rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
@@ -1876,7 +1915,8 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanTestFlowCtrlHint) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   double loopwait = 0.1;
   rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
@@ -2024,7 +2064,8 @@ TEST(RWMsgBroker, CloseSrvChanW1Bro) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   double loopwait = 0.1;
   rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
@@ -2168,7 +2209,8 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanAndSndBlkW1Bro) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   double loopwait = 0.1;
   rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
@@ -2332,7 +2374,8 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanAndSndNonConnDontQW1Bro_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   double loopwait = 0.1;
   rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
@@ -2411,11 +2454,13 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanOnSame2Bros_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   double loopwait = 0.1;
   int loopcount = 0;
@@ -2556,11 +2601,13 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanAndSndBlkOnSame2Bros_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   double loopwait = 0.1;
   int loopcount = 0;
@@ -2700,11 +2747,13 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanOnSeperate2Bros_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   double loopwait = 0.1;
   int loopcount = 0;
@@ -2874,11 +2923,13 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanAndSndBlkOnSeperate2Bros_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   double loopwait = 0.1;
   int loopcount = 0;
@@ -3009,11 +3060,13 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanAndCFSndBlkOnSeperate2Bros_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   rwsched_instance_CFRunLoopRunInMode(tenv.rwsched, RWMSG_RUNLOOP_MODE, 1, FALSE); 
 
@@ -3135,11 +3188,13 @@ TEST(RWMsgBroker, CheckStuckMessagesOnSeperate2Bros_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   double loopwait = 0.1;
   int loopcount = 0;
@@ -3292,15 +3347,18 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanW3Bros_LONG) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
 
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
 
   /* Broker is tasklet 4 */
   rwmsg_broker_t *bro3=NULL;
-  rwmsg_broker_main(broport_g, 4, 2, tenv.rwsched, tenv.tasklet[4], tenv.rwcal, TRUE, &bro3);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[4];
+  rwmsg_broker_main(broport_g, 4, 2, tenv.rwsched, tenv.tasklet[4], tenv.rwcal, TRUE, tenv.ti, &bro3);
 
   double loopwait = 0.1;
   int loopcount = 0;
@@ -3430,6 +3488,413 @@ TEST(RWMsgBroker, AcceptSrvchanAndCliChanW3Bros_LONG) {
   nnchk();
 }
 
+TEST(RWMsgBroker, ReCreateSrvChanW1Bro_LONG) {
+  ASSERT_EQ(rwmsg_global.status.endpoint_ct, 0);
+  nnchk();
+
+  TEST_DESCRIPTION("Tests accepting from a srvchan");
+  rwmsg_btenv_t tenv(3);
+  rwmsg_bool_t r;
+  rw_status_t rs;
+
+  setenv("RWMSG_CHANNEL_AGEOUT", "60", TRUE);
+
+  //const char *taddr = "/L/GTEST/RWBRO/TESTAPP/PBSCF/100/3";
+  const char *taddr = "/L/GTEST/RWBRO/1";
+
+  /* Broker is tasklet 0 */
+  rwmsg_broker_t *bro1=NULL;
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
+
+  double loopwait = 0.1;
+  rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
+
+  /* Srvchan is tasklet 3, attached to broker 0
+   * also bound to main rws queue to avoid CF/dispatch headachess
+   * This endpoint has bro_instid=0 */
+  rwmsg_endpoint_t *ep_s;
+  ep_s = rwmsg_endpoint_create(0, 1, 0, tenv.rwsched, tenv.tasklet[1], rwtrace_init(), NULL);
+  ASSERT_TRUE(ep_s != NULL);
+  /* Direct everything through the broker */
+  rwmsg_endpoint_set_property_int(ep_s, "/rwmsg/broker/shunt", 1);
+
+  rwmsg_srvchan_t *sc = rwmsg_srvchan_create(ep_s);
+  ASSERT_TRUE(sc != NULL);
+
+  Test_Service myapisrv;
+  TEST__INITSERVER(&myapisrv, Test_);
+  rs = rwmsg_srvchan_add_service(sc, taddr, &myapisrv.base, &tenv.tasklet[1]);
+  ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+
+  rs = rwmsg_srvchan_bind_rwsched_queue(sc, rwsched_dispatch_get_main_queue(tenv.rwsched));
+  ASSERT_TRUE(rs == RW_STATUS_SUCCESS);
+
+  rwmsg_broker_g.exitnow.neg_accepted = 0;
+  rwmsg_broker_g.exitnow.neg_freed = 0;
+  rwmsg_broker_g.exitnow.neg_freed_err = 0;
+
+  /* Should now accept, read hs, create broclichan, attach incoming accepted sk */
+  loopwait = 5;
+  rwsched_dispatch_main_until(tenv.tasklet[1], loopwait, &rwmsg_broker_g.exitnow.neg_freed);
+
+  ASSERT_GE(rwmsg_broker_g.exitnow.neg_accepted, 1);
+  ASSERT_GE(rwmsg_broker_g.exitnow.neg_freed, 1);
+  ASSERT_EQ(rwmsg_broker_g.exitnow.neg_freed_err, 0);
+
+
+  /* Clichan is tasklet 2, attached to broker 1
+   * also bound to main rws queue to avoid CF/dispatch headaches
+   * This endpoint has bro_instid=1 */
+  rwmsg_endpoint_t *ep_c;
+  ep_c = rwmsg_endpoint_create(0, 2, 0, tenv.rwsched, tenv.tasklet[2], rwtrace_init(), NULL);
+  ASSERT_TRUE(ep_c != NULL);
+  /* Direct everything through the broker */
+  rwmsg_endpoint_set_property_int(ep_c, "/rwmsg/broker/shunt", 1);
+
+  /* Create a client channel pointing at the Test service's path.
+   * Instantiate a Test service client and connect this to the client
+   * channel.
+   */
+  rwmsg_destination_t *dt;
+  //dt = rwmsg_destination_create(ep_c, RWMSG_ADDRTYPE_UNICAST, tpeerpath);
+  dt = rwmsg_destination_create(ep_c, RWMSG_ADDRTYPE_UNICAST, taddr);
+  ASSERT_TRUE(dt != NULL);
+  
+  rwmsg_clichan_t *cc = rwmsg_clichan_create(ep_c);
+  ASSERT_TRUE(cc != NULL);
+
+  rs = rwmsg_clichan_bind_rwsched_queue(cc, rwsched_dispatch_get_main_queue(tenv.rwsched));
+
+  Test_Client mycli;
+  TEST__INITCLIENT(&mycli);
+  rwmsg_clichan_add_service(cc, &mycli.base);
+
+  /* Should now accept, read hs, create broclichan, attach incoming accepted sk */
+  loopwait = 2;
+  rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+
+  TestReq req;
+  rwmsg_request_t *rwreq=NULL;
+  test_req__init(&req);
+  rwmsg_closure_t cb;
+  cb.pbrsp=(rwmsg_pbapi_cb)multibrocfb_response;
+  cb.ud=tenv.tasklet[2];
+
+  int send_some = 5;
+  for (int i=0; i<send_some; i++) {
+    req.body.value = i;
+    req.body.hopct = i;
+    rs = test__increment(&mycli, dt, &req, &cb, &rwreq);
+    ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+    loopwait = 0.001;
+    rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+  }
+
+  ASSERT_GE(rwmsg_broker_g.exitnow.neg_accepted, 1);
+  ASSERT_GE(rwmsg_broker_g.exitnow.neg_freed, 1);
+  ASSERT_EQ(rwmsg_broker_g.exitnow.neg_freed_err, 0);
+
+  /* End srvchan tasklet 2 */
+  VERBPRN("\n\n\n\n-------------- End srvchan\n");
+  rwmsg_srvchan_halt(sc);
+  loopwait = 2;
+  rwsched_dispatch_main_until(tenv.tasklet[1], loopwait, NULL);
+
+  int send_some_more = 2;
+#if 1
+  VERBPRN("\n\n\n\n-------------- send_some_more %u\n", send_some_more);
+  for (int i=0; i<send_some_more; i++) {
+    req.body.value = 50+i;
+    req.body.hopct = 50+i;
+    rs = test__increment(&mycli, dt, &req, &cb, &rwreq);
+    ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+    loopwait = 0.001;
+    rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+  }
+#endif
+
+
+#if 1
+  VERBPRN("\n\n\n\n-------------- Create a Server Channel\n");
+  sc = rwmsg_srvchan_create(ep_s);
+  ASSERT_TRUE(sc != NULL);
+
+  TEST__INITSERVER(&myapisrv, Test_);
+  rs = rwmsg_srvchan_add_service(sc, taddr, &myapisrv.base, &tenv.tasklet[1]);
+  ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+
+  rs = rwmsg_srvchan_bind_rwsched_queue(sc, rwsched_dispatch_get_main_queue(tenv.rwsched));
+  ASSERT_TRUE(rs == RW_STATUS_SUCCESS);
+
+  /* Should now accept, read hs, create broclichan, attach incoming accepted sk */
+  loopwait = 1;
+  rwsched_dispatch_main_until(tenv.tasklet[1], loopwait, NULL);
+#endif
+
+
+  send_some_more = 3;
+  VERBPRN("\n\n\n\n-------------- send_some_more %u\n", send_some_more);
+  for (int i=0; i<send_some_more; i++) {
+    req.body.value = 100+i;
+    req.body.hopct = 100+i;
+    rs = test__increment(&mycli, dt, &req, &cb, &rwreq);
+    ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+    loopwait = 0.001;
+    rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+  }
+
+  loopwait = 2;
+  rwsched_dispatch_main_until(tenv.tasklet[1], loopwait, NULL);
+
+  VERBPRN("\n\n\n\n-------------- End srvchan & clichan\n");
+  /* End srvchan tasklet 2 */
+  rwmsg_srvchan_halt(sc);
+  r = rwmsg_endpoint_halt_flush(ep_s, TRUE);
+  ASSERT_TRUE(r);
+
+  /* End clichan tasklet 1 */
+  rwmsg_clichan_halt(cc);
+  r = rwmsg_endpoint_halt_flush(ep_c, TRUE);
+  ASSERT_TRUE(r);
+
+  loopwait = 1;
+  rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+
+  /* End broker */
+  r = rwmsg_broker_halt_sync(bro1);
+  ASSERT_TRUE(r);
+
+  ASSERT_EQ(rwmsg_global.status.endpoint_ct, 0);
+  nnchk();
+}
+
+TEST(RWMsgBroker, ReCreateSrvChanW2Bros_LONG) {
+  ASSERT_EQ(rwmsg_global.status.endpoint_ct, 0);
+  nnchk();
+
+  TEST_DESCRIPTION("Tests accepting from a srvchan");
+  rwmsg_btenv_t tenv(4);
+  rwmsg_bool_t r;
+  rw_status_t rs;
+
+  setenv("RWMSG_CHANNEL_AGEOUT", "60", TRUE);
+
+  const char *taddr = "/L/GTEST/RWBRO/1";
+
+  /* Broker is tasklet 0 */
+  rwmsg_broker_t *bro1=NULL;
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
+
+  /* Broker is tasklet 2 */
+  rwmsg_broker_t *bro2=NULL;
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
+
+  double loopwait = 0.1;
+  int loopcount = 0;
+  uint32_t meshcount = 5*2*(2-1); //==5*2*n*(n-1)/2 == 10
+  /* Should now accept and ultimately timeout in the broker's acceptor */
+  //rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, &rwmsg_broker_g.exitnow.acc_listening);
+  while (rwmsg_broker_g.exitnow.neg_accepted<meshcount && loopcount++<200) {
+    usleep(5*1000); // 5ms
+    rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);
+  }
+
+  ASSERT_EQ(rwmsg_broker_g.exitnow.neg_accepted, meshcount);
+  ASSERT_EQ(rwmsg_broker_g.exitnow.neg_freed_err, 0);
+
+  /* Srvchan is tasklet 3, attached to broker 0
+   * also bound to main rws queue to avoid CF/dispatch headachess
+   * This endpoint has bro_instid=0 */
+  rwmsg_endpoint_t *ep_s;
+  ep_s = rwmsg_endpoint_create(0, 3, 1, tenv.rwsched, tenv.tasklet[3], rwtrace_init(), NULL);
+  ASSERT_TRUE(ep_s != NULL);
+  // fprintf(stderr, "\nSrvchan-to-bro-1\n");
+  /* Direct everything through the broker */
+  rwmsg_endpoint_set_property_int(ep_s, "/rwmsg/broker/shunt", 1);
+
+  rwmsg_srvchan_t *sc;
+  sc = rwmsg_srvchan_create(ep_s);
+  ASSERT_TRUE(sc != NULL);
+
+  Test_Service myapisrv;
+  TEST__INITSERVER(&myapisrv, Test_);
+  rs = rwmsg_srvchan_add_service(sc, taddr, &myapisrv.base, &tenv.tasklet[3]);
+  ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+
+  rs = rwmsg_srvchan_bind_rwsched_queue(sc, rwsched_dispatch_get_main_queue(tenv.rwsched));
+  ASSERT_TRUE(rs == RW_STATUS_SUCCESS);
+
+  rwmsg_broker_g.exitnow.neg_accepted = 0;
+  rwmsg_broker_g.exitnow.neg_freed = 0;
+  rwmsg_broker_g.exitnow.neg_freed_err = 0;
+
+  /* Should now accept, read hs, create broclichan, attach incoming accepted sk */
+  loopwait = 1;
+  rwsched_dispatch_main_until(tenv.tasklet[3], loopwait, &rwmsg_broker_g.exitnow.neg_freed);
+
+  ASSERT_GE(rwmsg_broker_g.exitnow.neg_accepted, 1);
+  ASSERT_GE(rwmsg_broker_g.exitnow.neg_freed, 1);
+  ASSERT_EQ(rwmsg_broker_g.exitnow.neg_freed_err, 0);
+
+
+#if 1
+  rwmsg_broker_g.exitnow.neg_accepted = 0;
+  rwmsg_broker_g.exitnow.neg_freed = 0;
+  rwmsg_broker_g.exitnow.neg_freed_err = 0;
+  /* Clichan is tasklet 1, attached to broker 1
+   * also bound to main rws queue to avoid CF/dispatch headaches
+   * This endpoint has bro_instid=1 */
+  rwmsg_endpoint_t *ep_c_b0;
+  ep_c_b0 = rwmsg_endpoint_create(0, 1, 0, tenv.rwsched, tenv.tasklet[1], rwtrace_init(), NULL);
+  ASSERT_TRUE(ep_c_b0 != NULL);
+  /* Direct everything through the broker */
+  rwmsg_endpoint_set_property_int(ep_c_b0, "/rwmsg/broker/shunt", 1);
+
+  /* Create a client channel pointing at the Test service's path.
+   * Instantiate a Test service client and connect this to the client
+   * channel.
+   */
+  rwmsg_destination_t *dt;
+  //dt = rwmsg_destination_create(ep_c_b0, RWMSG_ADDRTYPE_UNICAST, tpeerpath);
+  dt = rwmsg_destination_create(ep_c_b0, RWMSG_ADDRTYPE_UNICAST, taddr);
+  ASSERT_TRUE(dt != NULL);
+  
+  rwmsg_clichan_t *cc0 = rwmsg_clichan_create(ep_c_b0);
+  ASSERT_TRUE(cc0 != NULL);
+
+  rs = rwmsg_clichan_bind_rwsched_queue(cc0, rwsched_dispatch_get_main_queue(tenv.rwsched));
+
+  Test_Client mycli;
+  TEST__INITCLIENT(&mycli);
+  rwmsg_clichan_add_service(cc0, &mycli.base);
+
+  /* Should now accept, read hs, create broclichan, attach incoming accepted sk */
+  loopwait = .2;
+  rwsched_dispatch_main_until(tenv.tasklet[1], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+
+  sleep(1);
+
+  rwmsg_global.status.request_ct = 0;
+
+  TestReq req;
+  rwmsg_request_t *rwreq=NULL;
+  test_req__init(&req);
+  rwmsg_closure_t cb;
+  cb.pbrsp=(rwmsg_pbapi_cb)multibrocfb_response;
+  cb.ud=tenv.tasklet[2];
+
+  int send_some = 5;
+  for (int i=0; i<send_some; i++) {
+    req.body.value = i;
+    req.body.hopct = i;
+    rs = test__increment(&mycli, dt, &req, &cb, &rwreq);
+    ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+    loopwait = 0.001;
+    rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+  }
+
+  ASSERT_GE(rwmsg_broker_g.exitnow.neg_accepted, 1);
+  ASSERT_GE(rwmsg_broker_g.exitnow.neg_freed, 1);
+  ASSERT_EQ(rwmsg_broker_g.exitnow.neg_freed_err, 0);
+#endif
+
+  VERBPRN("\n\n\n\n-------------- End srvchan, send_some_more, recreate & send_some_more\n");
+#if 1
+  /* End srvchan tasklet 2 */
+  rwmsg_srvchan_halt(sc);
+
+  loopwait = 1;
+  rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+
+  test_req__init(&req);
+  cb.pbrsp=(rwmsg_pbapi_cb)multibrocfb_response;
+  cb.ud=tenv.tasklet[2];
+
+  int send_some_more = 5;
+  for (int i=0; i<send_some_more; i++) {
+    req.body.value = 50+i;
+    req.body.hopct = 50+i;
+    rs = test__increment(&mycli, dt, &req, &cb, &rwreq);
+    ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+    loopwait = 0.001;
+    rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+  }
+
+  loopwait = 1;
+  rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+
+  sc = rwmsg_srvchan_create(ep_s);
+  ASSERT_TRUE(sc != NULL);
+
+  TEST__INITSERVER(&myapisrv, Test_);
+  rs = rwmsg_srvchan_add_service(sc, taddr, &myapisrv.base, &tenv.tasklet[3]);
+  ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+
+  rs = rwmsg_srvchan_bind_rwsched_queue(sc, rwsched_dispatch_get_main_queue(tenv.rwsched));
+  ASSERT_TRUE(rs == RW_STATUS_SUCCESS);
+
+  loopwait = 1;
+  rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+
+  test_req__init(&req);
+  cb.pbrsp=(rwmsg_pbapi_cb)multibrocfb_response;
+  cb.ud=tenv.tasklet[2];
+
+  send_some_more = 5;
+  for (int i=0; i<send_some_more; i++) {
+    req.body.value = 100+i;
+    req.body.hopct = 100+i;
+    rs = test__increment(&mycli, dt, &req, &cb, &rwreq);
+    ASSERT_EQ(rs, RW_STATUS_SUCCESS);
+    loopwait = 0.001;
+    rwsched_dispatch_main_until(tenv.tasklet[2], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+  }
+#endif
+
+  //usleep(500*1000);
+  loopwait = 1.0;
+  rwsched_dispatch_main_until(tenv.tasklet[0], loopwait, NULL);//&rwmsg_broker_g.exitnow.neg_freed);
+
+  rwmsg_request_release(rwreq);
+
+  //ASSERT_LE(rwmsg_global.status.request_ct, 0);
+
+#if 0
+  fprintf(stderr, "rwmsg_broker_dump = bro1\n");
+  rwmsg_broker_dump((rwmsg_broker_t *)bro1);
+
+  fprintf(stderr, "\nrwmsg_broker_dump = bro2\n");
+  rwmsg_broker_dump((rwmsg_broker_t *)bro2);
+#endif
+
+#if 1
+  /* End clichan tasklet 1 */
+  rwmsg_clichan_halt(cc0);
+  r = rwmsg_endpoint_halt_flush(ep_c_b0, TRUE);
+  ASSERT_TRUE(r);
+#endif
+
+#if 1
+  /* End srvchan tasklet 2 */
+  rwmsg_srvchan_halt(sc);
+  r = rwmsg_endpoint_halt_flush(ep_s, TRUE);
+  ASSERT_TRUE(r);
+#endif
+
+  /* End broker */
+  r = rwmsg_broker_halt_sync(bro1);
+  ASSERT_TRUE(r);
+  r = rwmsg_broker_halt_sync(bro2);
+  ASSERT_TRUE(r);
+
+  ASSERT_EQ(rwmsg_global.status.endpoint_ct, 0);
+  nnchk();
+}
+
+
 static void reqcb1(rwmsg_request_t *req, void *ud) {
   req=req;
   ud=ud;
@@ -3444,7 +3909,8 @@ TEST(RWMsgBroker, BindSrvchan) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro);
   
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
   rwmsg_endpoint_t *ep;
@@ -3505,11 +3971,13 @@ TEST(RWMsgBroker, BindSrvchan2Bros) {
 
   /* Broker is tasklet 0 */
   rwmsg_broker_t *bro1=NULL;
-  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, &bro1);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[0];
+  rwmsg_broker_main(broport_g, 0, 0, tenv.rwsched, tenv.tasklet[0], tenv.rwcal, TRUE, tenv.ti, &bro1);
   
   /* Broker is tasklet 2 */
   rwmsg_broker_t *bro2=NULL;
-  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, &bro2);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[2];
+  rwmsg_broker_main(broport_g, 2, 1, tenv.rwsched, tenv.tasklet[2], tenv.rwcal, TRUE, tenv.ti, &bro2);
   
   {
   /* Clichan is tasklet 1, also bound to main rws queue to avoid CF/dispatch headaches */
@@ -3880,7 +4348,8 @@ static void pbcscf(int taskct, int doblocking, uint32_t burst, uint32_t startbur
   if (broker_c) {
     for (unsigned i=0; i<broker_c; i++) {
       //fprintf(stderr, "tasklet.broker[%u]=%p\n",i, tenv.tasklet[tenv.tasklet_ct-(broker_c-i)]);
-      rwmsg_broker_main(broport_g, tenv.tasklet_ct-(broker_c-i), i, tenv.rwsched, tenv.tasklet[tenv.tasklet_ct-(broker_c-i)], tenv.rwcal, TRUE, &bros[i]);
+      tenv.ti->rwsched_tasklet_info = tenv.tasklet[tenv.tasklet_ct-(broker_c-i)];
+      rwmsg_broker_main(broport_g, tenv.tasklet_ct-(broker_c-i), i, tenv.rwsched, tenv.tasklet[tenv.tasklet_ct-(broker_c-i)], tenv.rwcal, TRUE, tenv.ti, &bros[i]);
       //tctx.bro = bro;
     }
   }
@@ -4944,7 +5413,8 @@ static void lottaraw(int squat, int mainq, int fixedrateserver, int window, int 
   }
 
   rwmsg_broker_t *bro=NULL;
-  rwmsg_broker_main(broport_g, 1, 0, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, mainq, &bro);
+  tenv.ti->rwsched_tasklet_info = tenv.tasklet[1];
+  rwmsg_broker_main(broport_g, 1, 0, tenv.rwsched, tenv.tasklet[1], tenv.rwcal, mainq, tenv.ti, &bro);
 
   if (broflo) {
     bro->thresh_reqct2 = 10;
@@ -5185,7 +5655,7 @@ static void lottaraw(int squat, int mainq, int fixedrateserver, int window, int 
 
     /* Ought to work under val, but there is a cock-up with timers that makes the token refresh et al go wrong */
     if (ctx->flowexercise && !ctx->bncout && !RUNNING_ON_VALGRIND) {
-      ASSERT_EQ(valsout->reqhz, TOKVAL);
+      ASSERT_GE(valsout->reqhz, TOKVAL);
     }
 
     if (ctx->flowexercise && ctx->sc_timer) {
@@ -5411,40 +5881,31 @@ TEST(RWMsgBroker, LottaRawRWMeasureRTT) {
 
   lottaraw(false, true, false, 2, FALSE, FALSE, &opts, &vals); /* No Broker tests MainQ*/
   PRINT_REPORT("RWMsgBroker.MeasureRTT.NoBroker.MainQ");
-  ASSERT_LT(vals.max_rtt, 20*1000);
+  ASSERT_LT(vals.max_rtt, 50*1000);
 
   lottaraw(false, false, false, 2, FALSE, FALSE, &opts, &vals); /* No Broker tests */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.NoBroker");
-  ASSERT_LT(vals.max_rtt, 20*1000);
+  ASSERT_LT(vals.max_rtt, 50*1000);
   fprintf(stderr, "\n");
 
   lottaraw(false, true, false, 2, TRUE, FALSE, &opts, &vals); /* With Broker tests MainQ */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.WithBroker.MainQ");
-  ASSERT_LT(vals.max_rtt, 20*2000);
+  ASSERT_LT(vals.max_rtt, 100*1000);
 
   lottaraw(false, false, false, 2, TRUE, FALSE, &opts, &vals); /* With Broker tests */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.WithBroker.ConcurQ");
-  ASSERT_LT(vals.max_rtt, 20*2000);
+  ASSERT_LT(vals.max_rtt, 400*1000);
   fprintf(stderr, "\n");
-
-  //lottaraw(2, true, false, 2, TRUE, FALSE, &opts, &vals); /* With Broker tests */
-  //PRINT_REPORT("RWMsgBroker.MeasureRTT.WithBroker.MultiMainQ");
-  //ASSERT_LT(vals.max_rtt, 3000);
-  //fprintf(stderr, "\n");
 
   lottaraw2bros(false, true, false, 2, FALSE, &opts, &vals); /* For *MainQ* tests */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.With2Brokers.MainQ");
-  ASSERT_LT(vals.max_rtt, 20*3000);
+  ASSERT_LT(vals.max_rtt, 100*1000);
   fprintf(stderr, "\n");
 
   lottaraw2bros(false, false, false, 2, FALSE, &opts, &vals); /* For *ConcurQ* tests */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.With2Brokers.ConcurQ");
-  ASSERT_LT(vals.max_rtt, 20*3000);
+  ASSERT_LT(vals.max_rtt, 400*1000);
   fprintf(stderr, "\n");
-
-  //lottaraw2bros(2, false, false, 1, FALSE, &opts, &vals); /* For *ConcurQ* tests */
-  //PRINT_REPORT("RWMsgBroker.MeasureRTT.With2Brokers.MultipleConcurQ");
-  //ASSERT_LT(vals.max_rtt, 3000);
 
   nnchk();
   RWUT_BENCH_END(LottaRawRWMeasureRTT);
@@ -6077,7 +6538,8 @@ static void lottaraw2bros(int squat, int mainq, int fixedrateserver, int window,
   memset(bros, 0, sizeof(bros));
   if (broker_c) {
     for (unsigned i=0; i<broker_c; i++) {
-      rwmsg_broker_main(broport_g, 2-(broker_c-i), i, tenv.rwsched, tenv.tasklet[2-(broker_c-i)], tenv.rwcal, mainq, &bros[i]);
+      tenv.ti->rwsched_tasklet_info = tenv.tasklet[2-(broker_c-i)];
+      rwmsg_broker_main(broport_g, 2-(broker_c-i), i, tenv.rwsched, tenv.tasklet[2-(broker_c-i)], tenv.rwcal, mainq, tenv.ti, &bros[i]);
       bro = bros[i];
     }
   }

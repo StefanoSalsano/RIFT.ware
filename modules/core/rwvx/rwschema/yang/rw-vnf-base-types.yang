@@ -62,11 +62,17 @@ module rw-vnf-base-types
       enum On;
     }
   }
-
+  typedef vfap-type {
+    type enumeration {
+      enum fpath  {value 1;}
+    }
+  }
   typedef vsap-type {
     type enumeration {
       enum app    {value 1;}
       enum lport  {value 2;}
+      enum plugin  {value 3;}
+      enum fpath-lport  {value 4;}
     }
   }
 
@@ -79,7 +85,7 @@ module rw-vnf-base-types
   }
 
 
-  typedef tunnel-type{
+  typedef tunnel-type {
     type enumeration {
       enum gre {value 1;}
       enum sit {value 2;}
@@ -88,7 +94,7 @@ module rw-vnf-base-types
     }
   }
 
-  typedef flow-apply-method{
+  typedef flow-apply-method {
     type enumeration {
       enum loadbalance    {value 1;}
       enum exact-match    {value 2;}
@@ -104,8 +110,8 @@ module rw-vnf-base-types
     }
   }
 
-  typedef interface-type{
-    type enumeration{
+  typedef interface-type {
+    type enumeration {
       enum loopback {value 1;}
       enum fastpath-local {value 2;}
       enum broadcast {value 4;}
@@ -118,48 +124,52 @@ module rw-vnf-base-types
     }
   }
 
-  typedef admin-state{
+  typedef admin-state {
     type up-down;
   }
 
-  typedef link-state{
+  typedef link-state {
     type up-down;
   }
 
-  typedef bundle-state-type{
+  typedef lacp-state {
+    type up-down;
+  }
+
+  typedef bundle-state-type {
     type active-standby;
   }
 
-  typedef lacp-mode{
-    type enumeration{
+  typedef lacp-mode {
+    type enumeration {
       enum none;
       enum passive;
       enum active;
     }
   }
 
-  typedef lag-lb-mode{
-    type enumeration{
+  typedef lag-lb-mode {
+    type enumeration {
       enum mac_ip;
       enum ip_trans;
       enum ip_trans_vsap;
     }
   }
 
-  typedef lacp-rate{
+  typedef lacp-rate {
     type fast-slow;
   }
 
-  typedef mac-mode{
-    type enumeration{
+  typedef mac-mode {
+    type enumeration {
       enum active;
       enum follow;
       enum fixed;
     }
   }
 
-  typedef nexthoptype{
-    type enumeration{
+  typedef nexthoptype {
+    type enumeration {
       enum none;
       enum local;
       enum connected;
@@ -173,8 +183,8 @@ module rw-vnf-base-types
     }
   }
 
-  typedef route-type{
-    type enumeration{
+  typedef route-type {
+    type enumeration {
       enum none;
       enum connected;
       enum local;
@@ -186,7 +196,7 @@ module rw-vnf-base-types
     }
   }
 
-  typedef rx-action-type{
+  typedef rx-action-type {
     type enumeration {
       enum drop { value 0; }
       enum echo { value 1; }
@@ -208,7 +218,7 @@ module rw-vnf-base-types
     }
   }
 
-  typedef nsh-transport-type{
+  typedef nsh-transport-type {
     type enumeration {
       enum vxlan-gpe { value 1; }
       enum mac { value 2; }
@@ -271,7 +281,6 @@ module rw-vnf-base-types
       description
         "Simple priority for distinguishing between primary and
          backup next-hops.
-
          Backup next-hops are used if and only if no primary
          next-hops are reachable.";
     }
@@ -297,8 +306,8 @@ module rw-vnf-base-types
          If both primary and backup next-hops are present, then the
          weights for each priority level are used separately.";
     }
-  }  // grouping next-hop-classifiers
-*/
+    }  // grouping next-hop-classifiers
+  */
   grouping next-hop-content {
     description
       "Generic parameters of next-hops in routes.";
@@ -355,9 +364,14 @@ module rw-vnf-base-types
   grouping flow-control{
     container flow-control {
       description
-        "Specifies the flow control to use";
+        "Flow control parametera that allows the user to enable or disable
+         the receipt or transmission of PAUSE frames. PAUSE frames enable
+         the adapter and the switch to control the transmit rate. The side
+         that is receiving the PAUSE frame temporarily stops transmitting.";
       leaf flow-type {
-        description "none|rx|tx|both";
+        description
+          "Specify the direction to support flow control. Valid
+           values are none|rx|tx|both";
         type string {
           length "min..5";
         }
@@ -365,96 +379,121 @@ module rw-vnf-base-types
       }
       leaf high-watermark {
         description
-          "Threshold on which to stop flow";
+          "Threshold on which to activate flow control";
         type uint32;
       }
       leaf low-watermark {
         description
-          "Threshold on which to resume flow";
+          "Threshold on which to deactivate flow control";
         type uint32;
       }
       leaf pause-time {
         description
-          "Minimum time in seconds to stop flow";
+          "Period of pause time to be requested in the PAUSE frame.";
         type uint32;
       }
       leaf send-xon {
         description
-          "whether or not to send XON, when flow control status change
-              to no flow control";
+          "Whether or not to send XON, when flow control status change
+           to no flow control";
         type on-off;
       }
     }
   }
 
   grouping bind-interface {
+    description "Interface binding parameters";
     container bind {
       rwpb:field-inline true;
       leaf port {
-        description "port name to bind the interface to";
+        description "Port name to bind the interface to";
         type string {
           length "min..64";
         }
       }
-      leaf vlan{
-        description "vlan tag of the port to which the interface is bound";
+      leaf vlan {
+        description "VLAN tag of the port to which the interface is bound";
         type uint16;
       }
     }
   }
 
-  grouping tunnel-params{
-    leaf type{
+  grouping tunnel-params {
+    description "Tunnel parameters";
+    leaf type {
+      description "Type of tunnel to setup";
       type tunnel-type;
     }
 
-    container gre{
-      leaf keepalive-time{
+    container gre {
+      description "Generic Routing Encapsulation (GRE) tunnel parameters";
+      leaf keepalive-time {
+        description
+          "Defines the time interval (in seconds) between transmitted
+           keepalive packets";
         type uint32;
       }
-      leaf hold-time{
+      leaf hold-time {
+        description
+          "Length of time the originating end of a GRE tunnel waits
+           for keepalive packets from the other end of the tunnel
+           before marking the tunnel as operationally down.";
         type uint32;
       }
-      leaf ttl{
+      leaf ttl {
+        description "Time To Live (TTL) to be set in IP header";
         type uint32;
       }
-      leaf tos{
+      leaf tos {
+        description "Type Of Service (TOS) to be set in IP header";
         type uint32;
       }
-      leaf key{
+      leaf key {
+        description
+          "Key value to be used for the GRE header";
         type uint32;
       }
-      leaf remote-key{
+      leaf remote-key {
+        description
+          "Key value expected in the GRE header in the recieved packet";
         type uint32;
       }
     }
 
-    container nsh{
-      leaf ip-addr{
+    container nsh {
+      description "Network Service Header (NSH) tunnel parameters";
+      leaf ip-addr {
+        description "IP address";
         type rwt:ip-address;
         rwpb:field-string-max 46;
         rwpb:field-c-type "rw_ip_addr_t";
       }
-      leaf port{
+      leaf port {
+        description "Port";
         type uint32;
       }
-      leaf transport-type{
+      leaf transport-type {
+        description "Transport type to use";
         type nsh-transport-type;
       }
     }
 
-    container physical{
+    container physical {
+      description "IP tunnel parameters";
       leaf local {
+        description "Local IP address";
         type rwt:ip-address;
         rwpb:field-string-max 46;
         rwpb:field-c-type "rw_ip_addr_t";
       }
-      leaf vrf{
+      leaf vrf {
+        description "VRF name";
         type string {
           length "min..64";
         }
       }
-      leaf remote{
+      leaf remote {
+        description "Remote IP address";
         type rwt:ip-address;
         rwpb:field-string-max 46;
         rwpb:field-c-type "rw_ip_addr_t";
@@ -462,15 +501,15 @@ module rw-vnf-base-types
     }
   }
 
-  typedef lookup-type{
+  typedef lookup-type {
     type enumeration {
       enum exact {value 1;}
       enum lpm {value 2;}
     }
   }
 
-  typedef flow-type{
-    type enumeration{
+  typedef flow-type {
+    type enumeration {
       enum vfabric;
       enum lb_dest_nat;
       enum lb_dest_nat_rev;
@@ -578,8 +617,8 @@ module rw-vnf-base-types
     }
   }
 
-  typedef lport-type{
-    type enumeration{
+  typedef lport-type {
+    type enumeration {
       enum rwdefault  {value  1;}
       enum loopback  {value  2;}
       enum scaled-host {value  3;}
@@ -620,231 +659,246 @@ module rw-vnf-base-types
     }
   }
 
-  grouping lacppdu-info{
+  grouping lacpdu-info {
     leaf systemid {
-      description "System-d of the actor";
+      description "System ID";
       type rwt:mac-address;
       rwpb:field-string-max 18;
       rwpb:field-c-type "rw_mac_addr_t";
     }
-    leaf systemprio{
+    leaf systemprio {
+      description "System priority";
       type uint32;
     }
-    leaf key{
+    leaf key {
       type uint32;
-      description "actor key";
+      description "Key";
     }
-    leaf portid{
+    leaf portid {
       type uint32;
-      description "actor portid";
+      description "Port ID";
     }
-    leaf portprio{
+    leaf portprio {
       type uint32;
+      description "Port priority";
     }
 
-    container state{
-      leaf activity{
+    container state {
+      description "LACPDU counters";
+      leaf activity {
+        description "Count of paritcipant being active";
         type uint32;
       }
-      leaf aggregate{
+      leaf aggregate {
+        description "Count of paritcipant being aggregatable";
         type uint32;
       }
       leaf timeout {
+        description "Count of paritcipant timeouts";
         type uint32;
       }
       leaf sync {
+        description "Count of paritcipant joining correct LAG";
         type uint32;
       }
       leaf collecting {
+        description "Count of paritcipant collecting incoming packets";
         type uint32;
       }
       leaf distributing {
+        description "Count of paritcipant distributing outgoing packets";
         type uint32;
       }
       leaf defaulted {
+        description "Count of paritcipant using defaulted operational information";
         type uint32;
       }
       leaf expired {
+        description "Count of paritcipant recieve machine expried";
         type uint32;
       }
     }
   }
 
 
-  grouping network-packet-counters{
-    leaf total-wire-packets{
+  grouping network-packet-counters {
+    leaf total-wire-packets {
       description "Total number of wire packets of all packet sizes and all address-family (IPv4, IPv6...)";
       type rwt:zero-based-counter64;
     }
-    leaf total-vf-packets{
+    leaf total-vf-packets {
       description "Total number of virtual fabric packets of all packet sizes and all address-family (IPv4, IPv6...)";
       type rwt:zero-based-counter64;
     }
-    leaf total-kni-packets{
+    leaf total-kni-packets {
       description "Total number of kni packets of all packet sizes and all address-family (IPv4, IPv6...)";
       type rwt:zero-based-counter64;
     }
-    leaf total-app-packets{
+    leaf total-app-packets {
       description "Total number of app packets of all packet sizes and all address-family (IPv4, IPv6...)";
       type rwt:zero-based-counter64;
     }
-    leaf total-ipv4-packets{
+    leaf total-ipv4-packets {
       description "Total number of IPv4 packets of all packet size";
       type rwt:zero-based-counter64;
     }
-    leaf total-ipv6-packets{
+    leaf total-ipv6-packets {
       description "Total number of IPv6 packets of all packet size";
       type rwt:zero-based-counter64;
     }
-    leaf total-64-packets{
+    leaf total-64-packets {
       description "Total number of packets of 64-128 size packets";
       type rwt:zero-based-counter64;
     }
-    leaf total-128-packets{
+    leaf total-128-packets {
       description "Total number of packets of 128-256 size packets";
       type rwt:zero-based-counter64;
     }
-    leaf total-256-packets{
+    leaf total-256-packets {
       description "Total number of packets of 256-512 size packets";
       type rwt:zero-based-counter64;
     }
-    leaf total-512-packets{
+    leaf total-512-packets {
       description "Total number of packets of 512-1024 size packets";
       type rwt:zero-based-counter64;
     }
-    leaf total-1024-packets{
+    leaf total-1024-packets {
       description "Total number of packets of 1024-2048 size packets";
       type rwt:zero-based-counter64;
     }
-    leaf total-2048-packets{
+    leaf total-2048-packets {
       description "Total number of packets of > 2048 size packets";
       type rwt:zero-based-counter64;
     }
-    leaf fwd-miss-packets{
+    leaf fwd-miss-packets {
       description "Total number of packets sent to the kernel for logical-port/route misses";
       type rwt:zero-based-counter64;
     }
-    leaf neigh-miss-packets{
+    leaf neigh-miss-packets {
       description "Total number of packets sent to the kernel for arp/neighbor misses";
       type rwt:zero-based-counter64;
     }
-    leaf forme-packets{
+    leaf forme-packets {
       description "Total number of packets destined for local address (no-ip-classification";
       type rwt:zero-based-counter64;
     }
-    leaf flow-packets{
+    leaf flow-packets {
       description "Total number of packets matching a flow";
       type rwt:zero-based-counter64;
     }
-    leaf dropped-packets{
+    leaf dropped-packets {
       description "Total number of packets dropped";
       type rwt:zero-based-counter64;
     }
-    leaf invalid-packets{
+    leaf invalid-packets {
       description "Total number of packets dropped";
       type rwt:zero-based-counter64;
     }
-    leaf forward-packets{
+    leaf forward-packets {
       description "Total number of packets forwarded";
       type rwt:zero-based-counter64;
     }
-    leaf priority-packets{
+    leaf priority-packets {
       description "Total number of high-priority packets (arp..)";
       type rwt:zero-based-counter64;
     }
-    leaf kni-tx-packets{
+    leaf kni-tx-packets {
       description "Total number of packets sent to KNI interface in the kernel";
       type rwt:zero-based-counter64;
     }
-    leaf rate-limited{
+    leaf rate-limited {
       description "Total number of packets sent to KNI but rate-limited";
       type rwt:zero-based-counter64;
     }
-    leaf kni-vf-packets{
+    leaf kni-vf-packets {
       description "Total number of packets sent over vf to the lead";
       type rwt:zero-based-counter64;
     }
-    leaf kni-vf-dropped{
+    leaf kni-vf-dropped {
       description "Total number of packets sent over vf to the lead dropped";
       type rwt:zero-based-counter64;
     }
-    leaf kni-dropped{
+    leaf kni-dropped {
       description "Total number of packets sent to kni that are dropped";
       type rwt:zero-based-counter64;
     }
-    leaf kni-packets-noring{
+    leaf kni-packets-noring {
       description "Total number of packets sent to KNI but no ring";
       type rwt:zero-based-counter64;
     }
-    leaf kni-packets-nobuf{
+    leaf kni-packets-nobuf {
       description "Total number of packets sent to KNI but no buffer";
       type rwt:zero-based-counter64;
     }
-    leaf total-fragments{
+    leaf total-fragments {
       description "Total number of packets (fragments) received";
       type rwt:zero-based-counter64;
     }
-    leaf total-reassembled{
+    leaf total-reassembled {
       description "Total number of packets reassembled";
       type rwt:zero-based-counter64;
     }
-    leaf total-tobe-fragments{
+    leaf total-tobe-fragments {
       description "Total number of packets to be fragmented";
       type rwt:zero-based-counter64;
     }
-    leaf total-failed-fragmentation{
+    leaf total-failed-fragmentation {
       description "Total number of packets, failed fragmentation";
       type rwt:zero-based-counter64;
     }
-    leaf truncated-ip-packet{
+    leaf truncated-ip-packet {
       description "Total number of packets with bad packet lengths";
       type rwt:zero-based-counter64;
     }
-    leaf unknown-ether{
+    leaf unknown-ether {
       description "Unknown ether packets";
       type rwt:zero-based-counter64;
     }
-    leaf no-logical-port{
+    leaf no-logical-port {
       description "No logical port found";
       type rwt:zero-based-counter64;
     }
-    leaf bad-logical-port{
+    leaf bad-logical-port {
       description "Bad logical port found";
       type rwt:zero-based-counter64;
     }
-    leaf logical-port-down{
+    leaf logical-port-down {
       description "Logical port DOWN";
       type rwt:zero-based-counter64;
     }
-    leaf logical-port-no-context{
+    leaf logical-port-no-context {
       description "Logical port NOT bound to context";
       type rwt:zero-based-counter64;
     }
-    leaf nat-drop{
+    leaf nat-drop {
       description "Packet to a nat-address without a flow";
       type rwt:zero-based-counter64;
     }
-    leaf port-tx-failed{
+    leaf port-tx-failed {
       description "Failed transmit on port/bundle";
       type rwt:zero-based-counter64;
     }
-    leaf bad-network-context{
+    leaf bad-network-context {
       description "No network context or wrong network context";
       type rwt:zero-based-counter64;
     }
   }
 
-  grouping vrf-ip-neighbor{
-    leaf ip-address{
+  grouping vrf-ip-neighbor {
+    description "VRF neighbor IP information";
+    leaf ip-address {
+      description "IP address of the neighbor";
       rwpb:field-inline true;
       rwpb:field-string-max 46;
       type rwt:ip-address;
       rwpb:field-c-type "rw_ip_addr_t";
     }
-    leaf lport-id{
+    leaf lport-id {
+      description "IFIndex of the neighbor";
       type uint32;
     }
-    leaf mac{
+    leaf mac {
+      description "MAC address of the neighbor";
       rwpb:field-inline true;
       type rwt:mac-address;
       rwpb:field-string-max 18;
@@ -852,29 +906,36 @@ module rw-vnf-base-types
     }
   }
 
-  grouping vrf-ip-route{
+  grouping vrf-ip-route {
+    description "VRF route IP information";
     leaf prefix {
       description "IP prefix for the route";
       type rwt:ip-prefix-non-canonical;
       rwpb:field-string-max 46;
       rwpb:field-inline true;
+      rwpb:field-c-type "rw_ip_prefix_t";
     }
-    leaf type{
+    leaf type {
+      description "Route type";
       type route-type;
     }
-    leaf nexthop-index{
-      description "Nexthop handle index";
+    leaf nexthop-index {
+      description "Next hop handle index";
       type uint32;
     }
-    leaf nexthop-context-id{
+    leaf nexthop-context-id {
+      description "Next hop context ID";
       type uint32;
     }
   }
 
   grouping vrf-info-nexthop-handle {
+    description "VRF next hop information";
     list nexthop-handle {
       key "nexthop-index";
-      leaf nexthop-index{
+
+      leaf nexthop-index {
+        description "Index of this next hop";
         type uint32;
       }
       uses special-next-hop;
@@ -883,23 +944,23 @@ module rw-vnf-base-types
         rwpb:field-inline true;
         key "nexthop-type lport-id";
 
-        leaf nexthop-type{
+        leaf nexthop-type {
           description "Type of the nexthop";
           type nexthoptype;
         }
-        leaf lport-id{
+        leaf lport-id {
           description "Ifindex of the nexthop";
           type uint32;
         }
-        leaf gateway{
+        leaf gateway {
           description "Gateway Address of the nexthop";
           type rwt:ip-address;
           rwpb:field-string-max 46;
           rwpb:field-inline true;
           rwpb:field-c-type "rw_ip_addr_t";
         }
-        leaf interface_name{
-          description "Interface Name of the nexthop";
+        leaf interface_name {
+          description "Interface name for the nexthop";
           type string {
             length "min..64";
           }
@@ -910,7 +971,8 @@ module rw-vnf-base-types
   }
 
   grouping vrf-info-interface {
-    leaf name{
+    description "VRF interface data";
+    leaf name {
       description "Configured Name of the Interface";
       type string {
         length "min..64";
@@ -923,14 +985,14 @@ module rw-vnf-base-types
         description "Ifindex of the Interface in the kernel";
         type uint32;
       }
-      leaf platform-name{
+      leaf platform-name {
         description "Interface Name in the kernel";
         type string {
           length "min..64";
         }
         rwpb:field-inline true;
       }
-      leaf state{
+      leaf state {
         description "State of the Interface";
         type string {
           length "min..32";
@@ -943,47 +1005,60 @@ module rw-vnf-base-types
       }
       uses bind-interface;
     }
+    
     list ip {
+      description "List of IPs for the interface";
+      max-elements 32;
+      rwpb:msg-flat true;
+      rwpb:field-inline true;
       key address;
 
-      leaf address{
+      leaf address {
         description "IP address of the interface";
         type rwt:ip-address;
         rwpb:field-string-max 46;
+        rwpb:field-c-type "rw_ip_addr_t";
         rwpb:field-inline true;
         rwpb:field-c-type "rw_ip_addr_t";
       }
-      leaf mask{
+      leaf mask {
+        description "Mask length";
         type uint32;
       }
     }
   }
 
   grouping bpf-instruction-fields {
-    leaf code{
+    description "Berkeley Packet Filter (BPF) ";
+    leaf code {
+      description "Instruction code";
       type uint32;
     }
-    leaf jt{
+    leaf jt {
+      description "Jump if true";
       type uint32;
     }
-    leaf jf{
+    leaf jf {
+      description "Jump if false";
       type uint32;
     }
-    leaf k{
+    leaf k {
+      description "Generic multiuse field";
       type uint32;
     }
   }
 
   grouping vrf-info-filter-fields {
-    leaf type{
+    description "Filter parameters for VRF";
+    leaf type {
       type filter-type;
     }
 
-    leaf inode-id{
+    leaf inode-id {
       type uint32;
     }
 
-    leaf lport-id{
+    leaf lport-id {
       type uint32;
     }
 
@@ -993,6 +1068,7 @@ module rw-vnf-base-types
   }
 
   grouping vrf-info {
+    description "VRF operational data";
     uses vrf-info-nexthop-handle;
 
     container ip {
@@ -1002,7 +1078,7 @@ module rw-vnf-base-types
       }
 
       list route {
-        key "prefix";
+        key "prefix type";
         uses vrf-ip-route;
       }
     }
@@ -1026,6 +1102,7 @@ module rw-vnf-base-types
   }
 
   grouping fpath-packet-debug-params {
+    description "Fastpath Packet filter parameters";
     leaf trace-id {
       description "Unique trace-id to identify this trace command";
       type int32;
@@ -1038,7 +1115,7 @@ module rw-vnf-base-types
     }
 
     leaf fastpath {
-      description "Fastpath instance id";
+      description "Fastpath instance ID";
       type int32;
     }
 

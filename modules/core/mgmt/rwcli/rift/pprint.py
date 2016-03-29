@@ -18,6 +18,14 @@ import hashlib
 
 from collections import namedtuple
 
+import gi
+gi.require_version('RwYang', '1.0')
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwDebugYang', '1.0')
+gi.require_version('RwmsgDataYang', '1.0')
+gi.require_version('RwMemlogYang', '1.0')
+
+
 import gi.repository.GLib as glib
 import gi.repository.RwYang as rwyang
 import gi.repository.RwBaseYang as rwbase

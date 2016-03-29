@@ -185,6 +185,9 @@ extern "C"
   {
     rwlogd_instance_data->sink_data = new rwlogd_sink_data(filter_shm_name, schema_name);
     RW_ASSERT(rwlogd_instance_data->sink_data);
+    if (!rwlogd_instance_data->sink_data) {
+      return;
+    }
 
     RWLOG_DEBUG_PRINT("rwlogd_sink_obj_init *** created %p %p\n", 
                       rwlogd_instance_data,
@@ -515,7 +518,7 @@ extern "C"
   {
     rwlogd_sink_data *obj = rwlogd_get_sink_obj (instance);
     RW_ASSERT(obj);
-  
+    if (!obj) { return 0; }
     return obj->num_categories_;
   }
 
@@ -524,6 +527,7 @@ extern "C"
   {
     rwlogd_sink_data *obj = rwlogd_get_sink_obj (instance);
     RW_ASSERT(obj);
+    if (!obj) { return 0; }
   
     return obj->category_list_;
   }
@@ -534,6 +538,7 @@ extern "C"
   {
     rwlogd_sink_data *obj = rwlogd_get_sink_obj (instance);
     RW_ASSERT(obj);
+    if (!obj) { return 0; }
 
     return obj->map_category_string_to_index(category_str);
   }
@@ -624,19 +629,14 @@ extern "C"
   rw_status_t
   rwlogd_handle_dynamic_schema_update(rwlogd_instance_ptr_t instance,
                                       const uint64_t batch_size,
-                                      char ** module_name,
-                                      char ** fxs_filename,
-                                      char ** so_filename,
-                                      char ** yang_filename)
+                                      rwdynschema_module_t *modules)
   {
     rwlogd_sink_data *obj = rwlogd_get_sink_obj(instance);
     RW_ASSERT(obj);
+    if (!obj) { return RW_STATUS_FAILURE; }
 
     rw_status_t status = obj->dynamic_schema_update(batch_size,
-                                                    module_name,
-                                                    fxs_filename,
-                                                    so_filename,
-                                                    yang_filename);
+                                                    modules);
     
     instance->rwlogd_info->num_categories = obj->num_categories_;
     return status;
@@ -660,6 +660,9 @@ static inline std::string c_escape_string(
   unsigned dest_len = (len * 4) + 1;
   boost::scoped_array<char> dest(new char[dest_len]);
   RW_ASSERT(dest);
+  if (!dest) {
+    return NULL;
+  }
   unsigned used = 0;
   for (unsigned i = 0; i < len; i++) {
     switch(input[i]) {
@@ -767,11 +770,11 @@ rw_status_t rwlogd_sink_data::add_sink(rwlogd_sink *snk)
 {
   if (!snk)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
   if (!sink_queue_)
   {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
   sink_queue_->push_front(snk);
   snk->set_backptr(this);
@@ -857,13 +860,13 @@ void rwlogd_sink_data::rwlogd_filter_init(char *filter_shm_name)
                       RWLOG_FILTER_SHM_PATH,
                       rwlog_get_systemId());
     RW_ASSERT(r);
+    if (!r) { return; }
   }
 
   filter_shm_fd_ =  shm_open(rwlog_shm_name_,oflags,perms);
   if (filter_shm_fd_ < 0)
   {
     RWLOG_FILTER_DEBUG_PRINT ("Error Open %s for  SHM:%s\n", strerror(errno), rwlog_shm_name_);
-    RWLOG_ASSERT(0);
     return;
   }
 
@@ -873,7 +876,6 @@ void rwlogd_sink_data::rwlogd_filter_init(char *filter_shm_name)
   if (MAP_FAILED == rwlogd_shm_ctrl_)
   {
     RWLOG_FILTER_DEBUG_PRINT ("Error Open %s for MAP_FAILED SHM:%s\n", strerror(errno), rwlog_shm_name_);
-    RWLOG_ASSERT(0);
     return;
   }
 
@@ -902,6 +904,9 @@ void rwlogd_sink_data::rwlogd_filter_init(char *filter_shm_name)
 
   rwlogd_filter_memory_->num_categories = num_categories_;
   RW_ASSERT(num_categories_ < RWLOG_MAX_NUM_CATEGORIES);
+  if (num_categories_ >= RWLOG_MAX_NUM_CATEGORIES) {
+    num_categories_ = RWLOG_MAX_NUM_CATEGORIES-1;
+  }
   rwlog_category_filter_t *category_filter = (rwlog_category_filter_t *)((char *)rwlogd_filter_memory_ + sizeof(rwlogd_shm_ctrl_t)); 
   rwlogd_filter_memory_->category_offset = sizeof(rwlogd_shm_ctrl_t);
   severity_ = (rwlog_severity_t *)RW_MALLOC0(RWLOG_MAX_NUM_CATEGORIES * sizeof(rwlog_severity_t));
@@ -937,7 +942,6 @@ void rwlogd_sink_data::merge_filter(FILTER_ACTION action,
   if (!field || !value)
   {
     RWLOG_ERROR_PRINT("merge_filters:Invalid parameters");
-    RWLOG_ASSERT(0);
     return;
   }
   int cat = map_category_string_to_index(cat_str);
@@ -951,6 +955,7 @@ void rwlogd_sink_data::merge_filter(FILTER_ACTION action,
                     value,
                     cat_str);
   RW_ASSERT(r);
+  if (!r) { return;}
 
 
   if (action == FILTER_ADD)
@@ -1247,7 +1252,6 @@ void rwlogd_sink_data::merge_filter_uint64(FILTER_ACTION action,
   if (!field || !value)
   {
     RWLOG_ERROR_PRINT("merge_filter_uint64:Invalid parameters");
-    RWLOG_ASSERT(0);
     return;
   }
 
@@ -1263,6 +1267,7 @@ void rwlogd_sink_data::merge_filter_uint64(FILTER_ACTION action,
   char *field_value_combo=NULL;
   int r = asprintf (&field_value_combo, "%s:%lu", field, value);
   RW_ASSERT(r);
+  if (!r) { return; }
 
   if (action == FILTER_ADD)
   {
@@ -1346,6 +1351,7 @@ bool rwlogd_sink_data::l2_exact_uint64_match(uint32_t cat, char *name, uint64_t 
                      name,value,
                      cat);
   RW_ASSERT(r);
+  if (!r) { return FALSE; }
 
   UNUSED(pass);
   hash_index = BLOOM_IS_SET(category_filter_[cat].bitmap,field_value_combo, pass);
@@ -1499,6 +1505,7 @@ void rwlogd_sink_data::get_category_name_list()
 {
   const rw_yang_pb_schema_t *schema = yang_model_->get_ypbc_schema();
   RW_ASSERT(schema != NULL);
+  if (!schema) { return; }
   num_categories_ = 0;
 
   /* Have category "all" as first category */
@@ -1532,9 +1539,13 @@ void rwlogd_sink_data::load_log_yang_modules(const char* schema_name)
 
   yang_model_ = rw_yang::YangModelNcx::create_model();
   RW_ASSERT(yang_model_);
+  if (!yang_model_) { return; }
 
   char *env = getenv("YUMA_MODPATH");
   RWLOG_ASSERT(env);
+  if (!env) {
+    return;
+  }
   rw_yang::YangModule *comp;
 
   // gtest 
@@ -1543,10 +1554,12 @@ void rwlogd_sink_data::load_log_yang_modules(const char* schema_name)
   {
     comp = yang_model_->load_module("rw-logtest");
     RW_ASSERT(comp);
+    if (!comp) { return; }
     comp->mark_imports_explicit();
 
     void *handle = dlopen ("liblog_test_yang_gen.so", RTLD_LAZY|RTLD_NODELETE);
     RW_ASSERT(handle);
+    if (!handle) { return; }
     const auto *schema = (const rw_yang_pb_schema_t*)dlsym (handle, "rw_ypbc_RwLogtest_g_schema");
     RW_ASSERT(schema);
     yang_model_->register_ypbc_schema(schema);
@@ -1555,10 +1568,12 @@ void rwlogd_sink_data::load_log_yang_modules(const char* schema_name)
   {
     comp = yang_model_->load_module(schema_name);
     RW_ASSERT(comp);
+    if (!comp) { return; }
     comp->mark_imports_explicit();
 
     const auto *schema = rw_load_schema("librwlog-mgmt_yang_gen.so", schema_name);
     RW_ASSERT(schema);
+    if (!schema) { return; }
 
     yang_model_->register_ypbc_schema(schema);
   }
@@ -1566,10 +1581,7 @@ void rwlogd_sink_data::load_log_yang_modules(const char* schema_name)
 
 
 rw_status_t rwlogd_sink_data::dynamic_schema_update(const size_t batch_size,
-                                                    char ** module_name,
-                                                    char ** /*fxs_filename*/,
-                                                    char ** so_filename,
-                                                    char ** /*yang_filename*/)
+                                                    rwdynschema_module_t *modules)
 {
   rw_status_t status = RW_STATUS_SUCCESS;
   if(!yang_model_) {
@@ -1579,12 +1591,20 @@ rw_status_t rwlogd_sink_data::dynamic_schema_update(const size_t batch_size,
   /* Get current schema and merge it with new schemas received */
   const rw_yang_pb_schema_t *schema = yang_model_->get_ypbc_schema();
   for (size_t i = 0; i < batch_size; ++i) {
-    RW_ASSERT(module_name[i]);
-    RW_ASSERT(so_filename[i]);
+    RW_ASSERT(modules[i].module_name);
+    if (!modules[i].module_name) {
+      return RW_STATUS_FAILURE;
+    }
+    RW_ASSERT(modules[i].so_filename);
+    if (!modules[i].so_filename) {
+      return RW_STATUS_FAILURE;
+    }
 
-    schema = rw_load_and_merge_schema(schema, so_filename[i], module_name[i]);
+    schema = rw_load_and_merge_schema(schema, modules[i].so_filename, modules[i].module_name);
 
-    RW_ASSERT(schema);
+    if (!schema) {
+      return RW_STATUS_FAILURE;
+    }
   }
 
   /* Delete existing yang model and build it again with new schema */
@@ -1594,12 +1614,18 @@ rw_status_t rwlogd_sink_data::dynamic_schema_update(const size_t batch_size,
 
   yang_model_ = rw_yang::YangModelNcx::create_model();
   RW_ASSERT(yang_model_);
+  if (!yang_model_) {
+    return RW_STATUS_FAILURE;
+  }
 
   /* Build new yang model */
   yang_model_->load_schema_ypbc(schema);
 
   /* Annotate the yang model with the descriptors. */
-  yang_model_->register_ypbc_schema(schema);
+  status = yang_model_->register_ypbc_schema(schema);
+  if ( RW_STATUS_SUCCESS != status ) {
+    fprintf(stderr, "Failed to register ypbc schema \n");
+  }
 
   status = update_category_list();
   return status;
@@ -1951,7 +1977,7 @@ int rwlogd_sink::fill_common_attributes(ProtobufCMessage *arrivingmsg,
     os << " version:" << common_params->version;
   } else {
     // packed major/minor, see rwlog.h
-    RW_ASSERT(RWLOG_SHIFT == 16);
+    RW_STATIC_ASSERT(RWLOG_SHIFT == 16);
     os << " version:" << (common_params->version >> 16) << "." << (common_params->version & 0x0000ffff);
   }
   std::string pathname = common_params->filename;
@@ -2091,7 +2117,6 @@ ProtobufCMessage *rwlogd_sink_data::get_unpacked_proto(uint8_t *buffer)
       printf("no Mesc_descriptor ns_id %d, log_hdr->elem_id %d\n", 
              log_hdr->schema_id.ns, log_hdr->schema_id.tag);
 
-      RWLOG_ASSERT(0);
     }
     return NULL;
   }
@@ -2361,7 +2386,7 @@ rwlog_status_t rwlogd_sink::check_header_filter(uint8_t *proto)
 }
 int rwlogd_sink::post_evlog(uint8_t *proto)
 {
-  RW_ASSERT(0);
+    RW_CRASH();
   return -1;
 }
 void rwlogd_sink::set_backptr(rwlogd_sink_data *ptr)
@@ -2373,7 +2398,13 @@ void rwlogd_sink::create_category_list()
 {
   sink_filter_.category_filter_ = (rwlog_category_filter_t *)RW_MALLOC0(RWLOG_MAX_NUM_CATEGORIES * sizeof(rwlog_category_filter_t));
   RW_ASSERT(data_container_->num_categories_ < RWLOG_MAX_NUM_CATEGORIES);
+  if (data_container_->num_categories_ >= RWLOG_MAX_NUM_CATEGORIES) {
+    data_container_->num_categories_ = RWLOG_MAX_NUM_CATEGORIES-1;
+  }
   RW_ASSERT(sink_filter_.category_filter_);
+  if (!sink_filter_.category_filter_) {
+    return;
+  }
   for(uint32_t i=0;i<data_container_->num_categories_;i++) {
     sink_filter_.category_filter_[i].severity = RW_LOG_LOG_SEVERITY_ERROR;
     sink_filter_.category_filter_[i].bitmap = 0;
@@ -2386,7 +2417,7 @@ void rwlogd_sink::update_category_list()
 {
   RW_ASSERT(data_container_->num_categories_ < RWLOG_MAX_NUM_CATEGORIES);
   if(data_container_->num_categories_ >= RWLOG_MAX_NUM_CATEGORIES) {
-    return;
+     data_container_->num_categories_ = RWLOG_MAX_NUM_CATEGORIES-1;
   }
   for(uint32_t i=sink_filter_.filter_hdr_.num_categories;i<data_container_->num_categories_;i++) {
     sink_filter_.category_filter_[i].severity = RW_LOG_LOG_SEVERITY_ERROR;
@@ -2499,6 +2530,9 @@ void *rwlogd_create_show_log_filter(rwlogd_instance_ptr_t inst,rwlog_severity_t 
 
   filter->category_filter_ = (rwlog_category_filter_t *)RW_MALLOC0(filter->filter_hdr_.num_categories * sizeof(rwlog_category_filter_t));
   RW_ASSERT(filter->category_filter_);
+  if (!filter->category_filter_) {
+    return NULL;
+  }
   for (index=0; index<filter->filter_hdr_.num_categories ;index++) {
     filter->category_filter_[index].severity = default_severity;
     filter->category_filter_[index].bitmap = 0;

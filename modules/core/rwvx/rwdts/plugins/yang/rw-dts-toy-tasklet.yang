@@ -30,6 +30,9 @@ module rw-dts-toy-tasklet
   import rw-notify-ext {
     prefix "rwnotify";
   }
+  import rw-vcs {
+    prefix "rw-vcs";
+  }
 
   revision 2015-04-07 {
     description
@@ -136,6 +139,10 @@ module rw-dts-toy-tasklet
 
     config false;
     leaf name {
+      type string;
+    }
+
+    leaf general-info {
       type string;
     }
 

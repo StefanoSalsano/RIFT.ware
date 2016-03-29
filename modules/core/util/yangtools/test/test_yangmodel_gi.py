@@ -18,6 +18,7 @@ import io
 import sys
 import unittest
 import gi
+gi.require_version('RwYang', '1.0')
 from gi.repository import RwYang
 import xmlrunner
 

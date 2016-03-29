@@ -82,22 +82,18 @@ export default class RecordView extends React.Component {
       onClick: this.componentWillUnmount
     },{
       name: 'Viewport'
-    },
-    {
-      href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topology',
-      name: 'TOPOLOGY',
-      onClick: this.componentWillUnmount
     }
-    // Commented out for OSM_MWC
-    // ,{
-    //     href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2',
-    //     name: 'TOPOLOGYL2',
-    //     onClick: this.componentWillUnmount
-    // }, {
-    //     href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2Vm',
-    //     name: 'TOPOLOGYL2VM',
-    //     onClick: this.componentWillUnmount
-    // }
+    ,{
+      href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/compute-topology',
+      name: 'COMPUTE TOPOLOGY',
+      onClick: this.componentWillUnmount
+    },{
+      // unremark to work with websocket mode
+      //href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2',
+      href: '#/launchpad/' + mgmtDomainName + '/' + nsrId + '/topologyL2',
+         name: 'NETWORK TOPOLOGY',
+         onClick: this.componentWillUnmount
+    }
     ];
     let nav = <AppHeader title="Launchpad: Viewport" nav={navItems} />
     if (this.state.showRecordDetails) {

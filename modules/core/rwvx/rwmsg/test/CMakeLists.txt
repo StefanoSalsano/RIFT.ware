@@ -18,21 +18,11 @@ rift_add_proto_target(
 
 set(test_srcs rwmsg_gtest.cc rwmsg_broker_gtest.cc rwmsg_gtest_c.c ${proto_c_files})
 set(test_libs
-	rwcal_api
+  rwcal_api
   rwmsgbroker
-  rwmsg
-  rwlib
-  rwtrace
-  talloc
-  nanomsg
-  protobuf-c
-  rwsched
-  rwlog
-  CoreFoundation
-  dispatch
-  BlocksRuntime
-  ck
-  glib-2.0)
+  rwvcs
+  rwtasklet
+  ${rwmsg_link_libs})
 
 set(test_deps rwmsg rwmsgbroker rwsched rwlog)
 ##
@@ -48,6 +38,8 @@ add_executable(rwmsg_perftool ${PERFTOOL_C_SOURCES})
 target_link_libraries(rwmsg_perftool
   rwcal_api
   rwmsgbroker
+  rwvcs
+  rwtasklet
   ${rwmsg_link_libs})
 add_dependencies(rwmsg_perftool rwmsg rwmsgbroker rwsched rwlog)
 

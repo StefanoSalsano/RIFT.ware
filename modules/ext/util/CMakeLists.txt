@@ -38,6 +38,7 @@ set(subdirs
   vtune
   libtimer 
   stream
+  coredumper
   )
 rift_add_subdirs(SUBDIR_LIST ${subdirs})
 

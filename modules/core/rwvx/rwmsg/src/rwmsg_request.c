@@ -38,6 +38,7 @@ rwmsg_request_t *rwmsg_request_create(rwmsg_clichan_t *cc) {
   req->clichan = cc;
   if (ch) {
     RW_ASSERT(ch->chantype == RWMSG_CHAN_CLI || ch->chantype == RWMSG_CHAN_BROCLI || ch->chantype == RWMSG_CHAN_PEERCLI);
+    _RWMSG_CH_DEBUG_(ch, "++");
     ck_pr_inc_32(&ch->refct);
   }
   RWMSG_REQ_TRACK(req);

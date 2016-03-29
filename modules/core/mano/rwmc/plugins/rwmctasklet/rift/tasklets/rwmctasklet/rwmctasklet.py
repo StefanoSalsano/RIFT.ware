@@ -9,6 +9,13 @@ import os
 import time
 from datetime import timedelta
 
+import gi
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwMcYang', '1.0')
+gi.require_version('RwMcYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwTypes', '1.0')
+
 from gi.repository import (
     RwDts as rwdts,
     RwMcYang,
@@ -154,6 +161,10 @@ class MgmtDomain(object):
     @property
     def launchpad_state(self):
         return self._lifetime_manager.state
+
+    @property 
+    def launchpad_state_details(self):
+        return self._lifetime_manager.state_details
 
     @property
     def launchpad_state_details(self):
@@ -2141,7 +2152,10 @@ class MgmtDomainDtsOperdataHandler(object):
 
                 lp_ip = None
                 if mgmt_domain.launchpad_vm_info is not None:
-                    lp_ip = mgmt_domain.launchpad_vm_info.public_ip
+                    if mgmt_domain.launchpad_vm_info.public_ip:
+                        lp_ip = mgmt_domain.launchpad_vm_info.public_ip
+                    else:
+                        lp_ip = mgmt_domain.launchpad_vm_info.management_ip
 
             except Exception as e:
                 self._log.warning("Could not get mgmt-domain launchpad info: %s", e)

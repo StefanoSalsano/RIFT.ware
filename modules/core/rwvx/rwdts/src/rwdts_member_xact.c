@@ -677,6 +677,10 @@ rwdts_member_xact_fsm_state_init(rwdts_xact_t*           xact,
           } else {
             rwdts_store_cache_obj(xact);
           }
+          rwdts_journal_consume_xquery (xquery, RWDTS_MEMB_XACT_EVT_END);
+        }
+        else {
+          rwdts_journal_consume_xquery (xquery, RWDTS_MEMB_XACT_EVT_PREPARE);
         }
       } else {
         RWDTS_API_LOG_XACT_EVENT(xact->apih, xact, RwDtsApiLog_notif_XactFsmFailed,
@@ -833,6 +837,7 @@ rwdts_member_xact_fsm_state_prepare(rwdts_xact_t*           xact,
       /* Perform KV xact abort operation */
       rwdts_xact_query_t *xquery=NULL, *qtmp=NULL;
       HASH_ITER(hh, xact->queries, xquery, qtmp) {
+        rwdts_journal_consume_xquery (xquery, RWDTS_MEMB_XACT_EVT_ABORT);
         xquery->responded = 0;
       }
 
@@ -966,6 +971,11 @@ rwdts_member_xact_fsm_state_precommit(rwdts_xact_t*           xact,
       if (rs == RW_STATUS_SUCCESS) {
         // Transition to the commit state
 
+        rwdts_xact_query_t *xquery=NULL, *qtmp=NULL;
+        HASH_ITER(hh, xact->queries, xquery, qtmp) {
+          rwdts_journal_consume_xquery (xquery, RWDTS_MEMB_XACT_EVT_COMMIT);
+        }
+
         rwdts_member_xact_transition(xact, RWDTS_MEMB_XACT_ST_COMMIT_RSP, RWDTS_MEMB_XACT_EVT_COMMIT_RSP);
         rwdts_member_xact_run(xact, RWDTS_MEMB_XACT_EVT_COMMIT_RSP, NULL);
         rwdts_store_cache_obj(xact);
@@ -984,6 +994,7 @@ rwdts_member_xact_fsm_state_precommit(rwdts_xact_t*           xact,
       /* Perform KV xact abort operation */
       rwdts_xact_query_t *xquery=NULL, *qtmp=NULL;
       HASH_ITER(hh, xact->queries, xquery, qtmp) {
+        rwdts_journal_consume_xquery (xquery, RWDTS_MEMB_XACT_EVT_ABORT);
         xquery->responded = 0;
       }
 
@@ -1334,6 +1345,22 @@ static void rwdts_member_prep_check_timer(void* hndl)
   match->prep_timer_cancel = NULL;
   RW_ZERO_VARIABLE(&rsp);
   rsp.evtrsp = (xact->flags&RWDTS_XACT_FLAG_NOTRAN)?RWDTS_EVTRSP_NA:RWDTS_EVTRSP_NACK;
+  if (xact->tr) {
+    RWDtsTracerouteEnt ent;
+    char tmp_log_xact_id_str[128] = "";
+    rwdts_traceroute_ent__init(&ent);
+    ent.line = __LINE__;
+    ent.func = (char*)__PRETTY_FUNCTION__;
+    ent.what = RWDTS_TRACEROUTE_WHAT_PREP_TO;
+    ent.srcpath = apih->client_path;
+    rwdts_dbg_tracert_add_ent(xact->tr, &ent);
+    if (xact->tr->print) {
+      fprintf(stderr, "%s:%u: TYPE:%s, MEMBER:%s\n", ent.func, ent.line,
+              rwdts_print_ent_type(ent.what), ent.srcpath);
+    }
+    RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_TracePrepcheckTimeout, rwdts_xact_id_str(&xact->id,tmp_log_xact_id_str, sizeof(tmp_log_xact_id_str)),
+                apih->client_path);
+  }
   rwdts_member_send_response(xact, match->xact_info.queryh,&rsp);
   return;
 }
@@ -1502,6 +1529,7 @@ rwdts_handle_reg_prepare(rwdts_xact_t *xact, rwdts_xact_query_t *xquery)
       if (xact->tr && xact->tr->break_prepare) {
         G_BREAKPOINT();
       }
+      xact_info->transactional = rwdts_is_transactional(xact_info->xact);
       /* start prepare callback timer if enabled */
       if (PREPARE_CB_CANCEL_TIMER(match)) {
         match->prep_timer_cancel = rwsched_dispatch_source_create(apih->tasklet,
@@ -1878,6 +1906,27 @@ rwdts_member_xact_handle_abort(rwdts_xact_t *xact, RWDtsXact *input)
 
   rwdts_member_rsp_code_t rsp_code =  RWDTS_ACTION_OK;
   int abrt = 0;
+
+  if (xact->member_new_blocks) {
+    rwdts_xact_block_t *member_new_blocks;
+    int i;
+    for (i=0; i < xact->n_member_new_blocks; i++) {
+      member_new_blocks = xact->member_new_blocks[i];
+      rwdts_xact_block_unref(member_new_blocks, __PRETTY_FUNCTION__, __LINE__);
+    }
+    RW_FREE(xact->member_new_blocks);
+    xact->member_new_blocks = NULL;
+    xact->n_member_new_blocks = 0;
+  }
+
+  rwdts_xact_query_t *xquery=NULL, *xqtmp=NULL;
+  HASH_ITER(hh, xact->queries, xquery, xqtmp) {
+    rwdts_match_info_t *match = RW_SKLIST_HEAD(&(xquery->reg_matches), rwdts_match_info_t);
+    while (match) {
+      rwdts_member_prep_timer_cancel(match);
+      match = RW_SKLIST_NEXT(match, rwdts_match_info_t, match_elt);
+    }
+  }
 
   /* Group callback(s) */
   {

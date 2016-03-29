@@ -49,7 +49,8 @@ static struct rwtasklet_info_s * create_tasklet_info(
 
   info->rwsched_instance = rwvcs->rwvx->rwsched;
   info->rwsched_tasklet_info = rwsched_tasklet_new(rwvcs->rwvx->rwsched);
-  info->rwtrace_instance = rwvcs->rwvx->rwtrace;
+  //info->rwtrace_instance = rwvcs->rwvx->rwtrace;
+  info->rwtrace_instance = rwtrace_init(); 
   info->rwvx = rwvcs->rwvx;
   info->rwvcs = rwvcs;
   info->identity.rwtasklet_instance_id = tasklet_instance_id;
@@ -65,7 +66,6 @@ static struct rwtasklet_info_s * create_tasklet_info(
       info->rwtrace_instance,
       rwvcs->pb_rwmanifest->init_phase->settings->rwmsg);
 
-  rwtasklet_info_ref(info);
   return info;
 }
 
@@ -84,7 +84,7 @@ struct rwmain_tasklet * rwmain_tasklet_alloc(
 
   rt = (struct rwmain_tasklet *)malloc(sizeof(struct rwmain_tasklet));
   if (!rt) {
-    RW_ASSERT(0);
+    RW_CRASH();
     return NULL;
   }
 
@@ -94,7 +94,7 @@ struct rwmain_tasklet * rwmain_tasklet_alloc(
 
   rt->instance_name = strdup(instance_name);
   if (!rt->instance_name) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto free_tasklet;
   }
 
@@ -107,13 +107,13 @@ struct rwmain_tasklet * rwmain_tasklet_alloc(
                          rw_vx_library_open, "rw_vx_library_open:%s:%s for %s", 
                          plugin_name, plugin_dir, instance_name);
   if (status != RW_STATUS_SUCCESS) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto free_tasklet;
   }
 
   tinfo = create_tasklet_info(rwvcs, instance_name, instance_id);
   if (!tinfo) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto close_library;
   }
 
@@ -127,13 +127,13 @@ struct rwmain_tasklet * rwmain_tasklet_alloc(
       (void **)&rt->plugin_interface,
       NULL);
   if (status != RW_STATUS_SUCCESS) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto close_library;
   }
 
   url = RW_TASKLET_PLUGIN__RWEXECURL(g_object_new(RW_TASKLET_PLUGIN_TYPE__RWEXECURL, 0));
   if (!RW_TASKLET_PLUGIN_IS__RWEXECURL(url)) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto close_library;
   }
 
@@ -191,7 +191,7 @@ void rwmain_tasklet_free(struct rwmain_tasklet * rt)
 }
 
 rw_status_t rwmain_tasklet_start(
-    struct rwmain * rwmain,
+    struct rwmain_gi * rwmain,
     struct rwmain_tasklet * rt)
 {
   rw_status_t status;
@@ -206,7 +206,7 @@ rw_status_t rwmain_tasklet_start(
         rwmain,
         "Failed to add tasklet %s to rwmain sklist",
         rt->instance_name);
-    RW_ASSERT(0);
+    RW_CRASH();
     return status;
   }
 
@@ -294,5 +294,4 @@ cleanup:
 
   return;
 }
-
 

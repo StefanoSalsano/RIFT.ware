@@ -32,6 +32,14 @@ class Statistics(object):
         self._put_500_rsp = 0
         self._put_req = 0
 
+        # Event Source specific statistics
+        self.websocket_stream_open = 0
+        self.websocket_stream_close = 0
+        self.websocket_events = 0
+        self.http_stream_open = 0
+        self.http_stream_close = 0
+        self.http_events = 0
+
 
     @property
     def del_200_rsp(self):

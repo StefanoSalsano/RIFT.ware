@@ -9,7 +9,8 @@ import os
 import unittest
 
 import xmlrunner
-
+import gi
+gi.require_version('rwlib', '1.0')
 import gi.repository.rwlib as rwlib
 import gi.repository.RwTypes as rwtypes
 

@@ -32,6 +32,20 @@
 //LCOV_EXCL_START
 
 static void rwdts_router_calc_stat_timer(void *ctx);
+static void rwdts_router_publish_state_handler(
+    rwdts_router_t *dts,
+    RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *publish_state,
+    RWPB_T_PATHSPEC(RwBase_VcsInstance_Instance_ChildN_PublishState) *keyspec_entry);
+static void rwdts_router_publish_state_reg_ready(
+    rwdts_member_reg_handle_t  regh,
+    rw_status_t                rs,
+    void*                      user_data);
+static rwdts_member_rsp_code_t rwdts_router_publish_state_prepare(
+    const rwdts_xact_info_t* xact_info,
+    RWDtsQueryAction         action,
+    const rw_keyspec_path_t* keyspec,
+    const ProtobufCMessage*  msg,
+    void*                    user_data);
 
 static void rwdts_router_fill_reg_msg(RWPB_T_MSG(RwDts_data_Dts_Routers_MemberInfo)* member_info, int j,
                                       rwdts_memb_router_registration_t *rmemb)
@@ -683,6 +697,7 @@ rwdts_router_fill_store_router_data_and_key(rwdts_router_t *dts,
 
 static void
 rwdts_router_reg_handle_delete(rwdts_router_t *dts,
+                               rwdts_xact_t *xact,
                                const rw_keyspec_path_t*      key,
                                RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member) *member_p)
 {
@@ -699,9 +714,9 @@ rwdts_router_reg_handle_delete(rwdts_router_t *dts,
             pathspec.dompath.path001.key00.name, 
             strlen(pathspec.dompath.path001.key00.name), memb);
 
+  bool all_regs = (member_p->has_recovery_action && (member_p->recovery_action == RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL));
   if (memb)  {
-    bool all_regs = (member_p->has_all_regs && (member_p->all_regs == TRUE));
-    if (member_p->n_registration) {
+    if (all_regs && member_p->n_registration) {
       RWPB_T_PATHSPEC(RwDts_data_RtrPeerRegKeyspec_Router_Member_Registration) router_pub_ks  =
           (*RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrPeerRegKeyspec_Router_Member_Registration));
       rwdts_router_fill_router_reg_key(dts, &router_pub_ks, memb->msgpath, member_p->registration[0]->keystr, member_p->registration[0]->flags);
@@ -712,6 +727,19 @@ rwdts_router_reg_handle_delete(rwdts_router_t *dts,
                                                                         keyspec,
                                                                         NULL, NULL);
         RW_ASSERT(rs == RW_STATUS_SUCCESS);
+      }
+    }
+    if (member_p->has_recovery_action && (member_p->recovery_action == RWVCS_TYPES_RECOVERY_TYPE_RESTART)) {
+    
+      RWDTS_ROUTER_LOG_XACT_EVENT(dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
+                                  RWLOG_ATTR_SPRINTF("WAIT_RESTART Setting for %s", memb->msgpath));
+      memb->wait_restart = true;
+      if (memb->dest) {
+        rwmsg_clichan_stream_reset(dts->clichan, memb->dest);
+      }
+      if (memb->dest) {
+        rwmsg_destination_destroy(memb->dest);
+        memb->dest = NULL;
       }
     }
     if (all_regs) {
@@ -798,12 +826,8 @@ void rwdts_router_store_registration(rwdts_router_t *dts,
   }
   for (i=0; i < rcvreg->n_registration; i++) {
     if (rcvreg->registration[i]->rtr_reg_id) {
-      RWPB_T_MSG(RwDts_data_RtrInitRegId_Member) store_data;
-      RWPB_F_MSG_INIT(RwDts_data_RtrInitRegId_Member,&store_data);
-      strncpy(store_data.name, rcvreg->name, sizeof(store_data.name));
-
-      store_data.n_registration = 1;
-      store_data.registration = RW_MALLOC0(sizeof(store_data.registration[0]));
+      RWPB_T_MSG(RwDts_data_RtrInitRegId_Member_Registration) store_data;
+      RWPB_F_MSG_INIT(RwDts_data_RtrInitRegId_Member_Registration,&store_data);
 
       RWPB_T_PATHSPEC(RwDts_data_RtrInitRegId_Member_Registration) ks  = (*RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrInitRegId_Member_Registration));
 
@@ -818,33 +842,31 @@ void rwdts_router_store_registration(rwdts_router_t *dts,
       ks.dompath.path002.key00.rtr_reg_id = rcvreg->registration[i]->rtr_reg_id;
       ks.dompath.path002.key01.rtr_id = rcvreg->rtr_id;
 
-      store_data.registration[0] = RW_MALLOC0(sizeof(RWPB_T_MSG(RwDts_data_RtrInitRegId_Member_Registration)));
-      RWPB_F_MSG_INIT(RwDts_data_RtrInitRegId_Member_Registration, store_data.registration[0]);
-      store_data.registration[0]->keystr = rcvreg->registration[i]->keystr;
-      store_data.registration[0]->has_keyspec = 1;
-      store_data.registration[0]->keyspec.len = rcvreg->registration[i]->keyspec.len;
-      store_data.registration[0]->keyspec.data = rcvreg->registration[i]->keyspec.data;
-      store_data.registration[0]->has_flavor =  rcvreg->registration[i]->has_flavor;
-      store_data.registration[0]->flavor =  rcvreg->registration[i]->flavor;
-      store_data.registration[0]->has_index =  rcvreg->registration[i]->has_index;
-      store_data.registration[0]->index =  rcvreg->registration[i]->index;
-      store_data.registration[0]->has_start =  rcvreg->registration[i]->has_start;
-      store_data.registration[0]->start =  rcvreg->registration[i]->start;
-      store_data.registration[0]->has_stop =  rcvreg->registration[i]->has_stop;
-      store_data.registration[0]->stop =  rcvreg->registration[i]->stop;
+      store_data.keystr = rcvreg->registration[i]->keystr;
+      store_data.has_keyspec = 1;
+      store_data.keyspec.len = rcvreg->registration[i]->keyspec.len;
+      store_data.keyspec.data = rcvreg->registration[i]->keyspec.data;
+      store_data.has_flavor =  rcvreg->registration[i]->has_flavor;
+      store_data.flavor =  rcvreg->registration[i]->flavor;
+      store_data.has_index =  rcvreg->registration[i]->has_index;
+      store_data.index =  rcvreg->registration[i]->index;
+      store_data.has_start =  rcvreg->registration[i]->has_start;
+      store_data.start =  rcvreg->registration[i]->start;
+      store_data.has_stop =  rcvreg->registration[i]->has_stop;
+      store_data.stop =  rcvreg->registration[i]->stop;
       RW_ASSERT(rcvreg->registration[i]->flavor);
       if (rcvreg->registration[i]->has_minikey) {
-        store_data.registration[0]->has_minikey = 1;
-        store_data.registration[0]->minikey.len = rcvreg->registration[i]->minikey.len;
-        store_data.registration[0]->minikey.data = rcvreg->registration[i]->minikey.data;
+        store_data.has_minikey = 1;
+        store_data.minikey.len = rcvreg->registration[i]->minikey.len;
+        store_data.minikey.data = rcvreg->registration[i]->minikey.data;
       }
-      store_data.registration[0]->flags = rcvreg->registration[i]->flags;
+      store_data.flags = rcvreg->registration[i]->flags;
 
       if (rcvreg->registration[i]->has_descriptor) {
-        strcpy(store_data.registration[0]->descriptor, rcvreg->registration[i]->descriptor);
+        strcpy(store_data.descriptor, rcvreg->registration[i]->descriptor);
       }
-      store_data.registration[0]->rtr_reg_id = rcvreg->registration[i]->rtr_reg_id;
-      store_data.registration[0]->rtr_id = rcvreg->rtr_id;
+      store_data.rtr_reg_id = rcvreg->registration[i]->rtr_reg_id;
+      store_data.rtr_id = rcvreg->rtr_id;
 
       rs = rwdts_member_reg_handle_update_element_keyspec(dts->init_regidh,
                                                        keyspec,
@@ -852,10 +874,6 @@ void rwdts_router_store_registration(rwdts_router_t *dts,
                                                        0,
                                                        NULL);
       RW_ASSERT(rs == RW_STATUS_SUCCESS);
-      RW_FREE(store_data.registration[0]);
-      store_data.registration[0] = NULL;
-      RW_FREE(store_data.registration);
-      store_data.registration = NULL;
     }
   }
   return;
@@ -989,6 +1007,9 @@ static rwdts_member_rsp_code_t rwdts_router_reg_handle_commit(const rwdts_xact_i
 {
   /* Let's store the info into the reg table */
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   int i;
   rwdts_router_t *dts = (rwdts_router_t *)xact_info->ud;
   rwdts_xact_t *xact = xact_info->xact;
@@ -997,6 +1018,9 @@ static rwdts_member_rsp_code_t rwdts_router_reg_handle_commit(const rwdts_xact_i
   rtr_xact = rwdts_router_xact_lookup_by_id(dts, &xact->id);
   RW_ASSERT(rtr_xact);
 
+  if (!rtr_xact) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   for (i=0; i < n_crec; i++) {
     RW_ASSERT(crec[i]->msg);
     rwdts_router_reg_apply_crec(dts, xact, (RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member)*)crec[i]->msg);
@@ -1045,6 +1069,9 @@ rwdts_router_process_reg_xact(rwdts_router_t *dts,
                               const rwdts_xact_info_t* xact_info)
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   RW_ASSERT_TYPE(dts, rwdts_router_t);
 
   rwdts_xact_t *xact = xact_info->xact;
@@ -1093,6 +1120,7 @@ rwdts_router_get_router_member(rwdts_router_t *dts,
     memb = RW_MALLOC0_TYPE(sizeof(memb[0]), rwdts_router_member_t);
     memb->msgpath = strdup(member_p->name);
     memb->refct = 1;
+    RW_DL_INIT(&memb->queued_xacts);
     RW_SKLIST_PARAMS_DECL(transreg_list_,rwdts_memb_trans_registration_t, xact_serialno,
                           rw_sklist_comp_uint64_t, element);
     RW_SKLIST_INIT(&(memb->trans_reglist),&transreg_list_);
@@ -1280,6 +1308,9 @@ rwdts_router_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
                                 void *getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member) *member_p = (RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member)*)msg;
   rwdts_router_t *dts = (rwdts_router_t *)xact_info->ud;
@@ -1300,11 +1331,11 @@ rwdts_router_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
   }
 
   if (action == RWDTS_QUERY_DELETE) {
-    bool all_regs = (member_p->has_all_regs && (member_p->all_regs == TRUE));
+    bool all_regs = (member_p->has_recovery_action && (member_p->recovery_action == RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL));
     uint8_t *bp = NULL;
     size_t bp_len = 0;
     int k;
-    rwdts_router_reg_handle_delete(dts, key, member_p);
+    rwdts_router_reg_handle_delete(dts, xact, key, member_p);
     if (!all_regs) {
       for (k=0; k< member_p->n_registration; k++) {
         if (member_p->registration[k]->has_keyspec) {
@@ -1329,6 +1360,10 @@ rwdts_router_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
 
   // We should not be receiving a request without member name
   RW_ASSERT(memb);
+
+  if (!memb) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   RW_ASSERT(init_member_p->has_rtr_id);
   if (init_member_p->rtr_id == RWDTS_ROUTER_LOCAL_IDX(dts)) {
@@ -1359,6 +1394,9 @@ rwdts_router_peer_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
                                 void *getnext_ptr)
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
 
   RWPB_T_MSG(RwDts_data_RtrPeerRegKeyspec_Router_Member) *router_member_p = 
       (RWPB_T_MSG(RwDts_data_RtrPeerRegKeyspec_Router_Member)*)msg;
@@ -1370,6 +1408,12 @@ rwdts_router_peer_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
   RW_ASSERT(pathspec.has_dompath &&
             pathspec.dompath.has_path001 &&
             pathspec.dompath.path001.has_key00);
+ 
+  if (!(pathspec.has_dompath &&
+        pathspec.dompath.has_path001 &&
+        pathspec.dompath.path001.has_key00)) {
+    return RWDTS_ACTION_NOT_OK;
+  }
             
   if (!strcmp(pathspec.dompath.path001.key00.name, dts->rwmsgpath)) {
     PRINT_STR (dts->rwmsgpath, "%s", "Router NOT NA ed");
@@ -1384,11 +1428,12 @@ rwdts_router_peer_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
     del_ks.dompath.path001.has_key00 = TRUE;
     strncpy(del_ks.dompath.path001.key00.name, pathspec.dompath.path002.key00.name, sizeof(del_ks.dompath.path001.key00.name));
     rw_keyspec_path_t *keyspec = (rw_keyspec_path_t*)&del_ks;
-    bool all_regs = (router_member_p->has_all_regs && (router_member_p->all_regs == TRUE));
+    bool all_regs = (router_member_p->has_recovery_action && (router_member_p->recovery_action == RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL));
     uint8_t *bp = NULL;
     size_t bp_len = 0;
     int k;
-    rwdts_router_reg_handle_delete(dts, key, member_p);
+    rwdts_xact_t *xact = xact_info->xact;
+    rwdts_router_reg_handle_delete(dts, xact, key, member_p);
     if (!all_regs) {
       for (k=0; k< router_member_p->n_registration; k++) {
         if (router_member_p->registration[k]->has_keyspec) {
@@ -1398,7 +1443,7 @@ rwdts_router_peer_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
         }
       }
     }
-    rwdts_router_reg_handle_delete (dts, keyspec, member_p);
+    rwdts_router_reg_handle_delete (dts, xact, keyspec, member_p);
     return RWDTS_ACTION_OK;
   }
 
@@ -1428,6 +1473,9 @@ static rwdts_member_rsp_code_t rwdts_router_peer_reg_handle_commit(const rwdts_x
                                                               const rwdts_commit_record_t** crec)
 {
   RW_ASSERT(xact_info);
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   int i, indx;
   rwdts_router_t *dts = (rwdts_router_t *)xact_info->ud;
   rwdts_xact_t *xact = xact_info->xact;
@@ -1453,6 +1501,10 @@ static rwdts_member_rsp_code_t rwdts_router_peer_reg_handle_abort(const rwdts_xa
                                                              const rwdts_commit_record_t** crec)
 {
   RW_ASSERT(xact_info);
+
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
   int i, indx;
   rwdts_router_t *dts = (rwdts_router_t *)xact_info->ud;
   rwdts_xact_t *xact = xact_info->xact;
@@ -1576,7 +1628,9 @@ rwdts_router_get_peer_regs_cb (rwdts_xact_t*        xact,
       xact = rwdts_api_query_ks(reg->apih,
                                 peer_reg_cb->keyspec,
                                 RWDTS_QUERY_READ,
-                                RWDTS_FLAG_STREAM|RWDTS_FLAG_WAIT_RESPONSE, //|RWDTS_FLAG_TRACE,
+                                (RWDTS_XACT_FLAG_PEER_REG
+                                 |RWDTS_FLAG_STREAM
+                                 |RWDTS_FLAG_WAIT_RESPONSE), //|RWDTS_FLAG_TRACE,
                                 rwdts_router_get_peer_regs_cb,
                                 peer_reg_cb,
                                 NULL);
@@ -1606,6 +1660,9 @@ cleanup:
     RW_FREE(peer_reg_cb->peer_rwmsgpath);
     rw_keyspec_path_free(peer_reg_cb->keyspec, NULL);    
     RW_FREE_TYPE(peer_reg_cb, rwdts_router_peer_reg_t);
+    if (!dts->pend_peer_table) {
+      rwdts_router_replay_queued_msgs(dts);
+    }
   }
   if (msgs) RW_FREE(msgs);
   if (keyspecs) RW_FREE(keyspecs);
@@ -1694,7 +1751,9 @@ rwdts_router_register_single_peer_router(rwdts_router_t *dts, int vm_id)
     rwdts_xact_t*  xact = rwdts_api_query_ks(reg->apih,
                                              peer_reg_cb->keyspec,
                                              RWDTS_QUERY_READ,
-                                             RWDTS_FLAG_STREAM|RWDTS_FLAG_WAIT_RESPONSE, //|RWDTS_FLAG_TRACE,
+                                             (RWDTS_XACT_FLAG_PEER_REG
+                                              |RWDTS_FLAG_STREAM
+                                              |RWDTS_FLAG_WAIT_RESPONSE), //|RWDTS_FLAG_TRACE,
                                              rwdts_router_get_peer_regs_cb,
                                              peer_reg_cb,
                                              NULL);
@@ -1717,10 +1776,9 @@ static void
 rwdts_router_data_watcher_f(void *ctx)
 {
   rwdts_router_t *dts = (rwdts_router_t *)ctx;
+  rwtasklet_info_ptr_t ti = dts->rwtaskletinfo;
   dts->data_watcher_cb_count++;
 
-  rwcal_module_ptr_t rwcal =
-      ((rwvx_instance_t*)(dts->rwtaskletinfo->rwvx))->rwcal_module;
   char zklock[256] = {0};
   char *rwzk_path = "/sys-router/R/RW.DTSRouter/";
   char my_rwzk_path[256] = {0};
@@ -1728,15 +1786,13 @@ rwdts_router_data_watcher_f(void *ctx)
   char ** children = NULL;;
   rw_status_t status;
 
-  RW_ASSERT(rwcal);
-
   sprintf(zklock, "%s-lOcK/routerlock", dts->rwmsgpath);
-  RW_ASSERT(rwcal_rwzk_exists(rwcal, zklock));
-  status = rwcal_rwzk_lock(rwcal, zklock, &tv);
+  RW_ASSERT(rwvcs_rwzk_exists(ti->rwvcs, zklock));
+  status = rwvcs_rwzk_lock_path(ti->rwvcs, zklock, &tv);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
 
   sprintf(my_rwzk_path, "/sys-router%s", dts->rwmsgpath);
-  status = rwcal_rwzk_get_children(rwcal, rwzk_path, &children, NULL);
+  status = rwvcs_rwzk_get_children(ti->rwvcs, rwzk_path, &children);
   RW_ASSERT(status == RW_STATUS_SUCCESS || status == RW_STATUS_NOTFOUND);
   if (children) {
     int i=0;
@@ -1745,7 +1801,7 @@ rwdts_router_data_watcher_f(void *ctx)
       sprintf(check_rwzk_path, "%s%s", rwzk_path, children[i]);
       if (strcmp (check_rwzk_path, my_rwzk_path)) {
         char *rwzk_get_data = NULL;
-        status = rwcal_rwzk_get(rwcal, rwzk_path, &rwzk_get_data, NULL);
+        status = rwvcs_rwzk_get(ti->rwvcs, rwzk_path, &rwzk_get_data);
         rwdts_router_register_single_peer_router(dts, atoi(children[i]));
         free(rwzk_get_data);
       }
@@ -1755,37 +1811,17 @@ rwdts_router_data_watcher_f(void *ctx)
     free(children);
   }
 
-  status = rwcal_rwzk_unlock(rwcal, zklock);
+  status = rwvcs_rwzk_unlock_path(ti->rwvcs, zklock);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
   return;
-}
-
-#define RWCAL_RET_UD_IDX(ud, type, idx) ((type *)rwcal_get_userdata_idx(ud, idx))
-static rw_status_t
-rwdts_router_data_watcher(rwcal_module_ptr_t rwcal, void *ud, int len)
-{
-  rwdts_router_t *dts = RWCAL_RET_UD_IDX(ud, rwdts_router_t, 0);
-  RW_ASSERT(len == 1);
-  rw_status_t status = RW_STATUS_FAILURE;
-
-  if (((rwvx_instance_t*)(dts->rwtaskletinfo->rwvx))->rwcal_module != rwcal) {
-    return status;
-  }
-
-  rwmsg_endpoint_t *ep = dts->ep;
-  RW_ASSERT_TYPE(ep, rwmsg_endpoint_t);
-  rwsched_dispatch_async_f(dts->taskletinfo, dts->rwq, dts, rwdts_router_data_watcher_f);
-
-  status = RW_STATUS_SUCCESS;
-
-  return status;
 }
 
 static void
 rwdts_router_manage_peers(rwdts_router_t *dts,
                           rwcal_module_ptr_t rwcal)
 {
-  if (rwcal) {
+  rwtasklet_info_ptr_t ti = dts->rwtaskletinfo;
+  if (ti && ti->rwvcs) {
     char zklock[256] = {0};
     char *rwzk_path = "/sys-router/R/RW.DTSRouter/";
     char my_rwzk_path[256] = {0};
@@ -1795,27 +1831,27 @@ rwdts_router_manage_peers(rwdts_router_t *dts,
     rw_status_t status;
 
     sprintf(zklock, "%s-lOcK/routerlock", dts->rwmsgpath);
-    if (!rwcal_rwzk_exists(rwcal, zklock)) {
-      status = rwcal_rwzk_create(rwcal, zklock, NULL);
+    if (!rwvcs_rwzk_exists(ti->rwvcs, zklock)) {
+      status = rwvcs_rwzk_create(ti->rwvcs, zklock);
       RW_ASSERT(status == RW_STATUS_SUCCESS);
     }
-    RW_ASSERT(rwcal_rwzk_exists(rwcal, zklock));
-    status = rwcal_rwzk_lock(rwcal, zklock, &tv);
+    RW_ASSERT(rwvcs_rwzk_exists(ti->rwvcs, zklock));
+    status = rwvcs_rwzk_lock_path(ti->rwvcs, zklock, &tv);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
 
     sprintf(my_rwzk_path, "/sys-router%s", dts->rwmsgpath);
-    if (rwcal_rwzk_exists(rwcal, my_rwzk_path)) {
+    if (rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path)) {
       PRINT_STR(dts->rwmsgpath, "ERROR: Entry exist %s: Stale Instance", my_rwzk_path);
     }
-    RW_ASSERT(!rwcal_rwzk_exists(rwcal, my_rwzk_path));
-    status = rwcal_rwzk_create(rwcal, my_rwzk_path, NULL);
+    RW_ASSERT(!rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path));
+    status = rwvcs_rwzk_create(ti->rwvcs, my_rwzk_path);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
 
     sprintf(rwzk_set_data, ":%u:%s:somemore", 0, "JUnk Str");
-    status = rwcal_rwzk_set(rwcal, my_rwzk_path, rwzk_set_data, NULL);
+    status = rwvcs_rwzk_set(ti->rwvcs, my_rwzk_path, rwzk_set_data);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-    status = rwcal_rwzk_get_children(rwcal, rwzk_path, &children, NULL);
+    status = rwvcs_rwzk_get_children(ti->rwvcs, rwzk_path, &children);
     RW_ASSERT(status == RW_STATUS_SUCCESS || status == RW_STATUS_NOTFOUND);
     if (children) {
       int i=0;
@@ -1825,7 +1861,7 @@ rwdts_router_manage_peers(rwdts_router_t *dts,
         sprintf(check_rwzk_path, "%s%s", rwzk_path, children[i]);
         if (strcmp (my_rwzk_path, check_rwzk_path)) {
           char *rwzk_get_data;
-          status = rwcal_rwzk_get(rwcal, check_rwzk_path, &rwzk_get_data, NULL);
+          status = rwvcs_rwzk_get(ti->rwvcs, check_rwzk_path, &rwzk_get_data);
           RW_ASSERT(status == RW_STATUS_SUCCESS);
           char *p = rwzk_get_data;
           char *pcount_b = strchr(p, ':');
@@ -1844,13 +1880,13 @@ rwdts_router_manage_peers(rwdts_router_t *dts,
           pnum++;
           RW_ASSERT(pnum);
 
-          status = rwcal_rwzk_get(rwcal, check_rwzk_path, &rwzk_get_data, NULL);
+          status = rwvcs_rwzk_get(ti->rwvcs, check_rwzk_path, &rwzk_get_data);
 
           rwdts_router_register_single_peer_router(dts, atoi(children[i]));
 
           count++;
           sprintf(new_rwzk_set_data, ":%u:%s:somemore", count, pcount_e);
-          status = rwcal_rwzk_set(rwcal, check_rwzk_path, new_rwzk_set_data, NULL);
+          status = rwvcs_rwzk_set(ti->rwvcs, check_rwzk_path, new_rwzk_set_data);
           RW_ASSERT(status == RW_STATUS_SUCCESS);
         }
         free(children[i]);
@@ -1859,12 +1895,15 @@ rwdts_router_manage_peers(rwdts_router_t *dts,
       free(children);
     }
 
-    dts->closure = rwcal_closure_alloc(rwcal, &rwdts_router_data_watcher, (void *)dts);
+    dts->closure = rwvcs_rwzk_watcher_start(
+        ti->rwvcs, 
+        my_rwzk_path, 
+        dts->taskletinfo,
+        dts->rwq,
+        &rwdts_router_data_watcher_f, 
+        (void *)dts);
     RW_ASSERT(dts->closure);
-
-    status = rwcal_rwzk_register_watcher(rwcal, my_rwzk_path, dts->closure);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-    status = rwcal_rwzk_unlock(rwcal, zklock);
+    status = rwvcs_rwzk_unlock_path(ti->rwvcs, zklock);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
   }
 }
@@ -2099,13 +2138,13 @@ static void rwdts_router_continue_init_f(void *ud)
                                         RWDTS_FLAG_SUBSCRIBER, TRUE);
   rw_keyspec_path_free(keyspec1, NULL);
 
-  rs = RW_KEYSPEC_PATH_CREATE_DUP((rw_keyspec_path_t *)RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrInitRegId_Member), NULL ,
+  rs = RW_KEYSPEC_PATH_CREATE_DUP((rw_keyspec_path_t *)RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrInitRegId_Member_Registration), NULL ,
                              (rw_keyspec_path_t**)&keyspec, NULL);
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
   free(keystr1);
   RW_KEYSPEC_PATH_SET_CATEGORY ((rw_keyspec_path_t*)keyspec, &dts->apih->ksi , RW_SCHEMA_CATEGORY_DATA, NULL );
 
-  dts->init_regidh = (rwdts_member_reg_handle_t )rwdts_member_registration_init_local(dts->apih, keyspec, &cb1, RWDTS_FLAG_SUBSCRIBER, RWPB_G_MSG_PBCMD(RwDts_data_RtrInitRegId_Member));
+  dts->init_regidh = (rwdts_member_reg_handle_t )rwdts_member_registration_init_local(dts->apih, keyspec, &cb1, RWDTS_FLAG_SUBSCRIBER, RWPB_G_MSG_PBCMD(RwDts_data_RtrInitRegId_Member_Registration));
   rwdts_log_payload_init(&dts->payload_stats);
 
 #ifdef RWDTS_SHARDING
@@ -2245,14 +2284,45 @@ static void rwdts_router_continue_init_f(void *ud)
 #endif
 
   rwdts_router_manage_peers (dts, rwcal);
+
+  rwdts_api_member_register_xpath (dts->apih,
+      RWDTS_API_VCS_INSTANCE_CHILD_STATE,
+      NULL,
+      RWDTS_FLAG_SUBSCRIBER|RWDTS_FLAG_CACHE,
+      RW_DTS_SHARD_FLAVOR_NULL, NULL, 0,-1,0,0,
+      rwdts_router_publish_state_reg_ready,
+      rwdts_router_publish_state_prepare,
+			NULL, NULL, NULL,
+      dts,
+      &(dts->publish_state_regh));
 }
 
 void rwdts_router_deinit(rwdts_router_t *dts) {
   rw_status_t rs = RW_STATUS_FAILURE;
   RW_ASSERT_TYPE(dts, rwdts_router_t);
 
-  /* Handles dispatch to rwq as needed */
+  rwtasklet_info_ptr_t ti = dts->rwtaskletinfo;
+  char zklock[256] = {0};
+  char my_rwzk_path[256] = {0};
 
+  sprintf(zklock, "%s-lOcK/routerlock", dts->rwmsgpath);
+  if (ti->rwvcs) {
+    RW_ASSERT(rwvcs_rwzk_exists(ti->rwvcs, zklock));
+
+    sprintf(my_rwzk_path, "/sys-router%s", dts->rwmsgpath);
+    RW_ASSERT (rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path));
+
+    rs = rwvcs_rwzk_watcher_stop(ti->rwvcs, my_rwzk_path, &dts->closure);
+    RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+    rs = rwvcs_rwzk_delete_path(ti->rwvcs, my_rwzk_path);
+    RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+    rs = rwvcs_rwzk_delete_path(ti->rwvcs, zklock);
+    RW_ASSERT(rs == RW_STATUS_SUCCESS);
+  }
+
+  /* Handles dispatch to rwq as needed */
   rs = rwdts_router_service_deinit(dts);
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
 }
@@ -2403,6 +2473,124 @@ static void rwdts_router_calc_stat_timer(void *ctx)
   }
 
   return;
+}
+
+static void rwdts_router_publish_state_handler(
+    rwdts_router_t *dts,
+    RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *publish_state,
+    RWPB_T_PATHSPEC(RwBase_VcsInstance_Instance_ChildN_PublishState) *keyspec_entry)
+{
+  if (publish_state) {
+    RW_ASSERT(keyspec_entry->has_dompath &&
+              keyspec_entry->dompath.has_path003 &&
+              keyspec_entry->dompath.path003.has_key00 &&
+              keyspec_entry->dompath.path003.key00.instance_name);
+
+    char *instance_path = to_instance_path(keyspec_entry->dompath.path003.key00.instance_name);
+    char *msgpath = NULL;
+    int r = asprintf (&msgpath, "/R/%s", instance_path);
+    RW_ASSERT(r > 0 );
+    RW_FREE(instance_path);
+  
+    rwdts_router_member_t *memb;
+    HASH_FIND(hh, dts->members, msgpath, strlen(msgpath), memb);
+    RW_FREE(msgpath);
+
+    if (memb) {
+      memb->component_state = publish_state->state;
+      if (publish_state->has_state) {
+        if (publish_state->state == RW_BASE_STATE_TYPE_TO_RECOVER) {
+          memb->to_recover = true;
+        }
+        else if (memb->to_recover 
+                 && memb->wait_restart 
+                 && (publish_state->state >= RW_BASE_STATE_TYPE_RECOVERING)) {
+          memb->wait_restart = false;
+          memb->to_recover = false;
+          RWDTS_ROUTER_LOG_EVENT(dts, DtsrouterCritical, RWLOG_ATTR_SPRINTF("%s member clears wait recovery", memb->msgpath));
+          RWTRACE_CRIT(
+              dts->apih->rwtrace_instance,
+              RWTRACE_CATEGORY_RWTASKLET,
+              "%s [router] recovery done and unpause %s [member]", 
+              dts->rwmsgpath, 
+              memb->msgpath
+              );
+          rwdts_router_queue_xact_t *queue_xact = 
+              RW_MALLOC0_TYPE(sizeof(rwdts_router_queue_xact_t), rwdts_router_queue_xact_t);
+          RW_ASSERT_TYPE(queue_xact, rwdts_router_queue_xact_t);
+          queue_xact->dts = dts;
+          queue_xact->member = memb;
+          rwsched_dispatch_async_f(
+              dts->taskletinfo, 
+              dts->rwq, 
+              queue_xact, 
+              rwdts_router_process_queued_xact_f);
+        }  
+      }
+    }
+  }
+}
+
+static void rwdts_router_publish_state_reg_ready(
+    rwdts_member_reg_handle_t  regh,
+    rw_status_t                rs,
+    void*                      user_data)
+{
+  rwdts_router_t *dts = (rwdts_router_t *)user_data;
+
+  rw_keyspec_path_t *elem_ks = NULL;
+  rwdts_member_cursor_t *cur = rwdts_member_data_get_current_cursor(NULL, regh);
+  RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *publish_state = NULL;
+  while ((publish_state = (RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState)*) rwdts_member_reg_handle_get_next_element(
+                                                                                                regh,
+                                                                                                cur,
+                                                                                                NULL,
+                                                                                                &elem_ks))) {
+    rwdts_router_publish_state_handler(
+        dts,
+        publish_state,
+        (RWPB_T_PATHSPEC(RwBase_VcsInstance_Instance_ChildN_PublishState) *)elem_ks);
+  }
+  return;
+}
+
+static rwdts_member_rsp_code_t rwdts_router_publish_state_prepare(
+    const rwdts_xact_info_t* xact_info,
+    RWDtsQueryAction         action,
+    const rw_keyspec_path_t* keyspec,
+    const ProtobufCMessage*  msg,
+    void*                    user_data)
+{
+  rwdts_router_t *dts = (rwdts_router_t *)user_data;
+
+  rwdts_member_rsp_code_t dts_ret = RWDTS_ACTION_OK;
+
+  rwdts_api_t *api = rwdts_xact_info_get_api(xact_info);
+  rwdts_xact_t *xact = rwdts_xact_info_get_xact(xact_info);
+  rwdts_member_reg_handle_t regh = xact_info->regh;
+
+  RW_ASSERT_MESSAGE((api != NULL), "rwdts_router_publish_state_prepare:invalid api");
+  if (api == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
+  RW_ASSERT_MESSAGE((xact != NULL), "rwdts_router_publish_state_prepare:invalid xact");
+  if (xact == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
+  RW_ASSERT_MESSAGE((regh != NULL),"rwdts_router_publish_state_prepare:invalid regh");
+  if (regh == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  }
+
+  RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *publish_state = 
+   (RWPB_T_MSG(RwBase_VcsInstance_Instance_ChildN_PublishState) *)msg;
+  
+  rwdts_router_publish_state_handler(
+      dts,
+      publish_state,
+      (RWPB_T_PATHSPEC(RwBase_VcsInstance_Instance_ChildN_PublishState) *)keyspec);
+    
+  return dts_ret;
 }
 
 //LCOV_EXCL_STOP

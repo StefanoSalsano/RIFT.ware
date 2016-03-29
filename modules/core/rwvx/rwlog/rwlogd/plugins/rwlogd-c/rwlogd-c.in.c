@@ -96,11 +96,17 @@ rwlogd_create_client_endpoint(rwlogd_instance_ptr_t instance)
   log_cli_chan = rwmsg_clichan_create(instance->rwtasklet_info->rwmsg_endpoint);
   rwmsg_clichan_add_service(log_cli_chan, &instance->rwlogd_cli.base);
   RW_ASSERT(instance->rwlogd_cli.base.rw_context);
+  if (!instance->rwlogd_cli.base.rw_context) {
+    return RW_STATUS_FAILURE;
+  }
 
   RWLOGD_PEER_API__INITCLIENT(&instance->rwlogd_peer_msg_client);
   rwmsg_clichan_add_service(log_cli_chan, 
                             &instance->rwlogd_peer_msg_client.base);
   RW_ASSERT(instance->rwlogd_peer_msg_client.base.rw_context); 
+  if (!instance->rwlogd_peer_msg_client.base.rw_context) {
+    return RW_STATUS_FAILURE;
+  }
 
   instance->cc = log_cli_chan;
   return RW_STATUS_SUCCESS;
@@ -205,11 +211,13 @@ rwlogd__component__instance_stop(
   RW_CF_TYPE_VALIDATE(component, rwlogd_component_ptr_t);
   instance = (rwlogd_instance_ptr_t) h_instance->priv;
   RW_CF_TYPE_VALIDATE(instance, rwlogd_instance_ptr_t);
+  rwmsg_clichan_halt(instance->cc);
+  rwmsg_srvchan_halt(instance->sc);
+  rwdts_api_deinit(instance->dts_h);
 
-  // The instance is started so print our RW.HelloWorld message
   RWTRACE_WARN(instance->rwtasklet_info->rwtrace_instance,
       RWTRACE_CATEGORY_RWTASKLET,
-      "RW.Logd[%d] -- Stop method undefined",
+      "RW.Logd[%d] -- Stopping ",
       instance->rwtasklet_info->identity.rwtasklet_instance_id);
 }
 

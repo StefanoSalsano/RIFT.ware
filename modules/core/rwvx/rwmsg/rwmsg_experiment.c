@@ -501,7 +501,7 @@ static void sockevent1(uint64_t id, int fd, int revents, void *ud) {
       }
     } else {
       printf("[%s] + unk fd value?\n", self->task_path);
-      RW_ASSERT(0);
+      RW_CRASH();
       abort();
     }
   }
@@ -1096,7 +1096,7 @@ static void runtasks(int taskct, int runbroker) {
   }
 
   /* There is no cleanup of toytask or tasklet or nanomsg structures */
-  RW_ASSERT(0);
+  RW_CRASH();
 
   free(tasklet_sched);
   tasklet_sched = NULL;

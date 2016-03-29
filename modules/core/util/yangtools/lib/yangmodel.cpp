@@ -23,6 +23,7 @@
 #include "yangmodel.h"
 #include "yangncx.hpp"
 #include "yangpbc.hpp"
+#include "rwyangutil.h"
 
 using namespace rw_yang;
 
@@ -522,6 +523,25 @@ const rw_yang_pb_schema_t* rw_load_schema(const char* so_filename, const char* y
   return new_schema;
 }
 
+void rw_yang_validate_schema(const char* yang_module_name,
+                             char** error_str)
+{
+  RW_ASSERT(yang_module_name);
+
+  std::string err_str;
+  std::string mangled_name = YangModel::mangle_to_camel_case(yang_module_name);
+  std::string upper_to_lower = YangModel::mangle_camel_case_to_underscore(mangled_name.c_str());
+
+  bool ret = rwyangutil::validate_module_consistency(
+                      yang_module_name,
+                      mangled_name,
+                      upper_to_lower,
+                      err_str);
+
+  if (!ret && err_str.length()) {
+    *error_str = RW_STRDUP (err_str.c_str());
+  }
+}
 
 /*****************************************************************************/
 // Default implementations for YangNode virtual functions.
@@ -1433,7 +1453,7 @@ rw_status_t YangNode::annotate_nodes (YangModel *model,
       {
         namespace_map_t::const_iterator iter = map.find (get_ns());
         if (map.end() == iter) {
-          // ATTN: RIFT-9411: RW_ASSERT(0);
+          // ATTN: RIFT-9411: RW_CRASH();
           //   return RW_STATUS_FAILURE;
           return RW_STATUS_SUCCESS;
         }
@@ -1520,6 +1540,11 @@ YangNode* YangNode::get_leafref_ref()
 {
   // Assume the node is not a leaf of type leafref.
   return nullptr;
+}
+
+std::string YangNode::get_leafref_path_str()
+{
+  return std::string();
 }
 
 YangNode* YangNode::get_reusable_grouping()
@@ -3406,7 +3431,7 @@ rw_status_t YangModel::annotate_nodes(namespace_map_t& map,
   YangNode *root = get_root_node();
 
   if (nullptr == root) {
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
 
@@ -3513,7 +3538,9 @@ rw_status_t YangModel::register_ypbc_schema(
     RW_ASSERT(nullptr != ypbc_module->ns);
     if (!nm_mgr.ns_is_dynamic(ypbc_module->ns)) { // ignore dynamic modules!!
       YangModule *ym = search_module_ns(ypbc_module->ns);
-      RW_ASSERT(ym);
+      if (!ym) {
+        return RW_STATUS_FAILURE;
+      }
       // populate namespace hash in the namespace mgr for latter lookups
       nm_mgr.get_ns_hash(ym->get_ns()); // ignore the return value
       rw_status_t rs = ym->register_ypbc_module(ypbc_module);

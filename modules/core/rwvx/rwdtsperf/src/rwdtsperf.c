@@ -83,6 +83,7 @@ rwdtsperf_instance_stop(rwdtsperf_component_ptr_t component,
 
   xact_cfg->running = false;
   xact_cfg->xact_max_with_outstanding = 0;
+  rwdts_api_deinit(instance->dts_h);
 }
 
 void

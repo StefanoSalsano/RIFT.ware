@@ -266,7 +266,7 @@ rwdtsperf_dts_mgmt_config_apply(rwdts_api_t *apih,
       }
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
   }
 

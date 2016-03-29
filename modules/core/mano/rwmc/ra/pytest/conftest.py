@@ -4,165 +4,186 @@
 #
 
 import pytest
+import os
 import subprocess
 import sys
 
-import rift.auto.log_scraper
+import rift.auto.log
 import rift.auto.session
 import rift.vcs.vcs
 import logging
 
-from gi.repository import RwMcYang
+import gi
+gi.require_version('RwCloudYang', '1.0')
+gi.require_version('RwMcYang', '1.0')
+
+from gi.repository import RwMcYang, RwCloudYang
 
 @pytest.fixture(scope='session', autouse=True)
-def cloud_account_name(request):
+def cloud_account_name():
     '''fixture which returns the name used to identify the cloud account'''
     return 'cloud-0'
 
 @pytest.fixture(scope='session', autouse=True)
-def mgmt_domain_name(request):
+def mgmt_domain_name():
     '''fixture which returns the name used to identify the mgmt_domain'''
     return 'mgmt-0'
 
 @pytest.fixture(scope='session', autouse=True)
-def vm_pool_name(request):
+def vm_pool_name():
     '''fixture which returns the name used to identify the vm resource pool'''
     return 'vm-0'
 
 @pytest.fixture(scope='session', autouse=True)
-def network_pool_name(request):
+def network_pool_name():
     '''fixture which returns the name used to identify the network resource pool'''
     return 'net-0'
 
 @pytest.fixture(scope='session', autouse=True)
-def port_pool_name(request):
+def port_pool_name():
     '''fixture which returns the name used to identify the port resource pool'''
     return 'port-0'
 
 @pytest.fixture(scope='session', autouse=True)
-def sdn_account_name(request):
+def sdn_account_name():
     '''fixture which returns the name used to identify the sdn account'''
     return 'sdn-0'
 
 @pytest.fixture(scope='session', autouse=True)
-def sdn_account_type(request):
+def sdn_account_type():
     '''fixture which returns the account type used by the sdn account'''
     return 'odl'
 
 @pytest.fixture(scope='session', autouse=True)
-def cloud_account(request, cloud_account_name, cloud_host, cloud_type):
+def _riftlog_scraper_session(log_manager, confd_host):
+    '''Fixture which returns an instance of rift.auto.log.FileSource to scrape riftlog
+
+    Arguments:
+        log_manager - manager of logging sources and sinks
+        confd_host - host on which confd is running (mgmt_ip)
+    '''
+    scraper = rift.auto.log.FileSource(host=confd_host, path='/var/log/rift/rift.log')
+    scraper.skip_to('Configuration management startup complete.')
+    log_manager.source(source=scraper)
+    return scraper
+
+@pytest.fixture(scope='session')
+def cloud_module(standalone_launchpad):
+    '''Fixture containing the module which defines cloud account
+
+    Depending on whether or not the system is being run with a standalone
+    launchpad, a different module will be used to configure the cloud
+    account
+
+    Arguments:
+        standalone_launchpad - fixture indicating if the system is being run with a standalone launchpad
+
+    Returns:
+        module to be used when configuring a cloud account
+    '''
+    cloud_module = RwMcYang
+    if standalone_launchpad:
+        cloud_module = RwCloudYang
+    return cloud_module
+
+@pytest.fixture(scope='session')
+def cloud_xpath(standalone_launchpad):
+    '''Fixture containing the xpath that should be used to configure a cloud account
+
+    Depending on whether or not the system is being run with a standalone
+    launchpad, a different xpath will be used to configure the cloud
+    account
+
+    Arguments:
+        standalone_launchpad - fixture indicating if the system is being run with a standalone launchpad
+
+    Returns:
+        xpath to be used when configure a cloud account
+    '''
+    xpath = '/cloud-account/account'
+    if standalone_launchpad:
+        xpath = '/cloud/account'
+    return xpath
+
+@pytest.fixture(scope='session', autouse=True)
+def cloud_account(cloud_module, cloud_account_name, cloud_host, cloud_type):
     '''fixture which returns an instance of RwMcYang.CloudAccount
 
     Arguments:
-        request            - pytest fixture request
+        cloud_module       - fixture: module defining cloud account
         cloud_account_name - fixture: name used for cloud account
         cloud_host         - fixture: cloud host address
         cloud_type         - fixture: cloud account type
 
     Returns:
-        An instance of RwMcYang.CloudAccount
+        An instance of CloudAccount
     '''
     account = None
 
     if cloud_type == 'lxc':
-        account = RwMcYang.CloudAccount(
-                name=cloud_account_name,
-                account_type='cloudsim')
+        account = cloud_module.CloudAccount.from_dict({
+                "name": cloud_account_name,
+                "account_type": "cloudsim"})
 
     elif cloud_type == 'openstack':
-        username='pluto'
-        password='mypasswd'
-        auth_url='http://{cloud_host}:5000/v3/'.format(cloud_host=cloud_host)
-        project_name='demo'
-        mgmt_network='private'
-        account = RwMcYang.CloudAccount.from_dict({
-                'name':cloud_account_name,
-                'account_type':'openstack',
-                'openstack':{
-                  'admin':True,
-                  'key':username,
-                  'secret':password,
-                  'auth_url':auth_url,
-                  'tenant':project_name,
-                  'mgmt_network':mgmt_network}})
+        username = 'pluto'
+        password = 'mypasswd'
+        auth_url = 'http://{cloud_host}:5000/v3/'.format(cloud_host=cloud_host)
+        project_name = os.getenv('PROJECT_NAME', 'demo')
+        mgmt_network = os.getenv('MGMT_NETWORK', 'private')
+        account = cloud_module.CloudAccount.from_dict({
+                'name': cloud_account_name,
+                'account_type': 'openstack',
+                'openstack': {
+                    'admin': True,
+                    'key': username,
+                    'secret': password,
+                    'auth_url': auth_url,
+                    'tenant': project_name,
+                    'mgmt_network': mgmt_network}})
 
     return account
 
 @pytest.fixture(scope='session')
-def scraper_proxy(mgmt_session):
-    '''fixture which returns a proxy to RwMcYang
+def _launchpad_scraper_session(request, log_manager, mgmt_domain_name):
+    '''fixture which returns an instance of rift.auto.log_scraper.FileSource to scrape the launchpad
 
     Arguments:
-        mgmt_session  - mgmt_session fixture - instance of a rift.auto.session class
-    '''
-    return mgmt_session.proxy(RwMcYang)
-
-@pytest.fixture(scope='session')
-def _launchpad_scraper_session(scraper_proxy, mgmt_domain_name):
-    '''fixture which returns an instance of rift.auto.log_scraper.RemoteLogScraper to scrape the launchpad
-
-    Arguments:
-        scraper_proxy - proxy used by scraper to determine launchpad host
+        log_manager - manager of log sources and sinks
         mgmt_domain_name - the management domain created for the launchpad
     '''
-    return rift.auto.log_scraper.RemoteLogScraper('/var/log/launchpad_console.log')
+    if request.config.getoption("--lp-standalone"):
+        return
 
-@pytest.fixture(scope='function')
-def splat_launchpad(request, logger, scraper_proxy, _launchpad_scraper_session, mgmt_domain_name):
-    '''
-    # splat_ : the function returned by this fixture will be run when a
-    #          test that uses this fixture fails
+    scraper = rift.auto.log.FileSource(host=None, path='/var/log/launchpad_console.log')
+    log_manager.source(source=scraper)
+    return scraper
 
-    This fixture when used will automatically scrape the launchpad log at
-    the beginning of each test.
-
-    When an exception occurs the portion of the log generated during the test
-    will be printed to stderr to be captured.
+@pytest.fixture(scope='function', autouse=False)
+def _connect_launchpad_scraper(request, _launchpad_scraper_session, mgmt_session, mgmt_domain_name, standalone_launchpad):
+    '''Determines the address of the launchpad and connects the launchpad scraper to it
+       Needed because the launchpad address isn't known at the start of the test session.
 
     Arguments:
-        request - fixture request object
-        _launchpad_scraper_session - instance of rift.auto.log_scraper.RemoteLogScraper targeting the launchpad console log
+        mgmt_session - management interface session
+        _launchpad_scraper_session - scraper responsible for collecting launchpad_console log
+        mgmt_domain_name - mgmt-domain in which the launchpad is located
     '''
+    if standalone_launchpad:
+        return
 
     if not _launchpad_scraper_session.connected():
-        def _cmp_response_exists(expected, response):
-            if response is not None and response != "":
-                return True
-            return False
-
-        try:
-            host = scraper_proxy.wait_for(
-                    "/mgmt-domain/domain[name='%s']/launchpad/ip_address" % mgmt_domain_name,
-                    'exists',
-                    timeout=200,
-                    compare=_cmp_response_exists)
-            _launchpad_scraper_session.connect(host)
-        except Exception as e:
-            logger.warn('Failed to determine launchpad ip address: %s', str(e))
-
-    def on_test_failure():
-        '''When a test fails scrape and emit new entries in the launchpad log
-        '''
-        scraped = _launchpad_scraper_session.scrape()
-        if scraped:
-            print("=== START LAUNCHPAD LOG ===")
-            print(scraped)
-            print("=== END LAUNCHPAD LOG ===")
-
-    def fin_scrape():
-        '''At the end of each test scrape and discard entries from the launchpad log
-        '''
-        _launchpad_scraper_session.scrape()
-    request.addfinalizer(fin_scrape)
-
-    return on_test_failure
+        proxy = mgmt_session.proxy(RwMcYang)
+        launchpad_address = proxy.get("/mgmt-domain/domain[name='%s']/launchpad/ip_address" % mgmt_domain_name)
+        if launchpad_address:
+            _launchpad_scraper_session.connect(launchpad_address)
 
 @pytest.fixture(scope='session')
 def launchpad_scraper(_launchpad_scraper_session):
     '''Fixture exposing the scraper used to scrape the launchpad console log
 
     Arguments:
-        _launchpad_scraper_session - instance of rift.auto.log_scraper.RemoteLogScraper targeting the launchpad console log
+        _launchpad_scraper_session - instance of rift.auto.log_scraper.FileSource targeting the launchpad console log
     '''
     return _launchpad_scraper_session
 

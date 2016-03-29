@@ -196,23 +196,12 @@ class RwcalOpenstackPlugin(GObject.Object, RwCal.Cloud):
         if image.container_format:
             kwargs['container_format'] = image.container_format
 
-        user_tags = []
-
-        tag_fields = ['checksum']
-        for field in tag_fields:
-            if image.has_field(field):
-                # Ensure that neither field nor field value has : in it.
-                assert field.find(":") == -1, "Image user tag key can not contain : character"
-                assert getattr(image, field).find(":") == -1, "Image user tag value can not contain : character"
-                user_tags.append(field+':'+ getattr(image, field))
-
-        kwargs['tags'] = user_tags
-
+        drv = self._get_driver(account)
         # Create Image
-        image_id = self._get_driver(account).glance_image_create(**kwargs)
-
+        image_id = drv.glance_image_create(**kwargs)
         # Upload the Image
-        self._get_driver(account).glance_image_upload(image_id, fd)
+        drv.glance_image_upload(image_id, fd)
+
         return image_id
 
     @rwstatus
@@ -242,15 +231,9 @@ class RwcalOpenstackPlugin(GObject.Object, RwCal.Cloud):
         """
         img = RwcalYang.ImageInfoItem()
         img.name = img_info['name']
-        img.id   = img_info['id']
-
-        tag_fields = ['checksum']
-        # Look for any properties
-        for tag in img_info['tags']:
-            if tag.split(":")[0] in tag_fields:
-                setattr(img, tag.split(":")[0], tag.split(":")[1])
-                
-        img.disk_format      = img_info['disk_format']
+        img.id = img_info['id']
+        img.checksum = img_info['checksum']
+        img.disk_format = img_info['disk_format']
         img.container_format = img_info['container_format']
         if img_info['status'] == 'active':
             img.state = 'active'

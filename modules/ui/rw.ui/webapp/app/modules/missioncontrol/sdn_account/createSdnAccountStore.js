@@ -3,6 +3,10 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
+
+import LaunchNetworkServiceSource from '../../launchpad/network_service_launcher/launchNetworkServiceSource.js';
+import LaunchNetworkServiceActions from '../../launchpad/network_service_launcher/launchNetworkServiceActions.js';
+
 var alt = require('../../core/alt');
 
 /*
@@ -15,8 +19,13 @@ var alt = require('../../core/alt');
 
 function createSdnAccountStore() {
     this.exportAsync(require('./createSdnAccountSource.js'));
+    this.exportAsync(LaunchNetworkServiceSource);
     this.bindActions(require('./createSdnAccountActions.js'));
+        this.bindListeners({
+        getCatalogSuccess: LaunchNetworkServiceActions.getCatalogSuccess
+    });
     this.sdnAccount = {};
+    this.descriptorCount = 0;
     this.validateErrorEvent = false;
     this.validateErrorMsg = "";
     this.isLoading = false;
@@ -130,6 +139,17 @@ createSdnAccountStore.prototype.getSdnAccountsSuccess = function(sdnAccounts) {
         sdnAccounts: data || [],
         isLoading: false
     })
+};
+createSdnAccountStore.prototype.getCatalogSuccess = function(data) {
+  var self = this;
+  var descriptorCount = 0;
+  data.forEach(function(catalog) {
+    descriptorCount += catalog.descriptors.length;
+  });
+
+  self.setState({
+    descriptorCount: descriptorCount
+  });
 };
 
 module.exports = alt.createStore(createSdnAccountStore);;

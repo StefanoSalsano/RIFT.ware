@@ -22,6 +22,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <unordered_map>
@@ -29,6 +30,7 @@
 
 #include <boost/optional.hpp>
 
+#include "rw_app_data.hpp"
 #include <rw_xml.h>
 #include <rwmemlog.h>
 #include <rwmemlog_mgmt.h>
@@ -40,9 +42,11 @@
 #include "rw-mgmtagt.pb-c.h"
 #include <rw-mgmtagt-log.pb-c.h>
 #include "rw-mgmt-schema.pb-c.h"
-#include "rwuagent_startup.hpp"
+#include "rwuagent_mgmt_system.hpp"
 
 #include "rwuagent_dynamic_schema.hpp"
+#include "RwyangutilArgumentParser.hpp"
+
 #include "yangncx.hpp"
 #include "confd_xml.h"
 
@@ -72,6 +76,18 @@ class SbReqRpc;
 class DtsMember;
 class Instance;
 
+
+
+/// YangNode app data
+typedef struct {
+  rwdts_member_reg_handle_t registration;
+  bool exported = false;
+} northbound_dts_registrations_app_data;
+
+typedef rw_yang::AppDataToken<northbound_dts_registrations_app_data *> adt_northbound_dts_registrations_t;
+
+constexpr const char * rwdynschema_app_data_namespace = "rwdynschema";
+constexpr const char * rwdynschema_dts_registrations_extension = "dts_registrations";
 
 /// NbReq token value. No local meaning.
 typedef intptr_t token_t;
@@ -205,6 +221,33 @@ void async_execute(rwsched_tasklet_ptr_t tasklet,
 }
 
 
+static inline
+std::string get_rift_install()
+{
+  auto rift_install = getenv("RIFT_INSTALL");
+  if (!rift_install) return "/home/rift/.install";
+  return rift_install;
+}
+
+/*!
+ * Predicate to check if the agent is running
+ * in production or not.
+ */
+static inline
+bool is_production()
+{
+  auto rift_prod_mode = getenv("RIFT_PRODUCTION_MODE");
+  if (rift_prod_mode) return true;
+
+  std::array<const char*, 3> probable_vals {
+    "/", "/home/rift", "/home/rift/.install"
+  };
+  auto it = std::find(probable_vals.begin(), probable_vals.end(), get_rift_install());
+
+  return it != probable_vals.end();
+}
+
+
 /*!
  * Encapsulation for 'rcp-error' element specified in the Netconf RFC.
  * There can be mutliple NetconfError's sent in a single error response.
@@ -217,6 +260,10 @@ public:
     IetfNetconf_ErrorTagType errTag = IETF_NETCONF_ERROR_TAG_TYPE_OPERATION_FAILED
   );
   ~NetconfError();
+
+  // non-copyable and non-assignable
+  NetconfError(const NetconfError&) = delete;
+  void operator=(const NetconfError&) = delete;
 
   /*!
    * Defines the conceptual layer where the error occurred.
@@ -353,7 +400,7 @@ public:
   /*!
    * Access error entries
    */
-  const std::vector<NetconfError>& get_errors() const;
+  const std::list<NetconfError>& get_errors() const;
 
   /*!
    * Converts the rpc-error protocol buffer to XML format.
@@ -365,7 +412,7 @@ private:
   /*!
    * An array of NetconfError's that will be sent with the error response.
    */
-  std::vector<NetconfError> errors_;
+  std::list<NetconfError> errors_;
 };
 
 // The command and its stats in a tuple
@@ -530,6 +577,9 @@ private:
 
   //! List of DTS registrations (config and notification)
   std::list<rwdts_member_reg_handle_t> all_dts_regs_;
+
+  /// App data token for dts registrations on northbound config elements
+  adt_northbound_dts_registrations_t dts_registrations_token_;
 };
 
 
@@ -625,7 +675,6 @@ public:
 
 public:
 
-  typedef std::list<std::string> modules_t;
   typedef std::unordered_map<rwsched_CFSocketRef,rwsched_CFRunLoopSourceRef> cf_src_map_t;
 
 public:
@@ -693,14 +742,21 @@ public:
   }
 
   //! Get the pointer to the uagent concurrent dispatch queue.
-  rwsched_dispatch_queue_t cc_dispatchq() const noexcept
+  rwsched_dispatch_queue_t concurrent_q() const noexcept
   {
-    return cc_dispatchq_;
+    return concurrent_q_;
   }
 
-  StartupHandler* startup_hndl() const noexcept
+  //! Get the serial dispatch queue for managing async
+  // tasks
+  rwsched_dispatch_queue_t serial_q() const noexcept
   {
-    return startup_handler_.get();
+    return serial_q_;
+  }
+
+  BaseMgmtSystem* mgmt_handler() const noexcept
+  {
+    return mgmt_handler_.get();
   }
 
   /*!
@@ -741,8 +797,7 @@ public:
   void start_upgrade(size_t n_modules, char** module_name);
 
   rw_status_t handle_dynamic_schema_update(const int batch_size,
-                                           const char * const * module_names,
-                                           const char * const * so_filenames);
+                                           rwdynschema_module_t * modules);
 
   rw_status_t perform_dynamic_schema_update();
 
@@ -778,8 +833,17 @@ public:
   void update_stats (RwMgmtagt_SbReqType type,
                      const char *req,
                      RWPB_T_MSG(RwMgmtagt_SpecificStatistics_ProcessingTimes) *sbreq_stats);
+
+  /*!
+   * Used to ask the instance if a given module is part of the exported northbound schema.
+   * @param module_name the name of the module to be checked
+   * @return true if the module with the given name is exported
+   */
+  bool module_is_exported(std::string const & module_name);
+
 private:
   rw_status_t fill_in_confd_info();
+  bool parse_cmd_args(const rwyangutil::ArgumentParser&);
 
 private:
   static const size_t MEMORY_LOGGER_INITIAL_POOL_SIZE = 12ul;
@@ -802,9 +866,6 @@ public: // ATTN: private
 
   /// The plugin component and instance
   rwuagent_instance_t rwuai_;
-
-  /// The list of loaded modes (Not strictly necesary?)
-  modules_t modules_;
 
 public: // ATTN: private
   /// The Confd Port to connect to
@@ -855,7 +916,14 @@ public: // ATTN: private
   // ATTN: Belongs in driver?
   /// List of modules which needs to be loaded for dynamic
   // schema update.
-  std::list<std::pair<std::string, std::string>> pending_schema_modules_;
+  typedef struct {
+    std::string module_name;
+    std::string so_filename;
+    bool exported = false;
+  } module_details_t;
+
+  std::list<module_details_t> pending_schema_modules_;
+
   std::atomic<bool> initializing_composite_schema_;
 private:
 
@@ -876,16 +944,23 @@ private:
   std::unique_ptr<DynamicSchemaDriver> schema_driver_ = nullptr;
 
   /// A concurrent dispatch queue for multi-threading
-  rwsched_dispatch_queue_t cc_dispatchq_;
+  rwsched_dispatch_queue_t concurrent_q_;
 
   /// Serial dispatch queue for loading schema files
   rwsched_dispatch_queue_t schema_load_q_;
 
+  /// Serial dispatch queue for other blocking tasks
+  rwsched_dispatch_queue_t serial_q_;
+
   ///
-  std::unique_ptr<StartupHandler> startup_handler_ = nullptr;
+  std::unique_ptr<BaseMgmtSystem> mgmt_handler_ = nullptr;
 
   /// A list used to hold temporary model objects
   std::vector<std::unique_ptr<rw_yang::YangModelNcx>> tmp_models_;
+
+  /// A set to hold the module names that are exported
+  std::set<std::string> exported_modules_;
+
 };
 
 /*!

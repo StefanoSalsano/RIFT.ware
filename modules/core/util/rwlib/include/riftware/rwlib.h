@@ -965,7 +965,7 @@ static inline void *RW_REALLOC_MAGIC(void *ptr,
   UNUSED(obj_type);
   UNUSED(loc);
 
-  RW_ASSERT(0);
+  RW_CRASH();
 #endif
 }
 #endif
@@ -1019,7 +1019,7 @@ rw_status_t rw_terminate_process(pid_t pid);
   { \
     void *storage = RW_MALLOC_TYPE(size, type); \
     if (storage == nullptr) { \
-      RW_ASSERT(0); \
+      RW_CRASH(); \
     } \
     return(storage); \
   } \

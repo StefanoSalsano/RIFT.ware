@@ -202,7 +202,7 @@
     size += sizeof(CFRuntimeBase); \
     void *storage = rw_malloc0_cf_magic(size, &_RW_CF_TYPE_ID(ptr_t), RW_HASH_TYPE(ptr_t), RW_QUOTE(ptr_t), G_STRLOC); \
     if (storage == nullptr) { \
-      RW_ASSERT(0); \
+      RW_CRASH(); \
     } \
     return static_cast<char*>(storage)+sizeof(CFRuntimeBase); \
   } \

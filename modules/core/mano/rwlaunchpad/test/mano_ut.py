@@ -14,6 +14,14 @@ import xmlrunner
 import argparse
 import logging
 
+import gi
+gi.require_version('RwCloudYang', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwNsmYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwResourceMgrYang', '1.0')
+gi.require_version('RwcalYang', '1.0')
+
 from gi.repository import (
     NsrYang as nsryang,
     RwCloudYang as rwcloudyang,
@@ -142,49 +150,54 @@ class ManoQuerier(object):
 
     @asyncio.coroutine
     def delete_nsr(self, nsr_id):
-        yield from self.dts.query_delete(
-                XPaths.nsr_config(nsr_id),
-                rwdts.Flag.TRACE,
-                #rwdts.Flag.ADVISE,
-                )
+        with self.dts.transaction() as xact:
+            yield from self.dts.query_delete(
+                    XPaths.nsr_config(nsr_id),
+                    rwdts.Flag.TRACE,
+                    #rwdts.Flag.ADVISE,
+                    )
 
     @asyncio.coroutine
     def delete_nsd(self, nsd_id):
         nsd_xpath = XPaths.nsd(nsd_id)
         self.log.debug("Attempting to delete NSD with path = %s", nsd_xpath)
-        yield from self.dts.query_delete(
-                nsd_xpath,
-                rwdts.Flag.ADVISE,
-                )
+        with self.dts.transaction() as xact:
+            yield from self.dts.query_delete(
+                    nsd_xpath,
+                    rwdts.Flag.ADVISE,
+                    )
 
     @asyncio.coroutine
     def delete_vnfd(self, vnfd_id):
         vnfd_xpath = XPaths.vnfd(vnfd_id)
         self.log.debug("Attempting to delete VNFD with path = %s", vnfd_xpath)
-        yield from self.dts.query_delete(
-                vnfd_xpath,
-                rwdts.Flag.ADVISE,
-                )
+        with self.dts.transaction() as xact:
+            yield from self.dts.query_delete(
+                    vnfd_xpath,
+                    rwdts.Flag.ADVISE,
+                    )
 
     @asyncio.coroutine
     def update_nsd(self, nsd_id, nsd_msg):
         nsd_xpath = XPaths.nsd(nsd_id)
         self.log.debug("Attempting to update NSD with path = %s", nsd_xpath)
-        yield from self.dts.query_update(
-                nsd_xpath,
-                rwdts.Flag.ADVISE,
-                nsd_msg,
-                )
+        with self.dts.transaction() as xact:
+            yield from self.dts.query_update(
+                    nsd_xpath,
+                    rwdts.Flag.ADVISE,
+                    nsd_msg,
+                    )
 
     @asyncio.coroutine
     def update_vnfd(self, vnfd_id, vnfd_msg):
         vnfd_xpath = XPaths.vnfd(vnfd_id)
         self.log.debug("Attempting to delete VNFD with path = %s", vnfd_xpath)
-        yield from self.dts.query_update(
-                vnfd_xpath,
-                rwdts.Flag.ADVISE,
-                vnfd_msg,
-                )
+        with self.dts.transaction() as xact:
+            yield from self.dts.query_update(
+                    vnfd_xpath,
+                    rwdts.Flag.ADVISE,
+                    vnfd_msg,
+                    )
 
 
 class ManoTestCase(rift.test.dts.AbstractDTSTest):
@@ -301,7 +314,8 @@ class DescriptorPublisher(object):
         def on_ready(regh, status):
             self.log.debug("Create element: %s, obj-type:%s obj:%s",
                            path, type(desc), desc)
-            regh.create_element(path, desc)
+            with self.dts.transaction() as xact:
+                regh.create_element(path, desc, xact.xact)
             self.log.debug("Created element: %s, obj:%s", path, desc)
             ready_event.set()
 
@@ -607,17 +621,23 @@ class VnsTestCase(rift.test.dts.AbstractDTSTest):
 
         @asyncio.coroutine
         def verify_vnfr_record(termination=False):
-            self.log.debug("Verifying vnfr record path = %s", XPaths.vnfr())
+            self.log.debug("Verifying vnfr record path = %s, Termination=%d",
+                           XPaths.vnfr(), termination)
+            if termination:
+                for i in range(5):
+                    vnfrs = yield from self.querier.get_vnfrs()
+                    if len(vnfrs) == 0:
+                        return True
+
+                    for vnfr in vnfrs:
+                        self.log.debug("VNFR still exists = %s", vnfr)
+
+
+                assert len(vnfrs) == 0
+
             while True:
                 vnfrs = yield from self.querier.get_vnfrs()
-                if termination:
-                    for vnfr in vnfrs:
-                        self.log.debug("VNFR = %s", vnfr)
-
-                    self.assertEqual(0, len(vnfrs))
-                    return True
-
-                if len(vnfrs) != 0:
+                if len(vnfrs) != 0 and termination is False:
                     vnfr = vnfrs[0]
                     self.log.debug("Rcvd VNFR with %s status", vnfr.operational_status)
                     if vnfr.operational_status == 'running':
@@ -719,15 +739,14 @@ class VnsTestCase(rift.test.dts.AbstractDTSTest):
             yield from verify_results()
 
             # Attempt deleting VNFD in use
-            with self.assertRaises(Exception):
-                yield from self.ping_pong.delete_ping_vnfd()
+            yield from self.ping_pong.delete_ping_vnfd()
 
             # Attempt deleting NSD in use
-            with self.assertRaises(Exception):
-                yield from self.ping_pong.delete_nsd()
+            yield from self.ping_pong.delete_nsd()
 
             yield from terminate_ns(nsr_id)
 
+            yield from asyncio.sleep(2, loop=self.loop)
             self.log.debug("Verifying termination results")
             yield from verify_results(termination=True)
             self.log.debug("Verified termination results")

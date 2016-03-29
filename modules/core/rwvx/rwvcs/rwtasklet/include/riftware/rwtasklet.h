@@ -41,6 +41,7 @@ struct rwtasklet_info_s {
   rwsched_instance_t *rwsched_instance;
   rwsched_tasklet_t *rwsched_tasklet_info;
   rwtrace_ctx_t *rwtrace_instance;
+  struct rwdts_api_s *apih;
   rwlog_ctx_t *rwlog_instance;
   rwmsg_endpoint_t *rwmsg_endpoint;
   struct rwvcs_instance_s *rwvcs;
@@ -134,6 +135,18 @@ rwtasklet_info_get_neighbors(rwtasklet_info_t *tasklet_info,
                              char *comparestr, 
                              uint32_t depth, 
                              char *** neighbors);
+
+/*!
+ * Get the vnf-name for a particular tasklet.
+ *
+ * @param tasklet_info
+ *
+ * @return NULL if failed
+ *         >0 if success
+ */
+char*
+rwtasklet_info_get_vnfname(rwtasklet_info_t * tasklet_info);
+
 
 /*!
  * Get the colony id for a particular tasklet.

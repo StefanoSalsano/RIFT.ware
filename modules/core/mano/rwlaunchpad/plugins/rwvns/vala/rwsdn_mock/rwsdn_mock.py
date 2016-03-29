@@ -6,6 +6,10 @@
 import collections
 import logging
 
+import gi
+gi.require_version('RwTypes', '1.0')
+gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwSdn', '1.0')
 from gi.repository import (
     GObject,
     RwSdn, # Vala package

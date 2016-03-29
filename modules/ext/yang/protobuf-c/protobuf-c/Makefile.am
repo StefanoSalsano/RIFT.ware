@@ -55,7 +55,7 @@ protobuf_c_libprotobuf_c_la_SOURCES = \
         protobuf-c/rift/rw_delta.pb-c.c \
         protobuf-c/rift/rw_delta.pb-c.h 
 
-protobuf_c_libprotobuf_c_la_LIBADD = $(GOBJ_LIBS) -lgobject-2.0
+protobuf_c_libprotobuf_c_la_LIBADD = $(GOBJ_LIBS) -lgobject-2.0 -lpthread
 
 protobuf_c_libprotobuf_c_la_LDFLAGS = $(AM_LDFLAGS) \
 	-version-info $(LIBPROTOBUF_C_CURRENT):$(LIBPROTOBUF_C_REVISION):$(LIBPROTOBUF_C_AGE) \

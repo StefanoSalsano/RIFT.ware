@@ -62,7 +62,7 @@ rw_piot_config_device(rw_piot_device_t *dev,
   rte_eth_dev_info_get(dev->rte_port_id, &dev_info);
   if (0 == dev_info.max_rx_queues ||  0 == dev_info.max_tx_queues) {
     printf("Eth device return 0 max rx/tx queues\n");
-    return -1;
+    return 0;
   } 
   rsp->num_rx_queues = req->num_rx_queues;
   if (rsp->num_rx_queues > dev_info.max_rx_queues) {

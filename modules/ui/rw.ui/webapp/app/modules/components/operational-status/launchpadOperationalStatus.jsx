@@ -9,7 +9,8 @@ import Loader from '../../components/loading-indicator/loadingIndicator.jsx';
 
 //Currently displays all buffer state messages. Should consider showing only the n most recent.
 //TODO remove loader when current state is running
-
+//TODO need to look at refactoring this
+//
 class ThrottledMessage extends React.Component {
 
   constructor(props) {
@@ -87,7 +88,12 @@ class ThrottledMessage extends React.Component {
     }, 600)
   }
   render() {
-    return (<span className='throttledMessageText'>{this.state.displayMessage}</span>)
+    if(!this.props.hasFailed) {
+      return (<span className='throttledMessageText'>{this.state.displayMessage}</span>)
+    } else {
+      return (<span> </span>)
+    }
+
   }
 }
 
@@ -121,28 +127,40 @@ export default class operationalStatus extends React.Component {
     let html;
     let isDisplayed = this.props.display;
     let isFailed = (this.props.currentStatus == 'failed') || false;
+    let title = (!this.props.loading || isFailed) ? <h2>History</h2> : '';
     let status = this.props.status.map(function(status) {
       return (
         <li key={status.id}>{status.description}</li>
       )
     }).reverse();
     if(this.props.loading) {
-      isDisplayed = true;
-      //If there is no collection of status event message, just display currentStatus
-      if(status.length) {
-            html = (
-                    <div className={this.props.className + '_loading'}>
-                      <Loader show={!isFailed}/>
-                      <ThrottledMessage currentStatus={this.props.currentStatus} buffer={this.props.status} onEnd={this.props.doneLoading}/>
-                    </div>
-            )
+      if (!isFailed) {
+        isDisplayed = true;
+        //If there is no collection of status event message, just display currentStatus
+        if(status.length) {
+              html = (
+                      <div className={this.props.className + '_loading'}>
+                        <Loader show={!isFailed}/>
+                        <ThrottledMessage currentStatus={this.props.currentStatus} buffer={this.props.status} onEnd={this.props.doneLoading}/>
+                      </div>
+              )
+        } else {
+          html = (
+                      <div className={this.props.className + '_loading'}>
+                        <Loader show={!isFailed}/>
+                        {this.statusMessage(this.props.currentStatus,this.props.currentStatusDetails)}
+                      </div>
+              )
+        }
       } else {
-        html = (
-                    <div className={this.props.className + '_loading'}>
-                      <Loader show={!isFailed}/>
-                      {this.statusMessage(this.props.currentStatus,this.props.currentStatusDetails)}
-                    </div>
-            )
+          isDisplayed = true;
+              html = (
+
+                        <ul>
+                        <ThrottledMessage currentStatus={this.props.currentStatus} buffer={this.props.status} onEnd={this.props.doneLoading} hasFailed={isFailed}/>
+                          {status}
+                        </ul>
+              )
       }
     } else {
       html = (
@@ -151,7 +169,7 @@ export default class operationalStatus extends React.Component {
           </ul>
       )
     }
-    return (<div className={this.props.className + (isDisplayed ? '_open':'_close')}>{html}</div>);
+    return (<div className={this.props.className + (isDisplayed ? '_open':'_close')}>{title} {html}</div>);
   }
 }
 

@@ -106,6 +106,15 @@ class TestMgmtAgent(unittest.TestCase):
         self.assertEqual(ret_obj.status, "Success")
         print(ret_obj)
 
+    def test_logrotate_rpc(self):
+        mgmt_proxy=self.mgmt_session.proxy(RwMgmtagtYang)
+        rpc=RwMgmtagtYang.LogrotateConf()
+        rpc.compress = false
+        ret_obj=mgmt_proxy.rpc(rpc)
+        self.assertTrue(ret_obj)
+        self.assertEqual(ret_obj.status, "Success")
+        print(ret_obj)
+
     def test_notification(self):
         mgmt_proxy=self.mgmt_session.proxy(InterfacesYang)
 

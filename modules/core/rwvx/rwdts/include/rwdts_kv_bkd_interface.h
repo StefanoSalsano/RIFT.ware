@@ -35,8 +35,8 @@ void *
 rwdts_kv_get_bkd_cursor(void *instance, char *file_name);
 
 rw_status_t
-rwdts_kv_get_next_bkd_api(void *instance, void **dbc, uint8_t **key, size_t *key_len,
-                          uint8_t **val, size_t *val_len);
+rwdts_kv_get_next_bkd_api(void *instance,void *cursor, char **key, int *key_len,
+                          char **val, int *val_len, void **out_cursor);
 
 rw_status_t
 rwdts_kv_remove_bkd(void *instance, const char *file_name);

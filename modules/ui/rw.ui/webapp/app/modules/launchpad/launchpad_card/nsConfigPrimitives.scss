@@ -18,7 +18,12 @@
     flex-direction: column;
     background: white;
     .launchpadCard_title {
-        flex:1 0 auto;
+        flex: 0 1 auto;
+        min-height: 1rem;
+    }
+    .configuring {
+        pointer-events: none;
+        opacity: 0.3;
     }
     .react-tabs {
         display: flex;
@@ -99,6 +104,7 @@
                     &.disabled {
                     }
                     input {
+                        font-size: 1rem;
                         flex: 1 1 auto;
                         height: 1.25rem;
                         box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.39), 0 -1px 1px #ffffff, 0 1px 0 #ffffff;
@@ -108,6 +114,14 @@
                     }
                     .optional {
                         @include optional();
+                    }
+                    span {
+                        font-weight: bolder;
+                    }
+                    .readonly {
+                        flex: 0 0 30%;
+                        height: 1.25rem;
+                        margin: 0.125rem 0 0.5rem 0;
                     }
                 }
             }
@@ -119,11 +133,11 @@
                     flex-direction:column;
                 }
                 .configGroupOverlay {
-                        background: #ccc;
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    opacity: 0.5;
+                    background: #ccc;
+                    position: absolute;
+                    width: 100%;
+                    height: 100%;
+                    opacity: 0.5;
                 }
                 &:after {
                 }
@@ -137,6 +151,7 @@
                         content: '*';
                     }
                     input, span {
+                     font-size: 1rem;
                         flex: 1 1 auto;
                     }
                     input {
@@ -147,6 +162,14 @@
                     }
                     .optional {
                         @include optional();
+                    }
+                    span {
+                        font-weight: bolder;
+                    }
+                    .readonly {
+                        flex: 0 0 30%;
+                        height: 1.25rem;
+                        margin: 0.125rem 0 0.5rem 0;
                     }
                 }
             }
@@ -169,11 +192,17 @@
         overflow-y: auto;
 
         >div>div {
-            padding:0.5rem;
-
+            margin:0.5rem;
+            >.tree-view_item {
+                padding: 1rem;
+            }
             &:nth-child(odd) {
                 background:white;
             }
+        }
+
+        .tree-view_children {
+            margin-left: 2rem;
         }
     }
 }

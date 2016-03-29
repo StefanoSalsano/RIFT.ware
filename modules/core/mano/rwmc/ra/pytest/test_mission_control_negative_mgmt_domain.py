@@ -12,8 +12,11 @@
 
 import pytest
 
+import gi
+gi.require_version('RwMcYang', '1.0')
+
 from gi.repository import RwMcYang
-from rift.auto.proxy import ProxyRequestError
+from rift.auto.session import ProxyRequestError
 from rift.auto.session import ProxyExpectTimeoutError
 
 
@@ -38,7 +41,7 @@ def start_launchpad(proxy, mgmt_domain_name):
     proxy.wait_for(
             "/mgmt-domain/domain[name='%s']/launchpad/state" % mgmt_domain_name,
             'started',
-            timeout=400,
+            timeout=120,
             fail_on=['crashed'])
 
 
@@ -55,7 +58,6 @@ def proxy(request, mgmt_session):
     return mgmt_session.proxy(RwMcYang)
 
 
-@pytest.mark.setup('launchpad')
 @pytest.mark.incremental
 class TestMgmtDomainNegativeSetup:
     '''Stand up object needed for the lifecycle of this test script '''
@@ -118,7 +120,6 @@ class TestMgmtDomainNegativeSetup:
         proxy.create_config('/mgmt-domain/domain', domain_config)
 
 
-@pytest.mark.depends('launchpad')
 @pytest.mark.incremental
 class TestMgmtDomain:
     '''Test negative cases for the management domain'''
@@ -244,7 +245,7 @@ class TestMgmtDomain:
             proxy.wait_for(
                 "/mgmt-domain/domain[name='%s']/launchpad/state" % mgmt_domain_name,
                 'started',
-                timeout=400,
+                timeout=120,
                 fail_on=['crashed'])
 
     def test_start_lp_with_empty_vm_pool(self, proxy, mgmt_domain_name, vm_pool_name):
@@ -268,11 +269,11 @@ class TestMgmtDomain:
             proxy.wait_for(
                 "/mgmt-domain/domain[name='%s']/launchpad/state" % mgmt_domain_name,
                 'started',
-                timeout=400,
+                timeout=120,
                 fail_on=['crashed'])
 
     def test_launchpad_starts_when_vm_pool_has_a_vm_resource(self, proxy,
-            cloud_account_name, vm_pool_name, mgmt_domain_name):
+            cloud_account_name, vm_pool_name, mgmt_domain_name, network_pool_name):
         '''Tests that a launchpad can now start when the vm pool has a vm
         resource
 
@@ -310,6 +311,17 @@ class TestMgmtDomain:
         pool = proxy.get("/vm-pool/pool[name='%s']" % vm_pool_name)
         assigned_ids = [vm.id for vm in pool.assigned]
         assert available_ids[0] in assigned_ids
+
+        # Create NW pool
+        pool_config = RwMcYang.NetworkPool(
+                name=network_pool_name,
+                cloud_account=cloud_account_name,
+                dynamic_scaling=True,
+        )
+        proxy.create_config('/network-pool/pool', pool_config)
+        pool_config = RwMcYang.MgmtDomainPools_Network(name=network_pool_name)
+        proxy.create_config("/mgmt-domain/domain[name='%s']/pools/network" % mgmt_domain_name, pool_config)
+
 
         proxy.wait_for(
             "/mgmt-domain/domain[name='%s']/launchpad/state" % mgmt_domain_name,
@@ -359,7 +371,6 @@ class TestMgmtDomain:
                 fail_on=['crashed'])
 
 
-@pytest.mark.teardown('launchpad')
 @pytest.mark.incremental
 class TestMgmtDomainNegativeTeardown:
 
@@ -440,6 +451,21 @@ class TestMgmtDomainNegativeTeardown:
 
         '''
         xpath = "/vm-pool/pool[name='%s']" % vm_pool_name
+        proxy.delete_config(xpath)
+
+    def test_delete_nw_pool(self, proxy, network_pool_name):
+        '''Unconfigure vm_pool: Remove the primary vm pool
+
+        Arguments:
+            proxy        - a pytest fixture proxy to RwMcYang
+            vm_pool_name - a pytest fixture for the VM pool name
+
+
+        Asserts:
+            None
+
+        '''
+        xpath = "/network-pool/pool[name='%s']" % network_pool_name
         proxy.delete_config(xpath)
 
     def test_delete_cloud_account(self, proxy, cloud_account_name):

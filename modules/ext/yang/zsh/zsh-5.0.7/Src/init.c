@@ -27,6 +27,9 @@
  *
  */
 
+#include <stdio.h>
+#include <termios.h>
+
 #include "zsh.mdh"
 
 #include "zshpaths.h"
@@ -46,6 +49,63 @@
 #define RIFT_ARG_NETCONF_PASSWD "passwd"
 #define RIFT_ARG_USE_NETCONF    "netconf"
 #define RIFT_ARG_USE_RWMSG      "rwmsg"
+#define RIFT_MAX_USERNAME_PASSWORD_LENGTH (64)
+
+void rift_strip_newline(char * line, size_t * length)
+{
+  
+  if (*length >= 1 && line[*length - 1] == '\n')
+  {
+    line[*length - 1] = 0;
+    *length -= 1;
+  } 
+}
+
+size_t rift_get_netconf_username(char * username)
+{
+  size_t length = RIFT_MAX_USERNAME_PASSWORD_LENGTH; // getline doesn't accept const
+
+  // Display prompt.
+  printf("\nEnter NETCONF username: ");
+
+  // Read the username.
+  char *username_start = &username[0];
+  size_t username_length = getline (&username_start, &length, stdin);
+  
+  rift_strip_newline(username, &username_length);
+
+  return username_length;
+}
+
+size_t rift_get_netconf_password(char * password)
+{
+  struct termios old, new;
+  size_t length = RIFT_MAX_USERNAME_PASSWORD_LENGTH; // getline doesn't accept const
+
+  // Turn echoing off and fail if we can’t. 
+  int status = tcgetattr (fileno (stdin), &old);
+  new = old;
+  new.c_lflag &= ~ECHO;
+  status |= tcsetattr (fileno (stdin), TCSAFLUSH, &new);
+  (void) status;
+  // ATTN: RIFT_ASSERT_MESSAGE(status == 0, "Failed to turn off echo on stdin to get password.");
+
+  // Display prompt
+  printf("\nEnter NETCONF password: ");
+
+  // Read the password. 
+  char *password_start = &password[0];
+  size_t const password_length = getline (&password_start, &length, stdin);
+  rift_strip_newline(password, &password_length);
+
+  printf("\n"); // clear the line becuase the newline isn't echoed
+
+  // Restore terminal. 
+  (void) tcsetattr (fileno (stdin), TCSAFLUSH, &old);
+  
+  return password_length;
+}
+
 
 mod_export rift_cmdargs_t rift_cmdargs;
 
@@ -1771,6 +1831,33 @@ zsh_main(UNUSED(int argc), char **argv)
     opts[USEZLE] = 1;   /* may be unset in init_io() */
     /* sets INTERACTIVE, SHINSTDIN and SINGLECOMMAND */
     parseargs(argv, &runscript);
+
+    // if we're connecting via NETCONF, ensure we have the username/password
+    fflush(stdout);
+    // make sure we have netconf username 
+    if (opts[INTERACTIVE]
+        && rift_cmdargs.use_netconf
+        && rift_cmdargs.netconf_username == NULL) {
+      char username[RIFT_MAX_USERNAME_PASSWORD_LENGTH];      
+      size_t username_length = 0;
+      do {
+        username_length = rift_get_netconf_username(username);
+      } while (username_length == 0);
+
+      rift_cmdargs.netconf_username = strdup(username);
+    }
+    // make sure we have netconf password
+    if (opts[INTERACTIVE]
+        && rift_cmdargs.use_netconf
+        && rift_cmdargs.netconf_passwd == NULL) {
+      char password[RIFT_MAX_USERNAME_PASSWORD_LENGTH];      
+      size_t password_length = 0;
+      do {
+        password_length = rift_get_netconf_password(password);
+      } while (password_length == 0);
+
+      rift_cmdargs.netconf_passwd = strdup(password);
+    }
 
     SHTTY = -1;
     init_io();

@@ -163,11 +163,6 @@ namespace rw_yang {
     /// Commit the upgrade
     bool commit();
 
-    /// If the upgrade is done successfully, a call to this
-    /// function will update the 'usr/data/confd_yang' symlink to point
-    /// to the upgraded yang schema directory.
-    bool update_sym_link();
-
     void set_log_cb(rw_confd_upgrade_log_cb cb, void *user_data);
 
     /// Get the max number of the link farm which is being
@@ -199,6 +194,7 @@ namespace rw_yang {
     std::string yang_sl_;
     std::string rift_root_;
     std::string ver_dir_;
+    std::string latest_;
 
     rw_confd_upgrade_log_cb log_cb_ = nullptr;
     void *log_cb_user_data_ = nullptr;

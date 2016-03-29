@@ -18,6 +18,10 @@ import io
 import sys
 import unittest
 import gi
+gi.require_version('RwFpathDYang', '1.0')
+gi.require_version('RwAppmgrDYang', '1.0')
+gi.require_version('YangModelPlugin', '1.0')
+
 from gi.repository import RwFpathDYang, RwAppmgrDYang
 import xmlrunner
 import rw_peas

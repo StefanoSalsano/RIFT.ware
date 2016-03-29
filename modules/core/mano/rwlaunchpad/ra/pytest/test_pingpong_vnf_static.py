@@ -22,6 +22,12 @@ import time
 import uuid
 import rift.auto.session
 
+import gi
+gi.require_version('RwMcYang', '1.0')
+gi.require_version('RwNsrYang', '1.0')
+gi.require_version('RwVnfdYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
 from gi.repository import RwMcYang, NsdYang, NsrYang, RwNsrYang, VldYang, RwVnfdYang, RwLaunchpadYang, RwBaseYang
 
 logging.basicConfig(level=logging.DEBUG)
@@ -138,7 +144,6 @@ def wait_onboard_transaction_finished(logger, transaction_id, timeout=600, host=
 
 @pytest.mark.setup('pingpong')
 @pytest.mark.depends('launchpad')
-@pytest.mark.usefixtures('splat_launchpad')
 @pytest.mark.incremental
 class TestPingPongStart(object):
     def test_configure_pools(self, mc_proxy, vm_pool_name, network_pool_name):

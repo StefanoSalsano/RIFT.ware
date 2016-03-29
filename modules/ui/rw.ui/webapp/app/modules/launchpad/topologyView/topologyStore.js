@@ -27,8 +27,10 @@ class TopologyStore {
         this.exportAsync(TopologySource);
         this.exportPublicMethods({
             selectNode: this.selectNode,
-            closeSocket: this.closeSocket
+            closeSocket: this.closeSocket,
+            getTopologyData: this.getTopologyData
         })
+        this.ajax_mode = rw.getSearchParams(window.location).ajax_mode || false;
     }
     selectNode = (node) => {
         var apiType = {
@@ -39,6 +41,7 @@ class TopologyStore {
         this.setState({
             hasSelected: true
         })
+        // TODO: VISIT
        this.getInstance()[apiType[node.type]](node.id, node.parent ? node.parent.id : undefined)
     }
     getRawSuccess = (data) => {
@@ -49,6 +52,15 @@ class TopologyStore {
     getRawLoading = () => {
 
     }
+
+    getTopologyData = (nsr_id) => {        
+        if (this.ajax_mode) {
+            this.getInstance().getNSRTopology(nsr_id);
+        } else {
+            this.getInstance().openNSRTopologySocket(nsr_id);
+        }
+    }
+
     openNSRTopologySocketLoading() {}
     openNSRTopologySocketSuccess(connection) {
         let self = this;
@@ -75,6 +87,8 @@ class TopologyStore {
         connectionManager('nsr', connection);
     }
     openNSRTopologySocketError() {}
+
+
     handleLogout = () => {
         this.closeSocket();
     }
@@ -86,5 +100,18 @@ class TopologyStore {
             socket: null
         })
     }
+
+    getNSRTopologySuccess = (data) => {
+        this.setState({
+            topologyData: data,
+            errorMessage: null,
+            isLoading: false
+        });
+    }
+    getNSRTopologyLoading = () => {}
+    getNSRTopologyError = (errorMessage) => {
+        this.errorMessage = errorMessage;
+    }
+
 }
 export default alt.createStore(TopologyStore);

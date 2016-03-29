@@ -83,35 +83,96 @@ int split_instance_id(const char * instance_name)
 }
 
 
-rw_status_t
-rwvcs_rwzk_server_start(
+void rwvcs_rwzk_server_start_sync_f(void *ctx)
+{
+  rwvcs_rwzk_server_start_sync_t *rwvcs_rwzk_server_start_sync_p = 
+      (rwvcs_rwzk_server_start_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_server_start_sync_p->rwvcs;
+  uint32_t instance_id = rwvcs_rwzk_server_start_sync_p->instance_id;
+  bool unique_ports = rwvcs_rwzk_server_start_sync_p->unique_ports;
+  const char ** server_names = rwvcs_rwzk_server_start_sync_p->server_names;
+
+  rwvcs_rwzk_server_start_sync_p->status = rwcal_rwzk_create_server_config(
+      rwvcs->rwvx->rwcal_module,
+      instance_id,
+      unique_ports,
+      server_names);
+  RW_ASSERT(rwvcs_rwzk_server_start_sync_p->status == RW_STATUS_SUCCESS);
+
+  rwvcs_rwzk_server_start_sync_p->status = rwcal_rwzk_server_start(rwvcs->rwvx->rwcal_module, instance_id);
+  if (rwvcs_rwzk_server_start_sync_p->status != RW_STATUS_SUCCESS) {
+    fprintf(stderr, "error starting rwcal_rwzk_server_start() - status=%d\n", rwvcs_rwzk_server_start_sync_p->status);
+  }
+  RW_ASSERT(rwvcs_rwzk_server_start_sync_p->status == RW_STATUS_SUCCESS);
+}
+
+rw_status_t rwvcs_rwzk_server_start(
     rwvcs_instance_ptr_t rwvcs,
     uint32_t instance_id,
     bool unique_ports,
     const char ** server_names)
 {
-  rw_status_t status;
+  rwvcs_rwzk_server_start_sync_t rwvcs_rwzk_server_start_sync = {
+    .rwvcs = rwvcs,
+    .instance_id = instance_id,
+    .unique_ports = unique_ports,
+    .server_names = server_names
+  };
 
-  status = rwcal_rwzk_create_server_config(
-      rwvcs->rwvx->rwcal_module,
-      instance_id,
-      unique_ports,
-      server_names);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
-
-  status = rwcal_rwzk_server_start(rwvcs->rwvx->rwcal_module, instance_id);
-  if (status != RW_STATUS_SUCCESS) {
-    fprintf(stderr, "error starting rwcal_rwzk_server_start() - status=%d\n", status);
-  }
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
-
-  return status;
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_server_start_sync,
+      rwvcs_rwzk_server_start_sync_f);
+  return rwvcs_rwzk_server_start_sync.status;
 }
 
-rw_status_t
-rwvcs_rwzk_seed_auto_instance(rwvcs_instance_ptr_t rwvcs, uint32_t start, const char *path)
+void rwvcs_rwzk_client_start_sync_f(void *ctx)
 {
-  rw_status_t status;
+  rwvcs_rwzk_client_start_sync_t *rwvcs_rwzk_client_start_sync_p = 
+      (rwvcs_rwzk_client_start_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_client_start_sync_p->rwvcs;
+
+  if (rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->zake) {
+    rwvcs_rwzk_client_start_sync_p->status = rwcal_rwzk_zake_init(rwvcs->rwvx->rwcal_module);
+  } else {
+    const char * server_names[2] = {
+      rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->master_ip,
+      NULL
+    };
+
+    rwvcs_rwzk_client_start_sync_p->status = rwcal_rwzk_kazoo_init(
+        rwvcs->rwvx->rwcal_module,
+        rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->unique_ports,
+        &server_names[0]);
+  }
+  RW_ASSERT(rwvcs_rwzk_client_start_sync_p->status == RW_STATUS_SUCCESS);
+}
+
+rw_status_t rwvcs_rwzk_client_start(rwvcs_instance_ptr_t rwvcs)
+{
+  rwvcs_rwzk_client_start_sync_t rwvcs_rwzk_client_start_sync = {
+    .rwvcs = rwvcs,
+  };
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_client_start_sync,
+      rwvcs_rwzk_client_start_sync_f);
+  return rwvcs_rwzk_client_start_sync.status;
+}
+
+void rwvcs_rwzk_seed_auto_instance_sync_f(void *ctx)
+{
+  rwvcs_rwzk_seed_auto_instance_sync_t *rwvcs_rwzk_seed_auto_instance_sync_p = 
+      (rwvcs_rwzk_seed_auto_instance_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_seed_auto_instance_sync_p->rwvcs;
+  uint32_t start = rwvcs_rwzk_seed_auto_instance_sync_p->start;
+  const char *path = rwvcs_rwzk_seed_auto_instance_sync_p->path;
+
   bool exists;
   const char *instance_path = path ? path : g_auto_instance_path;
 
@@ -121,24 +182,39 @@ rwvcs_rwzk_seed_auto_instance(rwvcs_instance_ptr_t rwvcs, uint32_t start, const 
     struct timeval tv = { .tv_sec = RWVCS_RWZK_TIMEOUT_S, .tv_usec = 0 };
     int r;
 
-    status = rwcal_rwzk_create(rwvcs->rwvx->rwcal_module, instance_path, NULL);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    rwvcs_rwzk_seed_auto_instance_sync_p->status = rwcal_rwzk_create(rwvcs->rwvx->rwcal_module, instance_path, NULL);
+    RW_ASSERT(rwvcs_rwzk_seed_auto_instance_sync_p->status == RW_STATUS_SUCCESS);
 
-    status = rwcal_rwzk_lock(rwvcs->rwvx->rwcal_module, instance_path, &tv);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    rwvcs_rwzk_seed_auto_instance_sync_p->status = rwcal_rwzk_lock(rwvcs->rwvx->rwcal_module, instance_path, &tv);
+    RW_ASSERT(rwvcs_rwzk_seed_auto_instance_sync_p->status == RW_STATUS_SUCCESS);
 
     r = asprintf(&data, "%u", start);
     RW_ASSERT(r != -1);
 
-    status = rwcal_rwzk_set(rwvcs->rwvx->rwcal_module, instance_path, data, NULL);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    rwvcs_rwzk_seed_auto_instance_sync_p->status = rwcal_rwzk_set(rwvcs->rwvx->rwcal_module, instance_path, data, NULL);
+    RW_ASSERT(rwvcs_rwzk_seed_auto_instance_sync_p->status == RW_STATUS_SUCCESS);
 
-    status = rwcal_rwzk_unlock(rwvcs->rwvx->rwcal_module, instance_path);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    rwvcs_rwzk_seed_auto_instance_sync_p->status = rwcal_rwzk_unlock(rwvcs->rwvx->rwcal_module, instance_path);
+    RW_ASSERT(rwvcs_rwzk_seed_auto_instance_sync_p->status == RW_STATUS_SUCCESS);
     RW_FREE(data);
   }
+}
 
-  return RW_STATUS_SUCCESS;
+rw_status_t
+rwvcs_rwzk_seed_auto_instance(rwvcs_instance_ptr_t rwvcs, uint32_t start, const char *path)
+{
+  rwvcs_rwzk_seed_auto_instance_sync_t rwvcs_rwzk_seed_auto_instance_sync = {
+    .rwvcs = rwvcs,
+    .start = start,
+    .path = path};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_seed_auto_instance_sync,
+      rwvcs_rwzk_seed_auto_instance_sync_f);
+  return rwvcs_rwzk_seed_auto_instance_sync.status;
 }
 
 void rwvcs_rwzk_lock_sync_f(void *ctx)
@@ -934,6 +1010,7 @@ void rwvcs_rwzk_update_state_f(void *ud)
 
 unlock:
   rwvcs_rwzk_unlock_internal(rwvcs, instance_name);
+  RW_FREE(instance_name);
 }
 
 
@@ -957,7 +1034,7 @@ rw_status_t rwvcs_rwzk_update_state(rwvcs_instance_ptr_t rwvcs,
   return RW_STATUS_SUCCESS;
 }
 
-rw_status_t
+static rw_status_t
 rwvcs_rwzk_get_leader(
     rwvcs_instance_ptr_t rwvcs,
     const char * instance_name,
@@ -1636,13 +1713,15 @@ rw_status_t
 rwvcs_rwzk_update_config_ready(
     rwvcs_instance_ptr_t rwvcs,
     const char * instance_name,
-    bool         config_ready)
+    bool         config_ready,
+    vcs_recovery_type recovery_action)
 
 {
   rwvcs_rwzk_update_config_ready_sync_t rwvcs_rwzk_update_config_ready_sync = {
     .rwvcs = rwvcs,
     .instance_name = instance_name,
-    .config_ready = config_ready};
+    .config_ready = config_ready,
+    .recovery_action = recovery_action};
 
   RWVCS_RWZK_DISPATCH(
       sync,
@@ -1653,9 +1732,68 @@ rwvcs_rwzk_update_config_ready(
   return rwvcs_rwzk_update_config_ready_sync.status;
 }
 
+static void rwvcs_rwzk_update_recovery_action_sync_f (void *ctx)
+{
+  rwvcs_rwzk_update_recovery_action_sync_t *rwvcs_rwzk_update_recovery_action_sync_p = 
+      (rwvcs_rwzk_update_recovery_action_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_update_recovery_action_sync_p->rwvcs;
+  const char * instance_name = rwvcs_rwzk_update_recovery_action_sync_p->instance_name;
+  vcs_recovery_type recovery_action = rwvcs_rwzk_update_recovery_action_sync_p->recovery_action;
+  rw_status_t unlock_status;
+  rw_component_info info;
+  struct timeval timeout = { .tv_sec = 5, .tv_usec = 0 };
+
+  rw_component_info__init(&info);
+
+  rwvcs_rwzk_update_recovery_action_sync_p->status = rwvcs_rwzk_lock_internal(rwvcs, instance_name, &timeout);
+  if (rwvcs_rwzk_update_recovery_action_sync_p->status != RW_STATUS_SUCCESS)
+    goto done;
+
+  rwvcs_rwzk_update_recovery_action_sync_p->status = rwvcs_rwzk_lookup_component_internal(rwvcs, instance_name, &info);
+  if (rwvcs_rwzk_update_recovery_action_sync_p->status != RW_STATUS_SUCCESS)
+    goto unlock_info;
+
+  info.has_recovery_action = true;
+  info.recovery_action = recovery_action;
+  rwvcs_rwzk_update_recovery_action_sync_p->status = rwvcs_rwzk_node_update_internal(rwvcs, &info);
+  RW_ASSERT(rwvcs_rwzk_update_recovery_action_sync_p->status == RW_STATUS_SUCCESS);
+
+unlock_info:
+  unlock_status = rwvcs_rwzk_unlock_internal(rwvcs, instance_name);
+  RW_ASSERT(unlock_status == RW_STATUS_SUCCESS);
+
+done:
+  protobuf_free_stack(info);
+
+  return;
+}
+
+rw_status_t
+rwvcs_rwzk_update_recovery_action(
+    rwvcs_instance_ptr_t rwvcs,
+    const char * instance_name,
+    vcs_recovery_type recovery_action)
+
+{
+  rwvcs_rwzk_update_recovery_action_sync_t rwvcs_rwzk_update_recovery_action_sync = {
+    .rwvcs = rwvcs,
+    .instance_name = instance_name,
+    .recovery_action = recovery_action};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_update_recovery_action_sync,
+      rwvcs_rwzk_update_recovery_action_sync_f);
+  return rwvcs_rwzk_update_recovery_action_sync.status;
+}
+
 
 typedef struct rwvcs_rwzk_watcher_closure {
-  rw_status_t (*cb)(void* ud);
+  rwsched_tasklet_ptr_t  sched_tasklet_ptr;
+  rwsched_dispatch_queue_t rwq;
+  void (*cb)(void* ud);
   void *ud;
 } rwvcs_rwzk_watcher_closure_t;
 
@@ -1668,23 +1806,22 @@ static rw_status_t rwvcs_rwzk_watcher_func(
   RW_ASSERT(len == 1);
   rwvcs_rwzk_watcher_closure_t *ud_closure = RWCAL_RET_UD_IDX(ud, rwvcs_rwzk_watcher_closure_t, 0);
 
-  status = ud_closure->cb(ud_closure->ud);
+  rwsched_dispatch_async_f(ud_closure->sched_tasklet_ptr, ud_closure->rwq, ud_closure->ud, ud_closure->cb);
 
   return status;
 }
 
-rw_status_t
-rwvcs_rwzk_watcher_start(
-    rwvcs_instance_ptr_t rwvcs,
-    const char * path,
-    rw_status_t (*cb)(void* ud),
-    void *ud)
+void rwvcs_rwzk_watcher_start_sync_f(void *ctx)
 {
-  RW_ASSERT(path);
-  rw_status_t status = RW_STATUS_SUCCESS;
+  rwvcs_rwzk_watcher_start_sync_t *rwvcs_rwzk_watcher_start_sync_p = 
+      (rwvcs_rwzk_watcher_start_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_watcher_start_sync_p->rwvcs;
+
   rwvcs_rwzk_watcher_closure_t *ud_closure = malloc(sizeof(*ud_closure));
-  ud_closure->cb = cb;
-  ud_closure->ud = ud;
+  ud_closure->sched_tasklet_ptr = rwvcs_rwzk_watcher_start_sync_p->sched_tasklet_ptr;
+  ud_closure->rwq = rwvcs_rwzk_watcher_start_sync_p->rwq;
+  ud_closure->cb = rwvcs_rwzk_watcher_start_sync_p->cb;
+  ud_closure->ud = rwvcs_rwzk_watcher_start_sync_p->ud;
 
   rwcal_closure_ptr_t closure = rwcal_closure_alloc(
       rwvcs->rwvx->rwcal_module,
@@ -1692,46 +1829,323 @@ rwvcs_rwzk_watcher_start(
       (void *)ud_closure);
   RW_ASSERT(closure);
 
-  status = rwcal_rwzk_register_watcher(
+  rw_status_t status = rwcal_rwzk_register_watcher(
       rwvcs->rwvx->rwcal_module,
-      path,
+      rwvcs_rwzk_watcher_start_sync_p->path,
       closure);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-  return status;
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  rwvcs_rwzk_watcher_start_sync_p->closure = closure;
+
+  return;
+}
+
+rwcal_closure_ptr_t
+rwvcs_rwzk_watcher_start(
+    rwvcs_instance_ptr_t rwvcs,
+    const char * path,
+    rwsched_tasklet_ptr_t sched_tasklet_ptr,
+    rwsched_dispatch_queue_t rwq,
+    void (*cb)(void* ud),
+    void *ud)
+{
+  rwvcs_rwzk_watcher_start_sync_t rwvcs_rwzk_watcher_start_sync = {
+    .rwvcs = rwvcs,
+    .path = path,
+    .sched_tasklet_ptr = sched_tasklet_ptr,
+    .rwq = rwq,
+    .cb = cb,
+    .ud = ud};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_watcher_start_sync,
+      rwvcs_rwzk_watcher_start_sync_f);
+  return rwvcs_rwzk_watcher_start_sync.closure;
+}
+
+void rwvcs_rwzk_get_children_sync_f(void *ctx)
+{
+  rwvcs_rwzk_get_children_sync_t *rwvcs_rwzk_get_children_sync_p = 
+      (rwvcs_rwzk_get_children_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_get_children_sync_p->rwvcs;
+
+  rwvcs_rwzk_get_children_sync_p->status = rwcal_rwzk_get_children(
+      rwvcs->rwvx->rwcal_module,
+      rwvcs_rwzk_get_children_sync_p->path,
+      rwvcs_rwzk_get_children_sync_p->children,
+      NULL);
+
+  return;
 }
 
 rw_status_t
 rwvcs_rwzk_get_children(
     rwvcs_instance_ptr_t rwvcs,
-    const char * path,
+    const char *path,
     char ***children)
 {
-  RW_ASSERT(path);
-  rw_status_t status = RW_STATUS_SUCCESS;
+  rwvcs_rwzk_get_children_sync_t rwvcs_rwzk_get_children_sync = {
+    .rwvcs = rwvcs,
+    .path = path,
+    .children = children};
 
-  status = rwcal_rwzk_get_children(
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_get_children_sync,
+      rwvcs_rwzk_get_children_sync_f);
+  return rwvcs_rwzk_get_children_sync.status;
+}
+
+void rwvcs_rwzk_get_sync_f(void *ctx)
+{
+  rwvcs_rwzk_get_sync_t *rwvcs_rwzk_get_sync_p = 
+      (rwvcs_rwzk_get_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_get_sync_p->rwvcs;
+
+  rwvcs_rwzk_get_sync_p->status = rwcal_rwzk_get(
       rwvcs->rwvx->rwcal_module,
-      path,
-      children,
+      rwvcs_rwzk_get_sync_p->path,
+      rwvcs_rwzk_get_sync_p->data,
       NULL);
-  return status;
+
+  return;
 }
 
 rw_status_t
 rwvcs_rwzk_get(
     rwvcs_instance_ptr_t rwvcs,
-    const char * path,
+    const char *path,
     char ** data)
 {
-  RW_ASSERT(path);
-  rw_status_t status = RW_STATUS_SUCCESS;
+  rwvcs_rwzk_get_sync_t rwvcs_rwzk_get_sync = {
+    .rwvcs = rwvcs,
+    .path = path,
+    .data = data};
 
-  status = rwcal_rwzk_get(
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_get_sync,
+      rwvcs_rwzk_get_sync_f);
+  return rwvcs_rwzk_get_sync.status;
+}
+
+void rwvcs_rwzk_set_sync_f(void *ctx)
+{
+  rwvcs_rwzk_set_sync_t *rwvcs_rwzk_set_sync_p = 
+      (rwvcs_rwzk_set_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_set_sync_p->rwvcs;
+  const char * path = rwvcs_rwzk_set_sync_p->path;
+  const char * data = rwvcs_rwzk_set_sync_p->data;
+
+  rwvcs_rwzk_set_sync_p->status = rwcal_rwzk_set(rwvcs->rwvx->rwcal_module, path, data, NULL);
+
+  return;
+}
+
+rw_status_t
+rwvcs_rwzk_set(
+    rwvcs_instance_ptr_t rwvcs, 
+    const char * path,
+    const char * data)
+{
+  rwvcs_rwzk_set_sync_t rwvcs_rwzk_set_sync = {
+    .rwvcs = rwvcs,
+    .path = path,
+    .data = data};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_set_sync,
+      rwvcs_rwzk_set_sync_f);
+  return rwvcs_rwzk_set_sync.status;
+}
+
+void rwvcs_rwzk_create_sync_f(void *ctx)
+{
+  rwvcs_rwzk_create_sync_t *rwvcs_rwzk_create_sync_p = 
+      (rwvcs_rwzk_create_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_create_sync_p->rwvcs;
+  const char * path = rwvcs_rwzk_create_sync_p->path;
+
+  rwvcs_rwzk_create_sync_p->status = rwcal_rwzk_create(rwvcs->rwvx->rwcal_module, path, NULL);
+
+  return;
+}
+
+rw_status_t
+rwvcs_rwzk_create(
+    rwvcs_instance_ptr_t rwvcs, 
+    const char * path)
+{
+  rwvcs_rwzk_create_sync_t rwvcs_rwzk_create_sync = {
+    .rwvcs = rwvcs,
+    .path = path};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_create_sync,
+      rwvcs_rwzk_create_sync_f);
+  return rwvcs_rwzk_create_sync.status;
+}
+
+void rwvcs_rwzk_exists_sync_f(void *ctx)
+{
+  rwvcs_rwzk_exists_sync_t *rwvcs_rwzk_exists_sync_p = 
+      (rwvcs_rwzk_exists_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_exists_sync_p->rwvcs;
+  const char * path = rwvcs_rwzk_exists_sync_p->path;
+
+  rwvcs_rwzk_exists_sync_p->exists = rwcal_rwzk_exists(rwvcs->rwvx->rwcal_module, path);
+
+  return;
+}
+
+bool
+rwvcs_rwzk_exists(
+    rwvcs_instance_ptr_t rwvcs, 
+    const char * path)
+{
+  rwvcs_rwzk_exists_sync_t rwvcs_rwzk_exists_sync = {
+    .rwvcs = rwvcs,
+    .path = path};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_exists_sync,
+      rwvcs_rwzk_exists_sync_f);
+  return rwvcs_rwzk_exists_sync.exists;
+}
+
+void rwvcs_rwzk_lock_path_sync_f(void *ctx)
+{
+  rwvcs_rwzk_lock_path_sync_t *rwvcs_rwzk_lock_path_sync_p = 
+      (rwvcs_rwzk_lock_path_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_lock_path_sync_p->rwvcs;
+  const char * path = rwvcs_rwzk_lock_path_sync_p->path;
+  struct timeval * timeout = rwvcs_rwzk_lock_path_sync_p->timeout;
+  rwvcs_rwzk_lock_path_sync_p->status = rwcal_rwzk_lock(rwvcs->rwvx->rwcal_module, path, timeout);
+  return;
+}
+
+rw_status_t
+rwvcs_rwzk_lock_path(
+    rwvcs_instance_ptr_t rwvcs, 
+    const char * path, 
+    struct timeval * timeout)
+{
+  rwvcs_rwzk_lock_path_sync_t rwvcs_rwzk_lock_path_sync = {
+    .rwvcs = rwvcs,
+    .path = path,
+    .timeout = timeout};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_lock_path_sync,
+      rwvcs_rwzk_lock_path_sync_f);
+  return rwvcs_rwzk_lock_path_sync.status;
+}
+
+void rwvcs_rwzk_unlock_path_sync_f(void *ctx)
+{
+  rwvcs_rwzk_unlock_path_sync_t *rwvcs_rwzk_unlock_path_sync_p = 
+      (rwvcs_rwzk_unlock_path_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_unlock_path_sync_p->rwvcs;
+  const char * path = rwvcs_rwzk_unlock_path_sync_p->path;
+  rwvcs_rwzk_unlock_path_sync_p->status = rwcal_rwzk_unlock(rwvcs->rwvx->rwcal_module, path);
+  return;
+}
+
+rw_status_t
+rwvcs_rwzk_unlock_path(
+    rwvcs_instance_ptr_t rwvcs, 
+    const char * path)
+{
+  rwvcs_rwzk_unlock_path_sync_t rwvcs_rwzk_unlock_path_sync = {
+    .rwvcs = rwvcs,
+    .path = path};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_unlock_path_sync,
+      rwvcs_rwzk_unlock_path_sync_f);
+  return rwvcs_rwzk_unlock_path_sync.status;
+}
+
+static void rwvcs_rwzk_delete_path_sync_f(void *ctx)
+{
+  rwvcs_rwzk_delete_path_sync_t *rwvcs_rwzk_delete_path_sync_p =
+      (rwvcs_rwzk_delete_path_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_delete_path_sync_p->rwvcs;
+  const char * path = rwvcs_rwzk_delete_path_sync_p->path;
+  RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
+  rwvcs_rwzk_delete_path_sync_p->status = rwcal_rwzk_delete(rwvcs->rwvx->rwcal_module, path, NULL);
+  return;
+}
+
+rw_status_t
+rwvcs_rwzk_delete_path(rwvcs_instance_ptr_t rwvcs, const char * path)
+{
+  rwvcs_rwzk_delete_path_sync_t  rwvcs_rwzk_delete_path_sync = {
+    .rwvcs = rwvcs,
+    .path = path};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_delete_path_sync,
+      rwvcs_rwzk_delete_path_sync_f);
+  return rwvcs_rwzk_delete_path_sync.status;
+}
+
+void rwvcs_rwzk_watcher_stop_sync_f(void *ctx)
+{
+  rwvcs_rwzk_watcher_stop_sync_t *rwvcs_rwzk_watcher_stop_sync_p = 
+      (rwvcs_rwzk_watcher_stop_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_watcher_stop_sync_p->rwvcs;
+  rwvcs_rwzk_watcher_stop_sync_p->status = rwcal_rwzk_unregister_watcher(
       rwvcs->rwvx->rwcal_module,
-      path,
-      data,
-      NULL);
-  return status;
+      rwvcs_rwzk_watcher_stop_sync_p->path,
+      (*rwvcs_rwzk_watcher_stop_sync_p->closure));
+  RW_ASSERT(rwvcs_rwzk_watcher_stop_sync_p->status == RW_STATUS_SUCCESS);
+  rwcal_closure_free(rwvcs_rwzk_watcher_stop_sync_p->closure);
+  return;
+}
+
+rw_status_t
+rwvcs_rwzk_watcher_stop(
+    rwvcs_instance_ptr_t rwvcs,
+    const char * path,
+    rwcal_closure_ptr_t *closure)
+{
+  rwvcs_rwzk_watcher_stop_sync_t rwvcs_rwzk_watcher_stop_sync = {
+    .rwvcs = rwvcs,
+    .path = path,
+    .closure = closure};
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_watcher_stop_sync,
+      rwvcs_rwzk_watcher_stop_sync_f);
+  return rwvcs_rwzk_watcher_stop_sync.status;
 }
 

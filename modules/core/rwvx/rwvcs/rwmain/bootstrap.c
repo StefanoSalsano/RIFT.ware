@@ -24,7 +24,7 @@
  * @param rwmain          - rwmain instance
  * @return                - rw status from rwvcs_action_run()
  */
-static rw_status_t bootstrap_rwvm(struct rwmain * rwmain);
+static rw_status_t bootstrap_rwvm(struct rwmain_gi * rwmain);
 
 /*
  * Bootstrap a RWPROC.  This will process the bootstrap-phase/rwproc section
@@ -34,10 +34,10 @@ static rw_status_t bootstrap_rwvm(struct rwmain * rwmain);
  * @param rwmain          - rwmain instance
  * @return                - rw status from rwvcs_action_run()
  */
-static rw_status_t bootstrap_rwproc(struct rwmain * rwmain);
+static rw_status_t bootstrap_rwproc(struct rwmain_gi * rwmain);
 
 
-static rw_status_t bootstrap_rwvm(struct rwmain * rwmain)
+static rw_status_t bootstrap_rwvm(struct rwmain_gi * rwmain)
 {
   rw_status_t status;
   char * self_id = NULL;
@@ -65,6 +65,13 @@ static rw_status_t bootstrap_rwvm(struct rwmain * rwmain)
     start.component_name = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->component_name;
     start.has_config_ready = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->has_config_ready;
     start.config_ready = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->config_ready;
+#if 0
+    start.has_recovery_action = true;
+    start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_RESTART;
+#else
+    start.has_recovery_action = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->has_recovery_action;
+    start.recovery_action = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->recovery_action;
+#endif
 
     status = rwmain_action_run(rwmain, self_id, &action);
 
@@ -86,7 +93,7 @@ done:
   return status;
 }
 
-static rw_status_t bootstrap_rwproc(struct rwmain * rwmain)
+static rw_status_t bootstrap_rwproc(struct rwmain_gi * rwmain)
 {
   rw_status_t status;
   char * self_id = NULL;
@@ -114,6 +121,13 @@ static rw_status_t bootstrap_rwproc(struct rwmain * rwmain)
     start.component_name = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->component_name;
     start.has_config_ready = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->has_config_ready;
     start.config_ready = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->config_ready;
+#if 0
+    start.has_recovery_action = true;
+    start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_RESTART;
+#else
+    start.has_recovery_action = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->has_recovery_action;
+    start.recovery_action = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->recovery_action;
+#endif
 
     status = rwmain_action_run(rwmain, self_id, &action);
 
@@ -140,7 +154,7 @@ done:
  * component does not have a parent and therefore no one created the zookeeper
  * node yet.
  */
-static rw_status_t update_zk(struct rwmain * rwmain)
+rw_status_t update_zk(struct rwmain_gi * rwmain)
 {
   rw_status_t status;
   vcs_manifest_component * mdef;
@@ -158,7 +172,7 @@ static rw_status_t update_zk(struct rwmain * rwmain)
   // guaranteed that the definition has to be in the static manifest.
   status = rwvcs_manifest_component_lookup(rwvcs, rwmain->component_name, &mdef);
   if (status != RW_STATUS_SUCCESS) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto done;
   }
 
@@ -171,7 +185,7 @@ static rw_status_t update_zk(struct rwmain * rwmain)
         rwmain->instance_id,
         id);
     if (!ci) {
-      RW_ASSERT(0);
+      RW_CRASH();
       status = RW_STATUS_FAILURE;
       goto done;
     }
@@ -194,7 +208,7 @@ static rw_status_t update_zk(struct rwmain * rwmain)
         rwmain->instance_id,
         id);
     if (!ci) {
-      RW_ASSERT(0);
+      RW_CRASH();
       status = RW_STATUS_FAILURE;
       goto done;
     }
@@ -206,14 +220,14 @@ static rw_status_t update_zk(struct rwmain * rwmain)
     ci->proc_info->native = false;
     ci->state = RW_BASE_STATE_TYPE_STARTING;
   } else {
-    RW_ASSERT(0);
+    RW_CRASH();
     status = RW_STATUS_FAILURE;
     goto done;
   }
 
   status = rwvcs_rwzk_node_update(rwmain->rwvx->rwvcs, ci);
   if (status != RW_STATUS_SUCCESS) {
-    RW_ASSERT(0);
+    RW_CRASH();
     goto done;
   }
 
@@ -229,7 +243,7 @@ done:
 }
 
 
-rw_status_t rwmain_bootstrap(struct rwmain * rwmain)
+rw_status_t rwmain_bootstrap(struct rwmain_gi * rwmain)
 {
   rw_status_t status;
 
@@ -247,7 +261,7 @@ rw_status_t rwmain_bootstrap(struct rwmain * rwmain)
     status = bootstrap_rwvm(rwmain);
   else {
     status = RW_STATUS_NOTFOUND;
-    RW_ASSERT(0);
+    RW_CRASH();
     goto done;
   }
 

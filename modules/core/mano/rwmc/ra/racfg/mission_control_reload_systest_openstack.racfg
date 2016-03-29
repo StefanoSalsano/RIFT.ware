@@ -1,0 +1,18 @@
+{
+  "test_name":"TC_MISSION_CONTROL_RELOAD_OPENSTACK",
+  "commandline":"./mission_control_reload_systest --cloud-type 'openstack' --cloud-host '10.66.4.115' --sysinfo ",
+  "test_description":"System test for mission control reload(Openstack)",
+  "run_as_root": false,
+  "status":"working",
+  "keywords":["nightly","smoke","MANO","openstack"],
+  "timelimit": 2200,
+  "networks":[],
+  "vms":[
+    {
+      "name": "VM",
+      "memory": 8192,
+      "cpus": 4
+    }
+  ]
+}
+

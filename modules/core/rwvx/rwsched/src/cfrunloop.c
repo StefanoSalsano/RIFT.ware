@@ -145,7 +145,7 @@ rwsched_tasklet_CFRunLoopRunTaskletBlock(rwsched_tasklet_ptr_t sched_tasklet,
     return_source = blocking_source;
   }
   else {
-    RW_ASSERT(0);
+    RW_CRASH();
   }
 
   g_rwresource_track_handle = sched_tasklet->rwresource_track_handle;

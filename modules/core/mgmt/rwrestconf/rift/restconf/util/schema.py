@@ -7,7 +7,11 @@
 
 from enum import Enum
 
+import gi
+
+gi.require_version('RwYang', '1.0')
 from gi.repository import RwYang
+
 from rift.rwlib.schema import (
     get_keys,
 )
@@ -50,6 +54,33 @@ def find_child_by_name(node, name):
         prefix = None
 
     return node.search_child_with_prefix(name, prefix)
+
+
+
+def find_target_node(top_node, path_list=[]):
+    """
+      Parameters:
+      @top_node : Top level yang node of the schema
+      @path_list: The schema path extracted from the URL
+      Eg: If URL specified is '/api/schema/X/Y/Z',
+          path_list will have entries [X, Y, Z]
+
+      This routine traverses through the schema in the order
+      dictated by the path_list to find the yang node associated
+      with the lowest node i.e. last element of the path_list.
+    """
+    if path_list == []:
+        return None
+
+    target_node = find_child_by_name(top_node, path_list[0])
+    if target_node is None:
+        return None
+
+    for name in path_list[1:]:
+        target_node = find_child_by_name(target_node, name)
+
+    return target_node
+
 
 def find_child_by_path(node, path):
     ''' walks the tree based on the path

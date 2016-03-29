@@ -16,6 +16,16 @@ import unittest
 
 import xmlrunner
 
+import gi
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('CF', '1.0')
+gi.require_version('RwDts', '1.0')
+gi.require_version('RwDtsToyTaskletYang', '1.0')
+gi.require_version('RwMain', '1.0')
+gi.require_version('RwManifestYang', '1.0')
+gi.require_version('rwlib', '1.0')
+gi.require_version('RwVcsYang', '1.0')
+
 import gi.repository.CF as cf
 import gi.repository.RwBaseYang as rwbase
 import gi.repository.RwDts as rwdts
@@ -24,6 +34,7 @@ import gi.repository.RwMain as rwmain
 import gi.repository.RwManifestYang as rwmanifest
 import gi.repository.rwlib as rwlib
 import gi.repository.RwTypes as rwtypes
+import gi.repository.RwVcsYang as rwvcs
 from gi.repository import ProtobufC
 
 import rift.tasklets
@@ -97,6 +108,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                 events[2].set()
 
         dts = rift.tasklets.DTS(self.tinfo, self.schema, self.loop, on_dts_state_change)
+        yield from asyncio.sleep(1, loop=self.loop)
         xpath = '/rw-dts-toy-tasklet:a-container'
 
         ret = toyyang.AContainer()
@@ -125,7 +137,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
             nonlocal results
             yield from asyncio.gather(dts.ready.wait(), events[0].wait(), loop=self.loop)
 
-            res_iter = yield from dts.query_read(xpath, flags=rwdts.Flag.TRACE)
+            res_iter = yield from dts.query_read(xpath, flags=0)
 
             for i in res_iter:
                 result = yield from i
@@ -178,6 +190,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                 events[2].set()
 
         dts = rift.tasklets.DTS(self.tinfo, self.schema, self.loop, on_dts_state_change)
+        yield from asyncio.sleep(1, loop=self.loop)
 
         @asyncio.coroutine
         def pub():
@@ -211,6 +224,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
         events = [asyncio.Event(loop=self.loop) for _ in range(2)]
 
         dts = rift.tasklets.DTS(self.tinfo, self.schema, self.loop)
+        yield from asyncio.sleep(1, loop=self.loop)
         xpath = '/rw-dts-toy-tasklet:a-container'
 
         ret = toyyang.AContainer()
@@ -241,7 +255,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
             nonlocal results
             yield from asyncio.gather(dts.ready.wait(), events[0].wait(), loop=self.loop)
 
-            res_iter = yield from dts.query_read(xpath, flags=rwdts.Flag.TRACE)
+            res_iter = yield from dts.query_read(xpath, flags=0)
 
             for i in res_iter:
                 result = yield from i
@@ -270,6 +284,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
         events = [asyncio.Event(loop=self.loop) for _ in range(2)]
 
         dts = rift.tasklets.DTS(self.tinfo, self.schema, self.loop)
+        yield from asyncio.sleep(1, loop=self.loop)
         xpath = '/rw-dts-toy-tasklet:a-container'
 
         ret = toyyang.AContainer()
@@ -425,9 +440,6 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
         Verify that pub/sub are working when the publisher and subscriber are using
         different dts api handles (and therefore going through the router).
 
-        Also verifies the loop instance in DTS is the default event loop for
-        the current thread (verified using asyncio.sleep without loop param).
-
         The test will progress through stages defined by the events list:
             0:  Publisher registration hit on_ready()
             1:  Subscriber finished iterating through dts.query_read() results
@@ -445,7 +457,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
         def pub():
             @asyncio.coroutine
             def on_ready(*args):
-                yield from asyncio.sleep(1)
+                yield from asyncio.sleep(1, loop=self.loop)
                 events[0].set()
 
             @asyncio.coroutine
@@ -755,7 +767,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
 
             yield from events[1].wait()
 
-            res_iter = yield from dts.query_read(sub_xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE|rwdts.Flag.TRACE)
+            res_iter = yield from dts.query_read(sub_xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
 
             for i in res_iter:
                 result = yield from i
@@ -4514,7 +4526,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     xpath2,
                     rwdts.Flag.MERGE|rwdts.Flag.CACHE)
 
-            yield from asyncio.sleep(1)
+            yield from asyncio.sleep(1, loop=self.loop)
 
             events[4].set()
 
@@ -4660,7 +4672,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
             yield from events[2].wait()
             yield from events[5].wait()
 
-            yield from asyncio.sleep(1)
+            yield from asyncio.sleep(1, loop=self.loop)
 
             events[4].set()
 
@@ -4819,7 +4831,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     xpath2,
                     rwdts.Flag.MERGE|rwdts.Flag.CACHE)
             """
-            yield from asyncio.sleep(1)
+            yield from asyncio.sleep(1, loop=self.loop)
 
             events[4].set()
 
@@ -4948,7 +4960,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     xpath2,
                     rwdts.Flag.MERGE|rwdts.Flag.CACHE)
             """
-            yield from asyncio.sleep(1)
+            yield from asyncio.sleep(1, loop=self.loop)
 
             events[4].set()
 
@@ -7725,7 +7737,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
             tinfo = self.new_tinfo('sub')
             dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
 
-            yield from asyncio.gather(events[0].wait(), asyncio.sleep(2), loop=self.loop)
+            yield from asyncio.gather(events[0].wait(), asyncio.sleep(2, loop=self.loop), loop=self.loop)
             res_iter = yield from dts.query_read(xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
 
             for i in res_iter:
@@ -7812,7 +7824,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     flags=rwdts.Flag.SUBSCRIBER|rwdts.Flag.CACHE,
                     handler=handler)
 
-            yield from asyncio.gather(events[1].wait(), asyncio.sleep(2), loop=self.loop)
+            yield from asyncio.gather(events[1].wait(), asyncio.sleep(2, loop=self.loop), loop=self.loop)
             res_iter = yield from dts.query_read(xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
 
             for i in res_iter:
@@ -8241,6 +8253,687 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
         self.sub_reg_two.deregister()
         self.sub_reg_three.deregister()
         print("}}}}}}}}}}}}}}}}}}}}DONE - test_wildcards_chain_pub_sub_with_cursor")
+
+    def test_xact_create_shallow_reroot(self):
+        """
+        Verify that create element operation at the pub done at deeper level than reg goes thru
+        fine and the data is committed when there are registered subscribers
+        for the keyspec.
+        """
+        print("{{{{{{{{{{{{{{{{{{{{STARTING - test_xact_create_shallow_reroot")
+        results = []
+        events = [asyncio.Event(loop=self.loop) for _ in range(3)]
+
+        employee = toyyang.Company().create_employee()
+        employee.id = 2
+        employee.name = "Employee1"
+        employee.title = "Engineer"
+        employee.start_date =  "10-10-1010"
+
+        xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]'
+        pub_xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]/rw-dts-toy-tasklet:employee[rw-dts-toy-tasklet:id="2"]'
+        @asyncio.coroutine
+        def pub():
+            tinfo = self.new_tinfo('pub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            yield from events[0].wait()
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                regh.create_element(pub_xpath,
+                                    employee)
+                events[1].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg1 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler)
+
+            yield from events[1].wait()
+
+        @asyncio.coroutine
+        def sub():
+            nonlocal results
+
+            tinfo = self.new_tinfo('sub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                events[0].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg2 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.SUBSCRIBER|rwdts.Flag.CACHE,
+                    handler=handler)
+
+            yield from asyncio.gather(events[1].wait(), asyncio.sleep(2, loop=self.loop), loop=self.loop)
+            res_iter = yield from dts.query_read(xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+
+            for i in res_iter:
+                result = yield from i
+                results.append(result)
+                print(result)
+
+            events[2].set()
+
+        asyncio.ensure_future(pub(), loop=self.loop)
+        asyncio.ensure_future(sub(), loop=self.loop)
+
+        self.run_until(events[2].is_set, timeout=5)
+        self.assertEqual(1, len(results))
+        print(results[0].result.name)
+        self.assertEqual(results[0].result.name, 'PUB1')
+        self.reg1.deregister()
+        self.reg2.deregister()
+        print("}}}}}}}}}}}}}}}}}}}}DONE - test_xact_create_shallow_reroot")
+
+    def test_xact_create_deep_reroot(self):
+        """
+        Verify that create element operation at the pub done at shallower level than reg goes thru
+        fine and the data is committed when there are registered subscribers
+        for the keyspec.
+        """
+        print("{{{{{{{{{{{{{{{{{{{{STARTING - test_xact_create_deep_reroot")
+        results = []
+        events = [asyncio.Event(loop=self.loop) for _ in range(3)]
+
+
+        company = toyyang.Company()
+        company.name = "PUB1"
+
+        employee1 = toyyang.Company().create_employee()
+        employee1.id = 1
+        employee1.name = "Employee1"
+        employee1.title = "Engineer"
+        employee1.start_date =  "10-10-1010"
+
+        employee2 = toyyang.Company().create_employee()
+        employee2.id = 2
+        employee2.name = "Employee2"
+        employee2.title = "Jr-Engineer"
+        employee2.start_date =  "20-20-2020"
+
+        company.employee = [employee1, employee2]
+
+        xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]/rw-dts-toy-tasklet:employee'
+        pub_xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]'
+
+        @asyncio.coroutine
+        def pub():
+            tinfo = self.new_tinfo('pub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            yield from events[0].wait()
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                regh.create_element(pub_xpath,
+                                    company)
+                events[1].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg1 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler)
+
+            yield from events[1].wait()
+
+        @asyncio.coroutine
+        def sub():
+            nonlocal results
+
+            tinfo = self.new_tinfo('sub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                events[0].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg2 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.SUBSCRIBER|rwdts.Flag.CACHE,
+                    handler=handler)
+
+            yield from asyncio.gather(events[1].wait(), asyncio.sleep(2, loop=self.loop), loop=self.loop)
+            res_iter = yield from dts.query_read(xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+
+            for i in res_iter:
+                result = yield from i
+                results.append(result)
+                print(result)
+
+            events[2].set()
+
+        asyncio.ensure_future(pub(), loop=self.loop)
+        asyncio.ensure_future(sub(), loop=self.loop)
+
+        self.run_until(events[2].is_set, timeout=5)
+        self.assertEqual(2, len(results))
+        print(results[0].result.name)
+        self.assertEqual(results[0].result.name, 'Employee1')
+        self.reg1.deregister()
+        self.reg2.deregister()
+        print("}}}}}}}}}}}}}}}}}}}}DONE - test_xact_create_deep_reroot")
+
+    def test_xact_update_deep_reroot(self):
+        """
+        Verify that update element operation at the pub done at shallower level than reg goes thru
+        fine and the data is committed when there are registered subscribers
+        for the keyspec.
+        """
+        print("{{{{{{{{{{{{{{{{{{{{STARTING - test_xact_update_deep_reroot")
+        results = []
+        events = [asyncio.Event(loop=self.loop) for _ in range(3)]
+
+
+        company = toyyang.Company()
+        company.name = "PUB1"
+
+        employee1 = toyyang.Company().create_employee()
+        employee1.id = 1
+        employee1.name = "Employee1"
+        employee1.title = "Engineer"
+        employee1.start_date =  "10-10-1010"
+
+        employee2 = toyyang.Company().create_employee()
+        employee2.id = 2
+        employee2.name = "Employee2"
+        employee2.title = "Jr-Engineer"
+        employee2.start_date =  "20-20-2020"
+
+        company.employee = [employee1, employee2]
+
+        xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]/rw-dts-toy-tasklet:employee'
+        pub_xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]'
+
+        @asyncio.coroutine
+        def pub():
+            tinfo = self.new_tinfo('pub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            yield from events[0].wait()
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                regh.create_element(xpath + '[rw-dts-toy-tasklet:id="1"]',
+                                    employee1)
+                regh.update_element(pub_xpath,
+                                    company)
+                events[1].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg1 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler)
+
+            yield from events[1].wait()
+
+        @asyncio.coroutine
+        def sub():
+            nonlocal results
+
+            tinfo = self.new_tinfo('sub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                events[0].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg2 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.SUBSCRIBER|rwdts.Flag.CACHE,
+                    handler=handler)
+
+            yield from asyncio.gather(events[1].wait(), asyncio.sleep(2, loop=self.loop), loop=self.loop)
+            res_iter = yield from dts.query_read(xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+
+            for i in res_iter:
+                result = yield from i
+                results.append(result)
+                print(result)
+
+            events[2].set()
+
+        asyncio.ensure_future(pub(), loop=self.loop)
+        asyncio.ensure_future(sub(), loop=self.loop)
+
+        self.run_until(events[2].is_set, timeout=5)
+        self.assertEqual(2, len(results))
+        print(results[0].result.name)
+        self.assertEqual(results[0].result.name, 'Employee1')
+        self.reg1.deregister()
+        self.reg2.deregister()
+        print("}}}}}}}}}}}}}}}}}}}}DONE - test_xact_update_deep_reroot")
+
+    def test_xact_update_shallow_reroot(self):
+        """
+        Verify that update element operation at the pub done at deeper level than reg goes thru
+        fine and the data is committed when there are registered subscribers
+        for the keyspec.
+        """
+        print("{{{{{{{{{{{{{{{{{{{{STARTING - test_xact_update_shallow_reroot")
+        results = []
+        events = [asyncio.Event(loop=self.loop) for _ in range(3)]
+
+        company = toyyang.Company()
+        company.name = "PUB1"
+
+        employee = toyyang.Company().create_employee()
+        employee.id = 2
+        employee.name = "Employee1"
+        employee.title = "Engineer"
+        employee.start_date =  "10-10-1010"
+
+        xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]'
+        pub_xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]/rw-dts-toy-tasklet:employee[rw-dts-toy-tasklet:id="2"]'
+        @asyncio.coroutine
+        def pub():
+            tinfo = self.new_tinfo('pub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            yield from events[0].wait()
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                regh.create_element(xpath,
+                                    company)
+
+                regh.update_element(pub_xpath,
+                                    employee)
+                events[1].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg1 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler)
+
+            yield from events[1].wait()
+
+        @asyncio.coroutine
+        def sub():
+            nonlocal results
+
+            tinfo = self.new_tinfo('sub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                events[0].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg2 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.SUBSCRIBER|rwdts.Flag.CACHE,
+                    handler=handler)
+
+            yield from asyncio.gather(events[1].wait(), asyncio.sleep(2, loop=self.loop), loop=self.loop)
+            res_iter = yield from dts.query_read(xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+
+            for i in res_iter:
+                result = yield from i
+                results.append(result)
+                print(result)
+
+            events[2].set()
+
+        asyncio.ensure_future(pub(), loop=self.loop)
+        asyncio.ensure_future(sub(), loop=self.loop)
+
+        self.run_until(events[2].is_set, timeout=5)
+        self.assertEqual(1, len(results))
+        print(results[0].result.name)
+        self.assertEqual(results[0].result.name, 'PUB1')
+        self.reg1.deregister()
+        self.reg2.deregister()
+        print("}}}}}}}}}}}}}}}}}}}}DONE - test_xact_update_shallow_reroot")
+
+    def test_xact_delete_deep_reroot(self):
+        """
+        Verify that delete element operation at the pub done at shallower level than reg goes thru
+        fine and the data is committed when there are registered subscribers
+        for the keyspec.
+        """
+        print("{{{{{{{{{{{{{{{{{{{{STARTING - test_xact_delete_deep_reroot")
+        results = []
+        events = [asyncio.Event(loop=self.loop) for _ in range(3)]
+
+        employee1 = toyyang.Company().create_employee()
+        employee1.id = 1
+        employee1.name = "Employee1"
+        employee1.title = "Engineer"
+        employee1.start_date =  "10-10-1010"
+
+        employee2 = toyyang.Company().create_employee()
+        employee2.id = 2
+        employee2.name = "Employee2"
+        employee2.title = "Jr-Engineer"
+        employee2.start_date =  "20-20-2020"
+
+        xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]/rw-dts-toy-tasklet:employee'
+        pub_xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]'
+
+        @asyncio.coroutine
+        def pub():
+            tinfo = self.new_tinfo('pub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            yield from events[0].wait()
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                regh.create_element(xpath + '[rw-dts-toy-tasklet:id="1"]',
+                                    employee1)
+                regh.create_element(xpath + '[rw-dts-toy-tasklet:id="2"]',
+                                    employee2)
+                regh.delete_element(pub_xpath)
+                events[1].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg1 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler)
+
+            yield from events[1].wait()
+
+        @asyncio.coroutine
+        def sub():
+            nonlocal results
+
+            tinfo = self.new_tinfo('sub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                events[0].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg2 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.SUBSCRIBER|rwdts.Flag.CACHE,
+                    handler=handler)
+
+            yield from asyncio.gather(events[1].wait(), asyncio.sleep(2, loop=self.loop), loop=self.loop)
+            res_iter = yield from dts.query_read(xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+
+            for i in res_iter:
+                result = yield from i
+                results.append(result)
+                print(result)
+
+            events[2].set()
+
+        asyncio.ensure_future(pub(), loop=self.loop)
+        asyncio.ensure_future(sub(), loop=self.loop)
+
+        self.run_until(events[2].is_set, timeout=5)
+        self.assertEqual(0, len(results))
+        self.reg1.deregister()
+        self.reg2.deregister()
+        print("}}}}}}}}}}}}}}}}}}}}DONE - test_xact_delete_deep_reroot")
+
+    def test_xact_delete_shallow_reroot(self):
+        """
+        Verify that delete element operation at the pub done at deeper level than reg goes thru
+        fine and the data is committed when there are registered subscribers
+        for the keyspec.
+        """
+        print("{{{{{{{{{{{{{{{{{{{{STARTING - test_xact_delete_shallow_reroot")
+        results = []
+        events = [asyncio.Event(loop=self.loop) for _ in range(3)]
+
+        company = toyyang.Company()
+        company.name = "PUB1"
+
+        employee1 = toyyang.Company().create_employee()
+        employee1.id = 1
+        employee1.name = "Employee1"
+        employee1.title = "Engineer"
+        employee1.start_date =  "10-10-1010"
+
+        employee2 = toyyang.Company().create_employee()
+        employee2.id = 2
+        employee2.name = "Employee2"
+        employee2.title = "Jr-Engineer"
+        employee2.start_date =  "20-20-2020"
+
+        company.employee = [employee1, employee2]
+
+        xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]'
+        pub_xpath = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="PUB1"]/rw-dts-toy-tasklet:employee[rw-dts-toy-tasklet:id="2"]'
+        @asyncio.coroutine
+        def pub():
+            tinfo = self.new_tinfo('pub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            yield from events[0].wait()
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                regh.create_element(xpath,
+                                    company)
+
+                regh.delete_element(pub_xpath)
+                events[1].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg1 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler)
+
+            yield from events[1].wait()
+
+        @asyncio.coroutine
+        def sub():
+            nonlocal results
+
+            tinfo = self.new_tinfo('sub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                events[0].set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready)
+
+            self.reg2 = yield from dts.register(
+                    xpath,
+                    flags=rwdts.Flag.SUBSCRIBER|rwdts.Flag.CACHE,
+                    handler=handler)
+
+            yield from asyncio.gather(events[1].wait(), asyncio.sleep(2, loop=self.loop), loop=self.loop)
+            res_iter = yield from dts.query_read(xpath, rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+
+            for i in res_iter:
+                result = yield from i
+                results.append(result)
+                print(result)
+
+            events[2].set()
+
+        asyncio.ensure_future(pub(), loop=self.loop)
+        asyncio.ensure_future(sub(), loop=self.loop)
+
+        self.run_until(events[2].is_set, timeout=5)
+        self.assertEqual(1, len(results))
+        print(results[0].result.name)
+        self.assertEqual(results[0].result.name, 'PUB1')
+        self.reg1.deregister()
+        self.reg2.deregister()
+        print("}}}}}}}}}}}}}}}}}}}}DONE - test_xact_delete_shallow_reroot")
+
+    def test_container_pub_in_list_pub(self):
+        """
+        Verify that the element functions on a registration work
+
+        The test will progress through stages defined by the events list:
+            0:  The pub is up and hit the on_ready() callback
+            1:  The sub is up and hit the on_ready() callback
+            2:  The sub publisher for container with list is up and hit the on_ready() callback
+            3:  The sub on_prepare completes processing of publish in (2)
+            4:  The sub publish deeper to allow update of cache from (3) is up and hit on_ready callback
+        """
+        print("{{{{{{{{{{{{{{{{{{{{STARTING - test_container_pub_in_list_pub")
+        results_one = []
+        results_two = []
+        events = [asyncio.Event(loop=self.loop) for _ in range(6)]
+
+        reg_xpath_one = 'D,/rw-dts-toy-tasklet:company'
+        reg_xpath_two = 'D,/rw-dts-toy-tasklet:company/rw-dts-toy-tasklet:profile'
+        reg_xpath_three = 'D,/rw-dts-toy-tasklet:company[rw-dts-toy-tasklet:name="company"]/rw-dts-toy-tasklet:profile/rw-dts-toy-tasklet:office-locations/rw-dts-toy-tasklet:printer-details'
+
+        companies = [toyyang.Company() for _ in range(2)]
+        for i, company in enumerate(companies):
+            company.name =  "company" + self.id() + str(i)
+            company.general_info =  "general-info" + self.id() + str(i)
+
+        profiles = [toyyang.Company_Profile() for _ in range(2)]
+
+        for i, profile in enumerate(profiles):
+            profile.revenue =  "revenue" + self.id() + str(i)
+
+        @asyncio.coroutine
+        def pub():
+            tinfo = self.new_tinfo('pub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            @asyncio.coroutine
+            def on_ready_one(regh, status):
+                for idx in range(2):
+                    regh.create_element(
+                            reg_xpath_one +
+                            '[rw-dts-toy-tasklet:name="%s"]' % (companies[idx].name),
+                            companies[idx])
+                events[0].set()
+
+            handler_one = rift.tasklets.DTS.RegistrationHandler(
+                    on_ready=on_ready_one)
+
+            self.reg_one = yield from dts.register(
+                    reg_xpath_one,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler_one)
+
+        @asyncio.coroutine
+        def sub():
+            nonlocal results_one
+            nonlocal results_two
+
+            tinfo = self.new_tinfo('sub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+            yield from events[0].wait()
+
+            @asyncio.coroutine
+            def on_prepare(xact_info, *args):
+                self.prepare_count += 1
+                xact_info.respond_xpath(rwdts.XactRspCode.ACK)
+                if (self.prepare_count == 2):
+                    events[3].set()
+
+
+            @asyncio.coroutine
+            def on_ready_one(regh, status):
+                results_one.extend(regh.elements)
+                events[1].set()
+
+            self.prepare_count = 0
+            handler_one = rift.tasklets.DTS.RegistrationHandler(
+                    on_ready=on_ready_one,
+                    on_prepare=on_prepare)
+
+            self.sub_reg_one = yield from dts.register(
+                    reg_xpath_one,
+                    flags=rwdts.Flag.SUBSCRIBER|rwdts.Flag.CACHE,
+                    handler=handler_one)
+
+            yield from events[1].wait()
+
+            @asyncio.coroutine
+            def on_ready_two(regh, status):
+                for idx in range(2):
+                    regh.create_element(
+                            reg_xpath_one +
+                            '[rw-dts-toy-tasklet:name="%s"]' % (companies[idx].name) +
+                            '/rw-dts-toy-tasklet:profile',
+                            profiles[idx])
+                events[2].set()
+
+            handler_two = rift.tasklets.DTS.RegistrationHandler(
+                    on_ready=on_ready_two)
+
+            self.sub_reg_two = yield from dts.register(
+                    reg_xpath_two,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler_two)
+
+            yield from events[3].wait()
+            @asyncio.coroutine
+            def on_ready_three(regh, status):
+                events[4].set()
+
+            handler_three = rift.tasklets.DTS.RegistrationHandler(
+                    on_ready=on_ready_three)
+
+            self.sub_reg_three = yield from dts.register(
+                    reg_xpath_three,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ,
+                    handler=handler_three)
+
+            yield from events[4].wait()
+            results_two.extend(self.sub_reg_one.elements)
+            events[5].set()
+
+        asyncio.ensure_future(pub(), loop=self.loop)
+        asyncio.ensure_future(sub(), loop=self.loop)
+
+        self.run_until(events[5].is_set, 60)
+
+        self.assertEqual(len(results_one), 2)
+        self.assertEqual(str(results_one[0]), str(companies[0]))
+        self.assertEqual(str(results_one[1]), str(companies[1]))
+        companies[0].profile = profiles[0]
+        companies[1].profile = profiles[1]
+        self.assertEqual(len(results_two), 2)
+        self.assertEqual(str(results_two[0]), str(companies[0]))
+        self.assertEqual(str(results_two[1]), str(companies[1]))
+        self.reg_one.deregister()
+        self.sub_reg_one.deregister()
+        self.sub_reg_two.deregister()
+        self.sub_reg_three.deregister()
+        print("}}}}}}}}}}}}}}}}}}}}DONE - test_container_pub_in_list_pub")
 
     def test_delete_partial(self):
         """
@@ -9404,6 +10097,9 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
 def main():
     top_dir = __file__[:__file__.find('/modules/core/')]
     build_dir = os.path.join(top_dir, '.build/modules/core/rwvx/src/core_rwvx-build')
+
+    if 'RIFT_NO_SUDO_REAPER' not in os.environ:
+        os.environ['RIFT_NO_SUDO_REAPER'] = '1'
 
     if 'MESSAGE_BROKER_DIR' not in os.environ:
         os.environ['MESSAGE_BROKER_DIR'] = os.path.join(build_dir, 'rwmsg/plugins/rwmsgbroker-c')

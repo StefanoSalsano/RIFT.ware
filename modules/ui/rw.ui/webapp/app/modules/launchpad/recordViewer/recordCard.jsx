@@ -56,6 +56,8 @@ export default class RecordCard extends React.Component {
     }
     let mgmt_interface = cardData["dashboard-url"];
     let mgmtHTML;
+    let metricsAndParams = [];
+
     if(mgmt_interface) {
       mgmtHTML = <a href={mgmt_interface} target="_blank">Open Application Dashboard</a>;
     }
@@ -64,17 +66,20 @@ export default class RecordCard extends React.Component {
       } else {
         let glyphValue = (this.props.recordDetailsToggleValue) ? "chevron-left" : "chevron-right";
         let nfviMetrics = this.props.type != 'vnfr' ? <LpCardNfviMetrics data={cardData["nfvi-metrics"]} /> : null;
+            if(true) {
+              metricsAndParams.push(<div className="monitoringParams">{components}</div>)
+                      metricsAndParams.push((<div className="nfvi-metrics">
+                        { nfviMetrics }
+                        <EpaParams data={cardData["epa-params"]} />
+                      </div>))
+            }
         html = (
             <DashboardCard className="recordCard" showHeader={true} title={cardData["short-name"]}>
               <a onClick={this.props.recordDetailsToggleFn} className={"recordViewToggle " + (this.props.recordDetailsToggleValue ? "on": null)}><span className="oi" data-glyph={glyphValue} title="Toggle Details Panel" aria-hidden="true"></span></a>
               <div className="launchpadCard_title" style={{textAlign:'right'}}><span style={{float:'left'}}>MONITORING PARAMETERS</span>
                 {mgmtHTML}
               </div>
-              <div className="monitoringParams">{components}</div>
-              <div className="nfvi-metrics">
-                { nfviMetrics }
-                <EpaParams data={cardData["epa-params"]} />
-              </div>
+              {metricsAndParams}
               <div className="configPrimitives">
                 {configPrimitiveComponent}
               </div>

@@ -323,8 +323,14 @@ def do_insert_license(args,path):
 	
 	#
 
-	# get text of source file
-	text = open(path,'rb').read();
+	text = ''
+
+	try:
+		# get text of source file
+		text = open(path,'rb').read();
+
+	except IOError:
+		printMe ('\tUnable to read '+str(path)+' ! Maybe it is a symlink?')
 
 	#printMe '\ntext_before:\n'+text[:300]+'\n\n'
 	beforeLines = text[:300]
@@ -361,6 +367,7 @@ def do_insert_license(args,path):
 	 (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 	')
 
+	prefix = ''
 
 	has_start = False
 	for phs in placeholders_start:
@@ -373,6 +380,12 @@ def do_insert_license(args,path):
 			# add a space on to C style prefix
 			if prefix == '*': 
 				prefix = ' *'
+
+			# newline prefix when there is no space between prefix and placeholder
+			if prefix == '\n':
+				printMe ('\t\t\t[real_license] found newline prefix ')
+				#prefix = '# '
+				prefix = text[found-1]
 
 			printMe ('\t\t\t[real_license] has_start@'+str(found)+' prefix=|'+str(prefix)+'| ')
 			has_start = True
@@ -677,8 +690,13 @@ def find_placeholders(args):
 
 			path = os.path.join(dirName, fname)
 
-			is_bin = is_binary_string(open(path, 'rb').read(1024))
-			if DEBUG: printMe ( '\t'+path+' is_bin='+str(is_bin) )
+			try:
+				is_bin = is_binary_string(open(path, 'rb').read(1024))
+				if DEBUG: printMe ( '\t'+path+' is_bin='+str(is_bin) )
+
+			except IOError:
+				printMe ('\tUnable to read '+str(path)+' ! Maybe it is a symlink?')
+
 
 			# we've found a text file (probably), check it for license placeholders
 			if is_bin == False:
@@ -715,8 +733,12 @@ def find_placeholders(args):
 					#BFDICT[theMod]['FILES'] = {}
 					BFDICT[theMod]['FILES'] = []
 
-				# get text of file
-				text = open(path,'rb').read();
+				try:
+					# get text of file
+					text = open(path,'rb').read();
+
+		               	except IOError:
+					printMe ('\tUnable to read '+str(path)+' ! Maybe it is a symlink?')
 
 				has_start = False
 				for phs in placeholders_start:

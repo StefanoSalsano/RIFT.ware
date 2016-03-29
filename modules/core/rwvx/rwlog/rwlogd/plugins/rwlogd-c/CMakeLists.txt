@@ -20,6 +20,7 @@ set(C_SOURCES rwlogd-c.c)
 # By default the directories are appended onto the current list of directories
 ##
 include_directories(BEFORE
+  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwsched/src
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwmsg/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwvcs/plugins/vala
@@ -38,6 +39,7 @@ add_definitions(-std=gnu99 -D_GNU_SOURCE)
 ##
 target_link_libraries(${PLUGIN_NAME}
   rwlogdproto
+  rwdts_api
   rwlogd_api
   rwschema_yang_gen
   rwlib

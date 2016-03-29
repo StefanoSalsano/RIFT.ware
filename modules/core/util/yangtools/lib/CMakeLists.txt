@@ -13,7 +13,8 @@ include_directories(BEFORE
   ${XERCES_C_INCLUDE_DIRS}
   ${EDIT_INCLUDE_DIRS}
   ${GOBJECT_INCLUDE_DIRS}
-  ${NCX_INCLUDE_DIRS})
+  ${NCX_INCLUDE_DIRS}
+  ../rwyangutil)
 
 ###############################################################################
 ##
@@ -32,6 +33,7 @@ set(rwyang_sources
   rw_xml.cpp
   rw_xml_ximpl.cpp
   rw_yang_pb.cpp
+  rw_yang_json.cpp
   rw_yang_mutex.cpp
   yangcli.cpp
   yangmodel.cpp
@@ -51,6 +53,7 @@ target_link_libraries(rwyang PRIVATE
   rwlib
   rwtrace
   rw_schema_pb
+  rwyangutil_lib
   ${XERCES_C_LIBRARIES}
   ${EDIT_LIBRARIES}
   ${GOBJECT_LIBRARIES}
@@ -84,6 +87,7 @@ rift_make_pc(rwyang
 install(FILES
   ../include/riftware/rw_gi.h
   ../include/riftware/rw_json.h
+  ../include/riftware/rw_yang_json.h
   ../include/riftware/rw_keyspec.h
   ../include/riftware/rw_keyspec_gi.h
   ../include/riftware/rw_keyspec_mk.h
@@ -109,6 +113,7 @@ install(FILES
   ../include/riftware/yangcli.hpp
   ../include/riftware/yangncx.hpp
   ../include/riftware/yangpbc.hpp
+  ../include/riftware/rw_yang_json.h
   DESTINATION usr/include/c++ COMPONENT ${PKG_LONG_NAME})
 
 
@@ -392,5 +397,13 @@ rift_install_vala_artifacts(
   DEST_PREFIX .
 )
 
-
-
+##
+# Compile and install the xerces libcurl disable preload
+##
+add_library(rwxercespreload SHARED rw_xerces_netaccessor_preload.cpp)
+install(
+  TARGETS rwxercespreload
+  LIBRARY
+  DESTINATION usr/lib/rift/preloads
+  COMPONENT ${PKG_LONG_NAME}
+  )

@@ -147,6 +147,8 @@ module.exports = function (grunt) {
         ]);
     });
 
+	grunt.registerTask('patch', ['version:project:patch', 'version:src', 'build:dist']);
+
     grunt.registerTask('test', ['karma']);
 
     grunt.registerTask('build', ['clean', 'copy', 'webpack']);

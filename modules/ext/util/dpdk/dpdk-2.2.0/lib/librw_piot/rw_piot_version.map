@@ -43,5 +43,6 @@ DPDK_2.2 {
         rw_piot_get_vlan_offload;
         rw_piot_update_vlan_filter;
         rw_piot_set_mc_addr_list;
+        rw_piot_get_extended_stats;
         local: *;
 };

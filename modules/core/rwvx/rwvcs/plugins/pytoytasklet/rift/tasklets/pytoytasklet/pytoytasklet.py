@@ -13,6 +13,10 @@ import collections
 import logging
 import sys
 
+import gi
+gi.require_version('RwBaseYang', '1.0')
+gi.require_version('RwDts', '1.0')
+
 import gi.repository.RwBaseYang as rwbase
 import gi.repository.RwDts as rwdts
 

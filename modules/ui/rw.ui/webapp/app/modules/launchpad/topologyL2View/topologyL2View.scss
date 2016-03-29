@@ -4,7 +4,7 @@
  *
  */
 @import "../../styles/_colors.scss";
-.topologyView {
+.topologyL2View {
 
 	display: flex;
 	flex-direction: row;
@@ -17,7 +17,7 @@
 	min-width: 1340px;
 
 	.dashboardCard {
-		flex: 0 1 auto;
+		flex: 1 1 auto;
 		width: auto;
 		height: auto;
 		margin: 0px;
@@ -29,30 +29,55 @@
 			background-color: white;
 		}
 		&.recordDetails {
-			flex: 1 1 auto;
-
+            width: 400px;
 			pre {
 				margin: 0;
 				white-space: pre-wrap;
 			}
 		}
-	}
+		.nodeAttr {
+			overflow: auto;
+			margin-top: 10px;
+            margin-left: 5px;
 
-	svg {
-		.gnode {
-			cursor: pointer;
-
-			circle {
-				stroke: steelblue;
-				stroke-width: 1.5px;
+			.listy {
+				//border: 1px solid red;
+				flex: 1 1 auto;
+				//max-height: 400px;
+				//.listyGroup {}
+				.listyGroup .listyGroup {
+					margin-left: 15px;
+				}
+				.listyItem {
+					padding-top: 5px;
+					list-style-type: none;
+				}
+				.listyGroupHeader {
+					font-size: 1em;
+				}
+				.listyNoDataMessage {
+					text-align: center;
+					margin-top: 40px;
+					color: gray;
+					font-size: 2em;
+					font-style: italic;
+				}
+			}
+			.debugDetailBox {
+				margin-top:20px;
 			}
 		}
-		.link {
-			fill: none;
-			stroke: gray;
-			stroke-width: 1.5px;
-		}
 	}
+	.topologyGraphDebugPanel {
+	    margin: 5px;
+	    background-color: #ECF1EF;
+    }
+    .topologyDebugRawJSON {
+    	margin: 5px;
+    	padding: 5px;
+    	border: 1px dashed gray;
+    }
+
 }
 
 svg.topology {
@@ -79,9 +104,28 @@ svg.topology {
 			fill: red;
 		}
 	}
+	.node-group-4 {
+		circle {
+			fill: blue;
+		}
+	}
+	.node-group-5 {
+		circle {
+			fill: orange;
+		}
+	}
+
 	.link {
 		fill: none;
 		stroke: gray;
 		stroke-width: 1.5px;
 	}
+
+	.legend {
+		// placeholder
+	}
+}
+
+.reloadButton {
+    //TODO: Style this button
 }

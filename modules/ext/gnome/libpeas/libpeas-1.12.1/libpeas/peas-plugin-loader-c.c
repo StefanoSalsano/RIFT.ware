@@ -4,19 +4,19 @@
  *
  * Copyright (C) 2008 - Jesse van den Kieboom
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU Library General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
+ * libpeas is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU Library General Public License for more details.
+ * libpeas is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- *  You should have received a copy of the GNU Library General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -44,8 +44,8 @@ G_DEFINE_TYPE_WITH_PRIVATE (PeasPluginLoaderC,
 #define GET_PRIV(o) \
   (peas_plugin_loader_c_get_instance_private (o))
 
-static
-G_DEFINE_QUARK (peas-extension-type, extension_type)
+static GQuark quark_extension_type = 0;
+static const gchar *intern_plugin_info = NULL;
 
 static gboolean
 peas_plugin_loader_c_load (PeasPluginLoader *loader,
@@ -65,13 +65,21 @@ peas_plugin_loader_c_load (PeasPluginLoader *loader,
       module_name = peas_plugin_info_get_module_name (info);
       module_dir = peas_plugin_info_get_module_dir (info);
 
-      /* Force all C modules to be resident in case they
-       * use libraries that do not deal well with reloading.
-       * Furthermore, we use local linkage to improve module isolation.
-       */
-      info->loader_data = peas_object_module_new_full (module_name,
-                                                       module_dir,
-                                                       TRUE, TRUE);
+      if (info->embedded != NULL)
+        {
+          info->loader_data = peas_object_module_new_embedded (module_name,
+                                                               info->embedded);
+        }
+      else
+        {
+          /* Force all C modules to be resident in case they
+           * use libraries that do not deal well with reloading.
+           * Furthermore, we use local linkage to improve module isolation.
+           */
+          info->loader_data = peas_object_module_new_full (module_name,
+                                                           module_dir,
+                                                           TRUE, TRUE);
+        }
 
       if (!g_type_module_use (G_TYPE_MODULE (info->loader_data)))
         g_clear_object (&info->loader_data);
@@ -117,14 +125,14 @@ peas_plugin_loader_c_create_extension (PeasPluginLoader *loader,
    * actually "duplicate" the GValues, a memcpy is sufficient as the
    * source GValues are longer lived than our local copy.
    */
-  exten_parameters = g_new (GParameter, n_parameters + 1);
+  exten_parameters = g_newa (GParameter, n_parameters + 1);
   memcpy (exten_parameters, parameters, sizeof (GParameter) * n_parameters);
 
   /* Initialize our additional property.
    * If the instance does not have a plugin-info property
    * then PeasObjectModule will remove the property.
    */
-  exten_parameters[n_parameters].name = g_intern_static_string ("plugin-info");
+  exten_parameters[n_parameters].name = intern_plugin_info;
   memset (&exten_parameters[n_parameters].value, 0, sizeof (GValue));
   g_value_init (&exten_parameters[n_parameters].value, PEAS_TYPE_PLUGIN_INFO);
   g_value_set_boxed (&exten_parameters[n_parameters].value, info);
@@ -135,7 +143,6 @@ peas_plugin_loader_c_create_extension (PeasPluginLoader *loader,
                                                exten_parameters);
 
   g_value_unset (&exten_parameters[n_parameters].value);
-  g_free (exten_parameters);
 
   if (instance == NULL)
     return NULL;
@@ -146,7 +153,7 @@ peas_plugin_loader_c_create_extension (PeasPluginLoader *loader,
   /* We have to remember which interface we are instantiating
    * for the deprecated peas_extension_get_extension_type().
    */
-  g_object_set_qdata (instance, extension_type_quark (),
+  g_object_set_qdata (instance, quark_extension_type,
                       GSIZE_TO_POINTER (exten_type));
 
   return instance;
@@ -183,6 +190,9 @@ peas_plugin_loader_c_class_init (PeasPluginLoaderCClass *klass)
   GObjectClass *object_class = G_OBJECT_CLASS (klass);
   PeasPluginLoaderClass *loader_class = PEAS_PLUGIN_LOADER_CLASS (klass);
 
+  quark_extension_type = g_quark_from_static_string ("peas-extension-type");
+  intern_plugin_info = g_intern_static_string ("plugin-info");
+
   object_class->finalize = peas_plugin_loader_c_finalize;
 
   loader_class->load = peas_plugin_loader_c_load;
@@ -191,7 +201,7 @@ peas_plugin_loader_c_class_init (PeasPluginLoaderCClass *klass)
   loader_class->create_extension = peas_plugin_loader_c_create_extension;
 }
 
-/**
+/*
  * peas_plugin_loader_c_new:
  *
  * Return a new instance of #PeasPluginLoaderC.

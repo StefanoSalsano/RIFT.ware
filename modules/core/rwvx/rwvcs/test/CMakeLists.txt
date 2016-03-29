@@ -12,8 +12,9 @@ rift_gtest(unittest_rwvcs_rwzk
     rwcal_api
     rwschema_yang_gen
     rwlib
+    rwsched
     rwvcs
-
+    ck
     glib-2.0
 )
 

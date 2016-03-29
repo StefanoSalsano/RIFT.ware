@@ -2022,8 +2022,8 @@ a[role=button] {
 }
 .login-cntnr .sign-in {
     display: inline-block;
-    height: 45px;
-    padding-top: 20px;
+    // height: 45px;
+    // padding-top: 20px;
     -webkit-box-shadow: 4px 4px 1px 0 #d9d9d9;
     -moz-box-shadow: 4px 4px 1px 0 #d9d9d9;
     box-shadow: 4px 4px 1px 0 #d9d9d9;

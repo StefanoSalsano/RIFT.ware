@@ -12,7 +12,7 @@ import alt from '../alt';
 class RiftHeaderActions {
 
 	constructor() {
-		this.generateActions('navigateToDashboard');
+		this.generateActions('requestLaunchpadConfigSuccess');
 	}
 
 }

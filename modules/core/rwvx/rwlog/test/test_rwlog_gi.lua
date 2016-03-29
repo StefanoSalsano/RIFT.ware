@@ -7,9 +7,9 @@
 local lgi = require 'lgi'
 local GObject = lgi.GObject
 
--- Import the RwLog and Rwcomposite
+-- Import the RwLog
 local RwLog = lgi.RwLog
-local RwComposite = lgi.RwComposite
+local RwLogYang = lgi.RwLogYang
 
 -- lua wrapper function for rwlog
 function rwlog_lua(info)
@@ -21,9 +21,10 @@ function rwlog_lua(info)
   print ('short_src', info.short_src)
 
   -- Compose the event
-  ev = RwComposite:EvTemplate();    -- or whatever the event is
-  ev:set_filename(info.short_src)
-  ev:set_linenumber(info.currentline)
+  ev = RwLogYang:EvTemplate();    -- or whatever the event is
+  tp = ev.template_params
+  tp.filename = info.short_src
+  tp.linenumber = info.currentline
   pb = ev:to_ptr()
 
   -- Send the protobuf

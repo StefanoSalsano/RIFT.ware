@@ -28,6 +28,7 @@
 #include <rwmsg.h>
 #include <rwdts_redis.h>
 #include <rwdts_kv_light_api.h>
+#include <rwdts_kv_light_api_gi.h>
 
 struct {
   rwdts_kv_handle_t *handle;

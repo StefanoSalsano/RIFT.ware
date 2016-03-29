@@ -17,6 +17,8 @@ import unittest
 import xmlrunner
 import gc
 import gi
+gi.require_version('RwpersonDbYang', '1.0')
+gi.require_version('YangModelPlugin', '1.0')
 from gi.repository import RwpersonDbYang, GLib
 from gi.repository import RwYang
 import rw_peas
@@ -520,6 +522,104 @@ class TestRwpersonDB(unittest.TestCase):
         rpco.target.result.timetaken = 1000
         xml_str=rpco.to_xml_v2(model)
         print(xml_str)
+
+    def test_nullable(self):
+        person = RwpersonDbYang.Person()
+        person.name = "jeff"
+        person.emergency_phone.type_yang = 'WORK'
+        person.blob=bytearray([0x1, 0x2, 0x3, 0x0, 0x4])
+
+        self.assertTrue(person.has_field('name'))
+        try:
+            person.name = None
+        except Exception as e:
+            self.fail('Unexpected exception thrown: ' + str(e))
+        else:
+            pass
+        self.assertFalse(person.has_field('name'))
+
+        self.assertTrue(person.emergency_phone.has_field('type'))
+        try:
+            person.emergency_phone.type_yang = None
+        except TypeError:
+            pass
+        except Exception as e:
+            self.fail('Unexpected exception thrown: ' + str(e))
+        else:
+            self.fail('ExpectedException not thrown')
+        self.assertTrue(person.emergency_phone.has_field('type'))
+
+        self.assertTrue(person.has_field('emergency_phone'))
+        try:
+            person.emergency_phone = None
+        except Exception as e:
+            self.fail('Unexpected exception thrown: ' + str(e))
+        else:
+            pass
+        self.assertFalse(person.has_field('emergency_phone'))
+
+        self.assertTrue(person.has_field('blob'))
+        try:
+            person.blob = None
+        except TypeError:
+            pass
+        except Exception as e:
+            self.fail('Unexpected exception thrown: ' + str(e))
+        else:
+            self.fail('ExpectedException not thrown')
+        self.assertTrue(person.has_field('blob'))
+
+
+
+        flat_person = RwpersonDbYang.FlatPerson()
+        flat_person.name = "jeff"
+        flat_person.emergency_phone.type_yang = 'WORK'
+        flat_person.blob=bytearray([0x1, 0x2, 0x3, 0x0, 0x4])
+
+        self.assertTrue(flat_person.has_field('name'))
+        try:
+            flat_person.name = None
+        except TypeError:
+            pass
+        except Exception as e:
+            self.fail('Unexpected exception thrown: ' + str(e))
+        else:
+            self.fail('ExpectedException not thrown')
+        self.assertTrue(flat_person.has_field('name'))
+
+        self.assertTrue(flat_person.emergency_phone.has_field('type'))
+        try:
+            flat_person.emergency_phone.type_yang = None
+        except TypeError:
+            pass
+        except Exception as e:
+            self.fail('Unexpected exception thrown: ' + str(e))
+        else:
+            self.fail('ExpectedException not thrown')
+        self.assertTrue(flat_person.emergency_phone.has_field('type'))
+
+        self.assertTrue(flat_person.has_field('emergency_phone'))
+        try:
+            flat_person.emergency_phone = None
+        except TypeError:
+            pass
+        except Exception as e:
+            self.fail('Unexpected exception thrown: ' + str(e))
+        else:
+            self.fail('ExpectedException not thrown')
+        self.assertTrue(flat_person.has_field('emergency_phone'))
+
+        self.assertTrue(flat_person.has_field('blob'))
+        try:
+            flat_person.blob = None
+        except TypeError:
+            pass
+        except Exception as e:
+            self.fail('Unexpected exception thrown: ' + str(e))
+        else:
+            self.fail('ExpectedException not thrown')
+        self.assertTrue(flat_person.has_field('blob'))
+
 
 class TestPersonDict(unittest.TestCase):
     def test_simple_from_dict(self):

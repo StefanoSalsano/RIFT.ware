@@ -6,7 +6,11 @@
 import asyncio
 import logging
 import os
+import sys
 
+import gi
+gi.require_version('RwVnsYang', '1.0')
+gi.require_version('RwDts', '1.0')
 from gi.repository import (
     RwVnsYang,
     RwDts as rwdts,
@@ -70,6 +74,12 @@ class SDNAccountDtsHandler(object):
         self._sdn_account[account.name]  = account
         self._parent._acctmgr.set_sdn_account(account)
 
+    def _del_sdn_account(self, account_name):
+        self._log.info("Deleting sdn account: {}".format(account_name))
+        del self._sdn_account[account_name]
+
+        self._parent._acctmgr.del_sdn_account(account_name)
+
     @asyncio.coroutine
     def register(self):
         def apply_config(dts, acg, xact, action, _):
@@ -90,12 +100,15 @@ class SDNAccountDtsHandler(object):
             fref.goto_whole_message(msg.to_pbcm())
 
             if fref.is_field_deleted():
-                # Delete an NSD record
-                self._log.warning("Deleting sdn account not yet supported")
+                # Delete the sdn account record
+                self._del_sdn_account(msg.name)
             else:
                 if msg.name in self._sdn_account:
                     msg = "Cannot update a SDN account that already was set."
                     self._log.error(msg)
+                    xact_info.send_error_xpath(RwTypes.RwStatus.FAILURE,
+                                               SDNAccountDtsHandler.XPATH,
+                                               msg)
                     raise SdnAccountExistsError(msg)
 
                 # Set the sdn account record
@@ -192,6 +205,7 @@ class VnsManager(object):
                                                self._loop,
                                                self,
                                                msg,
+                                               msg.res_id
                                                )
         return self._vlrs[msg.id]
 
@@ -271,6 +285,13 @@ class VnsTasklet(rift.tasklets.Tasklet):
     def on_instance_started(self):
         """ The task instance started callback"""
         self.log.debug("Got instance started callback")
+
+    def stop(self):
+      try:
+         self._dts.deinit()
+      except Exception:
+         print("Caught Exception in VNS stop:", sys.exc_info()[0])
+         raise
 
     @asyncio.coroutine
     def init(self):

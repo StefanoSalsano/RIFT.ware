@@ -60,12 +60,13 @@ static void rwdts_router_send_f(rwdts_router_xact_t *xact,
 
 static void rwdts_router_xact_free_req(rwdts_router_xact_t *xact);
 
-static uint32_t
-rwdts_router_update_sub_match(rwdts_router_xact_req_t *xreq, 
+static int
+rwdts_router_update_sub_match(rwdts_router_xact_t *xact,
+                              rwdts_router_xact_req_t *xreq, 
                               rwdts_shard_chunk_info_t *chunk,
                               bool subobj);
 
-static uint32_t
+static int
 rwdts_router_update_pub_match(rwdts_router_xact_t* xact, 
                               rwdts_router_xact_req_t *xreq, 
                               rwdts_shard_chunk_info_t *chunk,
@@ -179,6 +180,8 @@ rwdts_router_state_to_str(rwdts_router_xact_state_t state)
       return "ST_DONE";
     case RWDTS_ROUTER_XACT_TERM:
       return "ST_TERM";
+    case RWDTS_ROUTER_XACT_QUEUED:
+      return "ST_QUEUED";
     default:
       RW_ASSERT_MESSAGE(0, "Unknown State %u", state);
   }
@@ -614,6 +617,7 @@ static void rwdts_router_xact_timer(void *ctx)
               : sing_req->xreq_state == RWDTS_ROUTER_QUERY_SENT ? "SENT"
               : sing_req->xreq_state == RWDTS_ROUTER_QUERY_NONE ? "(none)"
               : sing_req->xreq_state == RWDTS_ROUTER_QUERY_UNSENT ? "UNSENT"
+              : sing_req->xreq_state == RWDTS_ROUTER_QUERY_QUEUED ? "QUEUED"
               : sing_req->xreq_state == RWDTS_ROUTER_QUERY_ASYNC ? "ASYNC"
               : sing_req->xreq_state == RWDTS_ROUTER_QUERY_ACK ? "ACK"
               : sing_req->xreq_state == RWDTS_ROUTER_QUERY_NA ? "NA"
@@ -721,6 +725,7 @@ rwdts_router_xact_t *rwdts_router_xact_create(rwdts_router_t *dts,
   gettimeofday(&xact->tv_trace, NULL);
 
   xact->do_commits = FALSE;        /* turned on by various query types */
+  RW_DL_INIT(&xact->queued_members);
 
 
   /* The originating request, which we respond to at the very end of
@@ -762,6 +767,7 @@ rwdts_router_xact_t *rwdts_router_xact_create(rwdts_router_t *dts,
   if (input->has_flags) {
     if ((input->flags & RWDTS_XACT_FLAG_WAIT)) {
       xact->ended = TRUE;
+      RWDTS_RTR_ADD_TR_ENT_ENDED(xact);   
     }
   }
 
@@ -837,6 +843,16 @@ void rwdts_router_xact_destroy(rwdts_router_t *dts,
   xact->xact_blocks = NULL;
 
   /* Clear out cached destination data */
+  while (RW_DL_LENGTH(&xact->queued_members)) {
+    rwdts_router_queued_xact_t *queued_xact = RW_DL_POP(&xact->queued_members, rwdts_router_queued_xact_t, queued_member_element);
+    RW_ASSERT_TYPE(queued_xact, rwdts_router_queued_xact_t);
+    RW_ASSERT(queued_xact->xact == xact);
+    rwdts_router_member_t *member = queued_xact->member;
+    RW_ASSERT_TYPE(member, rwdts_router_member_t);
+    RW_DL_REMOVE(&member->queued_xacts, queued_xact, queued_xact_element);
+    RW_FREE_TYPE(queued_xact, rwdts_router_queued_xact_t);
+  }
+
   rwdts_router_member_node_t *memb=NULL, *membtmp=NULL;
   HASH_ITER(hh_xact, xact->xact_union, memb, membtmp) {
     HASH_DELETE(hh_xact, xact->xact_union, memb);
@@ -1385,6 +1401,54 @@ rwdts_rtr_err_report(rwdts_router_xact_t *xact,
   rwdts_dbg_errrep_append(dbg->err_report, err_report);
 }
 
+static void rwdts_router_xact_queue_restart(
+    rwdts_router_xact_sing_req_t *sing_req,
+    rwdts_router_xact_t *xact,
+    bool push)
+{
+  RW_ASSERT(sing_req->membnode->member->wait_restart);
+  rwdts_router_queued_xact_t *queued_xact = 
+      RW_MALLOC0_TYPE(sizeof(rwdts_router_queued_xact_t), 
+                      rwdts_router_queued_xact_t);
+  RW_ASSERT_TYPE(queued_xact, rwdts_router_queued_xact_t);
+  queued_xact->xact = xact;
+  queued_xact->member = sing_req->membnode->member;
+  if (push) {
+    RW_DL_PUSH(
+        &sing_req->membnode->member->queued_xacts, 
+        queued_xact, 
+        queued_xact_element);
+    RW_DL_PUSH(
+        &xact->queued_members, 
+        queued_xact, 
+        queued_member_element);
+  }
+  else {
+    RW_DL_ENQUEUE(
+        &sing_req->membnode->member->queued_xacts, 
+        queued_xact, 
+        queued_xact_element);
+    RW_DL_ENQUEUE(
+        &xact->queued_members, 
+        queued_xact, 
+        queued_member_element);
+  }
+}
+
+static __inline__ char * rwdts_router_xact_rsp_bounce_str(rwmsg_bounce_t bcode)
+{
+  switch (bcode) {
+    case RWMSG_BOUNCE_NOMETH:
+      return "RWMSG_BOUNCE_NOMETH";
+    case RWMSG_BOUNCE_NOPEER:
+      return "RWMSG_BOUNCE_NOPEER";
+    case RWMSG_BOUNCE_SRVRST:
+      return "RWMSG_BOUNCE_SRVRST";
+    default:
+      return "RWMSG_BOUNCE_UNKOWN";
+  }
+}
+
 /* A response to a prepare or event has arrived.  Correlate and handle it... */
 void rwdts_router_xact_msg_rsp(const RWDtsXactResult *xresult,
                                rwmsg_request_t *rsp_req, /* our original request handle, or NULL for upcalls from the member */
@@ -1459,18 +1523,30 @@ found:
           xact->req_nack++;
           break;
         case RWMSG_BOUNCE_NOMETH:
-        case RWMSG_BOUNCE_NOPEER:        /* we can't differentiate nometh vs nopeer at present */
+        case RWMSG_BOUNCE_NOPEER:
+        case RWMSG_BOUNCE_SRVRST:
           if (xact->state > RWDTS_ROUTER_XACT_PREPARE) {
             /* Nope, it's an error after prepare */
             sing_req->xreq_state = RWDTS_ROUTER_QUERY_ERR;
             block->req_done_nack++;
             xact->req_nack++;
-          } else {
-            /* The destination either doesn't exist or hasn't got DTS
-               methods registered: treat as an N/A response. */
+          } 
+          else if ((bcode == RWMSG_BOUNCE_SRVRST) 
+                   && sing_req->membnode->member->wait_restart) {
+              block->req_outstanding--;
+              xact->req_outstanding--;
+              block->req_sent--;
+              xact->req_sent--;
+              sing_req->xreq_state = RWDTS_ROUTER_QUERY_QUEUED;
+              rwdts_router_xact_queue_restart(sing_req, xact, true);
+              xact->state = RWDTS_ROUTER_XACT_QUEUED;
+              rwdts_router_xact_run(xact);
+              return;
+          }
+          else {
             char *log_str;
             asprintf(&log_str, "Router: %s from %s: setting NACK",
-                     (bcode == RWMSG_BOUNCE_NOMETH)?"NOMETH":"NOPEER", 
+                     rwdts_router_xact_rsp_bounce_str(bcode),
                      sing_req->membnode->member->msgpath);
             RWDTS_ROUTER_LOG_EVENT(xact->dts, MemberBounce, log_str);
             sing_req->xreq_state = RWDTS_ROUTER_QUERY_ERR;
@@ -1717,7 +1793,7 @@ static void rwdts_router_xact_event_run(rwdts_router_xact_t *xact) {
     default:
       RWDTS_ROUTER_LOG_XACT_EVENT(dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
                                   RWLOG_ATTR_SPRINTF("router xact->state=%d", xact->state));
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
     }
   }
@@ -1891,12 +1967,10 @@ rwdts_router_select_anycast_member(rwdts_router_xact_t *xact,
 }
 
 static void
-rwdts_router_prepare_f(rwdts_router_xact_t *xact,
-                       rwdts_router_xact_req_t *xreq,
-                       bool is_resend,
-                       uint32_t blockidx,
-                       rwdts_router_xact_sing_req_t *sing_req)
+rwdts_router_prepare_f(rwdts_router_xact_t *xact, rwdts_router_xact_sing_req_t *sing_req)
 {
+  rwdts_router_xact_req_t *xreq = sing_req->xreq;
+  uint32_t blockidx = xreq->block_idx;
   rwdts_router_xact_block_t *block = xact->xact_blocks[blockidx];
 
   if (!sing_req->membnode->member->dest) {
@@ -1908,12 +1982,17 @@ rwdts_router_prepare_f(rwdts_router_xact_t *xact,
 
     return;
   }
+  if (sing_req->membnode->member->wait_restart) {
+    sing_req->xreq_state = RWDTS_ROUTER_QUERY_QUEUED;
+  }
 
   switch (sing_req->xreq_state) {
   case RWDTS_ROUTER_QUERY_UNSENT:
   case RWDTS_ROUTER_QUERY_NONE:
   case RWDTS_ROUTER_QUERY_ASYNC:
     break;
+  case RWDTS_ROUTER_QUERY_QUEUED:
+    rwdts_router_xact_queue_restart(sing_req, xact, false);
   default:
     return;
   }
@@ -2189,7 +2268,7 @@ void rwdts_router_send_f(rwdts_router_xact_t *xact,
                                &sing_req->req);
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       break;
   }
 
@@ -2242,6 +2321,7 @@ static void rwdts_router_xact_sendreqs(rwdts_router_xact_t *xact,
 
     /* Send any needed queries */
     int reqidx;
+    int mark_queued = 0;
     for (reqidx=0; reqidx < xact->n_req; reqidx++) {
       rwdts_router_xact_req_t *xreq = &xact->req[reqidx];
       rwdts_router_xact_sing_req_t *sing_req = NULL, *tmp_sing_req = NULL;
@@ -2250,7 +2330,10 @@ static void rwdts_router_xact_sendreqs(rwdts_router_xact_t *xact,
           switch (xact->state) {
           case RWDTS_ROUTER_XACT_PREPARE:
             // actual query message
-            rwdts_router_prepare_f(xact, xreq, FALSE/*resend*/, block->xact_blocks_idx, sing_req);
+            rwdts_router_prepare_f(xact, sing_req);
+            if (RW_DL_LENGTH(&sing_req->membnode->member->queued_xacts)) {
+              mark_queued = 1;
+            }
             break;
 
           case RWDTS_ROUTER_XACT_PRECOMMIT:
@@ -2262,7 +2345,7 @@ static void rwdts_router_xact_sendreqs(rwdts_router_xact_t *xact,
 
           default:
             // state-specific subx/xact event message(s)
-            RW_ASSERT(0);
+            RW_CRASH();
             break;
           }
         }
@@ -2272,6 +2355,9 @@ static void rwdts_router_xact_sendreqs(rwdts_router_xact_t *xact,
       }
     }
 
+    if (mark_queued) {
+      xact->state = RWDTS_ROUTER_XACT_QUEUED;
+    }
     RW_ASSERT(block->req_sent <= block->req_ct);
     RW_ASSERT(block->req_done <= block->req_ct);
 
@@ -2367,6 +2453,14 @@ void rwdts_router_xact_prepreqs_event(rwdts_router_t *dts,
       rwdts_router_member_node_t *membnode=NULL, *membtmp=NULL;
       int i = 0;
       HASH_ITER(hh_xact, xact->xact_union, membnode, membtmp) {
+        if (membnode->member->wait_restart) {
+          block->req_done_nack = true;
+          RWDTS_ROUTER_LOG_XACT_EVENT(
+              xact->dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
+              RWLOG_ATTR_SPRINTF("WAIT_RESTART set for %s: ABRTing xact", membnode->member->msgpath));
+          rwdts_router_xact_block_done (xact, block);
+          return;
+        }
         rwdts_router_xact_req_t *xreq = &xact->req[i];
         rwdts_router_xact_sing_req_t *sing_req = (rwdts_router_xact_sing_req_t *)RW_MALLOC0(sizeof(rwdts_router_xact_sing_req_t));
         xreq->query_idx = 0;
@@ -2377,6 +2471,7 @@ void rwdts_router_xact_prepreqs_event(rwdts_router_t *dts,
         sing_req->membnode = membnode;
         sing_req->memb_xfered = 1; 
         HASH_ADD_KEYPTR(hh_memb, xreq->sing_req, sing_req->membnode->member->msgpath, strlen(sing_req->membnode->member->msgpath), sing_req);
+        sing_req->xreq = xreq;
         i++;
 
         RWDTS_ROUTER_LOG_XACT_DEBUG_EVENT(xact->dts, xact, XACT_SEND_MSG,  "rwdts_router_xact_prepreqs_event sending event",
@@ -2461,18 +2556,30 @@ void rwdts_router_xact_block_prepreqs_prepare(rwdts_router_xact_t *xact,
           for (j=0; j<n_chunks; j++) {  /* TBD: use chunk iterator to fetch records */
             if (isadvise) {
               if (chunks[j]->elems.rtr_info.n_subrecords) {
-                block->req_ct += rwdts_router_update_sub_match(xreq, chunks[j], subobj);
+                int sub_ct = rwdts_router_update_sub_match(xact, xreq, chunks[j], subobj);
+                if (sub_ct < 0) {
+                  break;
+                }
+                block->req_ct += sub_ct;
               } 
             } 
             else {
               if (chunks[j]->elems.rtr_info.n_pubrecords) {
-                block->req_ct += rwdts_router_update_pub_match(xact, xreq, chunks[j], query->flags);
+                int pub_ct = rwdts_router_update_pub_match(xact, xreq, chunks[j], query->flags);
+                if (pub_ct < 0) {
+                  break;
+                }
+                block->req_ct += pub_ct;
               }
             }
           }
           if (chunks) {
             free(chunks);
             chunks = NULL;
+          }
+          if (xact->abrt) {
+            block->req_ct = 0;
+            break;
           }
         reqidx++;
         if (ks) {
@@ -2648,7 +2755,7 @@ rwdts_router_send_responses(rwdts_router_xact_t *xact,
               case RWDTS_EVT_PREPARE:
               default:
                 xres.more = TRUE;
-                RW_ASSERT(0);
+                RW_CRASH();
               }
             }
           }
@@ -2669,7 +2776,8 @@ rwdts_router_send_responses(rwdts_router_xact_t *xact,
               /* Wait for all the responses */
               RWDTS_ROUTER_LOG_XACT_EVENT(xact->dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
                                           RWLOG_ATTR_SPRINTF("Block %d not done, waiting", blockidx));
-              RW_ASSERT(xact->state == RWDTS_ROUTER_XACT_PREPARE);
+              RW_ASSERT((xact->state == RWDTS_ROUTER_XACT_PREPARE) 
+                        || (xact->state == RWDTS_ROUTER_XACT_QUEUED));
               continue;                /* next block */
             }
 
@@ -2679,7 +2787,8 @@ rwdts_router_send_responses(rwdts_router_xact_t *xact,
               /* Wait for all the responses */
               RWDTS_ROUTER_LOG_XACT_EVENT(xact->dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
                                           RWLOG_ATTR_SPRINTF("Block %d not done, waiting (forced on)", blockidx));
-              RW_ASSERT(xact->state == RWDTS_ROUTER_XACT_PREPARE);
+              RW_ASSERT((xact->state == RWDTS_ROUTER_XACT_PREPARE) 
+                        || (xact->state == RWDTS_ROUTER_XACT_QUEUED));
               continue;                /* next block */
             }
 #endif
@@ -2839,6 +2948,7 @@ void rwdts_router_xact_run(rwdts_router_xact_t *xact)
                                                            : sing_req->xreq_state == RWDTS_ROUTER_QUERY_SENT ? "SENT"
                                                            : sing_req->xreq_state == RWDTS_ROUTER_QUERY_NONE ? "(none)"
                                                            : sing_req->xreq_state == RWDTS_ROUTER_QUERY_UNSENT ? "UNSENT"
+                                                           : sing_req->xreq_state == RWDTS_ROUTER_QUERY_QUEUED ? "QUEUED"
                                                            : sing_req->xreq_state == RWDTS_ROUTER_QUERY_ASYNC ? "ASYNC"
                                                            : sing_req->xreq_state == RWDTS_ROUTER_QUERY_ACK ? "ACK"
                                                            : sing_req->xreq_state == RWDTS_ROUTER_QUERY_NA ? "NA"
@@ -2915,6 +3025,9 @@ void rwdts_router_xact_run(rwdts_router_xact_t *xact)
         rwdts_router_xact_destroy(dts, xact);
         // xact may be invalid now
         xact = NULL;
+        return;
+
+      case RWDTS_ROUTER_XACT_QUEUED:
         return;
 
       default:
@@ -3065,6 +3178,7 @@ rwdts_router_xact_update(rwdts_router_xact_t *xact,
       respond_now = TRUE;
     } else {
       xact->ended = TRUE;
+      RWDTS_RTR_ADD_TR_ENT_ENDED(xact);   
     }
   }
 
@@ -3163,6 +3277,7 @@ rwdts_router_xact_update(rwdts_router_xact_t *xact,
         }
         if (!block->xact_blocks_idx &&  (block->xbreq->flags & RWDTS_XACT_FLAG_END)) {
           xact->ended = TRUE;
+          RWDTS_RTR_ADD_TR_ENT_ENDED(xact);   
         }
 
         if (xact->dbg) {
@@ -3212,6 +3327,7 @@ rwdts_router_xact_update(rwdts_router_xact_t *xact,
       }
       if (!block->xact_blocks_idx &&  (block->xbreq->flags & RWDTS_XACT_FLAG_END)) {
         xact->ended = TRUE;
+        RWDTS_RTR_ADD_TR_ENT_ENDED(xact);   
       }
 
       /* Jettison this one as well for simplicity */
@@ -3357,12 +3473,13 @@ rwdts_router_check_subobj(rwdts_shard_chunk_info_t** chunks, uint32_t n_chunks)
   return false;
 }
 
-static uint32_t
-rwdts_router_update_sub_match(rwdts_router_xact_req_t *xreq, 
+static int
+rwdts_router_update_sub_match(rwdts_router_xact_t *xact,
+                              rwdts_router_xact_req_t *xreq, 
                               rwdts_shard_chunk_info_t *chunk,
                               bool subobj)
 {
-  uint32_t req_ct = 0;
+  int req_ct = 0;
 
   rwdts_chunk_rtr_info_t *rtr_info= NULL, *tmp_rtr_info = NULL;
   HASH_ITER(hh_rtr_record, chunk->elems.rtr_info.sub_rtr_info, rtr_info, tmp_rtr_info) {
@@ -3372,6 +3489,19 @@ rwdts_router_update_sub_match(rwdts_router_xact_req_t *xreq,
     if (rtr_info->flags & RWDTS_FLAG_DEPTH_OBJECT) {
       if (subobj == false) {
         continue;
+      }
+    }
+
+  
+    if (rtr_info->member->wait_restart) {
+      rwdts_router_member_node_t *membnode=NULL;
+      HASH_FIND(hh_xact, xact->xact_union, rtr_info->member->msgpath,  strlen(rtr_info->member->msgpath),  membnode);
+      if (membnode) {
+        xact->abrt = true;
+        RWDTS_ROUTER_LOG_XACT_EVENT(
+            xact->dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
+            RWLOG_ATTR_SPRINTF("WAIT_RESTART set for %s: ABRTing xact", rtr_info->member->msgpath));
+        return -1;
       }
     }
 
@@ -3385,6 +3515,7 @@ rwdts_router_update_sub_match(rwdts_router_xact_req_t *xreq,
     membnode->member = rtr_info->member;
     sin_req = (rwdts_router_xact_sing_req_t *)RW_MALLOC0(sizeof(rwdts_router_xact_sing_req_t));
     sin_req->membnode = membnode;
+    sin_req->xreq = xreq;
     HASH_ADD_KEYPTR(hh_memb, xreq->sing_req, membnode->member->msgpath, strlen(membnode->member->msgpath), sin_req);
     xreq->sing_req_ct++;
     req_ct++;
@@ -3392,13 +3523,13 @@ rwdts_router_update_sub_match(rwdts_router_xact_req_t *xreq,
   return req_ct;
 }
 
-static uint32_t
+static int
 rwdts_router_update_pub_match(rwdts_router_xact_t* xact, 
                               rwdts_router_xact_req_t *xreq, 
                               rwdts_shard_chunk_info_t *chunk,
                               uint32_t flags)
 {
-  uint32_t req_ct = 0;
+  int req_ct = 0;
 
   rwdts_chunk_rtr_info_t *rtr_info= NULL, *tmp_rtr_info = NULL;
   HASH_ITER(hh_rtr_record, chunk->elems.rtr_info.pub_rtr_info, rtr_info, tmp_rtr_info) {
@@ -3408,6 +3539,18 @@ rwdts_router_update_pub_match(rwdts_router_xact_t* xact,
     if (flags & RWDTS_FLAG_DEPTH_OBJECT) {
       if (!(rtr_info->flags & RWDTS_FLAG_SUBOBJECT)) {
         continue;
+      }
+    }
+
+    if (rtr_info->member->wait_restart) {
+      rwdts_router_member_node_t *membnode=NULL;
+      HASH_FIND(hh_xact, xact->xact_union, rtr_info->member->msgpath,  strlen(rtr_info->member->msgpath),  membnode);
+      if (membnode) {
+        xact->abrt = true;
+        RWDTS_ROUTER_LOG_XACT_EVENT(
+            xact->dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
+            RWLOG_ATTR_SPRINTF("WAIT_RESTART set for %s: ABRTing xact", rtr_info->member->msgpath));
+        return -1;
       }
     }
 
@@ -3425,6 +3568,7 @@ rwdts_router_update_pub_match(rwdts_router_xact_t* xact,
       sin_req->any_cast = true;
     }                   
     HASH_ADD_KEYPTR(hh_memb, xreq->sing_req, membnode->member->msgpath, strlen(membnode->member->msgpath), sin_req);
+    sin_req->xreq = xreq;
     req_ct++;
     xreq->sing_req_ct++;
   }
@@ -3504,4 +3648,39 @@ rwdts_precommit_to_client(rwdts_router_xact_t* xact, uint32_t* blockid)
      }
   }
   return false;
+}
+
+void rwdts_router_process_queued_xact_f(void *ctx)
+{
+  rwdts_router_queue_xact_t *queue_xact = (rwdts_router_queue_xact_t *)ctx;
+  RW_ASSERT_TYPE(queue_xact, rwdts_router_queue_xact_t);
+  //rwdts_router_t *dts = queue_xact->dts;
+  rwdts_router_member_t *member = queue_xact->member;
+  RW_FREE_TYPE(queue_xact, rwdts_router_queue_xact_t);
+
+  while (RW_DL_LENGTH(&member->queued_xacts)) {
+    rwdts_router_queued_xact_t *queued_xact = RW_DL_POP(&member->queued_xacts, rwdts_router_queued_xact_t, queued_xact_element);
+    RW_ASSERT_TYPE(queued_xact, rwdts_router_queued_xact_t);
+    RW_ASSERT(queued_xact->member == member);
+    rwdts_router_xact_t *xact = queued_xact->xact;
+    RW_ASSERT_TYPE(xact, rwdts_router_xact_t);
+    RW_DL_REMOVE(&xact->queued_members, queued_xact, queued_member_element);
+    RW_FREE_TYPE(queued_xact, rwdts_router_queued_xact_t);
+    if (xact->state != RWDTS_ROUTER_XACT_QUEUED) {
+      continue;
+    }
+    xact->state = RWDTS_ROUTER_XACT_PREPARE;
+    int reqidx;
+    for (reqidx=0; reqidx < xact->n_req; reqidx++) {
+      rwdts_router_xact_req_t *xreq = &xact->req[reqidx];
+      rwdts_router_xact_sing_req_t *sing_req = NULL, *tmp_sing_req = NULL;
+      HASH_ITER(hh_memb, xreq->sing_req, sing_req, tmp_sing_req) {
+        if (!strcmp(sing_req->membnode->member->msgpath, member->msgpath)
+            && (sing_req->xreq_state == RWDTS_ROUTER_QUERY_QUEUED))  {
+          sing_req->xreq_state = RWDTS_ROUTER_QUERY_UNSENT;
+          rwdts_router_prepare_f(xact, sing_req);
+        }
+      }
+    }
+  }
 }

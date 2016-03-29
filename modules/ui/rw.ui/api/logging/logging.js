@@ -25,7 +25,8 @@ Logging.get = function(req) {
         {
           'Authorization': req.get('Authorization')
         }),
-      forever: foreverOn
+      forever: foreverOn,
+      rejectUnauthorized: false
     },
     function(error, response, body) {
       if(error) {

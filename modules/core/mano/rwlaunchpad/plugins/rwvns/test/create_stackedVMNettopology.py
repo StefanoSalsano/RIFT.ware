@@ -5,6 +5,8 @@
 #
 
 
+import gi
+gi.require_version('RwYang', '1.0')
 from gi.repository import IetfL2TopologyYang as l2Tl
 from gi.repository import RwTopologyYang as RwTl
 from gi.repository import RwYang
@@ -66,7 +68,7 @@ class MyVMNetwork(object):
                 return node
 
     def get_tp(self, node, tp_name):
-        _tp_id = "urn:Rift:Lab:" + node.node_id + "_" + tp_name
+        _tp_id = node.node_id + "_" + tp_name
         for tp in node.termination_point :
             if (tp.tp_id == _tp_id):
                 return tp
@@ -76,7 +78,7 @@ class MyVMNetwork(object):
             if (link.l2_link_attributes.name == link_name):
                 return link
 
-    def create_node(self, node_name, description, mgmt_ip_addr = None, sup_node = None, nw_ref = None):
+    def create_node(self, node_name, description, mgmt_ip_addr=None, sup_node_list=None):
         logging.debug("Creating node %s", node_name)
         node = self.vmnet1.node.add()
         node.node_id = "urn:Rift:Lab:" + node_name
@@ -85,20 +87,22 @@ class MyVMNetwork(object):
         node.l2_node_attributes.description = description
         if (mgmt_ip_addr is not None):
             node.l2_node_attributes.management_address.append(mgmt_ip_addr)
-        if (sup_node is not None):
-            logging.debug("  Adding support node %s", sup_node.node_id)
-            ul_node = node.supporting_node.add()
-            if (nw_ref is not None):
-                ul_node.network_ref = nwref
-            else:
-                ul_node.network_ref = self.l2netid
-            ul_node.node_ref = sup_node.node_id
+        if (sup_node_list is not None):
+            for sup_node in sup_node_list:
+                logging.debug("  Adding support node %s", sup_node[0].node_id)
+                ul_node = node.supporting_node.add()
+                # Second element is hardcoded as nw ref
+                if (sup_node[1] is not None):
+                    ul_node.network_ref = sup_node[1]
+                else:
+                    ul_node.network_ref = self.l2netid
+                ul_node.node_ref = sup_node[0].node_id
         return node
 
     def create_tp(self, node, cfg_tp, sup_node = None, sup_tp = None, nw_ref = None):
         logging.debug("   Creating termination point %s %s", node.l2_node_attributes.name, cfg_tp)
         tp = node.termination_point.add()
-        tp.tp_id = ("urn:Rift:Lab:{}:{}").format(node.node_id, cfg_tp)
+        tp.tp_id = ("{}:{}").format(node.node_id, cfg_tp)
         # L2 TP augmentation
         tp.l2_termination_point_attributes.description = cfg_tp
         tp.l2_termination_point_attributes.maximum_frame_size = 1500
@@ -109,9 +113,7 @@ class MyVMNetwork(object):
             logging.debug("     Adding support terminaton point %s", sup_tp.tp_id)
             ul_tp = tp.supporting_termination_point.add()
             if (nw_ref is not None):
-                # TODO Think about this later, leafref needs to point to lowermost tp
-                #ul_tp.network_ref = nw_ref
-                ul_tp.network_ref = self.l2netid
+                ul_tp.network_ref = nw_ref
             else:
                 ul_tp.network_ref = self.l2netid
             ul_tp.node_ref = sup_node.node_id
@@ -154,6 +156,7 @@ class MyVMTopology(MyVMNetwork):
     def find_tp(self, node, tp_name):
         return self.get_tp(node, tp_name)
 
+   
     def find_link(self, link_name):
         return self.get_link(link_name)
 
@@ -175,9 +178,12 @@ class MyVMTopology(MyVMNetwork):
            raise MyNodeNotFound()
 
         self.pseudo_vm = self.create_node("Pseudo_VM","Pseudo VM to manage eth0 LAN")
-        self.tg_vm = self.create_node("Trafgen_VM","Trafgen VM on Grunt118", mgmt_ip_addr="10.0.118.3", sup_node = self.g118_node)
-        self.lb_vm = self.create_node("LB_VM","LB VM on Grunt44", mgmt_ip_addr="10.0.118.35", sup_node = self.g44_node)
-        self.ts_vm = self.create_node("Trafsink_VM","Trafsink VM on Grunt120", mgmt_ip_addr="10.0.118.4", sup_node = self.g118_node)
+        sup_node_list = [[self.g118_node, self.l2netid], [self.g44_br_int_node, self.provnetid]]
+        self.tg_vm = self.create_node("Trafgen_VM","Trafgen VM on Grunt118", mgmt_ip_addr="10.0.118.3", sup_node_list = sup_node_list)
+        sup_node_list = [[self.g44_node, self.l2netid], [self.g44_br_int_node, self.provnetid]]
+        self.lb_vm = self.create_node("LB_VM","LB VM on Grunt44", mgmt_ip_addr="10.0.118.35", sup_node_list = sup_node_list)
+        sup_node_list = [[self.g120_node, self.l2netid], [self.g44_br_int_node, self.provnetid]]
+        self.ts_vm = self.create_node("Trafsink_VM","Trafsink VM on Grunt120", mgmt_ip_addr="10.0.118.4", sup_node_list = sup_node_list)
 
     def setup_tps(self):
         logging.debug("Setting up termination points")
@@ -203,13 +209,8 @@ class MyVMTopology(MyVMNetwork):
         self.tg_vm_eth0 = self.create_tp(self.tg_vm, "eth0")
         self.tg_vm_trafgen11 = self.create_tp(self.tg_vm, "trafgen11", sup_node=self.g118_node, sup_tp=self.g118_e2)
 
-        self.lb_vm_eth0 = self.create_tp(self.tg_vm, "eth0")
-        # TODO Think about this. Needed to change this to support leafrefs in model
-        #     Supporting nodes needs tps
-        # Seeing netconf error
-        #     <tailf:bad-element>/nd:network[nd:network-id='VmNetwork-1']/nd:node[nd:node-id='urn:Rift:Lab:LB_VM']/lnk:termination-point[lnk:tp-id='urn:Rift:Lab:urn:Rift:Lab:LB_VM:load_balancer21']/lnk:supporting-termination-point[lnk:network-ref='L2HostNetwork-1'][lnk:node-ref='urn:Rift:Lab:G44_Br_Int'][lnk:tp-ref='urn:Rift:Lab:urn:Rift:Lab:G44_Br_Int:vhu2']/lnk:tp-ref</tailf:bad-element>
+        self.lb_vm_eth0 = self.create_tp(self.lb_vm, "eth0")
         self.lb_vm_lb21 = self.create_tp(self.lb_vm, "load_balancer21", sup_node=self.g44_br_int_node, sup_tp=self.g44_br_int_vhu2, nw_ref=self.provnetid)
-        #self.lb_vm_lb21 = self.create_tp(self.lb_vm, "load_balancer21", sup_node=self.g44_br_int_node, sup_tp=self.g44_br_eth1, nw_ref=self.l2netid)
         self.lb_vm_lb22 = self.create_tp(self.lb_vm, "load_balancer22", sup_node=self.g44_br_int_node, sup_tp=self.g44_br_int_vhu3, nw_ref=self.provnetid)
 
         self.ts_vm_eth0 = self.create_tp(self.ts_vm, "eth0")
@@ -306,8 +307,6 @@ if __name__ == "__main__":
     status = subprocess.call("sed -i '/xml version/d' " + xml_formatted_file, shell=True)
     status = subprocess.call("sed -i '/root xmlns/d' " + xml_formatted_file, shell=True)
     status = subprocess.call("sed -i '/\/root/d' " + xml_formatted_file, shell=True)
-    #adjust_xml_file(xml_formatted_file, "/tmp/stacked_vmtop3.xml", "<lnk:source>", "</lnk:destination>")
-    #adjust_xml_file("/tmp/stacked_vmtop3.xml", "/tmp/stacked_vmtop4.xml", "<nd:network-types>", "</nd:network-types>")
 
     print ("Converting to JSON ")
     # Convert set of topologies to JSON
@@ -317,4 +316,5 @@ if __name__ == "__main__":
     status = subprocess.call("python -m json.tool /tmp/stacked_vmtop.json > /tmp/stacked_vmtop2.json", shell=True)
     json_formatted_file = "/tmp/stacked_vmtop2.json"
     status = subprocess.call("sed -i -e 's/\"l2t:ethernet\"/\"ethernet\"/g' " + json_formatted_file, shell=True)
+    status = subprocess.call("sed -i -e 's/\"l2t:vlan\"/\"vlan\"/g' " + json_formatted_file, shell=True)
 

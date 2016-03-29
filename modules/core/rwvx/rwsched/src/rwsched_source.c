@@ -45,7 +45,7 @@ rwsched_dispatch_source_cancel(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 long
@@ -68,7 +68,7 @@ rwsched_dispatch_source_testcancel(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
   return 0;
 }
 
@@ -87,7 +87,7 @@ rwsched_dispatch_source_get_data(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
   return 0;
 }
 
@@ -108,7 +108,7 @@ rwsched_dispatch_source_merge_data(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 static void
@@ -163,7 +163,7 @@ rwsched_dispatch_cancel_handler_intercept(void *ud)
   RW_CF_TYPE_VALIDATE(sched_tasklet, rwsched_tasklet_ptr_t);
   dispatch_source_set_cancel_handler_f(source->header.libdispatch_object._ds, NULL);
   if (sched_tasklet->blocking_mode.blocked) {
-    RW_ASSERT(0); // Not implemented
+    RW_CRASH(); // Not implemented
   } else {
     if (source->cancel_handler) {
       g_rwresource_track_handle = sched_tasklet->rwresource_track_handle;
@@ -215,7 +215,7 @@ rwsched_dispatch_source_create(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
   return NULL;
 }
 
@@ -239,7 +239,7 @@ rwsched_dispatch_source_set_event_handler_f(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -261,7 +261,7 @@ rwsched_dispatch_source_set_cancel_handler_f(rwsched_tasklet_ptr_t sched_tasklet
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -284,7 +284,7 @@ rwsched_dispatch_source_set_timer(rwsched_tasklet_ptr_t sched_tasklet,
   }
 
   // Not yet implemented
-  RW_ASSERT(0);
+  RW_CRASH();
 }
 
 void
@@ -319,7 +319,7 @@ rwsched_dispatch_unblock_sources(rwsched_tasklet_ptr_t sched_tasklet)
         */
         break;
       default:
-        RW_ASSERT(0);
+        RW_CRASH();
         break;
     }
     g_tasklet_info = 0;

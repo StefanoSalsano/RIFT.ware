@@ -1,15 +1,11 @@
 
 /* simple toggle behavior (requires js to change data-toggle value to 'true' or add class '-is-toggled' */
 [data-toggle] {
-	position: relative;
-	&:before {
-		position: absolute;
-		top: 0;
-		left: 0;
-		bottom: 0;
-		width: 20px;
-		content: '-';
-		text-align: left;
+	.toggle-show-less {
+		display: inline;
+	}
+	.toggle-show-more {
+		display: none;
 	}
 }
 [data-toggle="true"],
@@ -17,7 +13,10 @@
 	+ .toggleable {
 		display: none !important;
 	}
-	&:before {
-		content: '+';
+	.toggle-show-more {
+		display: inline !important;
+	}
+	.toggle-show-less {
+		display: none !important;
 	}
 }

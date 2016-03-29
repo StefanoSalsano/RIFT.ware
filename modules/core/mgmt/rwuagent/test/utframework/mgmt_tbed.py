@@ -64,12 +64,7 @@ class MgmtVM(rift.vcs.VirtualMachine):
         self.add_tasklet(rift.vcs.uAgentTasklet())
         self.add_proc(rift.vcs.RestconfTasklet())
         self.add_proc(rift.vcs.procs.RiftCli())
-
-        # Generate confd config file
-        confd = rift.vcs.Confd()
-        confd._exe = ut_src + "/ut_confd"
-        confd._args = confd_args
-        self.add_proc(confd)
+        self.add_proc(rift.vcs.procs.Watchdog())
         self.add_proc(TestTasklet())
 
 def main(argv=sys.argv[1:]):
@@ -114,12 +109,13 @@ def main(argv=sys.argv[1:]):
             collapsed=collapsed,
             zookeeper=rift.vcs.manifest.RaZookeeper(zake=collapsed, master_ip=VM),
             colonies=[colony],
-            multi_broker=True
+            multi_broker=True,
+            northbound_listing="cli_rwfpath_schema_listing.txt"
     )
 
     # Compile the manifest
    compiler = rift.vcs.compiler.LegacyManifestCompiler()
-   compiler.system_constraints = [cons for cons in compiler.system_constraints if type(cons) is not rift.vcs.compiler.constraints.AdjacentConfdRestconfTasklets ]
+   #compiler.system_constraints = [cons for cons in compiler.system_constraints if type(cons) is not rift.vcs.compiler.constraints.AdjacentConfdRestconfTasklets ]
 
    _, manifest = compiler.compile(sysinfo)
 

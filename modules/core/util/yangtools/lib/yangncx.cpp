@@ -114,16 +114,23 @@ YangNodeNcx::YangNodeNcx(
     description_ = "";
   }
 
+#if 0
   // ATTN: This is the WRONG prefix for uses that cross modules!!!
   prefix_ = (const char*)obj_get_mod_prefix(obj_);
   RW_ASSERT(prefix_);
   RW_ASSERT(prefix_[0]);
+#endif
 
   xmlns_id_t nsid = obj_get_nsid(ncxmodel_.ncx_instance_, obj_);
   RW_ASSERT(nsid);
   ns_ = (const char*)xmlns_get_ns_name(ncxmodel_.ncx_instance_, nsid);
   RW_ASSERT(ns_);
   RW_ASSERT(ns_[0]);
+
+  prefix_ = (const char*)xmlns_get_ns_prefix(ncxmodel_.ncx_instance_, nsid);
+  RW_ASSERT(prefix_);
+  RW_ASSERT(prefix_[0]);
+
   node_tag_ = obj_get_obj_tag(obj_);
 
   // Assume statement type cannot change.
@@ -714,6 +721,26 @@ YangNode* YangNodeNcx::get_leafref_ref()
   retval = ncxmodel_.locked_populate_target_node(ref_obj);
   RW_ASSERT(retval);
   return leafref_ref_.locked_cache_set(&cache_state_, retval);
+}
+
+
+std::string YangNodeNcx::get_leafref_path_str()
+{
+  RW_ASSERT(   stmt_type_ == RW_YANG_STMT_TYPE_LEAF
+            || stmt_type_ == RW_YANG_STMT_TYPE_LEAF_LIST);
+
+  GlobalMutex::guard_t guard(GlobalMutex::g_mutex);
+  const typ_def_t* typ = obj_get_ctypdef(ncxmodel_.ncx_instance_, obj_);
+  if (typ == nullptr) {
+    return std::string();
+  }
+
+  const void* exprstr = typ_get_leafref_path(ncxmodel_.ncx_instance_, typ);
+  if (exprstr == nullptr) {
+    return std::string();
+  }
+
+  return std::string(static_cast<const char*>(exprstr));
 }
 
 bool YangNodeNcx::app_data_is_cached(const AppDataTokenBase* token) const noexcept
@@ -2327,6 +2354,7 @@ YangValueNcxBits::YangValueNcxBits(
 {
   RW_ASSERT(RW_YANG_LEAF_TYPE_BITS == leaf_type_);
   name_ = (const char*)typ_enum_->name;
+  position_ = typ_enum_->pos;
 
   if (nullptr != typ_enum_->descr) {
     description_ = (const char*)typ_enum_->descr;
@@ -2334,6 +2362,11 @@ YangValueNcxBits::YangValueNcxBits(
 
   // ATTN: What about prefix?
   // ATTN: What about ns?
+}
+
+int32_t YangValueNcxBits::get_integer_value()
+{
+  return position_;
 }
 
 

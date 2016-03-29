@@ -624,7 +624,7 @@ void FieldGenerator::GenerateGiHSupportMethodDecls(io::Printer* printer) const
   // Print the setter Comment block
   printer->Print("\n");
 
-  vars["annotations"] = GetGiParameterAnnotations();
+  vars["annotations"] = GetGiSetterAnnotations();
   printer->Print(vars, "/**\n"
                        " * $setter_fn$: \n"
                        " * @boxed:\n"

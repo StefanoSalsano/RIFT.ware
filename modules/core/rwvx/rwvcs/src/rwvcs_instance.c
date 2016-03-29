@@ -300,6 +300,13 @@ static rw_status_t initialize_zookeeper(rwvcs_instance_ptr_t rwvcs)
 {
   rw_status_t status;
 
+  if (rwvcs->rwvx->rwsched_tasklet) {
+    char zk_rwq_name[256] = {0};
+    snprintf(zk_rwq_name, 256, "rwzkq-%d",rwvcs->identity.rwvm_instance_id);
+    rwvcs->zk_rwq = rwsched_dispatch_queue_create(rwvcs->rwvx->rwsched_tasklet,
+					zk_rwq_name, DISPATCH_QUEUE_SERIAL);
+    RW_ASSERT(rwvcs->zk_rwq);
+  }
 
   status = start_zookeeper_server(rwvcs, rwvcs->pb_rwmanifest->bootstrap_phase);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -307,19 +314,7 @@ static rw_status_t initialize_zookeeper(rwvcs_instance_ptr_t rwvcs)
     return status;
 
   // Start the zookeeper client
-  if (rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->zake) {
-    status = rwcal_rwzk_zake_init(rwvcs->rwvx->rwcal_module);
-  } else {
-    const char * server_names[2] = {
-      rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->master_ip,
-      NULL
-    };
-
-    status = rwcal_rwzk_kazoo_init(
-        rwvcs->rwvx->rwcal_module,
-        rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->unique_ports,
-        &server_names[0]);
-  }
+  status = rwvcs_rwzk_client_start(rwvcs);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
   if (status != RW_STATUS_SUCCESS)
     return status;
@@ -330,14 +325,6 @@ static rw_status_t initialize_zookeeper(rwvcs_instance_ptr_t rwvcs)
       rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->auto_instance_start,
       NULL);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
-  if (rwvcs->rwvx->rwsched_tasklet) {
-    char zk_rwq_name[256] = {0};
-    snprintf(zk_rwq_name, 256, "rwzkq-%d",rwvcs->identity.rwvm_instance_id);
-    rwvcs->zk_rwq = rwsched_dispatch_queue_create(rwvcs->rwvx->rwsched_tasklet,
-					zk_rwq_name, DISPATCH_QUEUE_SERIAL);
-
-  }
-
   return status;
 }
 
@@ -481,6 +468,20 @@ void rwvcs_instance_free(rwvcs_instance_ptr_t rwvcs)
   protobuf_free(rwvcs->pb_rwmanifest);
 }
 
+static rw_status_t rwvcs_instance_process_manifest_path(
+    rwvcs_instance_ptr_t rwvcs,
+    const char * manifest_path)
+{
+  rw_status_t status;
+
+  rwvcs->rwmanifest_xmlfile = strdup(manifest_path);
+  RW_ASSERT(rwvcs->rwmanifest_xmlfile);
+
+  status = rwvcs_manifest_load(rwvcs, manifest_path);
+
+  return status;
+}
+
 rw_status_t rwvcs_instance_init(
     rwvcs_instance_ptr_t rwvcs,
     const char * manifest_path,
@@ -489,11 +490,8 @@ rw_status_t rwvcs_instance_init(
   rw_status_t status;
   char * ld_preload;
 
-
   rwvcs->rwmain_f = rwmain_f;
   rwvcs->rwcrash = rwmain_crash_task;
-  rwvcs->rwmanifest_xmlfile = strdup(manifest_path);
-  RW_ASSERT(rwvcs->rwmanifest_xmlfile);
 
   ld_preload = getenv("LD_PRELOAD");
   if (ld_preload) {
@@ -502,7 +500,13 @@ rw_status_t rwvcs_instance_init(
     unsetenv("LD_PRELOAD");
   }
 
-  status = rwvcs_manifest_load(rwvcs, manifest_path);
+  if (manifest_path) {
+    status = rwvcs_instance_process_manifest_path(rwvcs, manifest_path);
+    if (status != RW_STATUS_SUCCESS)
+      return status;
+  }
+
+  status = validate_bootstrap_phase(rwvcs->pb_rwmanifest->bootstrap_phase);
   if (status != RW_STATUS_SUCCESS)
     return status;
 

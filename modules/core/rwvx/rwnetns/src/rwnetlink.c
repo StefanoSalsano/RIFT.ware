@@ -41,7 +41,6 @@
 #include <linux/if_tun.h>
 #include <linux/ipv6.h>
 #include <linux/xfrm.h>
-#include <libudev.h>
 
 static int rw_netlink_route_recv_valid(struct nl_msg *msg, void *arg);
 static int rw_netlink_netfilter_recv_valid(struct nl_msg *msg, void *arg);
@@ -362,7 +361,7 @@ rw_status_t rw_netlink_read_ow(rw_netlink_handle_proto_t *proto_handle, int end_
       continue;
     }
     if (totallen){
-      RW_ASSERT(0);
+      RW_CRASH();
       return RW_STATUS_FAILURE;
     }
   }
@@ -476,78 +475,85 @@ int rw_netlink_route_recv_validmsg(rw_netlink_handle_proto_t *proto_handle,
         struct sockaddr *sockaddr = (struct sockaddr*)&skin6;
         
         rw_parse_rtattr(tb,RTA_MAX, RTM_RTA(r), msglen - NLMSG_LENGTH(sizeof(*r)));
+
+        if (tb[RTA_MULTIPATH]){
+          route = RW_MALLOC0(sizeof(*route) +
+                             (sizeof(rw_netlink_route_nh_entry_t) * 10));//AKKI fix this
+        }else{
+          route = RW_MALLOC0(sizeof(*route) + sizeof(rw_netlink_route_nh_entry_t));
+        }
+        
         if (tb[RTA_DST]){
-          if (tb[RTA_MULTIPATH]){
-            route = RW_MALLOC0(sizeof(*route) +
-                               (sizeof(rw_netlink_route_nh_entry_t) * 10));//AKKI fix this
-          }else{
-            route = RW_MALLOC0(sizeof(*route) + sizeof(rw_netlink_route_nh_entry_t));
-          }
           sockaddr->sa_family = r->rtm_family;
           memcpy(&sockaddr->sa_data,
                  RTA_DATA(tb[RTA_DST]),
                  RTA_PAYLOAD(tb[RTA_DST]));
-          RW_PREFIX_FROM_SOCKADDR(&route->prefix, sockaddr);
-          route->prefix.masklen = r->rtm_dst_len;
-          
-          if (nlhdr->nlmsg_flags & NLM_F_REPLACE){
-            route->replace = 1;
-          }else{
-            route->replace = 0;
-          }
-          route->protocol = r->rtm_protocol;
-          if (tb[RTA_MULTIPATH]){
-            struct rtnexthop *nh = RTA_DATA(tb[RTA_MULTIPATH]);
-            int len;
-            struct rtattr *subtb[RTA_MAX+1];
-            
-            route->num_nexthops = 0;
-            len = RTA_PAYLOAD(tb[RTA_MULTIPATH]);
-            
-            while (len >= sizeof(*nh)) {
-              if (nh->rtnh_len > len)
-                break;
-              if (nh->rtnh_len > sizeof(*nh)) {
-                rw_parse_rtattr(subtb,
-                                RTA_MAX,
-                                RTM_RTA(nh),
-                                nh->rtnh_len - sizeof(*nh));
-                if (subtb[RTA_GATEWAY]){
-                  sockaddr->sa_family = r->rtm_family;
-                  memcpy(&sockaddr->sa_data,
-                         RTA_DATA(tb[RTA_GATEWAY]),
-                         RTA_PAYLOAD(tb[RTA_GATEWAY]));
-                  RW_IP_FROM_SOCKADDR(&route->nexthops[route->num_nexthops].gateway,
-                                      sockaddr);
-                }   
-              }
-              route->nexthops[route->num_nexthops].ifindex = nh->rtnh_ifindex;
-              route->num_nexthops++;
-              len -= NLMSG_ALIGN(nh->rtnh_len);
-              nh = RTNH_NEXT(nh);
-            }
-          }else{
-            route->num_nexthops = 1;
-            if (tb[RTA_GATEWAY]){
-              sockaddr->sa_family = r->rtm_family;
-              memcpy(&sockaddr->sa_data,
-                     RTA_DATA(tb[RTA_GATEWAY]),
-                     RTA_PAYLOAD(tb[RTA_GATEWAY]));
-              RW_IP_FROM_SOCKADDR(&route->nexthops[0].gateway, sockaddr);
-            }
-            if (tb[RTA_OIF]){
-              memcpy(&route->nexthops[0].ifindex,
-                     RTA_DATA(tb[RTA_OIF]),
-                     RTA_PAYLOAD(tb[RTA_OIF]));
-            }
-          }
-          
-          if (proto_handle->cb[nlhdr->nlmsg_type - base]){
-            proto_handle->cb[nlhdr->nlmsg_type - base](proto_handle->handle->user_data,
-                                                       (void *)route);
-          }
-          RW_FREE(route);
+        }else{
+          //default route...
+          memset(sockaddr, 0, sizeof(skin6));
+          sockaddr->sa_family = r->rtm_family;
         }
+        RW_PREFIX_FROM_SOCKADDR(&route->prefix, sockaddr);
+        route->prefix.masklen = r->rtm_dst_len;
+        
+        if (nlhdr->nlmsg_flags & NLM_F_REPLACE){
+          route->replace = 1;
+        }else{
+          route->replace = 0;
+        }
+        route->protocol = r->rtm_protocol;
+        if (tb[RTA_MULTIPATH]){
+          struct rtnexthop *nh = RTA_DATA(tb[RTA_MULTIPATH]);
+          int len;
+          struct rtattr *subtb[RTA_MAX+1];
+          
+          route->num_nexthops = 0;
+          len = RTA_PAYLOAD(tb[RTA_MULTIPATH]);
+          
+          while (len >= sizeof(*nh)) {
+            if (nh->rtnh_len > len)
+              break;
+            if (nh->rtnh_len > sizeof(*nh)) {
+              rw_parse_rtattr(subtb,
+                              RTA_MAX,
+                              //RTM_RTA(nh),
+                              RTNH_DATA(nh), 
+                              nh->rtnh_len - sizeof(*nh));
+              if (subtb[RTA_GATEWAY]){
+                sockaddr->sa_family = r->rtm_family;
+                memcpy(&sockaddr->sa_data,
+                       RTA_DATA(subtb[RTA_GATEWAY]),
+                       RTA_PAYLOAD(subtb[RTA_GATEWAY]));
+                RW_IP_FROM_SOCKADDR(&route->nexthops[route->num_nexthops].gateway,
+                                    sockaddr);
+              }   
+            }
+            route->nexthops[route->num_nexthops].ifindex = nh->rtnh_ifindex;
+            route->num_nexthops++;
+            len -= NLMSG_ALIGN(nh->rtnh_len);
+            nh = RTNH_NEXT(nh);
+          }
+        }else{
+          route->num_nexthops = 1;
+          if (tb[RTA_GATEWAY]){
+            sockaddr->sa_family = r->rtm_family;
+            memcpy(&sockaddr->sa_data,
+                   RTA_DATA(tb[RTA_GATEWAY]),
+                   RTA_PAYLOAD(tb[RTA_GATEWAY]));
+            RW_IP_FROM_SOCKADDR(&route->nexthops[0].gateway, sockaddr);
+          }
+          if (tb[RTA_OIF]){
+            memcpy(&route->nexthops[0].ifindex,
+                   RTA_DATA(tb[RTA_OIF]),
+                   RTA_PAYLOAD(tb[RTA_OIF]));
+          }
+        }
+        
+        if (proto_handle->cb[nlhdr->nlmsg_type - base]){
+          proto_handle->cb[nlhdr->nlmsg_type - base](proto_handle->handle->user_data,
+                                                     (void *)route);
+        }
+        RW_FREE(route);
       }
       break;
     case RTM_NEWLINK:
@@ -690,7 +696,7 @@ rw_netlink_xfrm_convert_template_to_rw(rw_netlink_xfrm_template_info_t *info,
       addrsize = 16;
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       return -1;
   };
 
@@ -778,7 +784,7 @@ rw_netlink_xfrm_convert_selector_to_rw(rw_netlink_xfrm_selector_info_t *info,
       addrsize = 16;
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       return -1;
   };
   memcpy(&sockaddr->sa_data,
@@ -825,7 +831,7 @@ rw_netlink_xfrm_convert_nlsa_to_rw( rw_netlink_xfrm_sa_info_t *info,
       addrsize = 16;
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
       return -1;
   };
   
@@ -851,7 +857,7 @@ rw_netlink_xfrm_convert_nlsa_to_rw( rw_netlink_xfrm_sa_info_t *info,
     ret = rw_netlink_xfrm_convert_selector_to_rw(info->selector_info,
                                                  &xsinfo->sel, xsinfo->family);
     if (ret){
-      RW_ASSERT(0);
+      RW_CRASH();
       return -1;
     }
   }else{
@@ -863,7 +869,7 @@ rw_netlink_xfrm_convert_nlsa_to_rw( rw_netlink_xfrm_sa_info_t *info,
     ret = rw_netlink_xfrm_convert_template_to_rw(info->template_info,
                                                  (struct xfrm_user_tmpl *)tb[XFRMA_TMPL], xsinfo);
     if (ret){
-      RW_ASSERT(0);
+      RW_CRASH();
       return -1;
     }
   }else{
@@ -949,7 +955,7 @@ rw_netlink_xfrm_convert_nlpolicy_to_rw( rw_netlink_xfrm_policy_info_t *info,
     ret = rw_netlink_xfrm_convert_selector_to_rw(info->selector_info,
                                                  &xpinfo->sel, xpinfo->sel.family);
     if (ret){
-      RW_ASSERT(0);
+      RW_CRASH();
       return -1;
     }
   }else{
@@ -1052,7 +1058,7 @@ int rw_netlink_xfrm_recv_validmsg(rw_netlink_handle_proto_t *proto_handle,
                         msglen - NLMSG_SPACE(sizeof(*xsinfo)));
         ret = rw_netlink_xfrm_convert_nlsa_to_rw(&info, tb, xsinfo);
         if (ret){
-          RW_ASSERT(0);
+          RW_CRASH();
           return -1;
         }
 
@@ -1085,7 +1091,7 @@ int rw_netlink_xfrm_recv_validmsg(rw_netlink_handle_proto_t *proto_handle,
         RW_ASSERT(xsinfo);
         ret = rw_netlink_xfrm_convert_nlsa_to_rw(&info, tb, xsinfo);
         if (ret){
-          RW_ASSERT(0);
+          RW_CRASH();
           return -1;
         }
         
@@ -1117,7 +1123,7 @@ int rw_netlink_xfrm_recv_validmsg(rw_netlink_handle_proto_t *proto_handle,
         
         ret = rw_netlink_xfrm_convert_nlpolicy_to_rw(&pinfo, tb, xpinfo);
         if (ret){
-          RW_ASSERT(0);
+          RW_CRASH();
           return -1;
         }
         if (proto_handle->cb[nlhdr->nlmsg_type - base]){
@@ -1144,7 +1150,7 @@ int rw_netlink_xfrm_recv_validmsg(rw_netlink_handle_proto_t *proto_handle,
         RW_ASSERT(xpinfo);
         ret = rw_netlink_xfrm_convert_nlpolicy_to_rw(&pinfo, tb, xpinfo);
         if (ret){
-          RW_ASSERT(0);
+          RW_CRASH();
           return -1;
         }
         
@@ -1319,7 +1325,7 @@ rw_netlink_handle_proto_init_internal(rw_netlink_handle_t *handle,
                 rw_netlink_xfrm_recv_valid, proto_handle);
       break;
     default:
-      RW_ASSERT(0);
+      RW_CRASH();
   }
   nl_socket_set_cb(proto_handle->sk, cb);
 
@@ -1440,6 +1446,7 @@ void rw_netlink_terminate( rw_netlink_handle_t *handle)
     close(handle->ioctl6_sock_fd);
     handle->ioctl6_sock_fd = 0;
   }
+  
   RW_FREE(handle);
   return;
 }
@@ -1633,7 +1640,7 @@ static rw_status_t rw_netlink_update_interface_address(rw_netlink_handle_t *hand
   ret = nl_sendto(handle->proto_netlink[NETLINK_ROUTE]->sk,
                   nlhdr, nlhdr->nlmsg_len);
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   return RW_STATUS_SUCCESS;
@@ -1727,7 +1734,7 @@ static rw_status_t rw_netlink_update_interface_remote_address(rw_netlink_handle_
   ret = nl_sendto(handle->proto_netlink[NETLINK_ROUTE]->sk,
                   nlhdr, nlhdr->nlmsg_len);
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   return RW_STATUS_SUCCESS;
@@ -1857,7 +1864,7 @@ int rw_netlink_create_veth_pair(rw_netlink_handle_t *handle,
     if (netns_fd){
       close(netns_fd);
     }
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   if (netns_fd){
@@ -1949,7 +1956,7 @@ static rw_status_t rw_netlink_update_route(rw_netlink_handle_t *handle,
   ret = nl_sendto(handle->proto_netlink[NETLINK_ROUTE]->sk,
                   nlhdr, nlhdr->nlmsg_len);
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   return RW_STATUS_SUCCESS;  
@@ -2045,7 +2052,7 @@ static rw_status_t rw_netlink_update_neigh(rw_netlink_handle_t *handle,
   ret = nl_sendto(handle->proto_netlink[NETLINK_ROUTE]->sk,
                   nlhdr, nlhdr->nlmsg_len);
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   return RW_STATUS_SUCCESS;  
@@ -2326,7 +2333,7 @@ static rw_status_t rw_netlink_flush_sendbuf(rw_netlink_handle_t *handle, uint32_
   handle->proto_netlink[NETLINK_ROUTE]->write_buffer = 
       handle->proto_netlink[NETLINK_ROUTE]->head_write_buffer;
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   
@@ -2673,7 +2680,6 @@ rw_status_t rw_ioctl_interface_down(rw_netlink_handle_t *handle,
   if (ret) {
     return RW_STATUS_FAILURE;
   }
-  RW_ASSERT(!(ifr.ifr_flags & IFF_NOARP));
   
   ifr.ifr_flags &= ~(IFF_UP);
     
@@ -2786,7 +2792,6 @@ rw_status_t rw_ioctl_set_mtu(rw_netlink_handle_t *handle,
   if (ret) {
     return RW_STATUS_FAILURE;
   }
-  RW_ASSERT(!(ifr.ifr_flags & IFF_NOARP));
   if (ifr.ifr_flags & IFF_UP){
     up = 1;
     ifr.ifr_flags &= ~(IFF_UP);
@@ -2923,7 +2928,7 @@ rw_netlink_convert_tunnel_param(rw_netlink_tunnel_params_t *tparam,
   
   if (p->iph.protocol == IPPROTO_IPIP || p->iph.protocol == IPPROTO_IPV6) {
     if ((p->i_flags & GRE_KEY) || (p->o_flags & GRE_KEY)) {
-      RW_ASSERT(0);
+      RW_CRASH();
     }
   }
   
@@ -3151,7 +3156,7 @@ rw_netlink_update_tunnel_device(rw_netlink_handle_t *handle,
   ret = nl_sendto(sk,
                   nlhdr, nlhdr->nlmsg_len);
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     return RW_STATUS_FAILURE;
   }
   return RW_STATUS_SUCCESS;  
@@ -3348,7 +3353,7 @@ rw_status_t rw_netlink_get_intf_info_from_ip(rw_netlink_handle_t *handle,
   ret = nl_sendto(proto_handle->sk,
                   nlhdr, nlhdr->nlmsg_len);
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     status = RW_STATUS_FAILURE;
     goto ret;
   }
@@ -3379,144 +3384,6 @@ ret:
 }
 
 
-/*********************** TAKEN FROM dpdk code base************************************/
-int
-rw_strsplit(char *string, int stringlen,
-	     char **tokens, int maxtokens, char delim)
-{
-	int i, tok = 0;
-	int tokstart = 1; /* first token is right at start of string */
-
-	if (string == NULL || tokens == NULL)
-          goto einval_error;
-
-	for (i = 0; i < stringlen; i++) {
-          if (string[i] == '\0' || tok >= maxtokens)
-            break;
-          if (tokstart) {
-            tokstart = 0;
-            tokens[tok++] = &string[i];
-          }
-          if (string[i] == delim) {
-            string[i] = '\0';
-            tokstart = 1;
-          }
-	}
-	return tok;
-        
-einval_error:
-	errno = EINVAL;
-	return -1;
-}
-
-int
-rw_parse_pci_addr_format(char *buf, int bufsize,
-                         rw_pci_address_t *pci_addr)
-{
-#ifndef PCI_FMT_NVAL
- #define PCI_FMT_NVAL 4
-#endif
-  /* first split on ':' */
-  union splitaddr {
-    struct {
-      char *domain;
-      char *bus;
-      char *devid;
-      char *function;
-    };
-    char *str[PCI_FMT_NVAL]; /* last element-separator is "." not ":" */
-  } splitaddr;
-  
-  char *buf_copy = strndup(buf, bufsize);
-  if (buf_copy == NULL)
-    return -1;
-  
-  if (rw_strsplit(buf_copy, bufsize, splitaddr.str, PCI_FMT_NVAL, ':')
-      != PCI_FMT_NVAL - 1)
-    goto error;
-  /* final split is on '.' between devid and function */
-  splitaddr.function = strchr(splitaddr.devid,'.');
-  if (splitaddr.function == NULL)
-    goto error;
-  *splitaddr.function++ = '\0';
-  
-  /* now convert to int values */
-  errno = 0;
-  strncpy(pci_addr->pci_name, buf, sizeof(pci_addr->pci_name));
-  pci_addr->domain = (uint16_t)strtoul(splitaddr.domain, NULL, 16);
-  pci_addr->bus = (uint8_t)strtoul(splitaddr.bus, NULL, 16);
-  pci_addr->devid = (uint8_t)strtoul(splitaddr.devid, NULL, 16);
-  pci_addr->function = (uint8_t)strtoul(splitaddr.function, NULL, 10);
-  if (errno != 0)
-    goto error;
-  
-  free(buf_copy); /* free the copy made with strdup */
-  return 0;
-error:
-  free(buf_copy);
-  return -1;
-}
-
-/*********************** TAKEN FROM dpdk code base************************************/
-int
-rw_sys_populate_pci_from_path(const char *path, rw_pci_address_t *pci_addr)
-{
-  char copy[256];
-  char *tokens[12];
-  int num_tokens;
-  int i;
-  int ret = -1;
-  
-  snprintf(copy, sizeof(copy), "%s", path);
-  num_tokens = rw_strsplit(copy, sizeof(copy), tokens, 12, '/');
-  for (i =0; i < num_tokens; i++){
-    ret = rw_parse_pci_addr_format(tokens[i], strlen(tokens[i]), pci_addr);
-    if (ret == 0)
-      break;
-  }
-
-  return ret;
-}
-
-int
-rw_netlink_get_pci_addr(const char *ifname, rw_pci_address_t *pci_addr)
-{
-  struct udev *udev = NULL;
-  struct udev_enumerate *enumerate = NULL;
-  struct udev_list_entry *devices, *dev_list_entry;
-  int ret = -1;
-  
-  udev = udev_new();
-  if (!udev) {
-    ret = -1;
-    goto ret;
-  }
-
-  enumerate = udev_enumerate_new(udev);
-  udev_enumerate_add_match_subsystem(enumerate, "net");
-  udev_enumerate_add_match_sysname(enumerate, ifname);
-  udev_enumerate_scan_devices(enumerate);
-  devices = udev_enumerate_get_list_entry(enumerate);
-  
-  udev_list_entry_foreach(dev_list_entry, devices) {
-    const char *path;
-    
-    path = udev_list_entry_get_name(dev_list_entry);
-    ret = rw_sys_populate_pci_from_path(path, pci_addr);
-    if (!ret){
-      break;
-    }
-  }
-
-ret:
-  if (enumerate){
-    udev_enumerate_unref(enumerate);
-  }
-  if (udev){
-    udev_unref(udev);
-  }
-  return ret;
-}
 
 
 
@@ -3554,7 +3421,7 @@ rw_netlink_get_link(rw_netlink_handle_t *handle)
   ret = nl_sendto(proto_handle->sk,
                   nlhdr, nlhdr->nlmsg_len);
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     status = RW_STATUS_FAILURE;
     goto ret;
   }
@@ -3597,7 +3464,7 @@ rw_netlink_get_link_addr(rw_netlink_handle_t *handle)
   ret = nl_sendto(proto_handle->sk,
                   nlhdr, nlhdr->nlmsg_len);
   if (ret < 0){
-    RW_ASSERT(0);
+    RW_CRASH();
     status = RW_STATUS_FAILURE;
     goto ret;
   }

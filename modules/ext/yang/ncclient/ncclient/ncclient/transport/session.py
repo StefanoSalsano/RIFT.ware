@@ -43,6 +43,7 @@ class Session(Thread):
         logger.debug('%r created: client_capabilities=%r' %
                      (self, self._client_capabilities))
         self._device_handler = None # Should be set by child class
+        self._notification_callback = None
 
     def _dispatch_message(self, raw):
         try:
@@ -133,6 +134,17 @@ class Session(Thread):
                 if isinstance(listener, cls):
                     return listener
 
+    def register_notification_callback(self, cbk):
+        """Registers a callback to receive Netconf Notifications.
+
+        The *cbk* should be a callable accepting an argument of class 
+        Notification. :seealso: :class:`ncclient.operations.Notification`.
+        Notifications are reported only after a successful create_subscription 
+        operation. Since Netconf Notifications are reported on a session basis,
+        the callback is tied to a session (rather than per subscription).
+        """
+        self._notification_callback = cbk 
+
     def connect(self, *args, **kwds): # subclass implements
         raise NotImplementedError
 
@@ -169,6 +181,12 @@ class Session(Thread):
     def id(self):
         """A string representing the `session-id`. If the session has not been initialized it will be `None`"""
         return self._id
+
+    @property
+    def notification_callback(self):
+        """Notification callback to which Netconf Notifications on the session
+        will be delivered"""
+        return self._notification_callback
 
 
 class SessionListener(object):

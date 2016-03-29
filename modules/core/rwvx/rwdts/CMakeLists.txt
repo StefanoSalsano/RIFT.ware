@@ -111,7 +111,8 @@ target_link_libraries(kv_light_api PRIVATE
   rwlib
   talloc
   db
-  glib-2.0)
+  glib-2.0
+  gobject-2.0)
 install(TARGETS kv_light_api LIBRARY DESTINATION usr/lib COMPONENT ${PKG_LONG_NAME})
 
 
@@ -227,6 +228,7 @@ set(INSTALL_HFILES
     include/rwdts_appstats_api.h
     include/rwdts_api_gi_enum.h
     include/rwdts_xpath.h
+    include/rwdts_kv_light_api_gi.h
     )
 
 install(FILES ${INSTALL_HFILES} DESTINATION usr/include COMPONENT ${PKG_LONG_NAME})
@@ -275,12 +277,13 @@ rift_add_introspection(${GI_NAME}_gi
   HFILES
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include/rwdts_api_gi_enum.h
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include/rwdts_api_gi.h
-  LIBRARIES rwdts_api rwdts_yang_gen rwvcs
+  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include/rwdts_kv_light_api_gi.h
+  LIBRARIES rwdts_api rwdts_yang_gen rwvcs kv_light_api
   IDENTIFIER_FILTER_CMD "python ${CMAKE_CURRENT_SOURCE_DIR}/src/rwdts_gi_filter.py"
   IDENTIFIER_PREFIX "RWDts" "RwDts"
-  GI_INCLUDE_HFILES rwdts_api_gi_enum.h rwdts_api_gi.h 
+  GI_INCLUDE_HFILES rwdts_api_gi_enum.h rwdts_api_gi.h rwdts_kv_light_api_gi.h
   INCLUDE_PATHS  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include
-  DEPENDS rwdts_api rwtasklet_gi rwdts_yang
+  DEPENDS rwdts_api rwtasklet_gi rwdts_yang kv_light_api
   GENERATE_GI_OVERRIDE
   )
 

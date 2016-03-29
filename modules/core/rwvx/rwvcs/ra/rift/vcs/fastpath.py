@@ -8,6 +8,8 @@ from .ext import ClassProperty
 from . import port
 
 
+
+
 class Fastpath(core.Tasklet):
     """
     This class represents a fastpath tasklet.
@@ -21,6 +23,7 @@ class Fastpath(core.Tasklet):
             memory_model=None,
             lcore_workers=None,
             config_ready=True,
+            recovery_action=core.RecoveryType.FAILCRITICAL.value,
             ):
         """Creates a Fastpath object.
 
@@ -33,9 +36,12 @@ class Fastpath(core.Tasklet):
             memory_model   - the memory model that fastpath should use
             lcore_workers  - the number of lcore workers to use
             config_ready   - config readiness check enable
+            recovery_action - recovery action mode
         """
         name = 'RW.Fpath' if name is None else name
-        super(Fastpath, self).__init__(name=name, uid=uid, config_ready=config_ready)
+        super(Fastpath, self).__init__(name=name, uid=uid, config_ready=config_ready,
+                                       recovery_action=recovery_action,
+                                       )
 
         self.cmdargs = CommandLineArguments()
         self.hashbin_credit = hashbin_credit

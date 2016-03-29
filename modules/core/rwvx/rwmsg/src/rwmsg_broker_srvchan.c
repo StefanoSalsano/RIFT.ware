@@ -60,6 +60,18 @@ static int rwmsg_broker_srvchan_req_return(rwmsg_broker_srvchan_t *sc,
 static void rwmsg_broker_srvchan_req_release(rwmsg_broker_srvchan_t *sc,
 					     rwmsg_request_t *req);
 static void rwmsg_broker_srvchan_ackwheel_tick(void*);
+static inline void rwmsg_broker_srvchan_req_dl_remove(rwmsg_broker_srvchan_t *sc,
+                                                      rwmsg_request_t *req);
+
+static inline rw_status_t rwmsg_broker_srvchan_process_localq(rwmsg_broker_srvchan_t *sc,
+                                                       rwmsg_request_t *req,
+                                                       int p,
+                                                       bool pre_ready);
+static int rwmsg_broker_srvchan_recv_req(rwmsg_broker_srvchan_t *sc,
+                                         rwmsg_request_t *req);
+static void rwmsg_broker_srvchan_req_reminq(rwmsg_broker_srvchan_t *sc,
+                                            rwmsg_request_t *req);
+
 
 rwmsg_broker_srvchan_t * rwmsg_broker_or_peer_srvchan_create(rwmsg_broker_t *bro,
                                                              struct rwmsg_broker_channel_acceptor_key_s *key,
@@ -303,6 +315,7 @@ static void rwmsg_broker_srvchan_halt_f(void *ctx) {
 
 void rwmsg_broker_srvchan_halt_async(rwmsg_broker_srvchan_t *sc) {
   rwmsg_broker_t *bro = sc->bch.bro;
+  _RWMSG_CH_DEBUG_(&sc->ch, "++");
   ck_pr_inc_32(&sc->ch.refct);
   rwsched_dispatch_async_f(bro->ep->taskletinfo,
 			  rwsched_dispatch_get_main_queue(bro->ep->rwsched),
@@ -365,7 +378,7 @@ static void rwmsg_broker_srvchan_msgctl(rwmsg_broker_srvchan_t *sc,
       const struct rwmsg_srvchan_method_s *mb = rwmsg_request_get_request_payload(req, &len);
       //const struct rwmsg_srvchan_method_s *mb = rwmsg_request_get_response_payload(req, &len);
       if (len == sizeof(*mb)) {
-	RWMSG_TRACE_CHAN(&sc->bch.ch, INFO, "msgctl add method path='%s' phash=0x%lx methno=%u payt=%d",
+	RWMSG_TRACE_CHAN(&sc->bch.ch, INFO, "msgctl add methbinding path='%s' phash=0x%lx methno=%u payt=%d",
 			 mb->path,
 			 mb->k.pathhash,
 			 mb->k.methno,
@@ -376,21 +389,134 @@ static void rwmsg_broker_srvchan_msgctl(rwmsg_broker_srvchan_t *sc,
 	if (ch) {
 	  rwmsg_broker_srvchan_release((rwmsg_broker_srvchan_t*)ch);
 	  if (ch == (rwmsg_channel_t*)sc) {
+            /* It is us. */
 	    goto ret;
-	  }
-	  /* Not us?! */
-	  RWMSG_TRACE_CHAN(&sc->ch, NOTICE, "msgctl add method duplicate; chanid=%u already registered path='%s' phash=0x%lx methno=%u payt=%d",
-			   ch->chanid,
-			   mb->path,
-			   mb->k.pathhash,
-			   mb->k.methno,
-			   mb->k.payt);
+	  } else {
+            rwmsg_broker_srvchan_t *sc_o = (rwmsg_broker_srvchan_t*)ch;
+            if (sc_o->ch.chantype == RWMSG_CHAN_BROSRV) {
+              /* Not us?! */
+              RWMSG_TRACE_CHAN(&sc->ch, NOTICE, "msgctl add methbinding duplicate found on CHAN_BROSRV, treating as service-recreate; chanid=%u already registered path='%s' phash=0x%lx methno=%u payt=%d",
+                               ch->chanid,
+                               mb->path,
+                               mb->k.pathhash,
+                               mb->k.methno,
+                               mb->k.payt);
+              // delete all the old bindings
+              rwmsg_endpoint_del_channel_method_bindings(sc_o->ch.ep, ch);
 
+              int p;
+              for (p=RWMSG_PRIORITY_COUNT-2; p>=0; p--) {
+                rwmsg_request_t *req_o = NULL;
+                while ((req_o = rwmsg_queue_dequeue_pri(&sc_o->ch.localq, p))) {
+                  fprintf(stderr, "--------------------------------------sc_o->ch.localq" FMT_MSG_HDR(req_o->hdr), PRN_MSG_HDR(req_o->hdr));
+                  RW_ASSERT(!req_o);
+                }
+                while ((req_o = rwmsg_queue_dequeue_pri(&sc_o->ch.ssbufq, p))) {
+                  fprintf(stderr, "--------------------------------------sc_o->ch.ssbufq" FMT_MSG_HDR(req_o->hdr), PRN_MSG_HDR(req_o->hdr));
+                  RW_ASSERT(!req_o);
+                }
+                rwmsg_broker_srvchan_cli_t *cli_o = NULL;
+                HASH_ITER(hh, sc_o->cli_hash, cli_o, sc_o->cli_sched[p].cli_next) {
+#if 0
+                  int sent_count = 0;
+                  while ((req_o = RW_DL_HEAD(&cli_o->q[p].q, rwmsg_request_t, elem))) {
+                    bool sent = req_o->sent;
+                    // take an extra reference
+                    ck_pr_inc_32(&req_o->refct);
+
+                    rwmsg_broker_srvchan_req_release(sc_o, req_o);
+
+                    if (!sent) {
+                      fprintf(stderr, "++++++++++++++++++++++++++++++++++++++req_o=!sent" FMT_MSG_HDR(req_o->hdr), PRN_MSG_HDR(req_o->hdr));
+                      rwmsg_broker_srvchan_process_localq(sc, req_o, p, TRUE);
+                      if (sc->cli_sched[p].readyct)
+                        rwmsg_sockset_pollout(sc->ch.ss, p, TRUE);
+                    } else {
+                      fprintf(stderr, "--------------------------------------req_o=sent" FMT_MSG_HDR(req_o->hdr), PRN_MSG_HDR(req_o->hdr));
+                      //RW_ASSERT(!req_o);
+                      req_o->sent = FALSE;
+                      rwmsg_broker_srvchan_process_localq(sc, req_o, p, TRUE);
+                      if (sc->cli_sched[p].readyct)
+                        rwmsg_sockset_pollout(sc->ch.ss, p, TRUE);
+                    }
+                    sent_count ++;
+                  }
+                  rwmsg_broker_srvchan_cli_t *cli = NULL;
+                  HASH_FIND(hh, sc->cli_hash, &cli_o->brocli_id, sizeof(cli_o->brocli_id), cli);
+                  //RW_ASSERT(cli);
+                  if (cli) {
+                    RW_ASSERT(cli->brocli_id == cli_o->brocli_id);
+                    int qp;
+                    for (qp=0; qp<RWMSG_PRIORITY_COUNT; qp++) {
+                      if (cli->q[qp].seqno == 1)
+                        cli->q[qp].seqno = cli_o->q[qp].seqno;
+                        if (qp == p)
+                          cli->q[qp].seqno -= sent_count;
+                    }
+                  }
+#else
+                  rwmsg_request_t *qreq;
+                  while ((qreq = RW_DL_TAIL(&cli_o->q[p].q, rwmsg_request_t, elem))) {
+                    //fprintf(stderr, "=======================================qreq.bnc=RWMSG_BOUNCE_SRVRST" FMT_MSG_HDR(qreq->hdr), PRN_MSG_HDR(qreq->hdr));
+                    //RW_ASSERT(qreq->hdr.isreq);
+                    qreq->hdr.isreq = FALSE;
+                    qreq->hdr.bnc = RWMSG_BOUNCE_SRVRST;
+                    sc_o->stat.bnc[qreq->hdr.bnc]++;
+                    RW_ASSERT(!qreq->hdr.cancel);
+
+                    RW_ASSERT(qreq->broclichan);
+                    RW_ASSERT(qreq->refct >= 1);
+                    if (!(qreq->hdr.ack && qreq->hdr.nop)) {
+                      /* Assert that all items we dequeue and release are in the hash */
+                      rwmsg_request_t *dlreq = NULL;
+                      HASH_FIND(hh, sc_o->req_hash, &qreq->hdr.id, sizeof(qreq->hdr.id), dlreq);
+                      RW_ASSERT(dlreq);
+                      RW_ASSERT(dlreq->inhash);
+                      RW_ASSERT(dlreq == qreq);
+                    }
+
+                    RW_ASSERT_TYPE(qreq->brosrvcli, rwmsg_broker_srvchan_cli_t);
+                    RW_ASSERT(qreq->inq);
+
+                    RWMSG_TRACE_CHAN(&sc_o->ch, DEBUG, "qreq RWMSG_BOUNCE_SRVRST" FMT_MSG_HDR(qreq->hdr),
+                                     PRN_MSG_HDR(qreq->hdr));
+
+                    /* Remove from cli queue.  Remains in req hash for
+                       cancel/retransmit processing etc.  Bounces do get
+                       acked so we can free them. */
+                    rwmsg_broker_srvchan_req_reminq(sc_o, qreq);
+                    RW_ASSERT(qreq != RW_DL_HEAD(&cli_o->q[p].q, rwmsg_request_t, elem));
+
+                    RWMSG_TRACE_CHAN(&sc_o->ch, DEBUG, "inc_refct(req=%p) - rwmsg_broker_srvchan_recv()" FMT_MSG_HDR(qreq->hdr),
+                                     qreq, PRN_MSG_HDR(qreq->hdr));
+                    ck_pr_inc_32(&qreq->refct);
+                    if (!rwmsg_broker_srvchan_recv_req(sc_o, qreq)) {
+                      qreq = NULL;
+                    }
+
+                    /* brocli, if it wasn't halted in recv_req/req_return,
+                       will send cancel or ack for bounces, at which point
+                       we call srvchan_req_release() on our req */
+                  }
+#endif
+                }
+              }
+            } else {
+              RW_ASSERT(sc_o->ch.chantype == RWMSG_CHAN_PEERSRV);
+              /* Not us?! */
+              RWMSG_TRACE_CHAN(&sc->ch, NOTICE, "msgctl add methbinding duplicate; chanid=%u already registered path='%s' phash=0x%lx methno=%u payt=%d",
+                               ch->chanid,
+                               mb->path,
+                               mb->k.pathhash,
+                               mb->k.methno,
+                               mb->k.payt);
+	      goto ret;
+            }
+          }
 	  // TBD: multiple srvchans per method binding
-	  goto ret;
 	}
 
-	RWMSG_TRACE_CHAN(&sc->bch.ch, NOTICE, "Adding method in the broker path='%s' phash=0x%lx methno=%u payt=%d",
+	RWMSG_TRACE_CHAN(&sc->bch.ch, NOTICE, "Adding methbinding in the broker path='%s' phash=0x%lx methno=%u payt=%d",
 			 mb->path,
 			 mb->k.pathhash,
 			 mb->k.methno,
@@ -578,6 +704,9 @@ static int rwmsg_broker_srvchan_req_return(rwmsg_broker_srvchan_t *sc,
 
       RW_ASSERT(!req->hdr.isreq);
       RWMSG_REQ_TRACK(req);
+      RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "rsp" FMT_MSG_HDR(req->hdr) "=> %s",
+                       PRN_MSG_HDR(req->hdr),
+                       req->broclichan->ch.rwtpfx);
       rw_status_t rs = rwmsg_queue_enqueue(&req->broclichan->ch.localq, req);
       if (rs != RW_STATUS_SUCCESS) {
 	RW_ASSERT(!req->broclichan->ch.localq.qlencap);
@@ -585,9 +714,6 @@ static int rwmsg_broker_srvchan_req_return(rwmsg_broker_srvchan_t *sc,
 	RW_ASSERT(rs != RW_STATUS_BACKPRESSURE); /* not in the broker we don't! */
       } else {
 	/* Yes, queued */
-	RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "rsp" FMT_MSG_HDR(req->hdr) "=> %s",
-                         PRN_MSG_HDR(req->hdr),
-			 req->broclichan->ch.rwtpfx);
 	retval = TRUE;
       }
     }
@@ -707,6 +833,317 @@ static int rwmsg_broker_srvchan_do_writes_cli(rwmsg_broker_srvchan_t *sc,
   return rs;
 }
 
+static inline rw_status_t rwmsg_broker_srvchan_process_localq(
+    rwmsg_broker_srvchan_t *sc,
+    rwmsg_request_t *req,
+    int p,
+    bool pre_ready) {
+  rw_status_t rs = RW_STATUS_SUCCESS;
+  /* Req arrives with a ref already added for us by the
+     broclichan, so we have to release all reqs exactly once here
+     in brosrvchan */
+
+  RW_ASSERT(p != RWMSG_PRIORITY_BLOCKING); /* only exists on client side, so this is unpossible */
+  RW_ASSERT_TYPE(req, rwmsg_request_t);
+
+  RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req=%p" FMT_MSG_HDR(req->hdr) "arriving from queue",
+                   req, PRN_MSG_HDR(req->hdr));
+
+  /* Process ACK */
+  /* TBD: multple ACKs in extension header */
+  if (req->hdr.ack) {
+    rwmsg_request_t *ackreq = NULL;
+    //rwmsg_id_t ackid = req->hdr.id;
+    //ackid.locid = req->hdr.ackid;
+    rwmsg_id_t ackid = req->hdr.ackid;
+    HASH_FIND(hh, sc->req_hash, &ackid, sizeof(ackid), ackreq);
+    if (ackreq) {
+      RW_ASSERT(ackreq->inhash);
+
+      /* Deref locally */
+      rwmsg_broker_srvchan_req_release(sc, ackreq);
+      RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req" FMT_MSG_HDR(req->hdr) "srvchan_req_release called",
+                       PRN_MSG_HDR(req->hdr));
+      if (sc->ch.chantype == RWMSG_CHAN_BROSRV) {
+        req->hdr.ack = FALSE; /* this brosrv consumed the ACK, the requset might traverse to srvchan */
+      }
+    }
+  }
+  if (sc->ch.chantype != RWMSG_CHAN_BROSRV || !req->hdr.nop) {
+    // seek rsp in rspcache, else
+    rwmsg_request_t *oreq = NULL;
+    HASH_FIND(hh, sc->req_hash, &req->hdr.id, sizeof(req->hdr.id), oreq);
+    if (oreq) {
+      RW_ASSERT(oreq->inhash);
+      RW_ASSERT_TYPE(oreq->brosrvcli, rwmsg_broker_srvchan_cli_t); // CORRECT ?? 
+      bool reqgoaway = FALSE;
+
+      // replace oreq with this new one, for updated routing, etc
+      // we actually keep oreq, since it's in multiple hashes and lists
+      // we immediately release req, since it was a retransmit or cancel or somesuch
+
+      RW_ASSERT(req->hdr.pathhash == oreq->hdr.pathhash);
+      RW_ASSERT(req->hdr.payt == oreq->hdr.payt);
+      RW_ASSERT(req->hdr.methno == oreq->hdr.methno);
+
+      // update the broclichan ptr; will be either a broclichan or bropeerchan in the future
+      RW_ASSERT(req->broclichan);
+      RW_ASSERT(oreq->broclichan);
+      RW_ASSERT(req->brosrvchan == sc);
+      if (req->broclichan != oreq->broclichan) {
+        rwmsg_broker_clichan_release(oreq->broclichan);
+        oreq->broclichan = req->broclichan;
+        req->broclichan = NULL;
+      }
+
+      if (req->hdr.cancel) {
+        /* A cancel; toss */
+        reqgoaway = TRUE;
+        sc->stat.cancel++;
+        RW_ASSERT(req->hdr.bnc);
+        rwmsg_broker_srvchan_req_release(sc, oreq); /* our ref */
+        oreq = NULL;
+        RWMSG_TRACE_CHAN(&sc->ch, WARN, "req cancel" FMT_MSG_HDR(req->hdr),
+                         PRN_MSG_HDR(req->hdr));
+      } else {
+        if (!oreq->hdr.isreq) {
+          RW_CRASH();
+          /* A cached response, resend, bump ref before doing so, since the brocli will decr */
+          RWMSG_TRACE_CHAN(&sc->ch, INFO, "rsp resent" FMT_MSG_HDR(req->hdr),
+                           PRN_MSG_HDR(req->hdr));
+          RW_ASSERT(oreq->broclichan);
+          RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "inc_refct(req=%p) - rwmsg_broker_srvchan_recv()" FMT_MSG_HDR(oreq->hdr),
+                           oreq, PRN_MSG_HDR(oreq->hdr));
+          ck_pr_inc_32(&oreq->refct); /* this is a second or further copy enqueued, each copy gets released on dequeue in the brocli */
+          rwmsg_broker_srvchan_req_return(sc, oreq);
+          sc->stat.cached_resend++;
+        } else {
+          /* A pending request, do nothing */
+          RWMSG_TRACE_CHAN(&sc->ch, INFO, "req origin updated, still pending" FMT_MSG_HDR(req->hdr),
+                           PRN_MSG_HDR(req->hdr));
+          sc->stat.pending_donada++;
+        }
+      }
+
+      rwmsg_bool_t b = rwmsg_request_release(req);
+      if (reqgoaway) {
+        RW_ASSERT(b);
+      }
+      req = NULL;
+
+    } else {
+      if (req->hdr.cancel) {
+        sc->stat.cancel_unk++;
+        goto nop;
+      }
+
+      /* If this is an ack traversing thru the bro-srvchan, don't add to the req_hash */
+      if (!(req->hdr.ack && req->hdr.nop)) {
+        /* We own a ref to this req, this was set up before enqueue in the broclichan */
+        HASH_ADD(hh, sc->req_hash, hdr.id, sizeof(req->hdr.id), req);
+
+        RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req" FMT_MSG_HDR(req->hdr) "HASH_ADD req_hash",
+                         PRN_MSG_HDR(req->hdr));
+        req->inhash = TRUE;
+      }
+      else {
+        /* If this is an ack traversing thru the bro-srvchan, set the stid to 0 */
+        //req->hdr.stid = 0; /* RIFT_6913 */
+      }
+
+      /* Find or make the client */
+      rwmsg_broker_srvchan_cli_t *cli = NULL;
+      uint32_t brocli_id;
+      if (req->hdr.stid) {
+        brocli_id = RWMSG_ID_TO_BROCLI_ID(&req->hdr.id);
+      } else {
+        brocli_id = 0;
+        /* Note: To ensure ordering, we need to guarantee no
+           service to the cli for the actual brocli until this
+           brocli has no entries in the stid=0/brocli=0 queue.
+           TBD! */
+      }
+      HASH_FIND(hh, sc->cli_hash, &brocli_id, sizeof(brocli_id), cli);
+      if (!cli) {
+        /* If stream and no client, make and use a new client. */
+        cli = RW_MALLOC0_TYPE(sizeof(*cli), rwmsg_broker_srvchan_cli_t);
+        cli->brocli_id = brocli_id;
+        int qp;
+        for (qp=0; qp<RWMSG_PRIORITY_COUNT; qp++) {
+          cli->q[qp].seqno = 1;
+        }
+        HASH_ADD(hh, sc->cli_hash, brocli_id, sizeof(cli->brocli_id), cli);
+        RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "New Client brocli_id=%u added", brocli_id);
+      }
+      RW_ASSERT(cli);
+      req->brosrvcli = cli;
+
+      if (req->hdr.stid) {
+        // TBD if outside currently expected window, drop!
+
+        if (sc->ch.chantype == RWMSG_CHAN_PEERSRV) { // PEERSRV no seqno check
+          //RW_ASSERT(req->hdr.isreq);
+          RW_DL_INSERT_TAIL(&cli->q[p].q, req, elem);
+        } else {
+          /* RIFT-7414 - plain ack requests are triggering seqno resets on the sever side
+           * nops should not trigger a sequence reset
+           */
+          if (!req->hdr.seqno && !req->hdr.nop) {
+            /* Seqno zero is a sequence reset; bounce all extant
+               requests in the stream and reset. */
+            RWMSG_TRACE_CHAN(&sc->ch, CRIT, "req" FMT_MSG_HDR(req->hdr) "triggered a sequence reset in cli=%p",
+                             PRN_MSG_HDR(req->hdr), cli);
+            sc->stat.seqzero_recvd++;
+
+            rwmsg_request_t *qreq;
+            while ((qreq = RW_DL_HEAD(&cli->q[p].q, rwmsg_request_t, elem))) {
+              //RW_ASSERT(qreq->hdr.isreq);
+              qreq->hdr.isreq = FALSE;
+              qreq->hdr.bnc = RWMSG_BOUNCE_RESET;
+              sc->stat.bnc[qreq->hdr.bnc]++;
+              RW_ASSERT(!qreq->hdr.cancel);
+
+              RW_ASSERT(qreq->broclichan);
+              RW_ASSERT(qreq->refct >= 1);
+              if (!(qreq->hdr.ack && qreq->hdr.nop)) {
+                /* Assert that all items we dequeue and release are in the hash */
+                rwmsg_request_t *dlreq = NULL;
+                HASH_FIND(hh, sc->req_hash, &qreq->hdr.id, sizeof(qreq->hdr.id), dlreq);
+                RW_ASSERT(dlreq);
+                RW_ASSERT(dlreq->inhash);
+                RW_ASSERT(dlreq == qreq);
+              }
+
+              RW_ASSERT_TYPE(qreq->brosrvcli, rwmsg_broker_srvchan_cli_t);
+              RW_ASSERT(qreq->inq);
+
+              RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "qreq RWMSG_BOUNCE_RESET" FMT_MSG_HDR(qreq->hdr),
+                               PRN_MSG_HDR(qreq->hdr));
+
+              /* Remove from cli queue.  Remains in req hash for
+                 cancel/retransmit processing etc.  Bounces do get
+                 acked so we can free them. */
+              rwmsg_broker_srvchan_req_reminq(sc, qreq);
+              RW_ASSERT(qreq != RW_DL_HEAD(&cli->q[p].q, rwmsg_request_t, elem));
+
+              RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "inc_refct(req=%p) - rwmsg_broker_srvchan_recv()" FMT_MSG_HDR(qreq->hdr),
+                               qreq, PRN_MSG_HDR(qreq->hdr));
+              ck_pr_inc_32(&qreq->refct);
+              if (!rwmsg_broker_srvchan_recv_req(sc, qreq)) {
+                qreq = NULL;
+              }
+
+              /* brocli, if it wasn't halted in recv_req/req_return,
+                 will send cancel or ack for bounces, at which point
+                 we call srvchan_req_release() on our req */
+            }
+
+            /* This is the new and now only req in the queue */
+            //RW_ASSERT(req->hdr.isreq);
+            RW_DL_INSERT_HEAD(&cli->q[p].q, req, elem);
+            cli->q[p].seqno = 0;
+
+          } else {
+            /* queue / order by client */
+#define SEQ_LT(a,b) ((int32_t)((uint32_t)(a)-((uint32_t)(b)) < 0))
+            RW_ASSERT(sc->ch.chantype == RWMSG_CHAN_BROSRV);
+            rwmsg_request_t *qreq = RW_DL_TAIL(&cli->q[p].q, rwmsg_request_t, elem);
+            while (qreq && SEQ_LT(req->hdr.seqno, qreq->hdr.seqno)) {
+              //RW_ASSERT(qreq->hdr.isreq);
+              qreq = RW_DL_PREV(qreq, rwmsg_request_t, elem);
+            }
+            //RW_ASSERT(req->hdr.isreq);
+            if (!qreq) {
+              RW_DL_INSERT_HEAD(&cli->q[p].q, req, elem);
+            } else {
+              qreq = RW_DL_NEXT(qreq, rwmsg_request_t, elem);
+              if (qreq) {
+                RW_DL_ELEMENT_INSERT_BEFORE(&cli->q[p].q, &req->elem, &qreq->elem);
+              } else {
+                RW_DL_INSERT_TAIL(&cli->q[p].q, req, elem);
+              }
+            }
+          }
+        }
+
+        if (!cli->q[p].ready) {
+          if (sc->ch.chantype != RWMSG_CHAN_PEERSRV) { // PEERSRV no seqno check
+            rwmsg_request_t *hreq = NULL;
+            if (cli->q[p].last_written) {
+              hreq = RW_DL_NEXT(cli->q[p].last_written, rwmsg_request_t, elem);
+            } else {
+              hreq = RW_DL_HEAD(&cli->q[p].q, rwmsg_request_t, elem);
+            }
+            if ((hreq->hdr.seqno == cli->q[p].seqno)
+                || pre_ready) {
+              RW_ASSERT(p >= 0);
+              RW_ASSERT(p < RWMSG_PRIORITY_COUNT);
+              cli->q[p].ready = TRUE;
+              if (!sc->cli_sched[p].cli_next || !sc->cli_sched[p].readyct) {
+                sc->cli_sched[p].cli_next = cli;
+              }
+              sc->cli_sched[p].readyct++;
+            }
+          } else {
+            RW_ASSERT(p >= 0);
+            RW_ASSERT(p < RWMSG_PRIORITY_COUNT);
+            cli->q[p].ready = TRUE;
+            if (!sc->cli_sched[p].cli_next || !sc->cli_sched[p].readyct) {
+              sc->cli_sched[p].cli_next = cli;
+            }
+            sc->cli_sched[p].readyct++;
+          }
+        }
+
+        RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req" FMT_MSG_HDR(req->hdr) "scheduled in cli=%p q[pri=%u] .seqno=%u, .ready=%u, .cli_next=%p sched[].readyct=%u",
+                         PRN_MSG_HDR(req->hdr),
+                         cli,
+                         p,
+                         cli->q[p].seqno,
+                         cli->q[p].ready,
+                         sc->cli_sched[p].cli_next,
+                         sc->cli_sched[p].readyct);
+      } else {
+        /* Just append to queue on the anon/new client */
+        RW_ASSERT(!cli->brocli_id);
+        RW_ASSERT(p >= 0);
+        RW_ASSERT(p < RWMSG_PRIORITY_COUNT);
+        //RW_ASSERT(req->hdr.isreq);
+        RW_DL_INSERT_TAIL(&cli->q[p].q, req, elem);
+        if (!cli->q[p].ready) {
+          cli->q[p].ready = TRUE;
+          if (!sc->cli_sched[p].readyct) {
+            sc->cli_sched[p].cli_next = cli;
+          }
+          sc->cli_sched[p].readyct++;
+        }
+
+        RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req" FMT_MSG_HDR(req->hdr) "scheduled in cli=%p (anon/new)",
+                         PRN_MSG_HDR(req->hdr),
+                         cli);
+      }
+
+      req->inq = TRUE;
+      sc->cli_qtot++;
+      sc->cli_qunsent++;
+      cli->unsent++;
+      RW_ASSERT(p >= 0);
+      RW_ASSERT(p < RWMSG_PRIORITY_COUNT);
+      cli->q[p].unsent++;
+      req->sent = FALSE;
+    }
+  } else {
+  nop:
+    /* nop, release the req */
+    if (req->refct > 1) {
+      RW_ASSERT(req->refct > 1);
+      ck_pr_dec_32(&req->refct);
+    }
+    rwmsg_request_release(req);
+  }
+  return rs;
+}
+
 /* Execute writes in a vaguely fair round robin sort of way */
 static rw_status_t rwmsg_broker_srvchan_do_writes(rwmsg_broker_srvchan_t *sc,
 						  rwmsg_priority_t pri) {
@@ -810,309 +1247,7 @@ uint32_t rwmsg_broker_srvchan_recv(rwmsg_broker_srvchan_t *sc) {
 
     while (deqmax--
 	   && (req = rwmsg_queue_dequeue_pri(&sc->ch.localq, p))) {
-
-      /* Req arrives with a ref already added for us by the
-	 broclichan, so we have to release all reqs exactly once here
-	 in brosrvchan */
-
-      RW_ASSERT(p != RWMSG_PRIORITY_BLOCKING); /* only exists on client side, so this is unpossible */
-      RW_ASSERT_TYPE(req, rwmsg_request_t);
-
-      RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req=%p" FMT_MSG_HDR(req->hdr) "arriving from queue",
-                       req, PRN_MSG_HDR(req->hdr));
-
-      /* Process ACK */
-      /* TBD: multple ACKs in extension header */
-      if (req->hdr.ack) {
-	rwmsg_request_t *ackreq = NULL;
-	//rwmsg_id_t ackid = req->hdr.id;
-	//ackid.locid = req->hdr.ackid;
-	rwmsg_id_t ackid = req->hdr.ackid;
-	HASH_FIND(hh, sc->req_hash, &ackid, sizeof(ackid), ackreq);
-	if (ackreq) {
-	  RW_ASSERT(ackreq->inhash);
-
-	  /* Deref locally */
-	  rwmsg_broker_srvchan_req_release(sc, ackreq);
-	  RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req" FMT_MSG_HDR(req->hdr) "srvchan_req_release called",
-                           PRN_MSG_HDR(req->hdr));
-          if (sc->ch.chantype == RWMSG_CHAN_BROSRV) {
-            req->hdr.ack = FALSE; /* this brosrv consumed the ACK, the requset might traverse to srvchan */
-          }
-	}
-      }
-      if (sc->ch.chantype != RWMSG_CHAN_BROSRV || !req->hdr.nop) {
-	// seek rsp in rspcache, else
-	rwmsg_request_t *oreq = NULL;
-	HASH_FIND(hh, sc->req_hash, &req->hdr.id, sizeof(req->hdr.id), oreq);
-	if (oreq) {
-	  RW_ASSERT(oreq->inhash);
-          RW_ASSERT_TYPE(oreq->brosrvcli, rwmsg_broker_srvchan_cli_t); // CORRECT ?? 
-	  bool reqgoaway = FALSE;
-
-	  // replace oreq with this new one, for updated routing, etc
-	  // we actually keep oreq, since it's in multiple hashes and lists
-	  // we immediately release req, since it was a retransmit or cancel or somesuch
-
-	  RW_ASSERT(req->hdr.pathhash == oreq->hdr.pathhash);
-	  RW_ASSERT(req->hdr.payt == oreq->hdr.payt);
-	  RW_ASSERT(req->hdr.methno == oreq->hdr.methno);
-
-	  // update the broclichan ptr; will be either a broclichan or bropeerchan in the future
-	  RW_ASSERT(req->broclichan);
-	  RW_ASSERT(oreq->broclichan);
-	  RW_ASSERT(req->brosrvchan == sc);
-	  if (req->broclichan != oreq->broclichan) {
-	    rwmsg_broker_clichan_release(oreq->broclichan);
-	    oreq->broclichan = req->broclichan;
-	    req->broclichan = NULL;
-	  }
-
-	  if (req->hdr.cancel) {
-	    /* A cancel; toss */
-	    reqgoaway = TRUE;
-	    sc->stat.cancel++;
-	    RW_ASSERT(req->hdr.bnc);
-	    rwmsg_broker_srvchan_req_release(sc, oreq); /* our ref */
-	    oreq = NULL;
-	    RWMSG_TRACE_CHAN(&sc->ch, WARN, "req cancel" FMT_MSG_HDR(req->hdr),
-                             PRN_MSG_HDR(req->hdr));
-	  } else {
-	    if (!oreq->hdr.isreq) {
-              RW_ASSERT(0);
-	      /* A cached response, resend, bump ref before doing so, since the brocli will decr */
-	      RWMSG_TRACE_CHAN(&sc->ch, INFO, "rsp resent" FMT_MSG_HDR(req->hdr),
-                               PRN_MSG_HDR(req->hdr));
-	      RW_ASSERT(oreq->broclichan);
-              RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "inc_refct(req=%p) - rwmsg_broker_srvchan_recv()" FMT_MSG_HDR(oreq->hdr),
-                               oreq, PRN_MSG_HDR(oreq->hdr));
-	      ck_pr_inc_32(&oreq->refct); /* this is a second or further copy enqueued, each copy gets released on dequeue in the brocli */
-	      rwmsg_broker_srvchan_req_return(sc, oreq);
-	      sc->stat.cached_resend++;
-	    } else {
-	      /* A pending request, do nothing */
-	      RWMSG_TRACE_CHAN(&sc->ch, INFO, "req origin updated, still pending" FMT_MSG_HDR(req->hdr),
-                               PRN_MSG_HDR(req->hdr));
-	      sc->stat.pending_donada++;
-	    }
-	  }
-
-	  rwmsg_bool_t b = rwmsg_request_release(req);
-	  if (reqgoaway) {
-	    RW_ASSERT(b);
-	  }
-	  req = NULL;
-
-	} else {
-	  if (req->hdr.cancel) {
-	    sc->stat.cancel_unk++;
-	    goto nop;
-	  }
-
-          /* If this is an ack traversing thru the bro-srvchan, don't add to the req_hash */
-          if (!(req->hdr.ack && req->hdr.nop)) {
-            /* We own a ref to this req, this was set up before enqueue in the broclichan */
-            HASH_ADD(hh, sc->req_hash, hdr.id, sizeof(req->hdr.id), req);
-
-            RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req" FMT_MSG_HDR(req->hdr) "HASH_ADD req_hash",
-                             PRN_MSG_HDR(req->hdr));
-            req->inhash = TRUE;
-          }
-          else {
-            /* If this is an ack traversing thru the bro-srvchan, set the stid to 0 */
-            //req->hdr.stid = 0; /* RIFT_6913 */
-          }
-
-	  /* Find or make the client */
-	  rwmsg_broker_srvchan_cli_t *cli = NULL;
-	  uint32_t brocli_id;
-	  if (req->hdr.stid) {
-	    brocli_id = RWMSG_ID_TO_BROCLI_ID(&req->hdr.id);
-	  } else {
-	    brocli_id = 0;
-	    /* Note: To ensure ordering, we need to guarantee no
-	       service to the cli for the actual brocli until this
-	       brocli has no entries in the stid=0/brocli=0 queue.
-	       TBD! */
-	  }
-	  HASH_FIND(hh, sc->cli_hash, &brocli_id, sizeof(brocli_id), cli);
-	  if (!cli) {
-	    /* If stream and no client, make and use a new client. */
-	    cli = RW_MALLOC0_TYPE(sizeof(*cli), rwmsg_broker_srvchan_cli_t);
-	    cli->brocli_id = brocli_id;
-	    int qp;
-	    for (qp=0; qp<RWMSG_PRIORITY_COUNT; qp++) {
-	      cli->q[qp].seqno = 1;
-	    }
-	    HASH_ADD(hh, sc->cli_hash, brocli_id, sizeof(cli->brocli_id), cli);
-	    RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "New Client brocli_id=%u added", brocli_id);
-	  }
-	  RW_ASSERT(cli);
-	  req->brosrvcli = cli;
-
-	  if (req->hdr.stid) {
-	    // TBD if outside currently expected window, drop!
-
-	    if (sc->ch.chantype == RWMSG_CHAN_PEERSRV) { // PEERSRV no seqno check
-              //RW_ASSERT(req->hdr.isreq);
-              RW_DL_INSERT_TAIL(&cli->q[p].q, req, elem);
-            } else {
-              /* RIFT-7414 - plain ack requests are triggering seqno resets on the sever side
-               * nops should not trigger a sequence reset
-               */
-              if (!req->hdr.seqno && !req->hdr.nop) {
-                /* Seqno zero is a sequence reset; bounce all extant
-                   requests in the stream and reset. */
-                RWMSG_TRACE_CHAN(&sc->ch, CRIT, "req" FMT_MSG_HDR(req->hdr) "triggered a sequence reset in cli=%p",
-                                 PRN_MSG_HDR(req->hdr), cli);
-                sc->stat.seqzero_recvd++;
-
-                rwmsg_request_t *qreq;
-                while ((qreq = RW_DL_HEAD(&cli->q[p].q, rwmsg_request_t, elem))) {
-                  //RW_ASSERT(qreq->hdr.isreq);
-                  qreq->hdr.isreq = FALSE;
-                  qreq->hdr.bnc = RWMSG_BOUNCE_RESET;
-                  sc->stat.bnc[qreq->hdr.bnc]++;
-                  RW_ASSERT(!qreq->hdr.cancel);
-
-                  RW_ASSERT(qreq->broclichan);
-                  RW_ASSERT(qreq->refct >= 1);
-                  if (!(qreq->hdr.ack && qreq->hdr.nop)) {
-                    /* Assert that all items we dequeue and release are in the hash */
-                    rwmsg_request_t *dlreq = NULL;
-                    HASH_FIND(hh, sc->req_hash, &qreq->hdr.id, sizeof(qreq->hdr.id), dlreq);
-                    RW_ASSERT(dlreq);
-                    RW_ASSERT(dlreq->inhash);
-                    RW_ASSERT(dlreq == qreq);
-                  }
-
-                  RW_ASSERT_TYPE(qreq->brosrvcli, rwmsg_broker_srvchan_cli_t);
-                  RW_ASSERT(qreq->inq);
-
-                  RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "qreq RWMSG_BOUNCE_RESET" FMT_MSG_HDR(qreq->hdr),
-                                   PRN_MSG_HDR(qreq->hdr));
-
-                  /* Remove from cli queue.  Remains in req hash for
-                     cancel/retransmit processing etc.  Bounces do get
-                     acked so we can free them. */
-                  rwmsg_broker_srvchan_req_reminq(sc, qreq);
-                  RW_ASSERT(qreq != RW_DL_HEAD(&cli->q[p].q, rwmsg_request_t, elem));
-
-                  RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "inc_refct(req=%p) - rwmsg_broker_srvchan_recv()" FMT_MSG_HDR(qreq->hdr),
-                                   qreq, PRN_MSG_HDR(qreq->hdr));
-                  ck_pr_inc_32(&qreq->refct);
-                  if (!rwmsg_broker_srvchan_recv_req(sc, qreq)) {
-                    qreq = NULL;
-                  }
-
-                  /* brocli, if it wasn't halted in recv_req/req_return,
-                     will send cancel or ack for bounces, at which point
-                     we call srvchan_req_release() on our req */
-                }
-
-                /* This is the new and now only req in the queue */
-                //RW_ASSERT(req->hdr.isreq);
-                RW_DL_INSERT_HEAD(&cli->q[p].q, req, elem);
-                cli->q[p].seqno = 0;
-
-              } else {
-                /* queue / order by client */
-#define SEQ_LT(a,b) ((int32_t)((uint32_t)(a)-((uint32_t)(b)) < 0))
-                RW_ASSERT(sc->ch.chantype == RWMSG_CHAN_BROSRV);
-                rwmsg_request_t *qreq = RW_DL_TAIL(&cli->q[p].q, rwmsg_request_t, elem);
-                while (qreq && SEQ_LT(req->hdr.seqno, qreq->hdr.seqno)) {
-                  //RW_ASSERT(qreq->hdr.isreq);
-                  qreq = RW_DL_PREV(qreq, rwmsg_request_t, elem);
-                }
-                //RW_ASSERT(req->hdr.isreq);
-                if (!qreq) {
-                  RW_DL_INSERT_HEAD(&cli->q[p].q, req, elem);
-                } else {
-                  qreq = RW_DL_NEXT(qreq, rwmsg_request_t, elem);
-                  if (qreq) {
-                    RW_DL_ELEMENT_INSERT_BEFORE(&cli->q[p].q, &req->elem, &qreq->elem);
-                  } else {
-                    RW_DL_INSERT_TAIL(&cli->q[p].q, req, elem);
-                  }
-                }
-              }
-            }
-
-            if (!cli->q[p].ready) {
-              if (sc->ch.chantype != RWMSG_CHAN_PEERSRV) { // PEERSRV no seqno check
-                rwmsg_request_t *hreq = NULL;
-                if (cli->q[p].last_written) {
-                  hreq = RW_DL_NEXT(cli->q[p].last_written, rwmsg_request_t, elem);
-                } else {
-                  hreq = RW_DL_HEAD(&cli->q[p].q, rwmsg_request_t, elem);
-                }
-                if (hreq->hdr.seqno == cli->q[p].seqno) {
-                  RW_ASSERT(p >= 0);
-                  RW_ASSERT(p < RWMSG_PRIORITY_COUNT);
-                  cli->q[p].ready = TRUE;
-                  if (!sc->cli_sched[p].cli_next || !sc->cli_sched[p].readyct) {
-                    sc->cli_sched[p].cli_next = cli;
-                  }
-                  sc->cli_sched[p].readyct++;
-                }
-              } else {
-                RW_ASSERT(p >= 0);
-                RW_ASSERT(p < RWMSG_PRIORITY_COUNT);
-                cli->q[p].ready = TRUE;
-                if (!sc->cli_sched[p].cli_next || !sc->cli_sched[p].readyct) {
-                  sc->cli_sched[p].cli_next = cli;
-                }
-                sc->cli_sched[p].readyct++;
-              }
-            }
-
-	    RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req" FMT_MSG_HDR(req->hdr) "scheduled in cli=%p[.ready=%u] q[pri=%u].seqno=%u, .cli_next=%p sched[].readyct=%u",
-                             PRN_MSG_HDR(req->hdr),
-			     cli,
-			     p,
-			     cli->q[p].seqno,
-			     cli->q[p].ready,
-			     sc->cli_sched[p].cli_next,
-			     sc->cli_sched[p].readyct);
-	  } else {
-	    /* Just append to queue on the anon/new client */
-	    RW_ASSERT(!cli->brocli_id);
-	    RW_ASSERT(p >= 0);
-	    RW_ASSERT(p < RWMSG_PRIORITY_COUNT);
-	    //RW_ASSERT(req->hdr.isreq);
-	    RW_DL_INSERT_TAIL(&cli->q[p].q, req, elem);
-	    if (!cli->q[p].ready) {
-	      cli->q[p].ready = TRUE;
-	      if (!sc->cli_sched[p].readyct) {
-		sc->cli_sched[p].cli_next = cli;
-	      }
-	      sc->cli_sched[p].readyct++;
-	    }
-
-	    RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "req" FMT_MSG_HDR(req->hdr) "scheduled in cli=%p (anon/new)",
-                             PRN_MSG_HDR(req->hdr),
-			     cli);
-	  }
-
-	  req->inq = TRUE;
-	  sc->cli_qtot++;
-	  sc->cli_qunsent++;
-	  cli->unsent++;
-	  RW_ASSERT(p >= 0);
-	  RW_ASSERT(p < RWMSG_PRIORITY_COUNT);
-	  cli->q[p].unsent++;
-	  req->sent = FALSE;
-	}
-      } else {
-      nop:
-	/* nop, release the req */
-        if (req->refct > 1) {
-          RW_ASSERT(req->refct > 1);
-          ck_pr_dec_32(&req->refct);
-        }
-	rwmsg_request_release(req);
-      }
-
+      rwmsg_broker_srvchan_process_localq(sc, req, p, FALSE);
       rval++;
     }
 
@@ -1141,7 +1276,7 @@ uint32_t rwmsg_broker_srvchan_recv(rwmsg_broker_srvchan_t *sc) {
 
     if (deqmax == 99) {
       RW_ASSERT(sc->ch.localq.notify == &sc->ch.notify);
-      RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "no req in localq pri %d localq.detickle=%u .qlen=%u", p, sc->ch.localq.detickle, sc->ch.localq.qlen);
+      //RWMSG_TRACE_CHAN(&sc->ch, DEBUG, "no req in localq pri %d localq.detickle=%u .qlen=%u", p, sc->ch.localq.detickle, sc->ch.localq.qlen);
     }
 
   }
@@ -1169,6 +1304,7 @@ rw_status_t rwmsg_broker_srvchan_recv_buf(rwmsg_broker_srvchan_t *sc,
     hashreq = FALSE;
     req = rwmsg_request_create(NULL);
     req->brosrvchan = sc;
+    _RWMSG_CH_DEBUG_(&sc->ch, "++");
     ck_pr_inc_32(&sc->ch.refct);
   } else {
     RW_ASSERT(req->inhash);

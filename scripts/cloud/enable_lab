@@ -48,7 +48,7 @@ echo "Running $0 for $LAB site"
 chattr -i /etc/resolv.conf
 if [ $LAB = blr ]; then
     cat >/etc/resolv.conf <<EOF 
-search blr.riftio.com eng.riftio.com
+search blr.riftio.com blrlab.riftio.com eng.riftio.com
 nameserver 10.110.0.1
 EOF
 else
@@ -62,9 +62,10 @@ chattr +i /etc/resolv.conf
 cat >>/etc/hosts <<EOF
 10.64.10.50 boson boson.eng.riftio.com
 10.64.10.54 tau tau.eng.riftio.com
-10.1001.0.1 ganga ganga.blr.riftio.com
+10.110.1.4 ganga ganga.blr.riftio.com
 EOF
 
+yum -y install bind-utils
 host charm.eng.riftio.com
 if [ $? -ne 0 ]; then
     echo "Unable to resolve hostname charm.eng.riftio.com. Are you really connected to the lab net?"

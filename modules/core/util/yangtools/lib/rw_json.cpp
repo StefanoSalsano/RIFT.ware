@@ -172,7 +172,7 @@ rw_json_pbcm_to_json_int(const ProtobufCMessage *msg,
           //s_val << "\""<< c_escape_string((const char *)field_ptr, strlen((char *)field_ptr)).c_str() << "\"" ;
           break;
         default:
-          RW_ASSERT(0);
+          RW_CRASH();
           break;
       }
     } //for count

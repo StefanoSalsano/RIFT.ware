@@ -4,6 +4,8 @@
 #
 
 import rw_peas
+import gi
+gi.require_version('YangModelPlugin', '1.0')
 
 yang = rw_peas.PeasPlugin('yangmodel_plugin-c', 'YangModelPlugin-1.0')
 assert yang is not None

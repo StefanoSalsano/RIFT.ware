@@ -144,7 +144,8 @@ typedef struct rwdts_xact_info_s {
   rwdts_member_event_t      event;
   /*! DTS registration that matched this transaction */
   rwdts_member_reg_handle_t regh;
-
+  /*! transactional or non transactional */
+  bool transactional;
   /*! User data associated with the registration */
   void*                     ud;
   /*! User data returned by registration group's xact_init */
@@ -172,6 +173,11 @@ typedef void (*xact_deinit_callback)(rwdts_group_t* grp,
                                      rwdts_xact_t*  xact,
                                      void*          user_data,
                                      void*          scratch);
+
+typedef void (*recov_event_callback)(rwdts_group_t* grp,
+                                     rwdts_member_reg_handle_t reg,
+                                     void*           user_data);
+
 typedef  rwdts_member_rsp_code_t
 (*xact_event_callback)(rwdts_api_t*         apih,
                        rwdts_group_t*       grp,
@@ -200,6 +206,10 @@ typedef struct  rwdts_group_cbset_s {
      registration.  With reg groups this becomes semantically
      preferable for many functions. */
   xact_event_callback xact_event;
+
+  /* This callback function is called on recovery of the group
+   * registration */
+  recov_event_callback recov_event;
 
   /* Mainly for Gi binding, leave as zeroes */
   GDestroyNotify xact_init_dtor;
@@ -313,12 +323,14 @@ rwdts_member_deregister(rwdts_member_reg_handle_t  regh);
  *
  * @param apih     DTS API handle of the proxy member
  * @param path     MSG path of the  member to be deregistered.
+ * @param recovery Indicate the recovery action of the dregister member
  *
  * @return         status.
  */
 rw_status_t
 rwdts_member_deregister_path(rwdts_api_t *apih,
-                             char*        path);
+                             char*        path,
+                             vcs_recovery_type recovery_action);
 
 /*!
  * Should this be here?

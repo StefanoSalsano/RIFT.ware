@@ -103,7 +103,7 @@ DSAddCompilerFlags(TARGET libdispatch_static libdispatch_shared
   FLAGS ${cflags})
 
 DSTargetAddLinkerFlags(TARGET libdispatch_static libdispatch_shared
-  FLAGS ${linker_flags})
+  FLAGS ${linker_flags} "-Wl,--build-id")
 
 foreach (target libdispatch_shared libdispatch_static)
   target_link_libraries(${target}
