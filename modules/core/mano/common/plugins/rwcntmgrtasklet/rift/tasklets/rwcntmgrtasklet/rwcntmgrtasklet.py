@@ -14,6 +14,8 @@ import uuid
 import gi
 gi.require_version('RwDts', '1.0')
 gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwCal', '1.0')
+
 
 from gi.repository import (
     RwDts as rwdts,

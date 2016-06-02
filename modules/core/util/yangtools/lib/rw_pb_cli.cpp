@@ -81,7 +81,7 @@ rw_status_t rw_pb_to_cli_internal(YangNode* ynode,
     oss << start;
   }
   
-  if (!strcmp(ynode->get_parent()->get_name(), "root") &&
+  if (!strcmp(ynode->get_parent()->get_name(), "data") &&
       !strcmp(ynode->get_name(), "colony")) {
     // Duplicate node-names at the same level have to be qualified 
     // with the namespace prefix. To achieve this, the yangmodel should

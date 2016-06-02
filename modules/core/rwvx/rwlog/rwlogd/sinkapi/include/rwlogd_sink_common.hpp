@@ -91,7 +91,7 @@ class rwlog_free_mem_hdr_t {
 class rwlogd_sink_data{
   //TBD: Singleton 
  public:
-  rwlogd_sink_data(char *filter_shm_name, const char* schema_name);
+  rwlogd_sink_data(rwlogd_tasklet_instance_ptr_t rwlogd_info, char *filter_shm_name, const char* schema_name);
   ~rwlogd_sink_data();
 
   rwlogd_sink_data(const rwlogd_sink_data& other) = delete;
@@ -165,8 +165,13 @@ class rwlogd_sink_data{
  
   // Yang model 
   static void load_log_yang_modules(const char* schema_name);
-  rw_status_t dynamic_schema_update(const size_t batch_size,
+  void dynamic_schema_update(rwsched_tasklet_t * tasklet_info,                                  
+                                    rwsched_dispatch_queue_t queue,
+                                    const size_t batch_size,
                                     rwdynschema_module_t *modules);
+
+  static void dynamic_schema_load_modules(void * context);
+  static void dynamic_schema_end(void * context);
 
   static void get_category_name_list();
   rw_status_t update_category_list();
@@ -178,6 +183,12 @@ class rwlogd_sink_data{
   get_log_msg_desc(rw_schema_ns_and_tag_t schema_id);
 
  private:
+  rw_status_t dynamic_status_ = RW_STATUS_SUCCESS;
+  rwsched_dispatch_queue_t dynamic_queue_ = nullptr;
+  rwsched_tasklet_t * tasklet_info_ = nullptr;
+  rwlogd_tasklet_instance_ptr_t rwlogd_info_ = nullptr;
+  uint64_t dynamic_module_count_ = 0;
+  rwdynschema_module_t *dynamic_modules_ = nullptr;
   static rw_yang::YangModel *yang_model_;
   int filter_shm_fd_;
   char *rwlog_shm_name_;

@@ -1056,7 +1056,7 @@ rwdts_member_copy_rsp(rwdts_api_t* apih,
       rwdts_report_unknown_fields(src_rsp->ks, apih, src_rsp->msgs[i]);
       protobuf_c_message_delete_unknown_all(NULL, src_rsp->msgs[i]);
     }
-    if(!rw_keyspec_path_matches_message (src_rsp->ks, (xact)? &xact->ksi:&apih->ksi, src_rsp->msgs[i]))
+    if(!rw_keyspec_path_matches_message (src_rsp->ks, (xact)? &xact->ksi:&apih->ksi, src_rsp->msgs[i], true))
     {
       rwdts_match_info_t *match_info = (rwdts_match_info_t *)queryh;
       if (match_info) {
@@ -1156,9 +1156,11 @@ rwdts_member_send_response_int(rwdts_xact_t*                   xact,
     xquery = rwdts_xact_find_query_by_id(xact, query->queryidx);
   }
   if (rsp->evtrsp == RWDTS_EVTRSP_NACK) {
+#if 0
     RWDTS_MEMBER_SEND_ERROR (xact, NULL, (xquery)?xquery->query:NULL,
                              apih, rsp, RW_STATUS_FAILURE,
                              "ERROR member sending nack response");
+#endif
   }
   if (xquery && xquery->responded) {
 
@@ -1543,7 +1545,6 @@ rwdts_store_cache_obj(rwdts_xact_t* xact)
       }
     } else {
       HASH_FIND(hh_data, (*obj_list_p), mobj->key, mobj->key_len, newobj);
-
       if (((mobj->create_flag) && (newobj == NULL)) ||
           ((mobj->update_flag) && (newobj == NULL))){
         RW_ASSERT(mobj->keyspec);
@@ -1638,7 +1639,7 @@ rwdts_store_cache_obj(rwdts_xact_t* xact)
       }
     }
 
-    if (xact->flags&RWDTS_FLAG_SOLICIT_RSP) {
+    if (xact->flags&RWDTS_XACT_FLAG_SOLICIT_RSP) {
       rwdts_member_reg_run(reg, RW_DTS_REGISTRATION_EVT_ADVISE, newobj);
     }
 
@@ -1837,7 +1838,7 @@ rwdts_dispatch_pending_query_response(void *ctx)
                                queryidx, query->corrid, (char*)rwdts_evtrsp_to_str(rsp->evtrsp));
     }
 
-    if (query && !(query->flags & RWDTS_FLAG_STREAM))
+    if (query && !(query->flags & RWDTS_XACT_FLAG_STREAM))
     {
       if (rwdts_merge_rsp_msgs(xact, xquery, qres, rsp) != RWDTS_RETURN_SUCCESS)
       {

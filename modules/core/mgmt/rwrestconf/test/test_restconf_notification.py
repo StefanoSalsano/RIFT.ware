@@ -55,7 +55,6 @@ class TestWare(object):
             self.add_proc(rift.vcs.procs.RiftCli(netconf_username="admin",
                                             netconf_password="admin"));
             self.add_proc(rift.vcs.RestconfTasklet())
-            self.add_proc(rift.vcs.Watchdog())
             
     def __init__(self):
         self.rift_install = os.environ['RIFT_INSTALL'] 
@@ -115,11 +114,13 @@ class TestWare(object):
         
         pwd = os.getcwd()
         os.chdir(self.rift_install)
+        # ATTN: Are these really needed?
         os.system("rm -rf ./confd_persist*")
+        os.system("rm -rf ./xml_persist*")
         self.generate_manifest()
         os.environ['RIFT_NO_SUDO_REAPER'] = '1'
         self.loop.run_until_complete(
-                    asyncio.wait_for(start(), timeout=60, loop=self.loop))
+                    asyncio.wait_for(start(), timeout=180, loop=self.loop))
         logger.info("Testware started and running.")
         os.chdir(pwd)
 

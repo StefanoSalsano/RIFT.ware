@@ -57,7 +57,8 @@ var validateResponse = function(callerName, error, response, body, resolve, reje
 		}
 
 		res.errorMessage = {
-			error: 'Problem with ' + callerName + ': ' + response.statusCode + ': ' + body
+			error: 'Problem with ' + callerName + ': ' + response.statusCode + ': ' + body,
+			body:body
 		};
 
 		reject(res);
@@ -65,7 +66,7 @@ var validateResponse = function(callerName, error, response, body, resolve, reje
 	} else if (response.statusCode == 204) {
 		resolve({
 			statusCode: response.statusCode,
-			data: null
+			data: {}
 		});
 		return false;
 	} else {

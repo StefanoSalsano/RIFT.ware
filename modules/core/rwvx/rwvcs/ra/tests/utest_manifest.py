@@ -18,7 +18,6 @@ from rift.vcs.manifest import (
         RaCliProc,
         RaCluster,
         RaColony,
-        RaConfd,
         RaManifest,
         RaManifestObject,
         RaNativeProcess,
@@ -26,6 +25,9 @@ from rift.vcs.manifest import (
         RaVm,
         )
 import rift.vcs.vms
+import gi
+gi.require_version('RwManifestYang', '1.0')
+from gi.repository.RwManifestYang import NetconfTrace
 
 
 logger = logging.getLogger(__name__)
@@ -33,22 +35,21 @@ logger = logging.getLogger(__name__)
 
 class TestManifest(unittest.TestCase):
     def setUp(self):
-        # Create a system that consists of a cli tasklet and a confd process
+        # Create a system that consists of a cli tasklet
         # running inside a VM, that is running within a colony.
         self.cli = RaCliProc(name='test.cli')
-        self.confd = RaConfd(name='test.confd')
         self.colony = RaColony(name='test.colony')
         self.cluster = RaCluster(name='test.cluster')
         self.manifest = RaManifest(northbound_listing=None)
+        self.assertEqual(self.manifest.netconf_trace, NetconfTrace.AUTO)
 
         # Put the CLI tasklet into a proc
         self.cli_proc = RaProc(name='test.proc.cli')
         self.cli_proc.add_component(self.cli)
 
-        # Add the CLI and confd processes to the VM
+        # Add the CLI process to the VM
         self.vm = RaVm(name='test.vm')
         self.vm.add_component(self.cli_proc)
-        self.vm.add_component(self.confd)
 
         self.cluster.add_component(self.vm)
         self.colony.add_component(self.cluster)
@@ -60,7 +61,6 @@ class TestManifest(unittest.TestCase):
         reference = [
                 'test.cli',
                 'test.proc.cli',
-                'test.confd',
                 'test.vm',
                 'test.cluster',
                 'test.colony',
@@ -76,7 +76,6 @@ class TestManifest(unittest.TestCase):
         # The VM component and all of its children should have been removed
         # from the manifest
         self.assertIsNone(self.manifest.find_by_class(RaCliProc))
-        self.assertIsNone(self.manifest.find_by_class(RaConfd))
         self.assertIsNone(self.manifest.find_by_class(RaProc))
 
         # The only remaining components are the cluster and the colony
@@ -94,7 +93,6 @@ class TestManifest(unittest.TestCase):
         reference = [
                 'test.cli',
                 'test.proc.cli',
-                'test.confd',
                 'test.vm',
                 'test.colony',
                 ]
@@ -106,7 +104,7 @@ class TestManifest(unittest.TestCase):
         # All components derive from RaManifestObject, so each component should
         # be in the list.
         components = self.manifest.list_by_class(RaManifestObject)
-        self.assertEqual(6, len(components))
+        self.assertEqual(5, len(components))
 
         # There is only one RaProc component in the manifest
         procs = self.manifest.list_by_class(RaProc)
@@ -115,7 +113,6 @@ class TestManifest(unittest.TestCase):
     def test_find_by_class(self):
         self.assertTrue(self.manifest.find_by_class(RaCliProc) == self.cli)
         self.assertTrue(self.manifest.find_by_class(RaProc) == self.cli_proc)
-        self.assertTrue(self.manifest.find_by_class(RaConfd) == self.confd)
         self.assertTrue(self.manifest.find_by_class(RaColony) == self.colony)
         self.assertTrue(self.manifest.find_by_class(RaNativeProcess) == self.cli)
 

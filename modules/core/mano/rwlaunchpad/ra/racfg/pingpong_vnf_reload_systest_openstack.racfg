@@ -1,6 +1,6 @@
 {
   "test_name":"TC_PINGPONG_VNF_RELOAD_OPENSTACK",
-  "commandline":"./pingpong_vnf_reload_systest --cloud-type 'openstack' --cloud-host '10.66.4.115' --sysinfo ",
+  "commandline":"./pingpong_vnf_reload_systest --lp-standalone --cloud-type 'openstack' --sysinfo --cloud-host={cloud_host} --user={user} {tenants} --restconf",
   "test_description":"System test for ping pong vnf reload(Openstack)",
   "run_as_root": false,
   "status":"working",
@@ -9,7 +9,7 @@
   "networks":[],
   "vms":[
     {
-      "name": "VM",
+      "name": "rift_auto_launchpad",
       "memory": 8192,
       "cpus": 4
     }

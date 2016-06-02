@@ -3,81 +3,187 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
+import json
+import os
+
 import gi
+gi.require_version('PnfdYang', '1.0')
+gi.require_version('NsdYang', '1.0')
+gi.require_version('VnfdYang', '1.0')
 gi.require_version('RwYang', '1.0')
+gi.require_version('VldYang', '1.0')
+gi.require_version('VnffgdYang', '1.0')
 from gi.repository import (
+        PnfdYang,
         NsdYang,
+        VnfdYang,
         RwYang,
         VldYang,
-        VnfdYang,
+        VnffgdYang
         )
 
 
-class GenericYangConverter(object):
-    model = None
+class UnknownExtensionError(Exception):
+    pass
 
-    def __init__(self):
-        cls = self.__class__
 
-        if cls.model is None:
-            cls.model = RwYang.model_create_libncx()
-            cls.model.load_schema_ypbc(cls.yang_namespace().get_schema())
+class SerializationError(Exception):
+    pass
+
+
+class ProtoMessageSerializer(object):
+    """(De)Serializer/deserializer fo a specific protobuf message into various formats"""
+    libncx_model = None
+
+    def __init__(self, yang_ns, yang_pb_cls):
+        """ Create a serializer for a specific protobuf message """
+        self._yang_ns = yang_ns
+        self._yang_pb_cls = yang_pb_cls
 
     @classmethod
-    def yang_namespace(cls):
-        return cls.YANG_NAMESPACE
+    def _extension_method_map(cls):
+        return {
+                ".xml": cls._from_xml_file,
+                ".yml": cls._from_yaml_file,
+                ".yaml": cls._from_yaml_file,
+                ".json": cls._from_json_file,
+                }
 
     @classmethod
-    def yang_class(cls):
-        return cls.YANG_CLASS
+    def is_supported_file(cls, filename):
+        """Returns whether a file has a supported file extension
 
-    def from_xml_string(self, xml):
+        Arguments:
+            filename - A descriptor file
+
+        Returns:
+            True if file extension is supported, False otherwise
+
+        """
+        _, extension = os.path.splitext(filename)
+        extension_lc = extension.lower()
+
+        return extension_lc in cls._extension_method_map()
+
+    @property
+    def yang_namespace(self):
+        """ The Protobuf's GI namespace class (e.g. RwVnfdYang) """
+        return self._yang_ns
+
+    @property
+    def yang_class(self):
+        """ The Protobuf's GI class (e.g. RwVnfdYang.YangData_Vnfd_VnfdCatalog_Vnfd) """
+        return self._yang_pb_cls
+
+    @property
+    def model(self):
         cls = self.__class__
-        obj = cls.yang_class()()
-        obj.from_xml_v2(cls.model, xml)
-        return obj
 
-    def from_xml_file(self, filename):
-        with open(filename, 'r') as fp:
+        # Cache the libncx model for the serializer class
+        if cls.libncx_model is None:
+            cls.libncx_model = RwYang.model_create_libncx()
+            cls.libncx_model.load_schema_ypbc(self.yang_namespace.get_schema())
+
+        return cls.libncx_model
+
+    def _from_xml_file(self, file_path):
+        with open(file_path, 'r') as fp:
             xml = fp.read()
 
-        cls = self.__class__
-        obj = cls.yang_class()()
-        obj.from_xml_v2(cls.model, xml)
-        return obj
+        return self.yang_class.from_xml_v2(self.model, xml)
 
-    def to_xml_string(self, obj):
-        return obj.to_xml_v2(self.__class__.model)
-
-    def from_json_string(self, json):
-        cls = self.__class__
-        obj = cls.yang_class()()
-        obj.from_json(cls.model, json)
-        return obj
-  
-    def from_json_file(self, filename):
-        with open(filename, 'r') as fp:
+    def _from_json_file(self, file_path):
+        with open(file_path, 'r') as fp:
             json = fp.read()
-  
-        cls = self.__class__
-        obj = cls.yang_class()()
-        obj.from_json(cls.model, json)
-        return obj
-  
-    def to_json_string(self, obj):
-        return obj.to_json(self.__class__.model) 
+
+        return self.yang_class.from_json(self.model, json)
+
+    def _from_yaml_file(self, file_path):
+        with open(file_path, 'r') as fp:
+            yaml = fp.read()
+
+        return self.yang_class.from_yaml(self.model, yaml)
+
+    def to_json_string(self, pb_msg):
+        """ Serialize a protobuf message into JSON
+
+        Arguments:
+            pb_msg - A GI-protobuf object of type provided into constructor
+
+        Returns:
+            A JSON string representing the protobuf message
+
+        Raises:
+            SerializationError - Message could not be
+            TypeError - Incorrect protobuf type provided
+        """
+        if not isinstance(pb_msg, self._yang_pb_cls):
+            raise TypeError("Invalid protobuf message type provided")
+
+        try:
+            json_str = pb_msg.to_json(self.model)
+
+        except Exception as e:
+            raise SerializationError(e)
+
+        return json_str
+
+    def from_file(self, file_path):
+        """ Returns the deserialized protobuf message from file contents
+
+        This function determines the serialization format based on file extension
+
+        Arguments:
+            file_path - The file to deserialize
+
+        Returns:
+            A GI-Proto message of type that was provided into the constructor
+
+        Raises:
+            UnknownExtensionError - File extension is not of a known serialization format
+            SerializationError - File failed to be deserialized into the protobuf message
+        """
+
+        _, extension = os.path.splitext(file_path)
+        extension_lc = extension.lower()
+        extension_map = self._extension_method_map()
+
+        if extension_lc not in extension_map:
+            raise UnknownExtensionError("Cannot detect message format for %s extension" % extension_lc)
+
+        try:
+            msg = extension_map[extension_lc](self, file_path)
+        except Exception as e:
+            raise SerializationError(e)
+
+        return msg
 
 
-class VnfdYangConverter(GenericYangConverter):
-    YANG_NAMESPACE = VnfdYang
-    YANG_CLASS = VnfdYang.YangData_Vnfd_VnfdCatalog_Vnfd
+class VnfdSerializer(ProtoMessageSerializer):
+    """ Creates a serializer for the VNFD descriptor"""
+    def __init__(self):
+        super().__init__(VnfdYang, VnfdYang.YangData_Vnfd_VnfdCatalog_Vnfd)
 
 
-class NsdYangConverter(GenericYangConverter):
-    YANG_NAMESPACE = NsdYang
-    YANG_CLASS = NsdYang.YangData_Nsd_NsdCatalog_Nsd
+class NsdSerializer(ProtoMessageSerializer):
+    """ Creates a serializer for the NSD descriptor"""
+    def __init__(self):
+        super().__init__(NsdYang, NsdYang.YangData_Nsd_NsdCatalog_Nsd)
 
 
-class VldYangConverter(GenericYangConverter):
-    YANG_NAMESPACE = VldYang
-    YANG_CLASS = VldYang.YangData_Vld_VldCatalog_Vld
+class VldSerializer(ProtoMessageSerializer):
+    """ Creates a serializer for the VLD descriptor"""
+    def __init__(self):
+        super().__init__(VldYang, VldYang.YangData_Vld_VldCatalog_Vld)
+
+
+class PnfdSerializer(ProtoMessageSerializer):
+    """ Creates a serializer for the PNFD descriptor"""
+    def __init__(self):
+        super().__init__(PnfdYang, PnfdYang.YangData_Pnfd_PnfdCatalog_Pnfd)
+
+
+class VnffgdSerializer(ProtoMessageSerializer):
+    """ Creates a serializer for the VNFFD descriptor"""
+    def __init__(self):
+        super().__init__(PnfdYang, VnffgdYang.YangData_Vnffgd_VnffgdCatalog_Vnffgd)

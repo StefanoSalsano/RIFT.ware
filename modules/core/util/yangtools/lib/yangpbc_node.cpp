@@ -444,11 +444,6 @@ YangExtension* PbNode::get_yext_field_c_type() const
   return yext_field_c_type_;
 }
 
-YangExtension* PbNode::get_yext_utcli_callback_argv() const
-{
-  return yext_utcli_callback_argv_;
-}
-
 YangExtension* PbNode::get_yext_notif_log_common() const
 {
   return yext_notif_log_common_;
@@ -1510,50 +1505,6 @@ void PbNode::parse_extensions()
       continue;
     }
 
-    if (xi->is_match(RW_YANG_UTCLI_MODULE, RW_YANG_UTCLI_EXT_CALLBACK_ARGV)) {
-      if (yext_utcli_callback_argv_) {
-        std::ostringstream oss;
-        oss << "More than one " << xi->get_name()
-            << " extension on node " << ynode_->get_name()
-            << ", first at " << yext_utcli_callback_argv_->get_location();
-        pbmodel_->error( xi->get_location(), oss.str() );
-        continue;
-      }
-      if (!PbModel::is_identifier(xi->get_value())) {
-        std::ostringstream oss;
-        oss << "Extension " << xi->get_name()
-            << " on node " << ynode_->get_name()
-            << " must be valid C identifier: " << xi->get_value();
-        pbmodel_->error( xi->get_location(), oss.str() );
-        continue;
-      }
-
-      switch (stmt_type) {
-        case RW_YANG_STMT_TYPE_ROOT:
-        case RW_YANG_STMT_TYPE_ANYXML:
-        case RW_YANG_STMT_TYPE_CONTAINER:
-        case RW_YANG_STMT_TYPE_GROUPING:
-        case RW_YANG_STMT_TYPE_LEAF:
-        case RW_YANG_STMT_TYPE_LEAF_LIST:
-        case RW_YANG_STMT_TYPE_LIST:
-        case RW_YANG_STMT_TYPE_CHOICE:
-        case RW_YANG_STMT_TYPE_CASE:
-        case RW_YANG_STMT_TYPE_RPC:
-        case RW_YANG_STMT_TYPE_RPCIO:
-        case RW_YANG_STMT_TYPE_NOTIF:
-          break;
-        default:
-          std::ostringstream oss;
-          oss << "Unexpected yang statement type "
-              << rw_yang_stmt_type_string(stmt_type)
-              << " for extension " << xi->get_name();
-          pbmodel_->error(xi->get_location(), oss.str());
-          continue;
-      }
-      yext_utcli_callback_argv_ = &*xi;
-      continue;
-    }
-
     if (xi->is_match(RW_YANG_NOTIFY_MODULE, RW_YANG_NOTIFY_EXT_LOG_EVENT_ID)) {
       if (yext_notif_log_event_id_) {
         std::ostringstream oss;
@@ -1747,17 +1698,6 @@ void PbNode::parse_extensions()
       pbmodel_->error(yext_notif_log_event_id_->get_location(), oss.str());
       yext_notif_log_event_id_ = nullptr;
     }
-  }
-
-  if (yext_utcli_callback_argv_ && !yext_msg_new_) {
-    std::ostringstream oss;
-    oss << "Extension " << yext_utcli_callback_argv_->get_name()
-        << " on node " << ynode_->get_name()
-        << " requires extension " << RW_YANG_PB_EXT_MSG_NEW;
-    pbmodel_->error( yext_utcli_callback_argv_->get_location(), oss.str() );
-
-    // Forget the unit test callback and keep going, to get more errors.
-    yext_utcli_callback_argv_ = nullptr;
   }
 }
 

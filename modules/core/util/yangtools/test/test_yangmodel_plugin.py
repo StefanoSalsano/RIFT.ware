@@ -12,6 +12,7 @@ import rw_peas
 #import gi.repository.YangEnums as yang_enums
 from gi import require_version
 require_version('YangModelPlugin', '1.0')
+require_version('RwmanifestDYang', '1.0')
 from gi.repository import RwmanifestDYang
 
 

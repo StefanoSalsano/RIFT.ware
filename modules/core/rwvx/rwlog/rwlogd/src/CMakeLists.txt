@@ -44,7 +44,6 @@ target_link_libraries(rwlogd_api
   rwlogd_sink
   rwvcs
   rwdynschema
-  rwcmdargs
   rwlib
   talloc
   rwpython_util-1.0

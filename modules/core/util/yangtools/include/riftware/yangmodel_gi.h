@@ -352,6 +352,9 @@ uint32_t rw_yang_node_get_max_elements(rw_yang_node_t* ynode);
 //! C adaptor function. @sa YangNode::get_stmt_type()
 rw_yang_stmt_type_t rw_yang_node_get_stmt_type(rw_yang_node_t* ynode);
 
+//! C adaptor function. @sa YangNode::get_leafref_ref()
+rw_yang_node_t * rw_yang_node_get_leafref_ref(rw_yang_node_t* ynode);
+
 //! C adaptor function. @sa YangNode::is_config()
 bool_t rw_yang_node_is_config(rw_yang_node_t* ynode);
 
@@ -523,12 +526,12 @@ bool_t rw_yang_node_is_rpc_output(rw_yang_node_t* ynode);
 
 /// @cond GI_SCANNER
 /**
-* rw_yang_node_to_json:
+* rw_yang_node_to_json_schema:
 * @ymod:
 * @ostr: (out):
 */
 /// @endcond GI_SCANNER
-void rw_yang_node_to_json(rw_yang_node_t* ynode, char** ostr, bool_t pretty_print);
+void rw_yang_node_to_json_schema(rw_yang_node_t* ynode, char** ostr, bool_t pretty_print);
 
 
 /*****************************************************************************/

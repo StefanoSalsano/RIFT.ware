@@ -206,36 +206,4 @@ module interfaces {
       }
     }
   }
-
-  rpc raise-new-route {
-    input {
-      rwpb:msg-new "RaiseNewRoute";
-      leaf notif {
-        type empty;
-      }
-    }
-
-    output {
-      rwpb:msg-new "RaiseNewRouteOp";
-      leaf status {
-        type string;
-      }
-    }
-  }
-
-  rpc raise-temp-alarm {
-    input {
-      rwpb:msg-new "RaiseTempAlarm";
-      leaf notif {
-        type empty;
-      }
-    }
-
-    output {
-      rwpb:msg-new "RaiseTempAlarmOp";
-      leaf status {
-        type string;
-      }
-    }
-  }
 }

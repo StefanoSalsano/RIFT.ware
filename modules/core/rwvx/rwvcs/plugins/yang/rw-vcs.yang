@@ -114,6 +114,25 @@ module rw-vcs
     }
   }
 
+  rpc vsnap {
+    input {
+      rwpb:msg-new "VSnapInput";
+      leaf instance-name {
+        description "Instance-name of instance to grab a Snap";
+        type string;
+        mandatory true;
+      }
+    }
+
+    output {
+      rwpb:msg-new "VSnapOutput";
+      leaf rw_status {
+        description "Return status of the stop operation";
+        type uint32;
+      }
+    }
+  }
+
 //rpc vrestart {
 //  input {
 //    leaf instance-name {

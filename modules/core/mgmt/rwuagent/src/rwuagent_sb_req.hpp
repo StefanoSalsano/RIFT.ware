@@ -16,16 +16,18 @@
 #define CORE_MGMT_RWUAGENT_SB_REQ_HPP_
 
 #include "rwuagent.h"
+#include "rwuagent_request_mode.hpp"
 
 #include <rwdts.h>
+
 
 namespace rw_uagent {
 
 // Confd transaction timeout for show-system-info RPC
 static const int SSI_CONFD_ACTION_TIMEOUT_SEC = 300; // ATTN:- This has to be changed to periodically push it.
+
 // Confd transaction timeout for show-agent-logs RPC
 static const int SHOW_LOGS_ACTION_TIMEOUT_SEC = 300;
- 
 
 
 /*!
@@ -91,6 +93,9 @@ class SbReq
 
     /** [in] The transaction type */
     RwMgmtagt_SbReqType sbreq_type,
+
+    /** [in] The request mode*/
+    RequestMode request_mode,
 
     /** [in] Name for the trace buffer. */
     const char* trace_name,
@@ -264,7 +269,7 @@ class SbReq
   /*!
    * Flags to be sent to DTS
    */
-  RWDtsFlag dts_flags_ = RWDTS_FLAG_NONE;
+  RWDtsXactFlag dts_flags_ = RWDTS_XACT_FLAG_NONE;
 
   /*!
    * The request that started this transaction. Is null for edit config. Used
@@ -297,6 +302,12 @@ class SbReq
    * functions.  Must be true before the destructor runs.
    */
   bool responded_ = false;
+
+  /// name for tracing and logging
+  std::string const trace_name_;
+
+  /// The request mode
+  RequestMode request_mode_;
 };
 
 class SbReqEditConfig
@@ -313,9 +324,9 @@ class SbReqEditConfig
   SbReqEditConfig (
       Instance* instance,
       NbReq* nbreq,
-      const char *xml_fragment,  /**< [in] A string that has the xml fragment
+      RequestMode request_mode,
+      const char *xml_fragment);  /**< [in] A string that has the xml fragment
                                    that forms part of a configuration change*/
-      NetconfEditConfigOperations ec=ec_merge);
 
   /*!
    * Build a DTS EditConfig delete transaction for the provided
@@ -324,6 +335,7 @@ class SbReqEditConfig
   SbReqEditConfig (
       Instance* instance,
       NbReq* nbreq,
+      RequestMode request_mode,
       UniquePtrKeySpecPath::uptr_t delete_ks /**< [in] The keyspec to be deleted
                                                called from pb-request delete operation*/
       );
@@ -341,10 +353,23 @@ class SbReqEditConfig
   SbReqEditConfig (
       Instance* instance,
       NbReq* nbreq,
+      RequestMode request_mode,
       rw_yang::XMLBuilder *builder);
 
 
   virtual ~SbReqEditConfig();
+
+  /*!
+   * Transfers the collected delta over the transaction
+   * to the caller.
+   */
+  rw_yang::XMLDocument::uptr_t move_delta();
+
+  /*!
+   * Transfers all the delete keyspecs created over the
+   * transaction to the caller.
+   */
+  std::list<UniquePtrKeySpecPath::uptr_t> move_deletes();
 
  private:
   /*!
@@ -389,6 +414,12 @@ class SbReqEditConfig
    * transaction.
    */
   std::list<UniquePtrKeySpecPath::uptr_t>  delete_ks_;
+
+  /*!
+   * Modified instance dom with the delta_ changes applied
+   */
+  rw_yang::XMLDocument::uptr_t new_instance_dom_;
+
 };
 
 class SbReqGet
@@ -413,11 +444,13 @@ class SbReqGet
   SbReqGet (
     Instance* instance,
     NbReq* nbreq,
+    RequestMode request_mode,
     /**
      * [in] A string that has the xml fragment that forms part of a
      * configuration change
      */
-    const char *xml_fragment
+    const char *xml_fragment,
+    const bool is_internal_request = false
   );
 
   /*!
@@ -427,7 +460,10 @@ class SbReqGet
   SbReqGet (
       Instance* instance,
       NbReq* nbreq,
-      rw_yang::XMLDocument::uptr_t dom);
+      RequestMode request_mode,
+      rw_yang::XMLDocument::uptr_t dom,
+      const bool is_internal_request = false
+  );
 
   /*!
    * Set the async dispatch callback type.
@@ -471,7 +507,7 @@ class SbReqGet
 
   void commit_cb(
       rwdts_xact_t *xact);
-        
+
  private:
   /*!
    * A protobuf is constructred when the GET transaction is created. This is
@@ -497,6 +533,12 @@ class SbReqGet
    * created to merge the information in the protobuf messages.
    */
   rw_yang::XMLDocument::uptr_t rsp_dom_;
+
+  /*!
+   * Set to true if this is a southbound request kicked off by the internal
+   * northbound interface.
+   */
+  bool is_internal_request_;
 };
 
 class SbReqRpc
@@ -510,6 +552,7 @@ class SbReqRpc
   SbReqRpc (
     Instance* instance,
     NbReq* nbreq,
+    RequestMode request_mode,
     /*!
      * [in] A string that has the xml fragment that forms part of a
      * configuration change
@@ -523,6 +566,7 @@ class SbReqRpc
   SbReqRpc (
       Instance* instance,
       NbReq* nbreq,
+      RequestMode request_mode,
       rw_yang::XMLDocument* rpc_dom );
 
   /*!
@@ -541,6 +585,11 @@ class SbReqRpc
     //! [in] The list of errors
     NetconfErrorList* nc_errors );
 
+  /*!
+   * Completion callback for NbReqInternal to use for success.
+   */
+  void internal_done();
+
   const pbcm_uptr_t& rpc_input() const
   {
     return rpc_input_;
@@ -555,9 +604,11 @@ class SbReqRpc
 
   StartStatus start_xact_int() override;
 
-  StartStatus start_xact_locally();
+  StartStatus start_ns_mgmtagt_dts();
 
-  StartStatus start_xact_pb_request();
+  StartStatus start_ns_mgmtagt();
+
+  StartStatus start_pb_request();
 
   StartStatus start_ssi();
 

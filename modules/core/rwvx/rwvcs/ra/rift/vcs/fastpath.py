@@ -24,6 +24,7 @@ class Fastpath(core.Tasklet):
             lcore_workers=None,
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a Fastpath object.
 
@@ -37,10 +38,11 @@ class Fastpath(core.Tasklet):
             lcore_workers  - the number of lcore workers to use
             config_ready   - config readiness check enable
             recovery_action - recovery action mode
+            start          - Flag denotes whether to initially start this component
         """
         name = 'RW.Fpath' if name is None else name
         super(Fastpath, self).__init__(name=name, uid=uid, config_ready=config_ready,
-                                       recovery_action=recovery_action,
+                                       recovery_action=recovery_action, start=start
                                        )
 
         self.cmdargs = CommandLineArguments()

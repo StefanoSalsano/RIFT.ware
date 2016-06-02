@@ -1,4 +1,3 @@
-
 # 
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
@@ -10,8 +9,9 @@ import logging
 import uuid
 import time
 import os.path
-import sys
 import re
+import shutil
+import sys
 
 import gi
 gi.require_version('RwDts', '1.0')
@@ -21,7 +21,7 @@ gi.require_version('RwVlrYang', '1.0')
 gi.require_version('RwManifestYang', '1.0')
 gi.require_version('RwBaseYang', '1.0')
 gi.require_version('RwResourceMgrYang', '1.0')
-gi.require_version('RwTypes', '1.0')
+
 from gi.repository import (
     RwDts as rwdts,
     RwVnfrYang,
@@ -32,7 +32,6 @@ from gi.repository import (
     RwBaseYang,
     RwResourceMgrYang,
     ProtobufC,
-    RwTypes,
 )
 
 import rift.tasklets
@@ -119,6 +118,9 @@ class VnfrInstantiationFailed(Exception):
     """ Virtual Network Funtion Instantiation failed"""
     pass
 
+
+class VNFMPlacementGroupError(Exception):
+    pass
 
 class VirtualNetworkFunctionRecordState(enum.Enum):
     """ VNFR state """
@@ -222,7 +224,6 @@ class VcsComponent(object):
                                                               self._vnfd_id)
             return comp_dict
 
-
         mangled_dict = mangle_comp_names(vcs_comp_dict)
         msg = RwManifestYang.OpInventory_Component.from_dict(mangled_dict)
         return msg
@@ -250,7 +251,16 @@ class VcsComponent(object):
 
 class VirtualDeploymentUnitRecord(object):
     """  Virtual Deployment Unit Record """
-    def __init__(self, dts, log, loop, vdud, vnfr, mgmt_intf, cloud_account_name, vdur_id=None):
+    def __init__(self,
+                 dts,
+                 log,
+                 loop,
+                 vdud,
+                 vnfr,
+                 mgmt_intf,
+                 cloud_account_name,
+                 vdur_id=None,
+                 placement_groups = []):
         self._dts = dts
         self._log = log
         self._loop = loop
@@ -264,8 +274,8 @@ class VirtualDeploymentUnitRecord(object):
         self._ext_intf = []
         self._state = VDURecordState.INIT
         self._request_id = str(uuid.uuid4())
-        self._name = vnfr.name + "." + vdud.name
-
+        self._name = vnfr.name + "." + vdud.id
+        self._placement_groups = placement_groups
         self._rm_regh = None
         self._vm_resp = None
 
@@ -284,7 +294,6 @@ class VirtualDeploymentUnitRecord(object):
                 if conn_point.name == cp_name:
                     return conn_point.connection_point_id
         return ''
-
 
     @property
     def vdu_id(self):
@@ -346,7 +355,8 @@ class VirtualDeploymentUnitRecord(object):
                       "guest_epa",
                       "vswitch_epa",
                       "hypervisor_epa",
-                      "host_epa"]
+                      "host_epa",
+                      "name"]
         vdu_copy_dict = {k: v for k, v in
                          self._vdud.as_dict().items() if k in vdu_fields}
         vdur_dict = {"id": self._vdur_id,
@@ -369,16 +379,21 @@ class VirtualDeploymentUnitRecord(object):
 
         icp_list = []
         ii_list = []
-        for intf, cp, vlr in self._int_intf:
-            icp_list.append({"id": cp,
+
+        for intf, cp_id, vlr in self._int_intf:
+            cp = self.find_internal_cp_by_cp_id(cp_id)
+
+            icp_list.append({"name": cp.name,
+                             "id": cp.id,
                              "type_yang": "VPORT",
-                             "ip_address": self.cp_ip_addr(cp)})
+                             "ip_address": self.cp_ip_addr(cp.id)})
 
             ii_list.append({"name": intf.name,
-                            "vdur_internal_connection_point_ref": cp,
+                            "vdur_internal_connection_point_ref": cp.id,
                             "virtual_interface": {}})
 
         vdur_dict["internal_connection_point"] = icp_list
+        self._log.debug("internal_connection_point:%s", vdur_dict["internal_connection_point"])
         vdur_dict["internal_interface"] = ii_list
 
         ei_list = []
@@ -386,10 +401,15 @@ class VirtualDeploymentUnitRecord(object):
             ei_list.append({"name": cp,
                             "vnfd_connection_point_ref": cp,
                             "virtual_interface": {}})
-            self._vnfr.update_cp(cp, self.cp_ip_addr(cp),self.cp_id(cp))
+            self._vnfr.update_cp(cp, self.cp_ip_addr(cp), self.cp_id(cp))
 
         vdur_dict["external_interface"] = ei_list
 
+        placement_groups = []
+        for group in self._placement_groups:
+            placement_groups.append(group.as_dict())
+
+        vdur_dict['placement_groups_info'] = placement_groups
         return RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur.from_dict(vdur_dict)
 
     @property
@@ -406,6 +426,55 @@ class VirtualDeploymentUnitRecord(object):
         flavor.copy_from(self._vdud.vm_flavor)
 
         return flavor
+
+    def process_openstack_placement_group_construct(self, vm_create_msg_dict):
+        host_aggregates = []
+        availability_zones = []
+        server_groups = []
+        for group in self._placement_groups:
+            if group.has_field('host_aggregate'):
+                for aggregate in group.host_aggregate:
+                    host_aggregates.append(aggregate.as_dict())
+            if group.has_field('availability_zone'):
+                availability_zones.append(group.availability_zone.as_dict())
+            if group.has_field('server_group'):
+                server_groups.append(group.server_group.as_dict())
+
+        if availability_zones:
+            if len(availability_zones) > 1:
+                self._log.error("Can not launch VDU: %s in multiple availability zones. Requested Zones: %s", self.name, availability_zones)
+                raise VNFMPlacementGroupError("Can not launch VDU: {} in multiple availability zones. Requsted Zones".format(self.name, availability_zones))
+            else:
+                vm_create_msg_dict['availability_zone'] = availability_zones[0]
+
+        if server_groups:
+            if len(server_groups) > 1:
+                self._log.error("Can not launch VDU: %s in multiple Server Group. Requested Groups: %s", self.name, server_groups)
+                raise VNFMPlacementGroupError("Can not launch VDU: {} in multiple Server Groups. Requsted Groups".format(self.name, server_groups))
+            else:
+                vm_create_msg_dict['server_group'] = server_groups[0]
+                    
+        if host_aggregates:
+            vm_create_msg_dict['host_aggregate'] = host_aggregates
+
+        return
+    
+    def process_placement_groups(self, vm_create_msg_dict):
+        """Process the placement_groups and fill resource-mgr request"""
+        if not self._placement_groups:
+            return
+        
+        cloud_set  = set([group.cloud_type for group in self._placement_groups])
+        assert len(cloud_set) == 1
+        cloud_type = cloud_set.pop()
+        
+        if cloud_type == 'openstack':
+            self.process_openstack_placement_group_construct(vm_create_msg_dict)
+            
+        else:
+            self._log.info("Ignoring placement group with cloud construct for cloud-type: %s", cloud_type)
+        return
+        
 
     def resmgr_msg(self, config=None):
         vdu_fields = ["vm_flavor",
@@ -461,6 +530,8 @@ class VirtualDeploymentUnitRecord(object):
         vm_create_msg_dict["connection_points"] = cp_list
         vm_create_msg_dict.update(vdu_copy_dict)
 
+        self.process_placement_groups(vm_create_msg_dict)
+        
         msg = RwResourceMgrYang.VDUEventData()
         msg.event_id = self._request_id
         msg.cloud_account = self.cloud_account_name
@@ -488,6 +559,29 @@ class VirtualDeploymentUnitRecord(object):
             self._rm_regh = None
 
         self._state = VDURecordState.TERMINATED
+
+    def find_internal_cp_by_cp_id(self, cp_id):
+        """ Find the CP corresponding to the connection point id"""
+        cp = None
+
+        self._log.debug("find_internal_cp_by_cp_id(%s) called",
+                        cp_id)
+
+        for int_cp in self._vdud.internal_connection_point:
+            self._log.debug("Checking for int cp %s in internal connection points",
+                            int_cp.id)
+            if int_cp.id == cp_id:
+                cp = int_cp
+                break
+
+        if cp is None:
+            self._log.debug("Failed to find cp %s in internal connection points",
+                            cp_id)
+            msg = "Failed to find cp %s in internal connection points" % cp_id
+            raise VduRecordError(msg)
+
+        # return the VLR associated with the connection point
+        return cp
 
     @asyncio.coroutine
     def create_resource(self, xact, vnfr, config=None):
@@ -577,7 +671,7 @@ class VirtualDeploymentUnitRecord(object):
         self._log.debug("Creating new VM request at: %s, params: %s", resmgr_path, resmgr_msg)
         block.add_query_create(resmgr_path, resmgr_msg)
 
-        res_iter = yield from block.execute(flags=0, now=True)
+        res_iter = yield from block.execute(flags=rwdts.XactFlag.TRACE, now=True)
 
         resp = None
 
@@ -585,7 +679,7 @@ class VirtualDeploymentUnitRecord(object):
             r = yield from i
             resp = r.result
 
-        if resp is None or not (resp.has_field('resource_info') and resp.resource_info.has_field('vdu_id')):
+        if resp is None or not (resp.has_field('resource_info') and resp.resource_info.has_field('resource_state')):
             raise VMResourceError("Did not get a vm resource response (resp: %s)", resp)
         self._log.debug("Got vm request response: %s", resp.resource_info)
         return resp.resource_info
@@ -655,7 +749,7 @@ class VirtualDeploymentUnitRecord(object):
                             msg)
 
             if (query_action == rwdts.QueryAction.UPDATE or
-                query_action == rwdts.QueryAction.CREATE):
+                    query_action == rwdts.QueryAction.CREATE):
                 self._vm_resp = msg
 
                 if msg.resource_state == "active":
@@ -673,6 +767,17 @@ class VirtualDeploymentUnitRecord(object):
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
         try:
+            reg_event = asyncio.Event(loop=self._loop)
+            @asyncio.coroutine
+            def on_ready(regh, status):
+                reg_event.set()
+
+            handler = rift.tasklets.DTS.RegistrationHandler(on_prepare=on_prepare, on_ready=on_ready)
+            self._rm_regh = yield from self._dts.register(self.resmgr_path + '/resource-info',
+                                                          flags=rwdts.Flag.SUBSCRIBER,
+                                                          handler=handler)
+            yield from reg_event.wait()
+
             vm_resp = yield from self.create_resource(xact, vnfr, config)
             self._vm_resp = vm_resp
 
@@ -688,10 +793,10 @@ class VirtualDeploymentUnitRecord(object):
                   vm_resp.resource_state == "inactive"):
                 self._log.debug("Resourcemgr responded wih a pending vm resp %s",
                                 vm_resp)
-                handler = rift.tasklets.DTS.RegistrationHandler(on_prepare=on_prepare)
-                self._rm_regh = yield from self._dts.register(self.resmgr_path + '/resource-info',
-                                                              flags=rwdts.Flag.SUBSCRIBER,
-                                                              handler=handler)
+                # handler = rift.tasklets.DTS.RegistrationHandler(on_prepare=on_prepare)
+                # self._rm_regh = yield from self._dts.register(self.resmgr_path + '/resource-info',
+                #                                              flags=rwdts.Flag.SUBSCRIBER,
+                #                                              handler=handler)
             else:
                 self._log.debug("Resourcemgr responded wih an error vm resp %s",
                                 vm_resp)
@@ -810,7 +915,7 @@ class InternalVirtualLinkRecord(object):
         @asyncio.coroutine
         def get_vlr():
             """ Get the network id """
-            res_iter = yield from self._dts.query_read(self.vlr_path(), rwdts.Flag.MERGE)
+            res_iter = yield from self._dts.query_read(self.vlr_path(), rwdts.XactFlag.MERGE)
             vlr = None
             for ent in res_iter:
                 res = yield from ent
@@ -866,6 +971,7 @@ class VirtualNetworkFunctionRecord(object):
         self._log = log
         self._loop = loop
         self._cluster_name = cluster_name
+        self._vnfr_msg = vnfr_msg
         self._vnfr_id = vnfr_msg.id
         self._vnfd_id = vnfr_msg.vnfd_ref
         self._vnfm = vnfm
@@ -961,6 +1067,23 @@ class VirtualNetworkFunctionRecord(object):
                                                 self.vnfd_id)
         return self._inventory[mangled_name]
 
+    
+    
+    @asyncio.coroutine
+    def get_nsr_config(self):
+        ### Need access to NS instance configuration for runtime resolution.
+        ### This shall be replaced when deployment flavors are implemented
+        xpath = "C,/nsr:ns-instance-config"
+        results = yield from self._dts.query_read(xpath, rwdts.XactFlag.MERGE)
+        
+        for result in results:
+            entry = yield from result
+            ns_instance_config = entry.result
+            for nsr in ns_instance_config.nsr:
+                if nsr.id == self._vnfr_msg.nsr_id_ref:
+                    return nsr
+        return None
+
     @asyncio.coroutine
     def start_component(self, component_name, ip_addr):
         """ Start a component in the VNFR by name """
@@ -978,8 +1101,6 @@ class VirtualNetworkFunctionRecord(object):
     def mgmt_intf_info(self):
         """ Get Management interface info for this VNFR """
         mgmt_intf_desc = self.vnfd.msg.mgmt_interface
-        self._log.debug("Find mgmt interface info for vnfr id %s, mgmt_intf %s",
-                        self._vnfr_id, mgmt_intf_desc)
         ip_addr = None
         if mgmt_intf_desc.has_field("cp"):
             ip_addr = self.cp_ip_addr(mgmt_intf_desc.cp)
@@ -988,13 +1109,11 @@ class VirtualNetworkFunctionRecord(object):
                 vdur = self._get_vdur_from_vdu_id(mgmt_intf_desc.vdu_id)
                 ip_addr = vdur.management_ip
             except VDURecordNotFound:
+                self._log.debug("Did not find mgmt interface for vnfr id %s", self._vnfr_id)
                 ip_addr = None
         else:
             ip_addr = mgmt_intf_desc.ip_address
         port = mgmt_intf_desc.port
-
-        self._log.debug("Found mgmt interface for vnfr id %s, %s:%s",
-                        self._vnfr_id, ip_addr, port)
 
         return ip_addr, port
 
@@ -1013,12 +1132,13 @@ class VirtualNetworkFunctionRecord(object):
             mgmt_intf.port = port
 
         vnfr_dict = {"id": self._vnfr_id,
+                     "nsr_id_ref": self._vnfr_msg.nsr_id_ref,
                      "name": self.name,
                      "member_vnf_index_ref": self.member_vnf_index,
                      "vnfd_ref": self.vnfd_id,
                      "operational_status": self.operational_status,
                      "cloud_account": self.cloud_account_name,
-                     "config_status" : self._config_status
+                     "config_status": self._config_status
                      }
 
         vnfr_dict.update(vnfd_copy_dict)
@@ -1052,9 +1172,14 @@ class VirtualNetworkFunctionRecord(object):
         if self._vnfr.vnf_configuration is not None:
             vnfr_msg.vnf_configuration.from_dict(self._vnfr.vnf_configuration.as_dict())
             if (ip_address is not None and
-                vnfr_msg.vnf_configuration.config_access.mgmt_ip_address is None):
+                    vnfr_msg.vnf_configuration.config_access.mgmt_ip_address is None):
                 vnfr_msg.vnf_configuration.config_access.mgmt_ip_address = ip_address
 
+        for group in self._vnfr_msg.placement_groups_info:
+            group_info = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_PlacementGroupsInfo()
+            group_info.from_dict(group.as_dict())
+            vnfr_msg.placement_groups_info.append(group_info)
+            
         return vnfr_msg
 
     @property
@@ -1068,7 +1193,6 @@ class VirtualNetworkFunctionRecord(object):
                 http_port = 443
         if self.vnfd.msg.mgmt_interface.dashboard_params.has_field('port'):
             http_port = self.vnfd.msg.mgmt_interface.dashboard_params.port
-
 
         url = "{protocol}://{ip_address}:{port}/{path}".format(
                 protocol=protocol,
@@ -1138,6 +1262,59 @@ class VirtualNetworkFunctionRecord(object):
         """ Find the VLR associated with the cp name """
         return self._vlr_by_cp[cp_name]
 
+    def resolve_placement_group_cloud_construct(self, input_group, nsr_config):
+        """
+        Returns the cloud specific construct for placement group
+        Arguments:
+            input_group: VNFD PlacementGroup
+            nsr_config: Configuration for VNFDGroup MAP in the NSR config
+        """
+        copy_dict = ['name', 'requirement', 'strategy']
+        for group_info in nsr_config.vnfd_placement_group_maps:
+            if group_info.placement_group_ref == input_group.name and \
+               group_info.vnfd_id_ref == self.vnfd_id:
+                group = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur_PlacementGroupsInfo()
+                group_dict = {k:v for k,v in
+                              group_info.as_dict().items()
+                              if (k != 'placement_group_ref' and k !='vnfd_id_ref')}
+                for param in copy_dict:
+                    group_dict.update({param: getattr(input_group, param)})
+                group.from_dict(group_dict)
+                return group
+        return None
+
+    @asyncio.coroutine
+    def get_vdu_placement_groups(self, vdu):
+        placement_groups = []
+        ### Step-1: Get VNF level placement groups
+        for group in self._vnfr_msg.placement_groups_info:
+            #group_info = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur_PlacementGroupsInfo()
+            #group_info.from_dict(group.as_dict())
+            placement_groups.append(group)
+
+        ### Step-2: Get NSR config. This is required for resolving placement_groups cloud constructs
+        nsr_config = yield from self.get_nsr_config()
+
+        ### Step-3: Get VDU level placement groups
+        for group in self.vnfd.msg.placement_groups:
+            for member_vdu in group.member_vdus:
+                if member_vdu.member_vdu_ref == vdu.id:
+                    group_info = self.resolve_placement_group_cloud_construct(group,
+                                                                              nsr_config)
+                    if group_info is None:
+                        self._log.info("Could not resolve cloud-construct for placement group: %s", group.name)
+                        ### raise VNFMPlacementGroupError("Could not resolve cloud-construct for placement group: {}".format(group.name))
+                    else:
+                        self._log.info("Successfully resolved cloud construct for placement group: %s for VDU: %s in VNF: %s (Member Index: %s)",
+                                       str(group_info),
+                                       vdu.name,
+                                       self.vnf_name,
+                                       self.member_vnf_index)
+                        placement_groups.append(group_info)
+        
+        return placement_groups
+
+    @asyncio.coroutine
     def create_vdus(self, vnfr, restart_mode=False):
         """ Create the VDUs associated with this VNF """
 
@@ -1159,10 +1336,18 @@ class VirtualNetworkFunctionRecord(object):
 
             return vdur_id
 
+            
         self._log.info("Creating VDU's for vnfd id: %s", self.vnfd_id)
         for vdu in self.vnfd.msg.vdu:
             self._log.debug("Creating vdu: %s", vdu)
             vdur_id = get_vdur_id(vdu)
+
+            placement_groups = yield from self.get_vdu_placement_groups(vdu)
+            self._log.info("Launching VDU: %s from VNFD :%s (Member Index: %s) with Placement Groups: %s",
+                           vdu.name,
+                           self.vnf_name,
+                           self.member_vnf_index,
+                           [ group.name for group in placement_groups])
 
             vdur = VirtualDeploymentUnitRecord(
                 dts=self._dts,
@@ -1172,7 +1357,8 @@ class VirtualNetworkFunctionRecord(object):
                 vnfr=vnfr,
                 mgmt_intf=self.has_mgmt_interface(vdu),
                 cloud_account_name=self.cloud_account_name,
-                vdur_id=vdur_id
+                vdur_id=vdur_id,
+                placement_groups = placement_groups,
                 )
 
             self._vdus.append(vdur)
@@ -1182,7 +1368,7 @@ class VirtualNetworkFunctionRecord(object):
         """ Instantiate the VDUs associated with this VNF """
         self._log.debug("Instantiating VDU's for vnfd id %s: %s", self.vnfd_id, self._vdus)
 
-        lookup = {vdu.vdu_id:vdu for vdu in self._vdus}
+        lookup = {vdu.vdu_id: vdu for vdu in self._vdus}
 
         # Identify any dependencies among the VDUs
         dependencies = collections.defaultdict(list)
@@ -1390,7 +1576,7 @@ class VirtualNetworkFunctionRecord(object):
         for cp in self._cprs:
             if cp.name == cp_name:
                 self._log.debug("Setting ip address and id for cp %s, cpr %s with ip %s id %s",
-                                cp_name, cp, ip_address,cp_id)
+                                cp_name, cp, ip_address, cp_id)
                 cp.ip_address = ip_address
                 cp.connection_point_id = cp_id
                 return
@@ -1433,7 +1619,7 @@ class VirtualNetworkFunctionRecord(object):
                 vlr_path = self.vlr_xpath(cp.vlr_ref)
                 self._log.debug("Fetching VLR with path = %s", vlr_path)
                 res_iter = yield from self._dts.query_read(self.vlr_xpath(cp.vlr_ref),
-                                                           rwdts.Flag.MERGE)
+                                                           rwdts.XactFlag.MERGE)
                 for i in res_iter:
                     r = yield from i
                     d = r.result
@@ -1477,7 +1663,7 @@ class VirtualNetworkFunctionRecord(object):
 
         # instantiate VDUs
         self._log.debug("VNFR-ID %s: Create VDUs", self._vnfr_id)
-        self.create_vdus(self, restart_mode)
+        yield from self.create_vdus(self, restart_mode)
 
         # publish the VNFR
         self._log.debug("VNFR-ID %s: Publish VNFR", self._vnfr_id)
@@ -1556,10 +1742,12 @@ class VnfdDtsHandler(object):
             """Apply the  configuration"""
             self._log.debug("Got VNFM VNFD apply (xact: %s) (action: %s)(scr: %s)",
                             xact, action, scratch)
+
+            is_recovery = xact.xact is None and action == rwdts.AppconfAction.INSTALL
             # Create/Update a VNFD record
             for cfg in self._regh.get_xact_elements(xact):
                 # Only interested in those VNFD cfgs whose ID was received in prepare callback
-                if cfg.id in acg.scratch['vnfds']:
+                if cfg.id in acg.scratch['vnfds'] or is_recovery:
                     self._vnfm.update_vnfd(cfg)
 
             del acg._scratch['vnfds'][:]
@@ -1569,38 +1757,31 @@ class VnfdDtsHandler(object):
             """ on prepare callback """
             self._log.debug("Got on prepare for VNFD (path: %s) (action: %s)",
                             ks_path.to_xpath(RwVnfmYang.get_schema()), msg)
-            # RIFT-10161
-            try:
-                fref = ProtobufC.FieldReference.alloc()
-                fref.goto_whole_message(msg.to_pbcm())
+            fref = ProtobufC.FieldReference.alloc()
+            fref.goto_whole_message(msg.to_pbcm())
 
-                # Handle deletes in prepare_callback, but adds/updates in apply_callback
-                if fref.is_field_deleted():
-                    # Delete an VNFD record
-                    self._log.debug("Deleting VNFD with id %s", msg.id)
-                    if self._vnfm.vnfd_in_use(msg.id):
-                        self._log.debug("Cannot delete VNFD in use - %s", msg)
-                        err = "Cannot delete a VNFD in use - %s" % msg
-                        raise VirtualNetworkFunctionDescriptorRefCountExists(err)
-                    # Delete a VNFD record
-                    yield from self._vnfm.delete_vnfd(msg.id)
-                else:
-                    # Handle actual adds/updates in apply_callback,
-                    # just check if VNFD in use in prepare_callback
-                    if self._vnfm.vnfd_in_use(msg.id):
-                        self._log.debug("Cannot modify an VNFD in use - %s", msg)
-                        err = "Cannot modify an VNFD in use - %s" % msg
-                        raise VirtualNetworkFunctionDescriptorRefCountExists(err)
+            # Handle deletes in prepare_callback, but adds/updates in apply_callback
+            if fref.is_field_deleted():
+                # Delete an VNFD record
+                self._log.debug("Deleting VNFD with id %s", msg.id)
+                if self._vnfm.vnfd_in_use(msg.id):
+                    self._log.debug("Cannot delete VNFD in use - %s", msg)
+                    err = "Cannot delete a VNFD in use - %s" % msg
+                    raise VirtualNetworkFunctionDescriptorRefCountExists(err)
+                # Delete a VNFD record
+                yield from self._vnfm.delete_vnfd(msg.id)
+            else:
+                # Handle actual adds/updates in apply_callback,
+                # just check if VNFD in use in prepare_callback
+                if self._vnfm.vnfd_in_use(msg.id):
+                    self._log.debug("Cannot modify an VNFD in use - %s", msg)
+                    err = "Cannot modify an VNFD in use - %s" % msg
+                    raise VirtualNetworkFunctionDescriptorRefCountExists(err)
 
-                    # Add this VNFD to scratch to create/update in apply callback
-                    acg._scratch['vnfds'].append(msg.id)
+                # Add this VNFD to scratch to create/update in apply callback
+                acg._scratch['vnfds'].append(msg.id)
 
-                xact_info.respond_xpath(rwdts.XactRspCode.ACK)
-            except Exception:
-                self._log.exception("VNFD delete/modification failed:%s", msg.id)
-                acg._acg.prepare_complete_fail(xact_info=xact_info._xact_info,
-                                               rs=RwTypes.RwStatus.FAILURE,
-                                               errstr="Cannot modify VNFD in use")
+            xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
         self._log.debug(
             "Registering for VNFD config using xpath: %s",
@@ -1639,7 +1820,7 @@ class VcsComponentDtsHandler(object):
         """ Registers VCS component dts publisher registration"""
         self._log.debug("VCS Comp publisher DTS handler registering path %s",
                         VcsComponentDtsHandler.XPATH)
-        
+
         hdl = rift.tasklets.DTS.RegistrationHandler()
         handlers = rift.tasklets.Group.Handler()
         with self._dts.group_create(handler=handlers) as group:
@@ -1701,7 +1882,7 @@ class VnfrDtsHandler(object):
                 """Re-populate the vnfm after restart
 
                 Arguments:
-                    vlink 
+                    vlink
 
                 """
 
@@ -1761,18 +1942,23 @@ class VnfrDtsHandler(object):
                     yield from self._vnfm.delete_vnfr(xact_info.xact, vnfr)
                 except Exception as e:
                     self._log.exception(e)
-                    self._log.error("Caught exception while deleting vnfr %s",
-                                        path_entry.key00.id)
+                    self._log.error("Caught exception while deleting vnfr %s", path_entry.key00.id)
 
             elif action == rwdts.QueryAction.UPDATE:
                 schema = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr.schema()
                 path_entry = schema.keyspec_to_entry(ks_path)
-                vnfr = self._vnfm.get_vnfr(path_entry.key00.id)
+                vnfr = None
+                try:
+                    vnfr = self._vnfm.get_vnfr(path_entry.key00.id)
+                except Exception as e:
+                    self._log.debug("No vnfr found with id %s", path_entry.key00.id)
+                    xact_info.respond_xpath(rwdts.XactRspCode.NA)
+                    return
 
                 if vnfr is None:
                     self._log.debug("VNFR id %s not found for update", path_entry.key00.id)
-                    raise VirtualNetworkFunctionRecordNotFound(
-                        "VNFR id %s", path_entry.key00.id)
+                    xact_info.respond_xpath(rwdts.XactRspCode.NA)
+                    return
 
                 self._log.debug("VNFR {} update config status {} (current {})".
                                 format(vnfr.name, msg.config_status, vnfr.config_status))
@@ -2172,7 +2358,7 @@ class VnfManager(object):
         self._log.debug("Fetch vnfd with path %s", vnfd_path)
         vnfd = None
 
-        res_iter = yield from self._dts.query_read(vnfd_path, rwdts.Flag.MERGE)
+        res_iter = yield from self._dts.query_read(vnfd_path, rwdts.XactFlag.MERGE)
 
         for ent in res_iter:
             res = yield from ent
@@ -2266,7 +2452,7 @@ class VnfManager(object):
             self._log.debug("Delete VNFD failed - cannot find vnfd-id %s", vnfd_id)
             raise VirtualNetworkFunctionDescriptorNotFound("Cannot find %s", vnfd_id)
 
-        if vnfd_id not in self._vnfds:
+        if self._vnfds[vnfd_id].in_use():
             self._log.debug("Cannot delete VNFD id %s reference exists %s",
                             vnfd_id,
                             self._vnfds[vnfd_id].ref_count)
@@ -2274,6 +2460,17 @@ class VnfManager(object):
                 "Cannot delete :%s, ref_count:%s",
                 vnfd_id,
                 self._vnfds[vnfd_id].ref_count)
+
+        # Remove any files uploaded with VNFD and stored under $RIFT_ARTIFACTS/libs/<id>
+        try:
+            rift_artifacts_dir = os.environ['RIFT_ARTIFACTS']
+            vnfd_dir = os.path.join(rift_artifacts_dir, 'launchpad/libs', vnfd_id)
+            if os.path.exists(vnfd_dir):
+                shutil.rmtree(vnfd_dir, ignore_errors=True)
+        except Exception as e:
+            self._log.error("Exception in cleaning up VNFD {}: {}".
+                            format(self._vnfds[vnfd_id].name, e))
+            self._log.exception(e)
 
         del self._vnfds[vnfd_id]
 
@@ -2304,6 +2501,9 @@ class VnfmTasklet(rift.tasklets.Tasklet):
     """ VNF Manager tasklet class """
     def __init__(self, *args, **kwargs):
         super(VnfmTasklet, self).__init__(*args, **kwargs)
+        self.rwlog.set_category("rw-mano-log")
+        self.rwlog.set_subcategory("vnfm")
+
         self._dts = None
         self._vnfm = None
 
@@ -2330,11 +2530,11 @@ class VnfmTasklet(rift.tasklets.Tasklet):
         self.log.debug("Got instance started callback")
 
     def stop(self):
-      try:
-         self._dts.deinit()
-      except Exception:
-         print("Caught Exception in VNFM stop:", sys.exc_info()[0])
-         raise
+        try:
+            self._dts.deinit()
+        except Exception:
+            print("Caught Exception in VNFM stop:", sys.exc_info()[0])
+            raise
 
     @asyncio.coroutine
     def init(self):

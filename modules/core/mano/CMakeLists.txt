@@ -42,9 +42,12 @@ set(subdirs
   common
   rwmc
   rwlaunchpad
-  confd_client
   rwcm
   )
+
+if (NOT RIFT_AGENT_BUILD STREQUAL "XML_ONLY")
+  list(APPEND subdirs confd_client)
+endif()
 
 rift_add_subdirs(SUBDIR_LIST ${subdirs})
 

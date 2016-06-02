@@ -42,6 +42,11 @@ NbReqDts::~NbReqDts()
 
 StartStatus NbReqDts::execute()
 {
+  if (!instance_->mgmt_handler()->is_ready_for_nb_clients()) {
+    RW_MA_NBREQ_LOG (this, ClientNotice, "Agent not yet ready to accept request", "");
+    return send_error( RW_YANG_NETCONF_OP_STATUS_RESOURCE_DENIED );
+  }
+
   auto xml_mgr = instance_->xml_mgr();
   RW_ASSERT(xml_mgr);
 
@@ -57,7 +62,7 @@ StartStatus NbReqDts::execute()
   RW_MA_NBREQ_LOG( this, ClientDebug, "RPC Operation from DTS",
     (capture_temporary=xml_rpc->to_string()).c_str() );
 
-  SbReqRpc* rpc_xact = new SbReqRpc( instance_, this, xml_rpc.get() );
+  SbReqRpc* rpc_xact = new SbReqRpc( instance_, this, RequestMode::CONFD, xml_rpc.get() );
   return rpc_xact->start_xact();
 }
 
@@ -69,10 +74,11 @@ StartStatus NbReqDts::respond(
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "respond with keyspec and message",
     RWMEMLOG_ARG_PRINTF_INTPTR("sbreq=0x%" PRIX64,(intptr_t)sbreq));
 
+
   auto rs = rwdts_xact_info_respond_keyspec(
     xact_info_,
     RWDTS_XACT_RSP_CODE_ACK,
-    &RWPB_G_PATHSPEC_VALUE(RwMgmtagt_output_MgmtAgent)->rw_keyspec_path_t,
+    ks,
     msg );
   if (RW_STATUS_SUCCESS != rs) {
     RW_MA_NBREQ_LOG( this, ClientError, "DTS RPC failed, unable to respond", "" );
@@ -113,9 +119,11 @@ StartStatus NbReqDts::respond(
     return send_error( ncs );
   }
 
+  const rw_yang_pb_msgdesc_t* msgdesc = rw_schema_pbcm_get_msg_msgdesc(nullptr, msg, nullptr);
+
   return respond(
     sbreq,
-    &RWPB_G_PATHSPEC_VALUE(RwMgmtagt_output_MgmtAgent)->rw_keyspec_path_t,
+    msgdesc->schema_path_value,
     msg );
 }
 

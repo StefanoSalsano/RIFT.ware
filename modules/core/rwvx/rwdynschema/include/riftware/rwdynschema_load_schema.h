@@ -14,7 +14,7 @@ extern "C" {
 #  endif
 
   static const int MEMLOG_MAX_PATH_SIZE = 128;
- 
+
   void rwdynschema_load_all_schema(void * context);
 #  if defined(__cplusplus)
 }
@@ -58,13 +58,13 @@ public:
 
 public:
   /**
-   * Stores the yang modules under 'all' schema 
-   * and initializes them in a container.(std::vector)
+   * Finds the yang modules for 'all' schema
+   * and initializes them in a container.
    */
   void collect_yang_modules(const fs::path&);
 
   /**
-   * Stores the shared libraries to the corresponding 
+   * Stores the shared libraries to the corresponding
    * yang modules and sets the exported flag based on whether the
    * module was part of schema listing file.
    */
@@ -78,16 +78,16 @@ public:
       rwdynschema_dynamic_schema_registration_t*);
 
 private:
-  struct so_details_t {
-    std::string so_file_name; // Name of shared object file
+  struct module_files_t {
+    std::string so_file_name;       // Name of shared object file
     std::string metainfo_file_name; // Name of the file having schema files hash values
-    size_t exported = 0;      // If set, module is exported to northbound
+    size_t exported = 0;            // If set, module is exported to northbound
   };
-  
+
   struct dyn_module_details_t {
     std::string module_name;
-    so_details_t so_details;
-  }; 
+    module_files_t module_files;
+  };
   std::vector<dyn_module_details_t> dyn_modules_vec_;
 
   RwMemlogInstance memlog_inst_;

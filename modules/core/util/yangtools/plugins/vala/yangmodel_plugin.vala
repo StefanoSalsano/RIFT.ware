@@ -88,7 +88,6 @@ namespace YangmodelPlugin {
     public abstract bool is_mode_path(uint64 ynode);
     public abstract bool is_rpc(uint64 ynode);
     public abstract bool is_rpc_input(uint64 ynode);
-    public abstract void to_json(uint64 ynode, out string str, bool pretty_print);
   }
 
   public interface Key: GLib.Object {

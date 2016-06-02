@@ -4,7 +4,7 @@
   "target_vm":"VM",
   "test_description":"System test for ping and pong vnf",
   "run_as_root": true,
-  "status":"working",
+  "status":"broken",
   "keywords":["nightly","smoke","smoke_stable","MANO","cloudsim"],
   "timelimit": 1800,
   "networks":[],

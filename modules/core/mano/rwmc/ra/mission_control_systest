@@ -6,9 +6,8 @@
 # Creation Date: 2015/09/15
 #
 source $RIFT_INSTALL/usr/rift/systemtest/util/mano/mano_common.sh
-restconf=true
 
-SCRIPT_TEST="py.test -v \
+SCRIPT_TEST="py.test -x -v \
             ${PYTEST_DIR}/mission_control/test_mission_control.py \
             ${PYTEST_DIR}/mission_control/launchpad/test_startstop.py"
 

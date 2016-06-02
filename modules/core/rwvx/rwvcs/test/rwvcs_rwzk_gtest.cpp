@@ -469,31 +469,8 @@ class RwvcsRwzkTest: public ::testing::Test {
       ASSERT_EQ(rwvcs_rwzk_dispatch_exit_data.exitnow, 1);
 
       rwvcs_rwzk_dispatch_exit_data.exitnow = 0;
-      rwsched_dispatch_async_f(tasklet, 
-                               rwvcs_rwzk_dispatch_exit_data.rwq, 
-                               &rwvcs_rwzk_dispatch_exit_data, 
-                               rwvcs_rwzk_dispatch_async_exit_handler_f);
-      int dummy_state;
-      for (i = 2; i < RWVCS_RWZK_MAX_ITER; i++) {
-        rwvcs_rwzk_dispatch_data[i].m_rwvcs = m_rwvcs;
-        rwvcs_rwzk_dispatch_data[i].entry = &entry[0];
-        rwvcs_rwzk_dispatch_data[i].done = 0;
-        
-        dummy_state = ((i%5)+ 1);
-        if (dummy_state == 1) {
-          dummy_state += 1;
-        }
-        rwvcs_rwzk_dispatch_data[i].state = ((rw_component_state)(dummy_state));
-        rwsched_dispatch_async_f(tasklet, 
-                                 rwq[i%RWVCS_RWZK_MAX_ENTRY], 
-                                 &rwvcs_rwzk_dispatch_data[i], 
-                                 rwvcs_rwzk_dispatch_async_handler_f);
-      }
-      rwsched_dispatch_main_until(tasklet, RWVCS_RWZK_MAX_ITER/30, &rwvcs_rwzk_dispatch_exit_data.exitnow);
-      ASSERT_EQ(rwvcs_rwzk_dispatch_exit_data.exitnow, 1);
 
-      rwvcs_rwzk_dispatch_exit_data.exitnow = 0;
-
+      int dummy_state = 0;
 
       rwsched_dispatch_async_f(tasklet, 
                                rwvcs_rwzk_dispatch_exit_data.rwq, 

@@ -32,6 +32,8 @@ extern _RW_THREAD_ RW_RESOURCE_TRACK_HANDLE g_rwresource_track_handle;
 extern pthread_mutex_t g_rwresource_track_mutex;
 extern int g_malloc_intercepted;
 extern int g_callstack_depth;
+extern int g_heap_track_nth;
+extern int g_heap_track_bigger_than;
 
 #if 1
 #define RW_RESOURCE_TRACK_LOCK()    pthread_mutex_lock(&g_rwresource_track_mutex)
@@ -45,6 +47,10 @@ __BEGIN_DECLS
 
 typedef struct rw_ta_res_track_s {
   void *addr;
+  union {
+    const char *location;
+    void *callers[RW_RESOURCE_TRACK_MAX_CALLERS];
+  };
 } rw_ta_res_track_t;
 
 #define RW_TA_DATA_SIZE sizeof(rw_ta_res_track_t)
@@ -93,8 +99,9 @@ _rw_ta_resource_track_create_context(const char *descr)
   RW_RESOURCE_TRACK_LOCK();
 
   rh = (_RW_TA_RESOURCE_TRACK_HANDLE_)talloc_named_const(NULL, RW_TA_DATA_SIZE, descr);
+  memset(rh, '\0', RW_TA_DATA_SIZE);
   talloc_set_destructor((void*)rh, _rw_ta_destructor);
-  rh->addr = NULL;
+  //rh->addr = NULL;
 
   RW_RESOURCE_TRACK_UNLOCK();
 
@@ -130,7 +137,7 @@ _rw_ta_resource_track_free_addr(void *addr, rw_magic_pad_t hash)
 
   if ((paddr = rc_mem->addr) != NULL) {
     //_RW_TA_RESOURCE_TRACK_HANDLE_ rh = (_RW_TA_RESOURCE_TRACK_HANDLE_)rc_mem->addr;
-    //fprintf(stderr, "F %s %p %p %s\n", rc_mem->location, rh->addr, rc_mem->addr, talloc_get_name(rc_mem->addr));
+    //fprintf(stderr, "F %s %p %p %s\n", rh->location, rh->addr, rc_mem->addr, talloc_get_name(rc_mem->addr));
 
     RW_ASSERT(talloc_total_blocks(rc_mem->addr) == 1);
     RW_ASSERT(talloc_reference_count(rc_mem->addr) == 0);
@@ -159,6 +166,7 @@ _rw_ta_resource_track_attach_child(void *prh,
 
   rh = (_RW_TA_RESOURCE_TRACK_HANDLE_)talloc_named_const(prh, RW_TA_DATA_SIZE, descr);
   RW_ASSERT(rh);
+  memset(rh, '\0', RW_TA_DATA_SIZE);
   talloc_set_destructor((void*)rh, _rw_ta_destructor);
 
   RW_RESOURCE_TRACK_UNLOCK();
@@ -184,15 +192,15 @@ _rw_ta_resource_track_attach_child(void *prh,
   if (obj_type == RW_MALLOC_OBJECT) {
     int i;
     for (i=0; i<g_callstack_depth; i++) {
-      rc_mem->callers[i] = ((void**)loc)[i];
+      rh->callers[i] = ((void**)loc)[i];
     }
   } else {
-    rc_mem->location = loc;
+    rh->location = loc;
   }
   rc_mem->addr = rh;
   rc_mem->obj_type = obj_type;
 
-  //fprintf(stderr, "%s %p %p %s\n", rc_mem->location, rh->addr, rc_mem->addr, talloc_get_name(rc_mem->addr));
+  //fprintf(stderr, "%s %p %p %s\n", rh->location, rh->addr, rc_mem->addr, talloc_get_name(rc_mem->addr));
 
   return rh;
 }
@@ -294,7 +302,7 @@ RW_talloc_report_depth_FILE_helper(const void *ptr, int depth, int max_depth, in
     return;
   }
 
-  if (strcmp(name, "FREED")) {
+  if (rh->addr && strcmp(name, "FREED")) {
 #if 0
     fprintf(f, "%*s%-30s %3lu blocks (ref %d) %p\n",
             depth*4, "",
@@ -315,13 +323,13 @@ RW_talloc_report_depth_FILE_helper(const void *ptr, int depth, int max_depth, in
               depth*4, "",
               name, rc_mem->size, paddr);
       int i;
-      for (i=0; i<RW_RESOURCE_TRACK_MAX_CALLERS && rc_mem->callers[i]; i++) {
-        fprintf(f, "%*s    %s\n", depth*4, "", rw_btrace_get_proc_name(rc_mem->callers[i]));
+      for (i=0; i<RW_RESOURCE_TRACK_MAX_CALLERS && rh->callers[i]; i++) {
+        fprintf(f, "%*s    %s\n", depth*4, "", rw_btrace_get_proc_name(rh->callers[i]));
       }
     } else {
       fprintf(f, "%*s%-30s(%u) %p %s\n",
               depth*4, "",
-              name, rc_mem->size, paddr, rc_mem->location);
+              name, rc_mem->size, paddr, rh->location);
     }
   }
 #endif
@@ -385,18 +393,18 @@ RW_talloc_report_depth_STRING_helper(const void *ptr, int depth, int max_depth, 
     return;
   }
 
-  if (strcmp(name, "FREED")) {
+  if (rh->addr && strcmp(name, "FREED")) {
     memblock = ((char *)rh->addr - RW_MAGIC_PAD);
     rc_mem = (_RW_MEM_RESOURCE_TRACK_HANDLE_)(memblock + sizeof(rw_magic_pad_t));
     paddr = rc_mem->obj_type == RW_CF_OBJECT ? ((char *)(rh->addr) + RW_CF_OFFSET) : rh->addr;
 
     used = snprintf(NULL, 0, "%*s%-30s(%u) %p %s\n",
             depth*4, "",
-            name, rc_mem->size, paddr, rc_mem->location);
+            name, rc_mem->size, paddr, rh->location);
     if (s->sink_used+used < s->sink_len) {
       snprintf(sink+s->sink_used, s->sink_len-s->sink_used, "%*s%-30s(%u) %p %s\n",
             depth*4, "",
-            name, rc_mem->size, paddr, rc_mem->location);
+            name, rc_mem->size, paddr, rh->location);
       s->sink_used += used;
     }
   }
@@ -444,13 +452,13 @@ RW_talloc_report_depth_STRUCT_helper(const void *ptr, int depth, int max_depth, 
     return;
   }
 
-  if (strcmp(name, "FREED")) {
+  if (rh->addr && strcmp(name, "FREED")) {
     memblock = ((char *)rh->addr - RW_MAGIC_PAD);
     rc_mem = (_RW_MEM_RESOURCE_TRACK_HANDLE_)(memblock + sizeof(rw_magic_pad_t));
 #if 0
     unsigned int i;
     for (i=0; i<s->sink_used; i++) {
-      if (!strcmp(s[i].name, name) && (s[i].loc == rc_mem->location)) {
+      if (!strcmp(s[i].name, name) && (s[i].loc == rh->location)) {
         s[i].count++;
         return;
       }
@@ -468,12 +476,12 @@ RW_talloc_report_depth_STRUCT_helper(const void *ptr, int depth, int max_depth, 
         if (rc_mem->obj_type == RW_MALLOC_OBJECT) {
           int i;
           for (i=0; i<RW_RESOURCE_TRACK_MAX_CALLERS; i++) {
-            s[s->sink_used].callers[i] = rc_mem->callers[i];
+            s[s->sink_used].callers[i] = rh->callers[i];
           }
         } else {
           RW_ASSERT(rc_mem->obj_type == RW_RAW_OBJECT ||
                     rc_mem->obj_type == RW_CF_OBJECT);
-          s[s->sink_used].loc = rc_mem->location;
+          s[s->sink_used].loc = rh->location;
         }
         s[s->sink_used].count = 0;
         s->sink_used ++;

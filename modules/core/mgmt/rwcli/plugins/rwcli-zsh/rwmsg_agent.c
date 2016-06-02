@@ -18,6 +18,7 @@
 
 #include "rwcli_zsh.h"
 #include "rwcli_agent.h"
+#include "rw_sys.h"
 
 #ifdef alloca
 # undef alloca
@@ -33,6 +34,8 @@
 #define RWMSG_BROKER_ENABLE_VALUE "1"
 
 #define RWMSG_CLI_PATH "/R/RW.CLI/1"
+
+#define RW_VM_ID "RWVM_INSTANCE_ID"
 
 extern rift_cmdargs_t rift_cmdargs;
 
@@ -70,7 +73,11 @@ static struct rwtasklet_info_s * create_tasklet_info(
     uint32_t tasklet_instance_id)
 {
   struct rwtasklet_info_s * info;
-  int broker_id = rift_cmdargs.vm_instance_id;
+
+  // lookup broker id
+  const char* env_str = rw_getenv(RW_VM_ID);
+  RW_ASSERT(env_str);
+  int broker_id = atoi(env_str);
 
   info = (struct rwtasklet_info_s *)malloc(sizeof(struct rwtasklet_info_s));
   RW_ASSERT(info);
@@ -88,7 +95,7 @@ static struct rwtasklet_info_s * create_tasklet_info(
   info->rwmsg_endpoint = rwmsg_endpoint_create(
       1,
       tasklet_instance_id,
-      broker_id,
+      broker_id, // ATTN: this might be broken in single-broker mode
       info->rwsched_instance,
       info->rwsched_tasklet_info,
       info->rwtrace_instance,

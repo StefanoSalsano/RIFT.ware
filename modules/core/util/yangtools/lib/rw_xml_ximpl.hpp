@@ -67,9 +67,10 @@ ATTN
 #endif
 
 //#include <xercesc/sax2/DefaultHandler.hpp>
-
-
-
+#include "xalanc/PlatformSupport/DOMStringHelper.hpp"
+#include "xalanc/XalanDOM/XalanDOMString.hpp"
+#include <xalanc/XPath/ElementPrefixResolverProxy.hpp>
+XALAN_CPP_NAMESPACE_USE; //ATTN don't do this
 
 #include "rw_xml.h"
 #include "rw_xml_mixin_yang.hpp"
@@ -82,6 +83,7 @@ class XImplXMLStr;
 class XImplDOMErrorHandler;
 class XImplDOMLSResourceResolver;
 class XImplDOMUseerDataHandler;
+class XImpleDOMNamespaceResolver;
 class XMLDocumentXImpl;
 class XMLManagerXImpl;
 class XMLNodeXImpl;
@@ -820,6 +822,12 @@ class XMLNodeXImpl
     const char* localname,
     const char* ns = nullptr
   ) override;
+
+  std::string get_attribute_value(
+    const char* localname,
+    const char* ns = nullptr
+  ) override;
+
   void remove_attribute(
     XMLAttribute* attribute
   ) override;
@@ -848,6 +856,8 @@ class XMLNodeXImpl
   // Search interface implementations
 
   XMLNodeXImpl* find(const char* local_name, const char* ns) override;
+  std::unique_ptr<std::list<XMLNode*>> find_all(const char* local_name, const char* ns) override;
+  size_t count(const char* local_name, const char* ns) override;  
   XMLNodeXImpl* find_value(const char* local_name, const char* value, const char* ns) override;
 
   bool equals(const char* local_name, const char* ns);
@@ -1235,7 +1245,10 @@ class XMLDocumentXImpl
   /// @see XMLDocument::to_file(const char* ns, const char* tag, const char* file_name)
   rw_status_t to_file(const char *file_name, const char* local_name = nullptr, const char* ns = nullptr) override;
 
-  /// @see XMLDocument::is_equal(XMLDocument* other_doc)
+  rw_status_t evaluate_xpath(XMLNode * xml_node,      
+                      std::string const xpath);
+
+    /// @see XMLDocument::is_equal(XMLDocument* other_doc)
   bool is_equal(XMLDocument* other_doc) override;
 
   /**
@@ -1414,7 +1427,8 @@ class XMLManagerXImpl
    * platform.
    */
   XMLManagerXImpl(
-    YangModel* model = nullptr ///< [in] The model to use.  May be nullptr.  Must live at least as long as the manager.
+      YangModel* model = nullptr, ///< [in] The model to use.  May be nullptr.  Must live at least as long as the manager.
+      XERCES_CPP_NAMESPACE::DOMImplementation* impl = nullptr
   );
 
   /// @see XMLManager::obj_release()
@@ -1447,6 +1461,9 @@ class XMLManagerXImpl
 
   /// @see XMLManager::create_document_from_file(const char* file_name, bool validate = true)
   XMLDocument::uptr_t create_document_from_file(const char* file_name, bool validate = true) override;
+
+  /// @see XMLManager::create_document_from_file(const char* file_name, bool validate = true)
+  XMLDocument::uptr_t create_document_from_file(const char* file_name, std::string & error_out, bool validate = true) override;
 
   /// @see XMLManager::create_document_from_string(const char* xml_str, std::string& error_out, bool validate = true)
   XMLDocument::uptr_t create_document_from_string(const char* xml_str, std::string& error_out, bool validate = true) override;
@@ -1503,19 +1520,24 @@ class XMLManagerXImpl
    */
   virtual XMLDocumentXImpl::uptr_t alloc_xi_document();
 
+ private:
+  /// The number of managers instanciated so we can track when to initialize and terminate xalan
+  static size_t manager_count_;
 
  protected:
   /// DOM load-save impementation. Owned by Xerces.
   XERCES_CPP_NAMESPACE::DOMImplementation* xrcs_ls_impl_;
 
- protected:
   /// The model is owned.
   bool yang_model_owned_;
 
   /// The yang model
   YangModel* yang_model_;
 
+  XImpleDOMNamespaceResolver * ns_resolver_;
+
   friend class XMLDocumentXImpl;
+
 };
 
 
@@ -1543,6 +1565,39 @@ class XImplDOMLSResourceResolver
     const XMLCh *const baseURI);
 };
 
+/**
+ * Implements a Xerces namespace resolver for constructing xpath expressions.
+ */ 
+class XImpleDOMNamespaceResolver
+    : public PrefixResolver
+{
+ private:
+  /// Model used to determing prefix->namespace mappings
+  YangModel* model_;
+
+  /// Cache of prefix -> namespace mappings
+  mutable std::unordered_map<XalanDOMString, XalanDOMString, DOMStringHashFunction> namespace_map_;
+
+  /// Base URI
+  XalanDOMString base_uri_;
+
+  /**
+   * Find the namespace in the YangModel associated with the prefix and cache it.
+   */
+  void cache_prefix(XalanDOMString const & prefix) const;
+
+ public:
+  XImpleDOMNamespaceResolver() = default;
+  ~XImpleDOMNamespaceResolver();
+  XImpleDOMNamespaceResolver(YangModel* model);
+
+  ///    Retrieve a namespace corresponding to a prefix. 
+  virtual const XalanDOMString* getNamespaceForPrefix (const XalanDOMString &prefix) const;
+
+  ///    Retrieve the base URI for the resolver. More...
+  virtual const XalanDOMString& getURI () const;
+
+};
 
 }
 

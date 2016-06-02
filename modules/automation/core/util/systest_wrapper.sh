@@ -54,7 +54,6 @@ sysinfo=false
 show_sysinfo_cmd=":"
 systest_pipe=""
 tmp_dir=""
-ssl=false
 
 mypid=$$
 
@@ -255,8 +254,6 @@ do
      up_cmd="$2"
       shift
       ;;
-    --ssl) ssl=true
-      ;;
     -s|--system_cmd)
       system_cmd="$2"
       shift
@@ -305,12 +302,9 @@ if [ "${sysinfo}" == true ]; then
     show_sysinfo_cmd="$RIFT_INSTALL/demos/show_sysinfo.py --confd-host $confd_ip"
 fi
 
-PRELOAD=""
-if [ "${ssl}" == true ]; then
-    echo "HTTPS boot enabled."
-    export RIFT_BOOT_WITH_HTTPS=1
-    PRELOAD="LD_PRELOAD=${RIFT_ROOT}/.install/usr/lib/rift/preloads/librwxercespreload.so"
-fi
+# Preload the xerces ssl workaround
+PRELOAD="LD_PRELOAD=${RIFT_ROOT}/.install/usr/lib/rift/preloads/librwxercespreload.so"
+
 
 echo "Launching system using command: ${system_cmd} > >(tee ${log_stdout}) 2> >(tee ${log_stderr} >&2)"
 echo "-------------------------------------------------------"
@@ -336,8 +330,7 @@ fi
 # If a separate config command was provided, run it in the foreground
 # and capture the return value.
 if [ "${config_cmd}" != "" ]; then
-    run_cmd "${config_cmd}"
-
+    run_cmd "${PRELOAD} ${config_cmd}"
     if [[ ${curr_rc} -ne 0 ]]; then
         $show_sysinfo_cmd
         echo "Exiting with config_rc: $curr_rc"
@@ -361,20 +354,22 @@ if [ "${test_cmd}" != "" ]; then
     fi
 fi
 
-if [ "${post_restart_test_cmd}" != "" ]; then
-    echo "Restarting the system."
+if [[ ${curr_rc} -eq 0 ]]; then
+    if [ "${post_restart_test_cmd}" != "" ]; then
+        echo "Restarting the system."
 
-    # Restart sequence: Nullify any existing trap and kill system cmd.
-    trap "" SIGHUP EXIT
-    kill_pid "${system_pid}"
+        # Restart sequence: Nullify any existing trap and kill system cmd.
+        trap "" SIGHUP EXIT
+        kill_pid "${system_pid}"
 
-    # Sleep for 5s before starting, so that the SIGUP trap is not overwritten
-    # causing the restarted system to exit.
-    sleep 5
+        # Sleep for 5s before starting, so that the SIGUP trap is not overwritten
+        # causing the restarted system to exit.
+        sleep 5
 
-    start_system "${system_cmd}"
-    wait_for_system_start "$up_cmd"
-    run_cmd "${PRELOAD} ${post_restart_test_cmd}"
+        start_system "${system_cmd}"
+        wait_for_system_start "$up_cmd"
+        run_cmd "${PRELOAD} ${post_restart_test_cmd}"
+    fi
 fi
 
 echo "Exiting with test_rc: $curr_rc"

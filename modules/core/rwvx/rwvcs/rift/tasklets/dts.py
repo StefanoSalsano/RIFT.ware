@@ -1051,7 +1051,7 @@ class Registration(object):
         self._loop = loop
         self._shards = []
 
-    def get_xact_elements(self, xact=None):
+    def get_xact_elements(self, xact=None, include_keyspec=False):
         """
         Iterator over registration elements based on a transaction handle.
 
@@ -1071,7 +1071,11 @@ class Registration(object):
             pbcm, ks = self._reg_handle.get_next_element(cursor, xact)
             if pbcm is None:
                 break
-            yield pbcm_to_gi(pbcm)
+
+            if not include_keyspec:
+                yield pbcm_to_gi(pbcm)
+            else:
+                yield (pbcm_to_gi(pbcm), ks)
 
         raise StopIteration()
 
@@ -1116,6 +1120,7 @@ class Registration(object):
 
         @param xpath  - xpath at which this object will be created
         @param msg    - GI Box protobuf message to be created
+        @param flags  - RwDts.Flag
         @raises       - RegistrationElementError on failure
         """
         payload = msg if isinstance(msg, gi.repository.ProtobufC.Message) else msg.to_pbcm()
@@ -1124,18 +1129,19 @@ class Registration(object):
         if status != rwtypes.RwStatus.SUCCESS:
             raise RegistrationElementError('Failed to create element for xpath %s' % (xpath,))
 
-    def update_element(self, xpath, msg, flags=0):
+    def update_element(self, xpath, msg, flags=0, xact=None):
         """
         Update an element at this registration point
 
         @param xpath  - xpath at which to update
         @param msg    - updated GI Box protobuf message
         @param flags  - RwDts.Flag
+        @param xact   - 
         @raises       - RegistrationElementError on failure
         """
         payload = msg if isinstance(msg, gi.repository.ProtobufC.Message) else msg.to_pbcm()
 
-        status = self._reg_handle.update_element_xpath(xpath, payload, flags)
+        status = self._reg_handle.update_element_xpath(xpath, payload, flags, xact)
         if status != rwtypes.RwStatus.SUCCESS:
             raise RegistrationElementError('Failed to update element for xpath %s' % (xpath,))
 
@@ -1158,14 +1164,14 @@ class Registration(object):
 
         return pbcm_to_gi(pbcm)
 
-    def delete_element(self, xpath):
+    def delete_element(self, xpath, xact=None):
         """
         Delete an element at this registration point
 
         @param xpath  - xpath at which to delete element
         @raises       - RegistrationElementError on failure
         """
-        status = self._reg_handle.delete_element_xpath(xpath)
+        status = self._reg_handle.delete_element_xpath(xpath, None, xact)
         if status != rwtypes.RwStatus.SUCCESS:
             raise RegistrationElementError('Failed to delete element for xpath %s' % (xpath,))
 
@@ -1450,6 +1456,7 @@ class TaskScheduler(object):
         self.dts.exception_handler.register_handle_clbk(handler,
                 handle_exception)
         self.dts.loop.scheduler_tick()
+        self.dts.exception_handler.clear_handle_clbk(handler)
 
     def exec_now(self, func, *args, exception_callback=None, **kwargs):
         """
@@ -1660,14 +1667,15 @@ class GroupEventAdapter(EventAdapter):
 
             # Here we set the scratch per transaction
             scratch = self.registration.scratch.setdefault(xact.id, {})
-            self.scheduler.exec_soon(
-                    on_init,
-                    self.registration,
-                    xact,
-                    scratch,
-                    exception_callback=ExceptionRule.abort_xact(xact))
+            if on_init is not None:
+                self.scheduler.exec_soon(
+                        on_init,
+                        self.registration,
+                        xact,
+                        scratch,
+                        exception_callback=ExceptionRule.abort_xact(xact))
 
-        return wrapper if on_init is not None else None
+        return wrapper
 
     def on_deinit(self):
         """
@@ -1682,12 +1690,16 @@ class GroupEventAdapter(EventAdapter):
             """
             xact = Transaction(xact_raw, self.dts.loop)
             scratch = self.registration.scratch.setdefault(xact.id, {})
+            if scratch is not None and scratch:
+                print("GroupEventAdapter: on_deinit: self=", self, "scratch=", scratch, "**")
 
-            self.scheduler.exec_soon(
-                    on_deinit,
-                    self.registration,
-                    xact,
-                    scratch)
+            if on_deinit is not None:
+                self.scheduler.exec_soon(
+                        on_deinit,
+                        self.registration,
+                        xact,
+                        scratch)
+
             # We want the scratch to be removed only after the deinit callback
             # is done. This ensures that the scratch is still available for
             # the client within the 'on_deinit' callback.
@@ -1696,7 +1708,7 @@ class GroupEventAdapter(EventAdapter):
                     xact.id,
                     None)
 
-        return wrapper if on_deinit is not None else None
+        return wrapper
 
     def on_event(self):
         """
@@ -1771,10 +1783,11 @@ class AppConfEventAdapter(EventAdapter):
             # We pass the newly created scratch to the 'on_init' callback.
             # This provides the client app to stash any data during the on_init
             # callback.
-            self.scheduler.exec_soon(on_init, self.registration, xact, scratch,
-                    exception_callback=ExceptionRule.abort_xact(xact))
+            if on_init is not None:
+                self.scheduler.exec_soon(on_init, self.registration, xact, scratch,
+                        exception_callback=ExceptionRule.abort_xact(xact))
 
-        return wrapper if on_init is not None else None
+        return wrapper
 
     def on_deinit(self):
         """
@@ -1787,12 +1800,16 @@ class AppConfEventAdapter(EventAdapter):
             xact = Transaction(xact_raw, self.dts.loop)
 
             scratch = self.registration.scratch.setdefault(xact.id, {})
-            self.scheduler.exec_soon(
-                    on_deinit,
-                    self.registration,
-                    xact,
-                    scratch)
-            # We want the scratch to be removed only after the deint callback is
+            if scratch is not None and scratch:
+                print("AppConfEventAdapter: on_deinit: self=", self, "scratch=", scratch, "**")
+            if on_deinit is not None:
+                self.scheduler.exec_soon(
+                        on_deinit,
+                        self.registration,
+                        xact,
+                        scratch)
+
+            # We want the scratch to be removed only after the deinit callback is
             # done. This ensures that the scratch is still available for
             # the client within the 'on_deinit' callback.
             self.scheduler.exec_soon(
@@ -1800,7 +1817,7 @@ class AppConfEventAdapter(EventAdapter):
                     xact.id,
                     None)
 
-        return wrapper if on_deinit is not None else None
+        return wrapper
 
     def on_validate(self):
         """
@@ -2048,11 +2065,26 @@ class LoopExceptionHandler(object):
         """
         self._callbacks[key][handle] = callback
 
+    def clear_callback(self, key, handle):
+        """
+        If the handle still exists then clean up the handle to prevent
+        memory leak.
+        """
+        if handle in self._callbacks[key]:
+            del self._callbacks[key][handle]
+
     def register_handle_clbk(self, handle, callback):
         """
         A convenience method for register callback for asyncio.Handle
         """
         self.register_callback(self.KEY_HANDLE, handle, callback)
+
+    def clear_handle_clbk(self, handle):
+        """
+        A convenience method for deregister callback for asyncio.Handle
+        """
+        self.clear_callback(self.KEY_HANDLE, handle)
+
 
 
 class DTS(object):
@@ -2202,7 +2234,7 @@ class DTS(object):
         self._log_hdl = tasklet_info.get_rwlog_ctx()
         self._log.addHandler(
                 rwlogger.RwLogger(
-                    category="dts",
+                    subcategory="dts",
                     log_hdl=self._log_hdl,
                     )
                 )
@@ -2295,14 +2327,22 @@ class DTS(object):
         if msg is not None and not isinstance(msg, gi.repository.ProtobufC.Message):
             msg = msg.to_pbcm()
 
-        xact = self._dts.query(
-                xpath,
-                action,
-                flags,
-                on_response,
-                None,
-                msg)
-        yield from future
+        if flags & rwdts.XactFlag.RET_PAYLOAD and \
+                   (action == rwdts.QueryAction.CREATE or action == rwdts.QueryAction.UPDATE):
+            qri = QueryResultIterator(self._loop)
+            xact = self._dts.query(xpath, action, flags, qri, None, msg)
+
+            yield from qri.ready
+            return qri
+        else :
+            xact = self._dts.query(
+                    xpath,
+                    action,
+                    flags,
+                    on_response,
+                    None,
+                    msg)
+            yield from future
 
     @asyncio.coroutine
     def _read_rpc(self, xpath, action, flags, msg=None):
@@ -2351,11 +2391,12 @@ class DTS(object):
         @param msg    - GI Box to store at the specified xpath
         @raises       - TransactionAborted, TransactionFailed
         """
-        yield from self._create_update_delete(
+        ret = yield from self._create_update_delete(
                 xpath,
                 rwdts.QueryAction.CREATE,
                 flags,
                 msg)
+        return ret
 
     @asyncio.coroutine
     def query_read(self, xpath, flags=0):
@@ -2387,11 +2428,12 @@ class DTS(object):
         @param msg    - Updated GI Box to store at specified xpath
         @raises       - TransactionAborted, TransactionFailed
         """
-        yield from self._create_update_delete(
+        ret = yield from self._create_update_delete(
                 xpath,
                 rwdts.QueryAction.UPDATE,
                 flags,
                 msg)
+        return ret
 
     @asyncio.coroutine
     def query_delete(self, xpath, flags):

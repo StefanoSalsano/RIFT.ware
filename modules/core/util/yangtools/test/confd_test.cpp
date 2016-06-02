@@ -17,6 +17,7 @@
 #include "rw_ut_confd.hpp"
 #include "rwut.h"
 #include "yangncx.hpp"
+#include "rw_confd_annotate.hpp"
 
 #include <boost/scope_exit.hpp>
 
@@ -31,9 +32,6 @@
 #include "flat-conversion.confd.h"
 #include "flat-conversion.pb-c.h"
 #include "yangtest_common.hpp"
-
-extern char **g_argv;
-extern int g_argc;
 
 static const int CONFD_TEST_CONNECT_MAX_TRIES = 3;
 using namespace rw_yang;
@@ -213,9 +211,9 @@ TEST(ConfdUtTranslation, DomToConfd)
       ns_map[listp[i].uri] = listp[i].hash;
     }
     
-    model->annotate_nodes(ns_map, confd_str2hash,
-                          YANGMODEL_ANNOTATION_CONFD_NS,
-                          YANGMODEL_ANNOTATION_CONFD_NAME );
+    rw_confd_annotate_ynodes (model, ns_map, confd_str2hash,
+                              YANGMODEL_ANNOTATION_CONFD_NS,
+                              YANGMODEL_ANNOTATION_CONFD_NAME );
 
 
   // Create a DOM
@@ -347,9 +345,9 @@ TEST(ConfdUtTranslation, FindHkeyPath)
       ns_map[listp[i].uri] = listp[i].hash;
     }
 
-    model->annotate_nodes(ns_map, confd_str2hash,
-                          YANGMODEL_ANNOTATION_CONFD_NS,
-                          YANGMODEL_ANNOTATION_CONFD_NAME );
+    rw_confd_annotate_ynodes (model, ns_map, confd_str2hash,
+                              YANGMODEL_ANNOTATION_CONFD_NS,
+                              YANGMODEL_ANNOTATION_CONFD_NAME );
     
     
     // Create a DOM
@@ -630,9 +628,9 @@ TEST(ConfdUtTranslation, ConfdNewBuilder)
       ns_map[listp[i].uri] = listp[i].hash;
     }
     
-    model->annotate_nodes(ns_map, confd_str2hash,
-                          YANGMODEL_ANNOTATION_CONFD_NS,
-                          YANGMODEL_ANNOTATION_CONFD_NAME );
+    rw_confd_annotate_ynodes (model, ns_map, confd_str2hash,
+                              YANGMODEL_ANNOTATION_CONFD_NS,
+                              YANGMODEL_ANNOTATION_CONFD_NAME );
 
 
   // Create a DOM
@@ -785,9 +783,9 @@ TEST(ConfdUtTranslation, KeylessLists)
       ns_map[listp[i].uri] = listp[i].hash;
     }
 
-    model->annotate_nodes(ns_map, confd_str2hash,
-                          YANGMODEL_ANNOTATION_CONFD_NS,
-                          YANGMODEL_ANNOTATION_CONFD_NAME );
+    rw_confd_annotate_ynodes (model, ns_map, confd_str2hash,
+                              YANGMODEL_ANNOTATION_CONFD_NS,
+                              YANGMODEL_ANNOTATION_CONFD_NAME );
     
     
     // Create a DOM
@@ -948,9 +946,9 @@ TEST(ConfdUtTranslation, DynamicSchema)
     s = model1->register_ypbc_schema(dynamic);
     EXPECT_EQ(s, RW_STATUS_SUCCESS);
 
-    s = model1->annotate_nodes(ns_map, confd_str2hash,
-                          YANGMODEL_ANNOTATION_CONFD_NS,
-                          YANGMODEL_ANNOTATION_CONFD_NAME );
+    s = rw_confd_annotate_ynodes (model1, ns_map, confd_str2hash,
+                                  YANGMODEL_ANNOTATION_CONFD_NS,
+                                  YANGMODEL_ANNOTATION_CONFD_NAME );
 
     EXPECT_EQ(s, RW_STATUS_SUCCESS);
   }

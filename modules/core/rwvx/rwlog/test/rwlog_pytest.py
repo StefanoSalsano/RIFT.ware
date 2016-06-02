@@ -17,34 +17,35 @@ import os
 import sys
 import unittest
 import gi
-gi.require_version('RwGenericYang', '1.0')
 gi.require_version('RwLogYang', '1.0')
+gi.require_version('RwGenericLogYang', '1.0')
 
-from gi.repository import RwGenericYang
 from gi.repository import RwLogYang
+from gi.repository import RwGenericLogYang
 import xmlrunner
 import rwlogger
 
 class TestRwLog(unittest.TestCase):
     def setUp(self):
-        self.rwlogger = rwlogger.RwLogger(category="rw-appmgr-log")   # default cat
+        self.rwlogger = rwlogger.RwLogger(subcategory="rw-appmgr-log")   # default cat
         self.logger = logging.getLogger(__name__)
         self.logger.addHandler(self.rwlogger)
 
     def test_rwlog_basic(self):
         self.assertNotEqual(rwlogger, None)
 
-        ev = RwGenericYang.Warn()
+        ev = RwGenericLogYang.Warn()
         ev.log = "Basic log event"
         self.assertNotEqual(ev, None)
 
-        self.rwlogger.log_event(ev); 
+        self.rwlogger.log_event(ev);
 
     def test_log_warning(self):
         self.logger.warning("TEST...THIS IS A WARNING!")
 
     def test_log_error(self):
         self.logger.error("TEST...THIS IS AN ERROR!")
+
 
 def main(argv=sys.argv[1:]):
     logging.basicConfig(format='TEST %(message)s')

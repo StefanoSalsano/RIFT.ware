@@ -184,10 +184,10 @@ class TestSystemTransforms(unittest.TestCase):
     def test_assign_webservers_confd_host(self):
         webserver1 = rift.vcs.Webserver()
         webserver2 = rift.vcs.Webserver()
-        confd = rift.vcs.Confd()
+        uagent = rift.vcs.uAgentTasklet()
 
         vm1 = rift.vcs.VirtualMachine(ip='127.0.0.1', procs=[webserver1])
-        vm2 = rift.vcs.VirtualMachine(ip='127.0.0.2', procs=[webserver2, confd])
+        vm2 = rift.vcs.VirtualMachine(ip='127.0.0.2', procs=[webserver2, uagent])
 
         sysinfo = rift.vcs.SystemInfo(
                 colonies=[
@@ -206,7 +206,7 @@ class TestSystemTransforms(unittest.TestCase):
         transform(sysinfo)
 
         # After the transform, the webservers both have the IP of the VM that
-        # contains the confd process.
+        # contains the uagent process.
         self.assertEqual('127.0.0.2', webserver1.confd_host)
         self.assertEqual('127.0.0.2', webserver2.confd_host)
 

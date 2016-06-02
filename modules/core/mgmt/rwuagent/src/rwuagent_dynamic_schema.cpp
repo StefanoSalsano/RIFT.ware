@@ -68,7 +68,7 @@ void DynamicSchemaDriver::initiate_module_load()
   rwdts_api_query_ks(dts_handle_,
                      keyspec,
                      RWDTS_QUERY_READ,
-                     RWDTS_FLAG_NONE,
+                     RWDTS_XACT_FLAG_NONE,
                      PendingLoad::initiate_load,
                      reinterpret_cast<gpointer>(&pending_loads_.front()),
                      nullptr);
@@ -141,7 +141,6 @@ rwdts_member_rsp_code_t DynamicSchemaDriver::config_state_change(const rwdts_xac
   std::vector<Module> batch;
   
   for (size_t itr = 0; itr < numel_modules; ++itr) {
-    
     ConfigModule * module = state->modules[itr];
 
     batch.emplace_back(
@@ -233,7 +232,7 @@ void PendingLoad::retry_load(void * instance_pointer)
   rwdts_api_query_ks(instance->dts_handle_,
                      keyspec,
                      RWDTS_QUERY_READ,
-                     RWDTS_FLAG_NONE,
+                     RWDTS_XACT_FLAG_NONE,
                      PendingLoad::initiate_load,
                      reinterpret_cast<gpointer>(instance),
                      nullptr);
@@ -262,7 +261,6 @@ bool all_loaded(size_t application_type, rwdts_xact_t * xact)
 void PendingLoad::update_batch_state(RwMgmtSchema__YangEnum__ModuleState__E new_state)                        
 {
   for (auto module : batch_) {
-
     RWPB_M_MSG_DECL_INIT(RwMgmtSchema_data_RwMgmtSchemaState_DynamicModules, dynamic_module);
     RWPB_M_MSG_DECL_INIT(RwMgmtSchema_data_RwMgmtSchemaState_DynamicModules_Module, dynamic_module_contents);
 
@@ -275,7 +273,7 @@ void PendingLoad::update_batch_state(RwMgmtSchema__YangEnum__ModuleState__E new_
     dynamic_module_contents.fxs_filename      = RW_STRDUP(module.fxs_filename.c_str());
     dynamic_module_contents.so_filename       = RW_STRDUP(module.so_filename.c_str());
     dynamic_module_contents.yang_filename     = RW_STRDUP(module.yang_filename.c_str());
-    dynamic_module_contents.metainfo_filename =  RW_STRDUP(module.metainfo_filename.c_str());
+    dynamic_module_contents.metainfo_filename = RW_STRDUP(module.metainfo_filename.c_str());
     dynamic_module_contents.exported = module.exported;
     dynamic_module_contents.has_exported = true;
 
@@ -362,7 +360,7 @@ void PendingLoad::drive_state_machine(void * instance_pointer)
   rwdts_api_query_ks(instance->dts_handle_,
                      keyspec,
                      RWDTS_QUERY_READ,
-                     RWDTS_FLAG_NONE,
+                     RWDTS_XACT_FLAG_NONE,
                      PendingLoad::update_state,
                      reinterpret_cast<gpointer>(instance),
                      nullptr);
@@ -396,11 +394,11 @@ void PendingLoad::initiate_load(rwdts_xact_t * xact,
     // copy the config module into the list of operational modules
 
     rwdts_xact_t * create_xact = rwdts_api_xact_create(instance->dts_handle_,
-                                                       RWDTS_FLAG_NONE,
+                                                       RWDTS_XACT_FLAG_NONE,
                                                        nullptr,
                                                        nullptr);
     
-    for (auto module : instance->batch_) {
+    for (auto& module : instance->batch_) {
       DataModule dynamic_module;
       DataModuleContents dynamic_module_contents;
 
@@ -631,8 +629,8 @@ AgentDynSchemaHelper::dynamic_schema_version_cb(
   RWPB_T_MSG(RwMgmtSchema_data_RwMgmtSchema_SchemaVersion) schema_version;
   RWPB_F_MSG_INIT(RwMgmtSchema_data_RwMgmtSchema_SchemaVersion, &schema_version);
 
-  schema_version.has_yang_schema_version = 1;
-  schema_version.yang_schema_version = agent_inst->upgrade_ctxt_.schema_version_;
+  schema_version.has_yang_schema_version = 0;
+  //schema_version.yang_schema_version = agent_inst->upgrade_ctxt_.schema_version_;
 
   auto schema_ver_ps = *RWPB_G_PATHSPEC_VALUE(RwMgmtSchema_data_RwMgmtSchema_SchemaVersion);
 
@@ -655,10 +653,9 @@ void
 AgentDynSchemaHelper::dynamic_schema_reg_cb(
     void * app_instance,
     int numel,
-    rwdynschema_module_t * modules)
+    rwdynschema_module_t* modules)
 {
   RW_ASSERT(modules);
-
   std::lock_guard<std::mutex> _(schema_lck_);
   auto *agent_inst = reinterpret_cast<Instance*>(app_instance);
 

@@ -32,7 +32,7 @@ from gi.repository.RwNetnsLogYang import (
         GetNetnsFdFailed
         )
 
-rwlogger = rwlogger.RwLogger(category="rw-netns")   # need better category?
+rwlogger = rwlogger.RwLogger(subcategory="rw-netns")   # need better category?
 logger = logging.getLogger(__name__)
 logger.addHandler(rwlogger)
 

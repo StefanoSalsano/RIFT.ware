@@ -28,9 +28,10 @@ def proxy(request, mgmt_session):
     return mgmt_session.proxy(RwMcYang)
 
 
-@pytest.mark.setup('launchpad')
+@pytest.mark.setup('sdn')
 @pytest.mark.incremental
-class TestMissionControlSetup:
+@pytest.mark.feature('mission-control')
+class TestSdn:
     def test_create_odl_sdn_account(self, proxy, sdn_account_name, sdn_account_type):
         '''Configure sdn account
 
@@ -43,23 +44,60 @@ class TestMissionControlSetup:
         xpath = "/sdn/account[name='%s']" % sdn_account_name
         proxy.create_config(xpath, sdn_account)
 
+        print(sdn_account)
         sdn_account = proxy.get(xpath)
-        assert sdn_account.account_type == sdn_account_type
-        assert sdn_account.name == sdn_account_name
+        #assert sdn_account.account_type == sdn_account_type
+        #assert sdn_account.name == sdn_account_name
 
-    def test_create_cloud_account(self, mgmt_session, cloud_module, cloud_xpath, cloud_account):
-        '''Configure a cloud account
+    def test_show_odl_sdn_account(self, proxy, sdn_account_name, sdn_account_type):
+        '''Showing sdn account configuration
+
+        Asserts:
+            sdn_account.account_type is what was configured
+        '''
+        xpath = "/sdn/account[name='%s']" % sdn_account_name
+        sdn_account = proxy.get_config(xpath)
+        assert sdn_account.account_type == sdn_account_type
+
+    def test_delete_odl_sdn_account(self, proxy, sdn_account_name):
+        '''Unconfigure sdn account'''
+        xpath = "/sdn/account[name='%s']" % sdn_account_name
+        proxy.delete_config(xpath)
+
+
+@pytest.mark.setup('launchpad')
+@pytest.mark.usefixtures('cloud_account')
+@pytest.mark.incremental
+class TestMissionControlSetup:
+
+    def test_create_cloud_accounts(self, mgmt_session, cloud_module, cloud_xpath, cloud_accounts):
+        '''Configure cloud accounts
 
         Asserts:
             Cloud name and cloud type details
         '''
         proxy = mgmt_session.proxy(cloud_module)
-        proxy.create_config(cloud_xpath, cloud_account)
-        xpath = '{}[name="{}"]'.format(cloud_xpath, cloud_account.name)
-        response =  proxy.get(xpath)
-        assert response.name == cloud_account.name
-        assert response.account_type == cloud_account.account_type
+        for cloud_account in cloud_accounts:
+            xpath = '{}[name="{}"]'.format(cloud_xpath, cloud_account.name)
+            proxy.replace_config(xpath, cloud_account)
+            response =  proxy.get(xpath)
+            assert response.name == cloud_account.name
+            assert response.account_type == cloud_account.account_type
 
+    def test_account_connection_status(self, mgmt_session, cloud_module, cloud_xpath, cloud_accounts):
+        '''Verify connection status on each cloud account
+
+        Asserts:
+            Cloud account is successfully connected
+        '''
+
+        proxy = mgmt_session.proxy(cloud_module)
+        for cloud_account in cloud_accounts:
+            proxy.wait_for(
+                '{}[name="{}"]/connection-status/status'.format(cloud_xpath, cloud_account.name),
+                'success',
+                timeout=30,
+                fail_on=['failure'])
 
     @pytest.mark.feature('mission-control')
     def test_create_mgmt_domain(self, proxy, mgmt_domain_name):
@@ -80,7 +118,7 @@ class TestMissionControlSetup:
         assert response.launchpad.state == 'pending'
 
     @pytest.mark.feature('mission-control')
-    def test_create_vm_pool(self, proxy, cloud_account_name, vm_pool_name):
+    def test_create_vm_pool(self, proxy, cloud_account, vm_pool_name):
         '''Configure vm pool
 
         Asserts :
@@ -88,7 +126,7 @@ class TestMissionControlSetup:
         '''
         pool_config = RwMcYang.VmPool(
                 name=vm_pool_name,
-                cloud_account=cloud_account_name,
+                cloud_account=cloud_account.name,
                 dynamic_scaling=True,
         )
         proxy.create_config('/vm-pool/pool', pool_config)
@@ -99,7 +137,7 @@ class TestMissionControlSetup:
 
 
     @pytest.mark.feature('mission-control')
-    def test_assign_vm_resource_to_vm_pool(self, proxy, cloud_account_name, vm_pool_name, launchpad_vm_id):
+    def test_assign_vm_resource_to_vm_pool(self, proxy, cloud_account, vm_pool_name, launchpad_vm_id):
         '''Configure a vm resource by adding it to a vm pool
 
         Asserts:
@@ -108,7 +146,7 @@ class TestMissionControlSetup:
             Cloud account and vm pool agree on available resources
             Configured resource is reflected as assigned in operational data post assignment
         '''
-        account = proxy.get("/cloud-account/account[name='%s']" % cloud_account_name)
+        account = proxy.get("/cloud-account/account[name='%s']" % cloud_account.name)
         if launchpad_vm_id:
             cloud_vm_ids = [vm.id for vm in account.resources.vm if vm.id == launchpad_vm_id]
         else:
@@ -127,7 +165,7 @@ class TestMissionControlSetup:
 
         pool_config = RwMcYang.VmPool.from_dict({
                 'name':vm_pool_name,
-                'cloud_account':cloud_account_name,
+                'cloud_account':cloud_account.name,
                 'dynamic_scaling': True,
                 'assigned':[{'id':available_ids[0]}]})
         proxy.replace_config("/vm-pool/pool[name='%s']" % vm_pool_name, pool_config)
@@ -138,7 +176,7 @@ class TestMissionControlSetup:
 
 
     @pytest.mark.feature('mission-control')
-    def test_create_network_pool(self, proxy, cloud_account_name, network_pool_name):
+    def test_create_network_pool(self, proxy, cloud_account, network_pool_name):
         '''Configure network pool
 
         Asserts :
@@ -146,7 +184,7 @@ class TestMissionControlSetup:
         '''
         pool_config = RwMcYang.NetworkPool(
                 name=network_pool_name,
-                cloud_account=cloud_account_name,
+                cloud_account=cloud_account.name,
                 dynamic_scaling=True,
         )
 
@@ -190,19 +228,9 @@ class TestMissionControlSetup:
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 @pytest.mark.depends('launchpad')
 class TestMissionControl:
-
-    def test_show_odl_sdn_account(self, proxy, sdn_account_name, sdn_account_type):
-        '''Showing sdn account configuration
-
-        Asserts:
-            sdn_account.account_type is what was configured
-        '''
-        xpath = "/sdn/account[name='%s']" % sdn_account_name
-        sdn_account = proxy.get_config(xpath)
-        assert sdn_account.account_type == sdn_account_type
-
 
     @pytest.mark.feature('mission-control')
     def test_launchpad_stats(self, proxy, mgmt_domain_name):
@@ -235,6 +263,7 @@ class TestMissionControl:
         assert int(create_time) > 0
 
 @pytest.mark.teardown('launchpad')
+@pytest.mark.usefixtures('cloud_account')
 @pytest.mark.incremental
 class TestMissionControlTeardown:
 
@@ -306,13 +335,10 @@ class TestMissionControlTeardown:
         xpath = "/network-pool/pool[name='%s']" % network_pool_name
         proxy.delete_config(xpath)
 
-    def test_delete_odl_sdn_account(self, proxy, sdn_account_name):
-        '''Unconfigure sdn account'''
-        xpath = "/sdn/account[name='%s']" % sdn_account_name
-        proxy.delete_config(xpath)
 
-    def test_delete_cloud_account(self, mgmt_session, cloud_module, cloud_xpath, cloud_account_name):
+    def test_delete_cloud_accounts(self, mgmt_session, cloud_module, cloud_xpath, cloud_accounts):
         '''Unconfigure cloud_account'''
         proxy = mgmt_session.proxy(cloud_module)
-        xpath = "{}[name='{}']".format(cloud_xpath, cloud_account_name)
-        proxy.delete_config(xpath)
+        for cloud_account in cloud_accounts:
+            xpath = "{}[name='{}']".format(cloud_xpath, cloud_account.name)
+            proxy.delete_config(xpath)

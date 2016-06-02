@@ -56,6 +56,8 @@ namespace LIBXML {
 RW_CF_TYPE_DEFINE("RW.Cli RWTasklet Component Type", rwcli_component_ptr_t);
 RW_CF_TYPE_DEFINE("RW.Cli RWTasklet Instance Type", rwcli_instance_ptr_t);
 
+static const char* RW_CLI_BASE_MANIFEST = "rw.cli.xml";
+
 /*
  * Generic error handler to supress the generic errors raised by libxml
  */
@@ -148,9 +150,30 @@ void RwCliParser::mode_enter(ParseNode::ptr_t&& result_tree,
 
 }
 
+bool RwCliParser::config_behavioral (const ParseLineResult& r)
+{
+  RW_ASSERT (BaseCli::STATE_CONFIG != state_);
+
+  state_ = BaseCli::STATE_CONFIG;
+  // Reset flags if only mode paths were allowed
+  current_mode_->top_parse_node_->flags_.clear_inherit(ParseFlags::MODE_PATH);
+  current_mode_->top_parse_node_->flags_.set_inherit(ParseFlags::CONFIG_ONLY);
+  setprompt();
+
+  // All show commands in config mode must print in config cli format
+  show_node_->set_cli_print_hook(rw_cli.config_print_hook_.c_str());
+  show_node_->flags_.set(ParseFlags::PRINT_HOOK_STICKY);
+
+  return true;
+}
+
 bool RwCliParser::config_exit()
 {
   bool can_exit = true;
+
+  // Reset the show node print hook attributes
+  show_node_->set_cli_print_hook(nullptr);
+  show_node_->flags_.clear(ParseFlags::PRINT_HOOK_STICKY);
 
   // If there are uncommitted changes, then ask before exiting config mode
   if (rw_cli.has_candidate_store_ && uncommitted_changes_) {
@@ -246,14 +269,27 @@ void RwCliParser::enhance_behaviorals()
   manifest_keyword->set_callback(new CallbackRwCli(rw_cli, &RwCLI::show_manifest));
   cli_keyword->add_descendent (manifest_keyword);
   
+  ParseNodeFunctional *transport_keyword =
+      new ParseNodeFunctional(*this, "transport", cli_keyword);
+  
+  help = "Show CLI Transport mode";
+  transport_keyword->help_short_set(help);
+  transport_keyword->help_full_set(help);
+  transport_keyword->set_callback(new CallbackRwCli
+                                (rw_cli, &RwCLI::show_cli_transport));
+
+  cli_keyword->add_descendent(transport_keyword);
+
   show_node_->add_descendent(cli_keyword);
 
   ParseNodeFunctional *cfg_keyword = new ParseNodeFunctional (*this, "config", show_node_.get());
   help = "Show the configuration";
   cfg_keyword->help_short_set (help);
   cfg_keyword->help_full_set (help);
-  cfg_keyword->set_cli_print_hook("rwcli_plugin:config_writer");
   cfg_keyword->set_callback(new CallbackRwCli(rw_cli, &RwCLI::show_config_text));
+  if (!rw_cli.config_print_hook_.empty()) {
+    cfg_keyword->set_cli_print_hook(rw_cli.config_print_hook_.c_str());
+  }
   
   ParseNodeFunctional *text_keyword = new ParseNodeFunctional (*this, "text", cfg_keyword);
   help = "Show configuration in text mode";
@@ -267,8 +303,10 @@ void RwCliParser::enhance_behaviorals()
   ParseNodeFunctional *xml_keyword = new ParseNodeFunctional (*this, "xml", cfg_keyword);
   help = "Show configuration in xml mode";
   xml_keyword->help_short_set(help);
-  xml_keyword->set_cli_print_hook(".:pretty_print_xml");
   xml_keyword->help_full_set(help);
+  if (!rw_cli.pretty_print_xml_hook_.empty()) {
+    xml_keyword->set_cli_print_hook(rw_cli.pretty_print_xml_hook_.c_str());
+  }
 
   xml_keyword->set_callback(new CallbackRwCli(rw_cli, &RwCLI::show_config_xml));
 
@@ -282,44 +320,30 @@ void RwCliParser::enhance_behaviorals()
     help = "Show the candidate configuration";
     cand_keyword->help_short_set (help);
     cand_keyword->help_full_set (help);
-    cand_keyword->set_cli_print_hook("rwcli_plugin:config_writer");
     cand_keyword->set_callback(new CallbackBaseCli(this, 
                                     &BaseCli::show_candidate_config));
+    if (!rw_cli.config_print_hook_.empty()) {
+      cand_keyword->set_cli_print_hook(rw_cli.config_print_hook_.c_str());
+    }
     show_node_->add_descendent(cand_keyword);
   }
 
-  ParseNodeFunctional *commit_node = static_cast<ParseNodeFunctional*>(
-                                          commit_node_.get());
-  if (commit_node) {
-    commit_node->set_cli_print_hook("rwcli_plugin:default_print");
-  }
+  // Set the Default print hook on the Parse Root Node. If no print hook is set
+  // on the other parse nodes, the default will be applied
+  root_parse_node_->set_cli_print_hook(rw_cli.default_print_hook_.c_str());
 
-  ParseNodeFunctional *discard_node = static_cast<ParseNodeFunctional*>(
-                                          discard_node_.get());
-  if (discard_node) {
-    discard_node->set_cli_print_hook("rwcli_plugin:default_print");
-  }
-
-  if (show_candidate_node_) {
-    show_candidate_node_->set_cli_print_hook("rwcli_plugin:config_writer");
-  }
+  // 'no' behavior has a default print hook (cannot be overridden)
+  no_node_->flags_.set(ParseFlags::PRINT_HOOK_STICKY);
+  no_node_->set_cli_print_hook(rw_cli.default_print_hook_.c_str());
 }
 
 bool RwCliParser::show_config(const ParseLineResult& r)
 {
-  if (state_ == BaseCli::STATE_CONFIG) {
-    // In config mode show, the print should be always in CLI format
-    r.cli_print_hook_string_ = "rwcli_plugin:config_writer";
-  }
   return (rw_cli.process_cli_command (r, nc_get_config));
 }
 
 bool RwCliParser::show_candidate_config(const ParseLineResult& r)
 {
-  if (state_ == BaseCli::STATE_CONFIG) {
-    // In config mode show, the print should be always in CLI format
-    r.cli_print_hook_string_ = "rwcli_plugin:config_writer";
-  }
   return rw_cli.process_cli_command(r, nc_get_candidate_config);
 }
 
@@ -331,18 +355,26 @@ bool RwCliParser::show_operational (const ParseLineResult& r)
 
 bool RwCliParser::process_config (const ParseLineResult& r)
 {
-    if (r.cli_print_hook_string_ == nullptr) {
-      // Edit Config mode mostly display the results, it can be assumed that
-      // they will need a default print always
-      r.cli_print_hook_string_ = "rwcli_plugin:default_print";
-    }
-    return (rw_cli.process_cli_command (r, nc_edit_config));
+  // ATTN: Hack to introduce Role Based Access control for 'cloud' config command
+  if (rw_cli.user_mode_ == RWCLI_USER_MODE_OPER && 
+      !r.line_words_.empty() &&
+      r.line_words_[0] == "cloud") {
+    rw_cli.err_stream << "ERROR: Insufficient privilege to execute the command."
+                      << std::endl;
+    return true;
+  }
+  return (rw_cli.process_cli_command (r, nc_edit_config));
 }
 
 bool RwCliParser::no_behavioral (const ParseLineResult& r)
 {
-  if (r.cli_print_hook_string_ == nullptr) {
-    r.cli_print_hook_string_ = "rwcli_plugin:default_print";
+  // ATTN: Hack to introduce Role Based Access control for 'cloud' config command
+  if (rw_cli.user_mode_ == RWCLI_USER_MODE_OPER && 
+      r.line_words_.size() >= 2 &&
+      r.line_words_[1] == "cloud") {
+    rw_cli.err_stream << "ERROR: Insufficient privilege to execute the command."
+                      << std::endl;
+    return true;
   }
   return (rw_cli.process_cli_command (r, nc_edit_config, ec_delete));
 }
@@ -473,7 +505,7 @@ rw_status_t CliManifest::add_yang_module(char *module_name)
   return rw_cli.schema_mgr_->load_schema(module_name);
 }
 
-rw_status_t CliManifest::add_cli_print_hook(const char *path, const char *hook)
+CliManifest::ReadingStatus CliManifest::add_cli_print_hook(const char *path, const char *hook)
 {
   RW_ASSERT(path);
   RW_ASSERT(hook);
@@ -488,16 +520,16 @@ rw_status_t CliManifest::add_cli_print_hook(const char *path, const char *hook)
   ParseLineResult r(*tmp_parser, spaced_path.c_str(), ParseLineResult::ENTERKEY_MODE);
 
   if (!r.success_) {
-    return RW_STATUS_FAILURE;
+    return ReadingStatus(RW_STATUS_FAILURE, r.error_);
   }
 
   cli_print_hooks[path] = hook;
 
   r.result_node_->set_cli_print_hook(cli_print_hooks[path].c_str());
-  return RW_STATUS_SUCCESS;
+  return ReadingStatus(RW_STATUS_FAILURE, r.error_);
 }
 
-rw_status_t CliManifest::add_cli_mode(const char *mode, const char *display)
+CliManifest::ReadingStatus CliManifest::add_cli_mode(const char *mode, const char *display)
 {
   // Make a new base cli that will skip keys in completions
   RwCliParser tmp_parser(*(rw_cli.schema_mgr_->model_), rw_cli, 
@@ -573,15 +605,9 @@ rw_status_t CliManifest::add_plugin(char *plugin,
   return status;
 }
 
-rw_status_t CliManifest::read_cli_manifest(const char* afpath,
-                                           const std::set<std::string> & module_names)
+rw_status_t CliManifest::read_cli_manifest(const char* afpath)
 {
-  LIBXML::xmlXPathContextPtr context;
-  LIBXML::xmlChar *xpath_query;
-  LIBXML::xmlXPathObjectPtr result;
-  LIBXML::xmlNodeSetPtr nodeset;
   LIBXML::xmlDoc *doc;
-  std::list<char *> xsd_filenames;
   rw_status_t status = RW_STATUS_SUCCESS;
 
   xmlSetGenericErrorFunc(NULL, xml_generic_error_handler);
@@ -599,6 +625,54 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath,
   }
 
   mfiles.push_back(name);
+
+  status = read_cli_manifest_common(doc);
+
+  xmlFreeDoc(doc);
+
+  return status;
+}
+
+rw_status_t CliManifest::read_base_cli_manifest(const char* file)
+{
+  rw_status_t status = RW_STATUS_SUCCESS;
+  LIBXML::xmlDoc *doc;
+
+  if (file == nullptr) {
+    return RW_STATUS_SUCCESS;
+  }
+
+  xmlSetGenericErrorFunc(NULL, xml_generic_error_handler);
+
+  doc = xmlReadFile(file, nullptr, 0);
+  if (doc == nullptr) {
+    std::cout << "Error: failed to load " << file << std::endl;
+    return RW_STATUS_FAILURE;
+  }
+
+  mfiles.push_back(file);
+  
+  status = read_cli_manifest_common(doc);
+  if (status != RW_STATUS_SUCCESS) {
+    xmlFreeDoc(doc);
+    return status;
+  }
+
+  status = read_cli_manifest_defaults(doc);
+  xmlFreeDoc(doc);
+
+  return status;
+}
+
+rw_status_t CliManifest::read_cli_manifest_common(
+                  LIBXML::xmlDoc *doc)
+{
+  rw_status_t status = RW_STATUS_SUCCESS;
+  LIBXML::xmlXPathContextPtr context;
+  LIBXML::xmlChar *xpath_query;
+  LIBXML::xmlXPathObjectPtr result;
+  LIBXML::xmlNodeSetPtr nodeset;
+  ReadingStatus reading_status(RW_STATUS_SUCCESS);
 
   /**
    * Read the plugin list from xml specification.
@@ -620,7 +694,11 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath,
       rw_cli.err_stream << "Error: failed to plugin: "
                         << std::string(plugin) << std::endl;
     }
+    xmlFree(plugin);
+    xmlFree(typelib);
   }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
 
   /*
    * Read the yang files from xml specification
@@ -637,7 +715,7 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath,
     LIBXML::xmlNode *node = nodeset->nodeTab[i];
     char *module = (char *)xmlGetProp(node, (xmlChar *) "name");
 
-    if (module_names.find(module) == module_names.end()) {
+    if (rw_cli.module_names_.find(module) == rw_cli.module_names_.end()) {
       continue;
     }
 
@@ -647,7 +725,10 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath,
       rw_cli.err_stream << "Error: failed to add yang module: "
                         << std::string(module) << std::endl;
     }
+    xmlFree(module);
   }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
 
   xpath_query = (xmlChar *) "/cli/namespace-list/namespace";
   context = xmlXPathNewContext(doc);
@@ -666,7 +747,10 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath,
       rw_cli.err_stream << "Error: failed to add namespace: "
                         << std::string(ns) << std::endl;
     }
+    xmlFree(ns);
   }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
 
   /*
    * Read the cli modes and apply them
@@ -682,13 +766,20 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath,
     char *mode = (char *)xmlGetProp(node, (xmlChar *) "src");
     char *display = (char *) xmlGetProp(node, (xmlChar *) "display");
 
-    status = add_cli_mode(mode, display);
+    reading_status = add_cli_mode(mode, display);
 
     if (status != RW_STATUS_SUCCESS) {
       rw_cli.err_stream << "Error: failed to add cli mode: "
-                        << std::string(mode) << std::endl;
+                        << std::string(mode)
+                        << " " << reading_status.message
+                        << std::endl;
     }
+    xmlFree(mode);
+    xmlFree(display);
   }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
+
 
   /*
    * Read the cli print hooks and apply them
@@ -704,14 +795,84 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath,
     char *path = (char *)xmlGetProp(node, (xmlChar *) "path");
     char *hook = (char *) xmlGetProp(node, (xmlChar *) "hook");
 
-    status = add_cli_print_hook(path, hook);
+    reading_status = add_cli_print_hook(path, hook);
 
     if (status != RW_STATUS_SUCCESS) {
       rw_cli.err_stream << "Error: failed to add cli hook: "
-                        << std::string(path) << "[" << 
-                        std::string(hook) << "]" << std::endl;
+                        << std::string(path) << "[" 
+                        << std::string(hook) << "]"
+                        << reading_status.message << std::endl;
     }
+    xmlFree(path);
+    xmlFree(hook);
   }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
+
+  return status;
+}
+
+rw_status_t CliManifest::read_cli_manifest_defaults(
+                  LIBXML::xmlDoc *doc)
+{
+  rw_status_t status = RW_STATUS_SUCCESS;
+  LIBXML::xmlXPathContextPtr context;
+  LIBXML::xmlChar *xpath_query;
+  LIBXML::xmlXPathObjectPtr result;
+  LIBXML::xmlNodeSetPtr nodeset;
+
+  // Populate the defaults
+  xpath_query = (xmlChar *) "/cli/defaults/defaultPrintHook";
+  context = xmlXPathNewContext(doc);
+  result = xmlXPathEvalExpression(xpath_query, context);
+  nodeset = result->nodesetval;
+  if (nodeset->nodeNr) {
+    LIBXML::xmlNode *node = nodeset->nodeTab[0];
+    char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
+    rw_cli.default_print_hook_ = prop;
+    xmlFree(prop);
+  }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
+
+  xpath_query = (xmlChar *) "/cli/defaults/configPrintHook";
+  context = xmlXPathNewContext(doc);
+  result = xmlXPathEvalExpression(xpath_query, context);
+  nodeset = result->nodesetval;
+  if (nodeset->nodeNr) {
+    LIBXML::xmlNode *node = nodeset->nodeTab[0];
+    char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
+    rw_cli.config_print_hook_ = prop;
+    xmlFree(prop);
+  }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
+
+  xpath_query = (xmlChar *) "/cli/defaults/configPrintToFileHook";
+  context = xmlXPathNewContext(doc);
+  result = xmlXPathEvalExpression(xpath_query, context);
+  nodeset = result->nodesetval;
+  if (nodeset->nodeNr) {
+    LIBXML::xmlNode *node = nodeset->nodeTab[0];
+    char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
+    rw_cli.config_print_to_file_hook_ = prop;
+    xmlFree(prop);
+  }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
+
+  xpath_query = (xmlChar *) "/cli/defaults/prettyPrintXmlHook";
+  context = xmlXPathNewContext(doc);
+  result = xmlXPathEvalExpression(xpath_query, context);
+  nodeset = result->nodesetval;
+  if (nodeset->nodeNr) {
+    LIBXML::xmlNode *node = nodeset->nodeTab[0];
+    char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
+    rw_cli.pretty_print_xml_hook_ = prop;
+    xmlFree(prop);
+  }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
 
   return status;
 }
@@ -721,7 +882,10 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath,
  * RW.CLI syntax, initializes the CLI parser, and creates an empty
  * configuration.
  */
-RwCLI::RwCLI(bool no_editline, const char * schema_listing)
+RwCLI::RwCLI(bool no_editline, 
+        const char * schema_listing, 
+        rwcli_transport_mode_t transport_mode,
+        rwcli_user_mode_t user_mode)
 : parent_rw_cli(nullptr),
   xmlmgr(nullptr),
   config(nullptr),
@@ -730,7 +894,9 @@ RwCLI::RwCLI(bool no_editline, const char * schema_listing)
   schema_mgr_(nullptr),
   out_stream(std::cout),
   err_stream(std::cerr),
-  messaging_hook_(nullptr)
+  messaging_hook_(nullptr),
+  transport_mode_(transport_mode),
+  user_mode_(user_mode)
 {
   // Create the syntax model. The other code assumes this exists.
   schema_mgr_ = new SchemaManager();
@@ -742,11 +908,6 @@ RwCLI::RwCLI(bool no_editline, const char * schema_listing)
   parser = new RwCliParser( *(schema_mgr_->model_), *this );
   RW_ASSERT(parser);
   parser->has_candidate_store_ = has_candidate_store_;
-  parser->add_builtins();
-  parser->setprompt();
-  parser->add_behaviorals();
-  add_builtin_cmds();
-
   if (!no_editline) {
     editline =  new CliEditline( *parser, stdin, stdout, stderr );
     editline->nonblocking_mode();
@@ -779,7 +940,13 @@ RwCLI::RwCLI(RwCLI* other)
   schema_mgr_(other->schema_mgr_),
   out_stream(std::cout),
   err_stream(std::cerr),
-  messaging_hook_(other->messaging_hook_)
+  messaging_hook_(other->messaging_hook_),
+  transport_mode_(other->transport_mode_),
+  user_mode_(other->user_mode_),
+  default_print_hook_(other->default_print_hook_),
+  config_print_hook_(other->config_print_hook_),
+  config_print_to_file_hook_(other->config_print_to_file_hook_),
+  pretty_print_xml_hook_(other->pretty_print_xml_hook_)
 {
   RW_ASSERT(other);
   RW_ASSERT(other->schema_mgr_);
@@ -835,6 +1002,19 @@ RwCLI::~RwCLI()
   }
 }
 
+void RwCLI::initialize(const char* base_manifest_file)
+{
+  // The plugin framework must be initialized before this, since the base cli
+  // manifest might load plugins
+  manifest_->read_base_cli_manifest(base_manifest_file);
+
+  // The builtin and behavioral nodes might require default parameters set in
+  // the base cli manifest.
+  parser->add_builtins();
+  parser->setprompt();
+  parser->add_behaviorals();
+  add_builtin_cmds();
+}
 
 bool RwCLI::load_from_xml(const ParseLineResult& r)
 {
@@ -869,7 +1049,7 @@ bool RwCLI::save_config(const ParseLineResult& r)
 
   RW_BCLI_MIN_ARGC_CHECK(&r,4);
 
-  const char* config_str = "<?xml version= \"1.0\" encoding=\"UTF-8\"?> \n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\"/>";
+  const char* config_str = "<?xml version= \"1.0\" encoding=\"UTF-8\"?> \n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\"/>";
   NetconfRsp *rsp = nullptr;
 
   rw_status_t rs = process_cli_command((char*)config_str, &rsp, nc_get_config);
@@ -948,6 +1128,24 @@ bool RwCLI::show_cli_history(const ParseLineResult& r) {
 
   out_stream<< std::endl;
   RW_ASSERT (0 >= history (h, &curr,  H_SET));
+
+  return true;
+}
+
+bool RwCLI::show_cli_transport(const ParseLineResult& r) {
+  UNUSED (r);
+
+  switch(transport_mode_) {
+    case RWCLI_TRANSPORT_MODE_RWMSG:
+      out_stream << "RW.MSG";
+      break;
+    case RWCLI_TRANSPORT_MODE_NETCONF:
+      out_stream << "NETCONF";
+      break;
+    default:
+      out_stream << "unknown";
+  }
+  out_stream << std::endl;
 
   return true;
 }
@@ -1094,14 +1292,18 @@ bool RwCLI::handle_built_in_commands(ParseLineResult* r){
       RW_BCLI_MIN_ARGC_CHECK(r,3);
       if (r->line_words_[1] == "config" && r->line_words_[2] == "text") {
         RW_BCLI_MIN_ARGC_CHECK(r,5);
-        r->cli_print_hook_string_ = "rwcli_plugin:config_writer_file";
+        if (!config_print_to_file_hook_.empty()) {
+          r->cli_print_hook_string_ = config_print_to_file_hook_.c_str();
+        }
         save_config(*r);
         return true;
       }
 
       if (r->line_words_[1] == "config" && r->line_words_[2] == "fooxml") {
         RW_BCLI_MIN_ARGC_CHECK(r,5);
-        r->cli_print_hook_string_ = ".:pretty_print_xml_file";
+        if (!pretty_print_xml_hook_.empty()) {
+          r->cli_print_hook_string_ = pretty_print_xml_hook_.c_str();
+        }
         save_config(*r);
         return true;
       }
@@ -1279,9 +1481,12 @@ rw_status_t RwCLI::process_cli_command(char *command,
   req.has_operation = 1;
   req.operation = op;
 
+  // For Netconf mode ec_delete is not used
+  // In RW.NSG mode with XML-Agent, ec_delete is not required
+  // XML-Agent during copy-merge checks the operation=delete
   if (nc_edit_config == op) {
     req.has_edit_config_operation = 1;
-    req.edit_config_operation = ec;
+    req.edit_config_operation = ec_merge;
   }
 
   if (messaging_hook_) {
@@ -1548,7 +1753,7 @@ void RwCLI::add_builtin_cmds()
   help = "save configuration in text mode";
   text_keyword->help_short_set(help);
   text_keyword->help_full_set(help);
-  text_keyword->set_cli_print_hook("rwcli_plugin:config_writer_file");
+  text_keyword->set_cli_print_hook(config_print_to_file_hook_.c_str());
 
   text_keyword->set_callback(new CallbackRwCli(*this, &RwCLI::save_config));
 
@@ -1649,12 +1854,17 @@ bool RwCLI::load_manifest_files()
     fs::path fn = path.filename();
     std::string ext;
 
+    if (fn == RW_CLI_BASE_MANIFEST) {
+      // Already loaded
+      continue;
+    }
+
     for (; !fn.extension().empty(); fn = fn.stem()) {
       ext = fn.extension().string() + ext;
     }
 
     if (ext == ".cli.xml") {
-      if (manifest_->read_cli_manifest(path.string().c_str(), module_names_) != RW_STATUS_SUCCESS) {
+      if (manifest_->read_cli_manifest(path.string().c_str()) != RW_STATUS_SUCCESS) {
         return false;
       }
     }
@@ -1688,7 +1898,7 @@ bool RwCLI::load_schema_modules(const char * schema_listing_filename)
 bool RwCLI::load_manifest(const char *name)
 {
   /// Load the objects from cli manifest into the CLI
-  auto status = manifest_->read_cli_manifest(name, module_names_);
+  auto status = manifest_->read_cli_manifest(name);
   return (status == RW_STATUS_SUCCESS);
 }
 
@@ -1911,7 +2121,10 @@ xsdcli_instance_init(rwcli_component_ptr_t component,
   const bool has_editline = false;
 
   // Create a RIFT_Cli instance
-  RwCLI *rw_cli = new RwCLI(has_editline, nullptr);
+  RwCLI *rw_cli = new RwCLI(has_editline, 
+                          nullptr,
+                          RWCLI_TRANSPORT_MODE_RWMSG,
+                          RWCLI_USER_MODE_NONE);
   instance->rwcli = rw_cli;
 
   status = rw_cli->initialize_plugin_framework();
@@ -1948,15 +2161,27 @@ xsdcli_instance_start(rwcli_component_ptr_t component,
 
 static RwCLI* rwcli_zsh_instance = NULL;
 
-int rwcli_zsh_plugin_init(const char * schema_listing)
+int rwcli_zsh_plugin_init(
+        const char * schema_listing,
+        rwcli_transport_mode_t transport_mode,
+        rwcli_user_mode_t user_mode)
 {
   rw_status_t status;
   const bool no_editline = true;
 
-  rwcli_zsh_instance = new RwCLI(no_editline, schema_listing);
+  rwcli_zsh_instance = new RwCLI(no_editline, 
+                              schema_listing,
+                              transport_mode,
+                              user_mode);
 
   status = rwcli_zsh_instance->initialize_plugin_framework();
   RW_ASSERT(status == RW_STATUS_SUCCESS);
+
+  std::string base_manifest = rwcli_zsh_instance->schema_mgr_->get_cli_manifest_dir();
+  base_manifest += "/";
+  base_manifest += RW_CLI_BASE_MANIFEST;
+
+  rwcli_zsh_instance->initialize(base_manifest.c_str());
 
   rwcli_zsh_instance->component = NULL;
   rwcli_zsh_instance->instance = NULL;

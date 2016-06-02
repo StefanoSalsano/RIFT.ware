@@ -49,104 +49,6 @@ class ConfigManagerROifConnectionError(Exception):
 class ScriptError(Exception):
     pass
 
-class ConfigManagerROif(object):
-
-    def __init__(self, log, loop, parent):
-        self._log = log
-        self._loop = loop
-        self._parent = parent
-        self._manager = None
-
-        try:
-            self._model = RwYang.Model.create_libncx()
-            self._model.load_schema_ypbc(nsrY.get_schema())
-            self._model.load_schema_ypbc(vnfrY.get_schema())
-        except Exception as e:
-            self._log.error("Error generating models %s", str(e))
-
-        self.ro_config = self._parent._config.ro_config
-
-    @property
-    def manager(self):
-        if self._manager is None:
-            raise
-
-        return self._manager
-
-    @asyncio.coroutine
-    def connect(self, timeout_secs=60):
-        ro_cfg = self.ro_config
-        start_time = time.time()
-        while (time.time() - start_time) < timeout_secs:
-
-            try:
-                self._log.info("Attemping Resource Orchestrator netconf connection.")
-
-                self._manager = yield from ncclient.asyncio_manager.asyncio_connect(
-                    loop=self._loop,
-                    host=ro_cfg['ro_ip_address'],
-                    port=ro_cfg['ro_port'],
-                    username=ro_cfg['ro_username'],
-                    password=ro_cfg['ro_password'],
-                    allow_agent=False,
-                    look_for_keys=False,
-                    hostkey_verify=False,
-                )
-                self._log.info("Connected to Resource Orchestrator netconf")
-                return
-
-            except ncclient.transport.errors.SSHError as e:
-                self._log.error("Netconf connection to Resource Orchestrator ip %s failed: %s",
-                                  ro_cfg['ro_ip_address'], str(e))
-
-            yield from asyncio.sleep(2, loop=self._loop)
-
-        self._manager = None
-        raise ConfigManagerROifConnectionError(
-            "Failed to connect to Resource Orchestrator within %s seconds" % timeout_secs
-        )
-
-    @asyncio.coroutine
-    def get_nsr(self, id):
-        self._log.debug("get_nsr() locals: %s", locals())
-        xpath = "/ns-instance-opdata/nsr[ns-instance-config-ref='{}']".format(id)
-        #xpath = "/ns-instance-opdata/nsr"
-        self._log.debug("Attempting to get NSR using xpath: %s", xpath)
-        response = yield from self._manager.get(
-                filter=('xpath', xpath),
-                )
-        response_xml = response.data_xml.decode()
-
-        self._log.debug("Received NSR(%s) response: %s", id, str(response_xml))
-
-        try:
-            nsr = nsrY.YangData_Nsr_NsInstanceOpdata_Nsr()
-            nsr.from_xml_v2(self._model, response_xml)
-        except Exception as e:
-            self._log.error("Failed to load nsr from xml e=%s", str(e))
-            return
-
-        self._log.debug("Deserialized NSR response: %s", nsr)
-
-        return nsr.as_dict()
-
-    @asyncio.coroutine
-    def get_vnfr(self, id):
-        xpath = "/vnfr-catalog/vnfr[id='{}']".format(id)
-        self._log.info("Attempting to get VNFR using xpath: %s", xpath)
-        response = yield from self._manager.get(
-                filter=('xpath', xpath),
-                )
-        response_xml = response.data_xml.decode()
-
-        self._log.debug("Received VNFR(%s) response: %s", id, str(response_xml))
-
-        vnfr = vnfrY.YangData_Vnfr_VnfrCatalog_Vnfr()
-        vnfr.from_xml_v2(self._model, response_xml)
-
-        self._log.debug("Deserialized VNFR response: %s", vnfr)
-
-        return vnfr.as_dict()
 
 class ConfigManagerEvents(object):
     def __init__(self, dts, log, loop, parent):
@@ -156,31 +58,9 @@ class ConfigManagerEvents(object):
         self._parent = parent
         self._nsr_xpath = "/cm-state/cm-nsr"
 
-    def register(self):
-        try:
-            self._orif = ConfigManagerROif(self._log, self._loop, self._parent)
-            self.register_cm_rpc()
-        except Exception as e:
-            self._log.debug("Failed to register (%s)", e)
-
-
-    def register_cm_rpc(self):
-
-        try:
-            self._rpc_hdl = self._dts.register(
-                xpath=self._nsr_xpath,
-                handler=rift.tasklets.DTS.RegistrationHandler(
-                    on_prepare=self.prepare_update_nsr),
-                flags=rwdts.Flag.PUBLISHER)
-        except Exception as e:
-            self._log.debug("Failed to register xpath(%s) as (%s)", self._nsr_xpath, e)
-
     @asyncio.coroutine
-    def prepare_update_nsr(self, xact_info, action, ks_path, msg):
-        """ Prepare callback for the RPC """
-        self._log("Received prepare_update_nsr with action=%s, msg=%s", action, msg)
-
-        # Fetch VNFR for each VNFR id in NSR
+    def register(self):
+        pass
 
     @asyncio.coroutine
     def update_vnf_state(self, vnf_cfg, state):
@@ -189,12 +69,20 @@ class ConfigManagerEvents(object):
         
     @asyncio.coroutine
     def apply_vnf_config(self, vnf_cfg):
-        yield from self.update_vnf_state(vnf_cfg, conmanY.RecordState.CFG_DELAY)
-        yield from asyncio.sleep(vnf_cfg['config_delay'], loop=self._loop)
+        self._log.debug("apply_vnf_config VNF:{}"
+                        .format(log_this_vnf(vnf_cfg)))
+        
+        if vnf_cfg['config_delay']:
+            yield from self.update_vnf_state(vnf_cfg, conmanY.RecordState.CFG_DELAY)
+            yield from asyncio.sleep(vnf_cfg['config_delay'], loop=self._loop)
+            
         # See if we are still alive!
         if vnf_cfg['nsr_obj'].being_deleted:
             # Don't do anything, just return
+            self._log.info("VNF : %s is being deleted, skipping configuration!",
+                           log_this_vnf(vnf_cfg))
             return True
+            
         yield from self.update_vnf_state(vnf_cfg, conmanY.RecordState.CFG_SEND)
         try:
             if vnf_cfg['config_method'] == 'netconf':
@@ -263,12 +151,12 @@ class ConfigManagerVNFscriptconf(object):
             script_msg = yield from proc.stdout.read()
             rc = yield from proc.wait()
 
-            self._log.debug("Debug config script output (%s)", script_msg)
             if rc != 0:
                 raise ScriptError(
                     "script config returned error code : %s" % rc
                     )
 
+            self._log.debug("config script output (%s)", script_msg)
         except Exception as e:
             self._log.error("Error (%s) while executing script config for VNF: %s",
                             str(e), log_this_vnf(vnf_cfg))

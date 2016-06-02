@@ -13,6 +13,7 @@
 #
 """
 import logging
+import os
 import time
 
 import rift.auto.proxy
@@ -31,6 +32,8 @@ from gi.repository import (
         RwManifestYang,
         RwVcsYang,
         )
+
+from gi.repository.RwManifestYang import RwmgmtAgentMode
 
 SYSTEM_STARTUP_TIMEOUT_SECS = 5*60
 
@@ -276,3 +279,16 @@ class VcsComponent(object):
         vstop_output.from_xml(yang_model.yang_model, response_xml)
 
         return vstop_output
+
+
+def default_agent_mode():
+    """Determine the default management agent mode."""
+
+    rift_install = os.environ['RIFT_INSTALL']
+    confd_conf = os.path.join(rift_install, "etc/rw_confd_prototype.conf")
+
+    if os.path.exists(confd_conf):
+        return RwmgmtAgentMode.CONFD
+    else:
+        return RwmgmtAgentMode.RWXML
+

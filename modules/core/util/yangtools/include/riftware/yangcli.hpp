@@ -115,6 +115,7 @@ class ParseFlags
     DEPRECATED, ///< Use of this node is deprecated
     GET_GENERIC, ///< Behavioral node used for Getting config or operational data
     GET_CONFIG, ///< Behavioral node used in Get-Config operation
+    PRINT_HOOK_STICKY, ///< Print Hook at this node cannot be overriden by descendants
     FLAG_end,
 
     FIRST = FLAG_base+1,
@@ -1999,11 +2000,12 @@ class ParseLineResult
 
   /// The parsing was successful
   bool success_;
+  /// The error string describing why the parsing failed
+  std::string error_;
 
   // ATTN: Convert to app_data
-  // Print hook shoudl be mutable as it can be overridden by the application
   /// The most recent cli_print_hook_string
-  mutable const char* cli_print_hook_string_;
+  const char* cli_print_hook_string_;
 
   // ATTN: Convert to app_data
   /// The most recent callback function set
@@ -2216,6 +2218,11 @@ class BaseCli
    */
   virtual void handle_parse_error(const parse_result_t, const std::string);
   bool show_behavioral (const ParseLineResult& r );
+
+  /**
+   * Invoked when CLI enters the config mode.
+   * @return true on successful completion, false otherwise
+   */
   virtual bool config_behavioral (const ParseLineResult& r);
 
   virtual bool no_behavioral (const ParseLineResult& r);

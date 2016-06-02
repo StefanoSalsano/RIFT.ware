@@ -280,7 +280,9 @@ struct rwmain_gi * rwmain_gi_new(rwpb_gi_RwManifest_Manifest * manifest_box)
   struct rwmain_gi * rwmain;
   struct rwvx_instance_s * rwvx;
   vcs_manifest * manifest;
-
+  extern char **environ;
+  char *s;
+  int i;
   char * parent = NULL;
   char * ip_address = NULL;
 
@@ -289,15 +291,29 @@ struct rwmain_gi * rwmain_gi_new(rwpb_gi_RwManifest_Manifest * manifest_box)
   }
 
   rwvx = rwvx_instance_alloc();
+   
   RW_ASSERT(rwvx);
 
+  s = *environ;
+  for (i=0; s; i++) {
+    rwvx->rwvcs->envp = realloc(rwvx->rwvcs->envp, (i+1)*sizeof(char*));
+    rwvx->rwvcs->envp[i] = strdup(s);
+    s = *(environ+i+1);
+  }
+  rwvx->rwvcs->envp = realloc(rwvx->rwvcs->envp, (i+1)*sizeof(char*));
+  rwvx->rwvcs->envp[i] = NULL;
+
+ 
   RW_ASSERT(manifest_box->box.message->descriptor == RWPB_G_MSG_PBCMD(RwManifest_Manifest));
   manifest = (vcs_manifest *)manifest_box->box.message;
   sanitize_manifest(manifest);
-  rwvx->rwvcs->pb_rwmanifest = (vcs_manifest *)protobuf_c_message_duplicate(
+  char *manifest_file = getenv("RW_MANIFEST");
+  if (!manifest_file) {
+    rwvx->rwvcs->pb_rwmanifest = (vcs_manifest *)protobuf_c_message_duplicate(
       NULL,
       &manifest->base,
       manifest->base.descriptor);
+  }
   if (g_pb_rwmanifest) {
     protobuf_c_message_free_unpacked(NULL, &g_pb_rwmanifest->base);
   }
@@ -305,7 +321,12 @@ struct rwmain_gi * rwmain_gi_new(rwpb_gi_RwManifest_Manifest * manifest_box)
                     NULL, &manifest->base,
                     manifest->base.descriptor); /* used for module / unit test hack */
 
-  status = rwvcs_instance_init(rwvx->rwvcs, getenv("RW_MANIFEST"), rwmain_gi_function);
+  if (manifest_file) {
+     status = rwvcs_instance_init(rwvx->rwvcs, getenv("RW_MANIFEST"), main_function);
+  }
+  else {
+    status = rwvcs_instance_init(rwvx->rwvcs, NULL, rwmain_gi_function);
+  }
   RW_ASSERT(status == RW_STATUS_SUCCESS);
 
   char *component_name = NULL;

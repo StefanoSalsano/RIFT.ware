@@ -42,46 +42,46 @@ class RwNsPlugin(rwnsmplugin.NsmPluginBase):
         pass
 
     @asyncio.coroutine
-    def instantiate_ns(self, nsr, xact):
+    def instantiate_ns(self, nsr, config_xact):
         """
         Instantiate NSR with the passed nsr id
         """
-        yield from nsr.instantiate(xact)
+        yield from nsr.instantiate(config_xact)
 
     @asyncio.coroutine
-    def instantiate_vnf(self, nsr, vnfr, xact):
+    def instantiate_vnf(self, nsr, vnfr):
         """
         Instantiate NSR with the passed nsr id
         """
-        yield from vnfr.instantiate(nsr, xact)
+        yield from vnfr.instantiate(nsr)
 
     @asyncio.coroutine
-    def instantiate_vl(self, nsr, vlr, xact):
+    def instantiate_vl(self, nsr, vlr):
         """
         Instantiate NSR with the passed nsr id
         """
-        yield from vlr.instantiate(xact)
+        yield from vlr.instantiate()
 
     @asyncio.coroutine
-    def terminate_ns(self, nsr, xact):
+    def terminate_ns(self, nsr):
         """
         Terminate the network service
         """
         pass
 
     @asyncio.coroutine
-    def terminate_vnf(self, vnfr, xact):
+    def terminate_vnf(self, vnfr):
         """
         Terminate the network service
         """
-        yield from vnfr.terminate(xact)
+        yield from vnfr.terminate()
 
     @asyncio.coroutine
-    def terminate_vl(self, vlr, xact):
+    def terminate_vl(self, vlr):
         """
         Terminate the virtual link
         """
-        yield from vlr.terminate(xact)
+        yield from vlr.terminate()
 
 
 class NsmPlugins(object):

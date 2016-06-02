@@ -14,7 +14,11 @@
  * @brief Test program for Generic tree iterators
  */
 
+#include "rw_tree_iter.h"
+#include "flat-conversion.confd.h"
+#include "confd_xml.h"
 #include "yangtest_common.hpp"
+#include "rw_confd_annotate.hpp"
 #include <regex>
 #include <boost/regex.hpp>
 #include <boost/algorithm/string.hpp>
@@ -245,16 +249,6 @@ rw_tree_walker_status_t Find (Haystack *haystack, Needle *needle,
 using namespace rw_yang;
 namespace RE = boost;
 
-                                 
-std::string get_rift_root()
-{
-  const char* rift_root = getenv("RIFT_ROOT");
-  if (nullptr == rift_root) {
-    std::cerr << "Unable to find $RIFT_ROOT" << std::endl;
-    throw std::exception();
-  }
-  return std::string(rift_root);
-}
 
 void rw_test_build_dom_from_file (const char *filename,
                              XMLDocument::uptr_t &dom)
@@ -409,7 +403,6 @@ build_keypath (confd_hkeypath_t *path)
   path->v[length][1].type = C_NOEXISTS;
 }
 
-
 TEST(ConfdHkeyIteration, BasicTests)
 {
   confd_hkeypath_t path;
@@ -471,10 +464,10 @@ rw_status_t rw_test_load_confd_schema (const char *harness_name)
   return RW_STATUS_SUCCESS;
 }
 
-rw_status_t rw_test_build_confd_array(const char *harness_name,
-                                      confd_tag_value_t **array,
-                                      size_t            *count,
-                                      struct confd_cs_node **ret_cs_node)
+static rw_status_t rw_test_build_confd_array(const char *harness_name,
+                                             confd_tag_value_t **array,
+                                             size_t            *count,
+                                             struct confd_cs_node **ret_cs_node)
 {
 
   XMLManager::uptr_t mgr(xml_manager_create_xerces());
@@ -517,10 +510,9 @@ rw_status_t rw_test_build_confd_array(const char *harness_name,
     ns_map[listp[i].uri] = listp[i].hash;
   }
   
-  model->annotate_nodes(ns_map, confd_str2hash,
-                        YANGMODEL_ANNOTATION_CONFD_NS,
-                        YANGMODEL_ANNOTATION_CONFD_NAME );
-  
+  rw_confd_annotate_ynodes (model, ns_map, confd_str2hash,
+                            YANGMODEL_ANNOTATION_CONFD_NS,
+                            YANGMODEL_ANNOTATION_CONFD_NAME );
   
   // Create a DOM
   std::string file_name = get_rift_root() +
@@ -537,7 +529,8 @@ rw_status_t rw_test_build_confd_array(const char *harness_name,
   
   // Test confd to yang node mapping
   YangNode *yn = root_node->get_yang_node();
-  yn->search_child_confd_tags(cs_node->children->ns,
+  rw_confd_search_child_tags (yn,
+                              cs_node->children->ns,
                               cs_node->children->tag);
   
   ConfdTLVBuilder builder(cs_node, true);
@@ -604,9 +597,9 @@ TEST(ConfdUtIteration, BasicTests)
       ns_map[listp[i].uri] = listp[i].hash;
     }
     
-    model->annotate_nodes(ns_map, confd_str2hash,
-                          YANGMODEL_ANNOTATION_CONFD_NS,
-                          YANGMODEL_ANNOTATION_CONFD_NAME );
+    rw_confd_annotate_ynodes (model, ns_map, confd_str2hash,
+                              YANGMODEL_ANNOTATION_CONFD_NS,
+                              YANGMODEL_ANNOTATION_CONFD_NAME );
 
 
   // Create a DOM
@@ -630,16 +623,21 @@ TEST(ConfdUtIteration, BasicTests)
   ASSERT_TRUE (yn);
   ASSERT_TRUE (cs_node->children);
 
-  ASSERT_TRUE (yn->search_child_confd_tags(cs_node->children->ns,
-                                           cs_node->children->tag));
+  ASSERT_TRUE ( rw_confd_search_child_tags (yn,
+                                            cs_node->children->ns,
+                                            cs_node->children->tag));
   
   // This test depends on the schema to ensure success
-  ASSERT_FALSE (yn->search_child_confd_tags(cs_node->children->ns + 1, 
-                                            cs_node->children->tag));
+  ASSERT_FALSE ( rw_confd_search_child_tags (yn,
+                                             cs_node->children->ns + 1, 
+                                             cs_node->children->tag));
   // This test depends on the schema to ensure success
-  ASSERT_FALSE (yn->search_child_confd_tags(cs_node->children->ns,
-                                            cs_node->children->tag+1));
-  ASSERT_EQ (model->get_root_node()->search_child_confd_tags (cs_node->ns, cs_node->tag),
+  ASSERT_FALSE ( rw_confd_search_child_tags (yn,
+                                             cs_node->children->ns,
+                                             cs_node->children->tag+1));
+
+  ASSERT_EQ ( rw_confd_search_child_tags (model->get_root_node(),
+                                          cs_node->ns, cs_node->tag),
              yn);
       
   // Translate the DOM to confd
@@ -991,6 +989,8 @@ TEST(RwXMLTreeIterator, BasicTests)
   ASSERT_TRUE(dom.get());
   
   XMLNode* root_node = dom->get_root_node();
+  ASSERT_TRUE(root_node);
+  root_node = root_node->get_first_child();
   ASSERT_TRUE(root_node);
 
   RwXMLTreeIterator iter = RwXMLTreeIterator(root_node);

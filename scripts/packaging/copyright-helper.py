@@ -111,7 +111,7 @@ def init(args):
 						'.git',
 						'.idea',
 						'.install',
-						'1.bundle.js','bundle.js','1.bundle.js.map','bundle.js.map', # we can't insert copyrights on these packed bundles as it will introduce syntax errors from the linebreaks
+						'1.bundle.js','bundle.js','1.bundle.js.map','bundle.js.map','main.js','main.js.map','1.main.js.map', # we can't insert copyrights on these packed bundles as it will introduce syntax errors from the linebreaks
 						'setup/skel', # very old, per JLM
 						'modules/app', # removed in OSM flat git
 						'modules/enablement', # removed in OSM flat git
@@ -146,7 +146,7 @@ def init(args):
 	else:
 		# when --skipchecks=true = we don't care about the exclude files and dirs as we assume the source dir is clean already
 		exclude_dirs = []
-		exclude_files = ['1.bundle.js','bundle.js','1.bundle.js.map','bundle.js.map'] # we can't insert copyrights on these packed bundles as it will introduce syntax errors from the linebreaks
+		exclude_files = ['1.bundle.js','bundle.js','1.bundle.js.map','bundle.js.map','main.js','main.js.map'] # we can't insert copyrights on these packed bundles as it will introduce syntax errors from the linebreaks
 
 
 	exclude_simple = []

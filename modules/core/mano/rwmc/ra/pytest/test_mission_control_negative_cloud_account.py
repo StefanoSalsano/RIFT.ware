@@ -47,6 +47,7 @@ def cloud_account_type(request, cloud_type):
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 class TestCloudAccount:
     '''Tests behaviors and properties common to all cloud account types'''
 
@@ -196,7 +197,7 @@ class TestCloudAccount:
     # Test change cloud type
     #
 
-    def test_create_cloud_account(self, proxy, cloud_account_name, cloud_account):
+    def test_create_cloud_account(self, proxy, cloud_account):
         '''Creates a cloud account for subsequent tests
         
         Arguments:
@@ -208,10 +209,9 @@ class TestCloudAccount:
             None
         
         '''
-        assert cloud_account_name == cloud_account.name
         proxy.create_config('/cloud-account/account', cloud_account)
 
-    def test_change_cloud_account_type(self, proxy, cloud_account_name):
+    def test_change_cloud_account_type(self, proxy, cloud_account):
         '''Test that a cloud account type cannot be changed
 
         Arguments:
@@ -226,7 +226,7 @@ class TestCloudAccount:
             'cloudsim': 'openstack',
             'openstack': 'cloudsim',
         }
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         cloud_account = proxy.get(xpath)
         updated_cloud_account = RwMcYang.CloudAccount.from_dict({
             'name': cloud_account.name,
@@ -235,7 +235,7 @@ class TestCloudAccount:
         with pytest.raises(ProxyRequestError):
             proxy.merge_config(xpath, updated_cloud_account)
 
-    def test_create_cloud_account_with_duplicate_name(self, proxy, cloud_account_name,
+    def test_create_cloud_account_with_duplicate_name(self, proxy,
             cloud_account):
         '''Attempt to create a cloud account with a duplicate name
 
@@ -247,12 +247,11 @@ class TestCloudAccount:
             rift.auto.proxy.ProxyRequestError is raised
 
         '''
-        assert cloud_account_name == cloud_account.name
         with pytest.raises(ProxyRequestError):
             proxy.create_config('/cloud-account/account', cloud_account)
 
     def test_delete_cloud_account_with_vm_pool_with_vm_resources(self, proxy,
-            cloud_account_name, vm_pool_name):
+            cloud_account, vm_pool_name):
         '''Tests that a cloud account cannot be deleted if it has a vm pool
 
         Arguments:
@@ -271,13 +270,13 @@ class TestCloudAccount:
             rift.auto.proxy.ProxyRequestError is raised
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         cloud_account = proxy.get(xpath)
         assert cloud_account is not None
 
         pool_config = RwMcYang.VmPool(
                 name=vm_pool_name,
-                cloud_account=cloud_account_name,
+                cloud_account=cloud_account.name,
                 dynamic_scaling=True,
         )
         proxy.create_config('/vm-pool/pool', pool_config)
@@ -285,7 +284,7 @@ class TestCloudAccount:
         assigned_ids = [vm.id for vm in pool.assigned]
         assert len(assigned_ids) == 0 # pool contained resources before any were assigned
 
-        account = proxy.get("/cloud-account/account[name='%s']" % cloud_account_name)
+        account = proxy.get("/cloud-account/account[name='%s']" % cloud_account.name)
         cloud_vm_ids = [vm.id for vm in account.resources.vm]
         assert len(cloud_vm_ids) >= 1
 
@@ -297,19 +296,20 @@ class TestCloudAccount:
 
         pool_config = RwMcYang.VmPool.from_dict({
                 'name':vm_pool_name,
-                'cloud_account':cloud_account_name,
+                'cloud_account':cloud_account.name,
                 'assigned':[{'id':available_ids[0]}]})
         proxy.replace_config("/vm-pool/pool[name='%s']" % vm_pool_name, pool_config)
         pool = proxy.get("/vm-pool/pool[name='%s']" % vm_pool_name)
         assigned_ids = [vm.id for vm in pool.assigned]
         assert available_ids[0] in assigned_ids # Configured resource shows as assigned
 
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         with pytest.raises(ProxyRequestError):
             proxy.delete_config(xpath)
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 class TestCloudAccountNegativeTeardown:
 
     def test_remove_vm_resource_from_vm_pool(self, proxy, vm_pool_name):
@@ -350,7 +350,7 @@ class TestCloudAccountNegativeTeardown:
         xpath = "/vm-pool/pool[name='%s']" % vm_pool_name
         proxy.delete_config(xpath)
 
-    def test_delete_cloud_account(self, proxy, cloud_account_name):
+    def test_delete_cloud_account(self, proxy, cloud_account):
         '''Unconfigure cloud_account
 
         Arguments:
@@ -361,6 +361,6 @@ class TestCloudAccountNegativeTeardown:
             None
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         proxy.delete_config(xpath)
 

@@ -27,6 +27,37 @@ static int reload_count = 0;
    belong.
  */
 
+void rw_management_agent_xml_confd_log_cb(void *user_data,
+                                          rw_xml_log_level_e level,
+                                          const char *fn,
+                                          const char *log_msg)
+{
+  /*
+   * ATTN: These messages need to get back to the transaction that
+   * generated them, so that they can be included in the NETCONF error
+   * response, if any.
+   *
+   * ATTN: I think RW.XML needs more context when generating messages -
+   * just binding the errors to manage is insufficient - need to
+   * actually bind the messages to a particular client/xact.
+   */
+  auto *inst = static_cast<Instance*>(user_data);
+
+  switch (level) {
+    case RW_XML_LOG_LEVEL_DEBUG:
+      RW_MA_DOMMGR_LOG (inst, DommgrDebug, fn, log_msg);
+      break;
+    case RW_XML_LOG_LEVEL_INFO:
+      RW_MA_DOMMGR_LOG (inst, DommgrNotice, fn, log_msg);
+      break;
+    case RW_XML_LOG_LEVEL_ERROR:
+      RW_MA_DOMMGR_LOG (inst, DommgrError, fn, log_msg);
+      break;
+    default:
+      RW_ASSERT_NOT_REACHED();
+  }
+}
+
 
 NbReqConfdConfig::NbReqConfdConfig(
   Instance* instance )
@@ -44,6 +75,61 @@ NbReqConfdConfig::NbReqConfdConfig(
 NbReqConfdConfig::~NbReqConfdConfig ()
 {
 }
+
+
+rw_status_t NbReqConfdConfig::setup_confd_subscription()
+{
+  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "setup confd subscription");
+  rw_status_t ret;
+
+  RW_ASSERT(instance_->confd_addr_);
+
+  if (confd_load_schemas(instance_->confd_addr_, instance_->confd_addr_size_) != CONFD_OK) {
+    RW_MA_INST_LOG (instance_, InstanceNotice,
+                    "RW.uAgent - load of  Confdb schema failed. Will retry");
+    return RW_STATUS_FAILURE;
+  }
+
+  RW_MA_INST_LOG(instance_, InstanceDebug, "RW.uAgent - confd load schema done");
+
+  // annotate the YANG model with tailf hash tags
+  annotate_yang_model_confd ();
+
+  ret = setup();
+  if (ret != RW_STATUS_SUCCESS) {
+    RW_MA_INST_LOG (instance_, InstanceNotice, "RW.uAgent - confd_config_ setup failed");
+    return RW_STATUS_FAILURE;
+  }
+
+  RW_MA_INST_LOG(instance_, InstanceNotice, "RW.uAgent - Moving on to confd reload phase");
+  instance_->mgmt_handler()->proceed_to_next_state();
+
+  return ret;
+}
+
+
+void NbReqConfdConfig::annotate_yang_model_confd()
+{
+  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "annotate yang model");
+
+  namespace_map_t ns_map;
+  struct confd_nsinfo *listp;
+
+  uint32_t ns_count = confd_get_nslist(&listp);
+
+  RW_ASSERT (ns_count); // for now
+
+  for (uint32_t i = 0; i < ns_count; i++) {
+    ns_map[listp[i].uri] = listp[i].hash;
+  }
+
+  rw_confd_annotate_ynodes (instance_->yang_model(),
+                            ns_map,
+                            confd_str2hash,
+                            YANGMODEL_ANNOTATION_CONFD_NS,
+                            YANGMODEL_ANNOTATION_CONFD_NAME );
+}
+
 
 rw_status_t NbReqConfdConfig::connect(int *fd, cdb_sock_type type)
 {
@@ -128,12 +214,31 @@ rw_status_t NbReqConfdConfig::setup()
       sub_sock_ref_,
       0 );
 
-  instance_->cf_srcs_[sub_sock_ref_] = sub_sock_src_;
+  cf_srcs_[sub_sock_ref_] = sub_sock_src_;
 
   rwsched_CFRunLoopRef runloop = rwsched_tasklet_CFRunLoopGetCurrent(tasklet);
   rwsched_tasklet_CFRunLoopAddSource(tasklet, runloop, sub_sock_src_, sched->main_cfrunloop_mode);
 
   return RW_STATUS_SUCCESS;
+}
+
+void NbReqConfdConfig::close_cf_socket(rwsched_CFSocketRef s)
+{
+  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "close cf socket");
+  rwsched_instance_ptr_t sched = instance_->rwsched();
+  rwsched_tasklet_ptr_t tasklet = instance_->rwsched_tasklet();
+  rwsched_CFRunLoopRef runloop = rwsched_tasklet_CFRunLoopGetCurrent(tasklet);
+
+  cf_src_map_t::iterator src = cf_srcs_.find (s);
+  RW_ASSERT (src != cf_srcs_.end());
+
+  rwsched_tasklet_CFRunLoopRemoveSource(tasklet,
+                                        runloop,
+                                        src->second,
+                                        sched->main_cfrunloop_mode);
+  cf_srcs_.erase(src);
+
+  rwsched_tasklet_CFSocketRelease(tasklet, s);
 }
 
 void NbReqConfdConfig::cfcb_confd_sub_event(rwsched_CFSocketRef s,
@@ -167,11 +272,10 @@ void NbReqConfdConfig::process_confd_subscription()
 
   if (confd_result == CONFD_EOF) {
     RW_MA_NBREQ_LOG (this, ClientDebug, __FUNCTION__ , " Reopening subscription socket");
-    instance_->close_cf_socket(sub_sock_ref_);
+    close_cf_socket(sub_sock_ref_);
     close (sub_fd_);
     sub_fd_ = RWUAGENT_INVALID_SOCK_ID;
-    RW_ASSERT(instance_->confd_config_)
-    instance_->confd_config_->setup();
+    setup();
 
     return;
   }
@@ -185,6 +289,7 @@ void NbReqConfdConfig::process_confd_subscription()
 
     case CDB_SUB_COMMIT:
       RW_MA_NBREQ_LOG (this, ClientDebug, __FUNCTION__ , "Commit callback from confd");
+      commit_changes();// sb_delta_, sb_delte_ks_ are hidden parameters to commit_changes
       cdb_sync_subscription_socket (sub_fd_, CDB_DONE_PRIORITY);
       break;
 
@@ -230,6 +335,7 @@ void NbReqConfdConfig::async_reload_configuration(NbReqConfdConfig* self)
 void NbReqConfdConfig::reload_configuration(void* ctxt)
 {
   auto* self = reinterpret_cast<NbReqConfdConfig*>(ctxt);
+  RW_MA_NBREQ_LOG (self, ClientCritInfo, __FUNCTION__, "Starting config reload");
 
   if (!self->instance_->dts_ready()) {
     RW_MA_NBREQ_LOG (self, ClientDebug, __FUNCTION__, "DTS not yet ready. Will retry");
@@ -254,6 +360,8 @@ void NbReqConfdConfig::reload_configuration(void* ctxt)
     async_reload_configuration(self);
     return;
   }
+
+  RW_MA_NBREQ_LOG (self, ClientCritInfo, __FUNCTION__, "Config reload finished");
 
   RW_MA_NBREQ_LOG (self, ClientDebug, __FUNCTION__, "CDB is ready for read op");
 
@@ -292,14 +400,14 @@ void NbReqConfdConfig::prepare(int *subscription_points, int length, int flags)
 
   // Create a DOM of the changes
   XMLBuilder *builder = new XMLBuilder (instance_->xml_mgr());
-  builder->set_log_cb(rw_management_agent_xml_log_cb, instance_);
+  builder->set_log_cb(rw_management_agent_xml_confd_log_cb, instance_);
 
   // Build a DOM from the modifications
   for (i = 0; i < length; i++) {
     if (cdb_get_modifications(sub_fd_, subscription_points[i], CDB_GET_MODS_INCLUDE_LISTS
                 , &values, &nvalues, "/") == CONFD_OK) {
       ConfdTLVTraverser traverser(builder, values, nvalues);
-      traverser.set_log_cb(rw_management_agent_xml_log_cb, instance_);
+      traverser.set_log_cb(rw_management_agent_xml_confd_log_cb, instance_);
       traverser.traverse();
 
       for (int j = 0; j < nvalues; j++) {
@@ -312,6 +420,7 @@ void NbReqConfdConfig::prepare(int *subscription_points, int length, int flags)
   {
     xact_ = new SbReqEditConfig(instance_,
                                 this,
+                                RequestMode::CONFD,
                                 builder);
     xact_->start_xact();
     // Don't care about start status
@@ -328,6 +437,9 @@ StartStatus NbReqConfdConfig::respond(
     RWMEMLOG_ARG_PRINTF_INTPTR("sbreq=0x%" PRIX64,(intptr_t)sbreq) );
 
   if (xact_) {
+    sb_delta_ = xact_->move_delta();
+    sb_delete_ks_ = xact_->move_deletes();
+
     RW_MA_NBREQ_LOG (this, ClientDebug, __FUNCTION__ , " committing transaction");
     cdb_sync_subscription_socket (sub_fd_, CDB_DONE_PRIORITY);
     xact_ = nullptr;

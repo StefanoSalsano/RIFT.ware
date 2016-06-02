@@ -14,6 +14,10 @@ cmake_minimum_required(VERSION 2.8)
 
 add_definitions(-std=c++11)
 
+if (NOT RIFT_AGENT_BUILD STREQUAL "XML_ONLY")
+  add_definitions(-DCONFD_ENABLED)
+endif ()
+
 include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR})
 
 find_library(boost_filesystem_path NAMES boost_filesystem)
@@ -27,8 +31,9 @@ endif ()
 
 set(
   CXX_SOURCES
-    RwyangutilArgumentParser.cc
-    RwyangutilFileProtoOps.cc
+    rwyangutil_argument_parser.cc
+    rwyangutil_directory_helpers.cc
+    rwyangutil_file_proto_ops.cc
     rwyangutil_helpers.cc
   )
 
@@ -71,8 +76,9 @@ install(TARGETS rwyangutil
 install(
   FILES
     rwyangutil.h
-    RwyangutilArgumentParser.hpp
-    RwyangutilFileProtoOps.hpp
+    rwyangutil_argument_parser.hpp
+    rwyangutil_file_proto_ops.hpp
+    rwyangutil_helpers.hpp
   DESTINATION
     usr/include
   COMPONENT

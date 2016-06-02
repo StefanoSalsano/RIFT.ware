@@ -35,7 +35,7 @@
 
 namespace fs = boost::filesystem;
 
-class FileProOpsTestsFixture : public ::testing::Test 
+class FileProOpsTestsFixture : public ::testing::Test
 {
  public:
   FileProOpsTestsFixture()
@@ -45,11 +45,11 @@ class FileProOpsTestsFixture : public ::testing::Test
       rift_install_ = "/";
     }
 
-    schema_path_ = rift_install_ + "/" + DYNAMIC_SCHEMA_DIR;
-    image_spath_ = rift_install_ + "/" + IMAGE_SCHEMA_DIR;
+    schema_path_ = rift_install_ + "/" + RW_SCHEMA_ROOT_PATH;
+    image_spath_ = rift_install_ + "/" + RW_INSTALL_YANG_PATH;
     test_listing_path_ = rift_install_
                          + "/"
-                         + SCHEMA_LISTING_DIR
+                         + RW_INSTALL_MANIFEST_PATH
                          + "/"
                          + "test_northbound_listing.txt";
   }
@@ -60,18 +60,23 @@ class FileProOpsTestsFixture : public ::testing::Test
       TearDown(); // Just for first test case.
     }
 
+    std::string cmd = "rwyangutil --create-schema-dir test_northbound_listing.txt";
+#ifdef CONFD_ENABLED
+    cmd += " confd_nb_schema_list.txt";
+#endif
+
     // Setup the schema directory.
-    auto ret = std::system("rwyangutil --create-schema-dir test_northbound_listing.txt");
+    auto ret = std::system(cmd.c_str());
     ASSERT_EQ (ret, 0);
 
-    lock_file_ = std::string(rift_install_) + "/" + SCHEMA_LOCK_FILE;
+    lock_file_ = std::string(rift_install_) + "/" + RW_SCHEMA_LOCK_PATH + "/" + RW_SCHEMA_LOCK_FILENAME;
     if (fs::exists(lock_file_)) {
       std::system("rwyangutil --lock-file-delete");
     }
 
-    schema_all_tmp_loc_ = std::string(rift_install_) + "/" + SCHEMA_TMP_ALL_LOC;
-    schema_northbound_tmp_loc_ = std::string(rift_install_) + "/" + SCHEMA_TMP_NORTHBOUND_LOC;    
-    schema_ver_dir_ = std::string(rift_install_) + "/" + SCHEMA_VER_DIR;
+    schema_all_tmp_loc_ = std::string(rift_install_) + "/" + RW_SCHEMA_TMP_ALL_PATH;
+    schema_northbound_tmp_loc_ = std::string(rift_install_) + "/" + RW_SCHEMA_TMP_NB_PATH;
+    schema_ver_dir_ = std::string(rift_install_) + "/" + RW_SCHEMA_VER_PATH;
   }
 
   void TearDown()
@@ -95,8 +100,25 @@ unsigned get_file_type_count(const std::string& path, const std::string& fext)
   unsigned count = 0;
 
   std::for_each(fs::directory_iterator(path),
-                fs::directory_iterator(), [&count, &fext](const fs::directory_entry& et) 
+                fs::directory_iterator(), [&count, &fext](const fs::directory_entry& et)
                 { if (et.path().extension().string() == fext) { count++; } });
+
+  return count;
+}
+
+static unsigned get_nb_schema_count(std::vector<std::string> const& nb_list)
+{
+  unsigned count = 0;
+
+  for (unsigned i = 0; i < nb_list.size(); ++i) {
+    {
+      std::ifstream nb_listing_file(nb_list[i]);
+      std::string line;
+      while (std::getline(nb_listing_file, line)) {
+        count++;
+      }
+    }
+  }
 
   return count;
 }
@@ -106,7 +128,9 @@ TEST_F(FileProOpsTestsFixture, SchemaDirCreationTest)
   // Check whether the schema directory is created properly
   ASSERT_TRUE ( fs::exists(schema_path_) ) ;
   ASSERT_TRUE ( fs::exists(schema_path_ + "/yang") );
+#ifdef CONFD_ENABLED
   ASSERT_TRUE ( fs::exists(schema_path_ + "/fxs") );
+#endif
   ASSERT_TRUE ( fs::exists(schema_path_ + "/xml") );
   ASSERT_TRUE ( fs::exists(schema_path_ + "/lib") );
   ASSERT_TRUE ( fs::exists(schema_path_ + "/lock") );
@@ -154,6 +178,7 @@ TEST_F(FileProOpsTestsFixture, SchemaDirCreationTest)
   EXPECT_EQ (dc, dcount);
   std::cout << "Total installed dsdl files " << dc << std::endl;
 
+#ifdef CONFD_ENABLED
   unsigned fcount = 0;
   fs::path fpath(schema_path_ + "/fxs");
   for (fs::directory_iterator it(fpath);
@@ -173,6 +198,7 @@ TEST_F(FileProOpsTestsFixture, SchemaDirCreationTest)
   auto fc = get_file_type_count(image_spath_, std::string(".fxs"));
   EXPECT_EQ (fc, fcount);
   std::cout << "Total installed fxs files " << fc << std::endl;
+#endif
 
   unsigned cmcount = 0, cssicount = 0;
   fs::path cpath(schema_path_ + "/cli");
@@ -232,6 +258,23 @@ TEST_F(FileProOpsTestsFixture, SchemaDirCreationTest)
   std::for_each(fs::directory_iterator(vpath),
                 fs::directory_iterator(), [&cnt](const fs::directory_entry& _){ cnt++; });
   ASSERT_EQ(cnt, 2);
+
+  std::vector<std::string> nb_list;
+  nb_list.push_back(test_listing_path_);
+
+#ifdef CONFD_ENABLED
+  std::string confd_nb_file = rift_install_ + "/usr/data/manifest/confd_nb_schema_list.txt";
+  nb_list.push_back(confd_nb_file);
+#endif
+
+  unsigned nb_schema_count = get_nb_schema_count(nb_list);
+  fs::path nb_ypath = schema_ver_dir_ + "/latest/northbound/yang";
+
+  cnt = 0;
+  std::for_each(fs::directory_iterator(nb_ypath),
+                fs::directory_iterator(), [&cnt](const fs::directory_entry& _){ cnt++; });
+
+  EXPECT_EQ(cnt, nb_schema_count);
 }
 
 TEST_F(FileProOpsTestsFixture, CreateAndDeleteLockFileTest)
@@ -285,27 +328,6 @@ TEST_F(FileProOpsTestsFixture, CascadeTest1)
                 fs::directory_iterator(), [](const fs::directory_entry& e){ fs::remove_all(e); });
 }
 
-TEST_F(FileProOpsTestsFixture, InitDirTest)
-{
-  auto ret = std::system("rwyangutil --lock-file-create");
-  ASSERT_EQ(ret, 0);
-  ASSERT_TRUE(fs::exists(lock_file_));
-
-  std::string cmd = std::string("touch ") + schema_all_tmp_loc_;
-  auto fxs = cmd + "a.fxs";
-  auto yang = fxs+ ";" + cmd + "a.yang";
-  auto xml = yang + ";" + cmd + "a.dsdl";
-  auto so = xml + ";" + cmd + "a.so";
-
-  ret = std::system(so.c_str());
-  ASSERT_EQ(ret, 0);
-
-  ret = std::system("rwyangutil --init-schema-dir");
-  ASSERT_EQ(ret, 0);
-  ASSERT_FALSE(fs::exists(lock_file_));
-
-}
-
 TEST_F(FileProOpsTestsFixture, PruneDirTest)
 {
   for (unsigned i = 0; i < 20; ++i) {
@@ -334,6 +356,8 @@ TEST_F(FileProOpsTestsFixture, PruneDirTest)
   ASSERT_EQ(cnt, 2);
 }
 
+#ifdef CONFD_ENABLED
+
 TEST_F(FileProOpsTestsFixture, RemovePersistConfdWSTest)
 {
   bool present = false;
@@ -342,7 +366,7 @@ TEST_F(FileProOpsTestsFixture, RemovePersistConfdWSTest)
   {
     if (!fs::is_directory(entry->path())) continue;
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(CONFD_PWS_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_CONFD_PERSIST_PREFIX);
 
     if (pos != std::string::npos) {
       present = true;
@@ -351,16 +375,16 @@ TEST_F(FileProOpsTestsFixture, RemovePersistConfdWSTest)
   }
 
   if (!present) {
-    auto dir = rift_install_ + "/" + std::string("confd_persist_test_tmp");
+    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_CONFD_PERSIST_PREFIX) + "tmp1";
     ASSERT_TRUE(fs::create_directory(dir));
   }
-  auto ret = std::system("rwyangutil --rm-non-unique-confd-ws");
+  auto ret = std::system("rwyangutil --rm-persist-confd-ws");
   EXPECT_EQ (ret, 0);
 
   std::for_each(fs::directory_iterator(rift_install_),
                 fs::directory_iterator(), [](const fs::directory_entry& et) {
                   auto name = et.path().filename().string();
-                  EXPECT_EQ (name.find(CONFD_PWS_PREFIX), std::string::npos);
+                  EXPECT_EQ (name.find(RW_SCHEMA_CONFD_PERSIST_PREFIX), std::string::npos);
                 });
 }
 
@@ -372,16 +396,16 @@ TEST_F(FileProOpsTestsFixture, RemoveUniqueConfdWSTest)
   {
     if (!fs::is_directory(entry->path())) continue;
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(CONFD_WS_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_CONFD_TEST_PREFIX);
 
     if (pos != std::string::npos) {
-      present = true; 
+      present = true;
       break;
     }
   }
 
   if (!present) {
-    auto dir = rift_install_ + "/" + std::string("confd_ws.test_tmp_dir");
+    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_CONFD_TEST_PREFIX) + "tmp2";
     ASSERT_TRUE(fs::create_directory(dir));
   }
 
@@ -391,13 +415,13 @@ TEST_F(FileProOpsTestsFixture, RemoveUniqueConfdWSTest)
   std::for_each(fs::directory_iterator(rift_install_),
                 fs::directory_iterator(), [](const fs::directory_entry& et) {
                   auto name = et.path().filename().string();
-                  EXPECT_EQ (name.find(CONFD_WS_PREFIX), std::string::npos);
+                  EXPECT_EQ (name.find(RW_SCHEMA_CONFD_TEST_PREFIX), std::string::npos);
                 });
 }
 
 TEST_F(FileProOpsTestsFixture, ArchiveConfdPersistWS)
 {
-  auto dir = rift_install_ + "/" + std::string("confd_persist_test");
+  auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_CONFD_PERSIST_PREFIX) + "tm35";
   ASSERT_TRUE(fs::create_directory(dir));
 
   auto ret = std::system("rwyangutil --archive-confd-persist-ws");
@@ -411,7 +435,7 @@ TEST_F(FileProOpsTestsFixture, ArchiveConfdPersistWS)
     if (!fs::is_directory(entry->path())) continue;
 
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(AR_CONFD_PWS_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_CONFD_ARCHIVE_PREFIX);
 
     if (pos != 0) continue;
     found = true;
@@ -421,18 +445,25 @@ TEST_F(FileProOpsTestsFixture, ArchiveConfdPersistWS)
 
   ASSERT_TRUE(found);
 }
+#endif
 
 TEST_F(FileProOpsTestsFixture, OnBoardSchema)
 {
   size_t ret = 0;
   // touch southbound files
   std::string sb_cmd = std::string("touch ") + schema_all_tmp_loc_;
-  auto sb_fxs_a = sb_cmd + "/fxs/a.fxs";
+  std::string sb_fxs_a = "/bin/true";
+#ifdef CONFD_ENABLED
+  sb_fxs_a = sb_cmd + "/fxs/a.fxs";
+#endif
   auto sb_yang_a = sb_fxs_a + ";" + sb_cmd + "/yang/a.yang";
   auto sb_xml_a = sb_yang_a + ";" + sb_cmd + "/xml/a.dsdl";
   auto sb_so_a = sb_xml_a + ";" + sb_cmd + "/lib/a.so";
 
-  auto sb_fxs_b = sb_cmd + "/fxs/b.fxs";
+  std::string sb_fxs_b = "/bin/true";
+#ifdef CONFD_ENABLED
+  sb_fxs_b = sb_cmd + "/fxs/b.fxs";
+#endif
   auto sb_yang_b = sb_fxs_b + ";" + sb_cmd + "/yang/b.yang";
   auto sb_xml_b = sb_yang_b + ";" + sb_cmd + "/xml/b.dsdl";
   auto sb_so_b = sb_xml_b + ";" + sb_cmd + "/lib/b.so";
@@ -445,7 +476,10 @@ TEST_F(FileProOpsTestsFixture, OnBoardSchema)
 
   // touch northbound files
   std::string nb_cmd = std::string("touch ") + schema_northbound_tmp_loc_;
-  auto fxs = nb_cmd + "/fxs/a.fxs";
+  std::string fxs = "/bin/true";
+#ifdef CONFD_ENABLED
+  fxs = nb_cmd + "/fxs/a.fxs";
+#endif
   auto yang = fxs + ";" + nb_cmd + "/yang/a.yang";
   auto xml = yang + ";" + nb_cmd + "/xml/a.dsdl";
   auto so = xml + ";" + nb_cmd + "/lib/a.so";
@@ -453,19 +487,25 @@ TEST_F(FileProOpsTestsFixture, OnBoardSchema)
   ASSERT_EQ(ret, 0);
 
   std::string all_cmd = std::string("touch ") + schema_all_tmp_loc_;
-  auto all_fxs = all_cmd + "/fxs/a.fxs";
+  std::string all_fxs = "/bin/true";
+#ifdef CONFD_ENABLED
+  all_fxs = all_cmd + "/fxs/a.fxs";
+#endif
   auto all_yang = all_fxs + ";" + all_cmd + "/yang/a.yang";
   auto all_xml = all_yang + ";" + all_cmd + "/xml/a.dsdl";
   auto all_so = all_xml + ";" + all_cmd + "/lib/a.so";
   ret = std::system(all_so.c_str());
   ASSERT_EQ(ret, 0);
 
-  std::array<std::string, 4> const paths {
+
+  std::vector<std::string> const paths {
+#ifdef CONFD_ENABLED
     "/fxs",
-        "/xml",
-        "/lib",
-        "/yang"
-        };
+#endif
+    "/xml",
+    "/lib",
+    "/yang"
+  };
 
   // get the count first
   std::map<std::string, size_t> first_all_count;
@@ -473,7 +513,7 @@ TEST_F(FileProOpsTestsFixture, OnBoardSchema)
 
   for (std::string const & subpath : paths) {
     std::string const all_subpath = schema_ver_dir_ + "/latest/all/" + subpath;
-    std::string const northbound_subpath = schema_ver_dir_ + "/latest/northbound/" + subpath;      
+    std::string const northbound_subpath = schema_ver_dir_ + "/latest/northbound/" + subpath;
 
     first_all_count[subpath] = 0;
     first_northbound_count[subpath] = 0;
@@ -482,13 +522,13 @@ TEST_F(FileProOpsTestsFixture, OnBoardSchema)
          it != fs::directory_iterator();
          ++it) {
       first_all_count[subpath]++;
-    }      
+    }
 
     for (fs::directory_iterator it(northbound_subpath);
          it != fs::directory_iterator();
          ++it) {
       first_northbound_count[subpath]++;
-    }      
+    }
 
   }
 
@@ -502,7 +542,7 @@ TEST_F(FileProOpsTestsFixture, OnBoardSchema)
 
   for (std::string const & subpath : paths) {
     std::string const all_subpath = schema_ver_dir_ + "/latest/all/" + subpath;
-    std::string const northbound_subpath = schema_ver_dir_ + "/latest/northbound/" + subpath;      
+    std::string const northbound_subpath = schema_ver_dir_ + "/latest/northbound/" + subpath;
 
     second_all_count[subpath] = 0;
     second_northbound_count[subpath] = 0;
@@ -511,13 +551,13 @@ TEST_F(FileProOpsTestsFixture, OnBoardSchema)
          it != fs::directory_iterator();
          ++it) {
       second_all_count[subpath]++;
-    }      
+    }
 
     for (fs::directory_iterator it(northbound_subpath);
          it != fs::directory_iterator();
          ++it) {
       second_northbound_count[subpath]++;
-    }      
+    }
 
   }
 
@@ -531,7 +571,7 @@ TEST_F(FileProOpsTestsFixture, OnBoardSchema)
 
   for (std::string const & subpath : paths) {
     std::string const all_subpath = schema_ver_dir_ + "/latest/all/" + subpath;
-    std::string const northbound_subpath = schema_ver_dir_ + "/latest/northbound/" + subpath;      
+    std::string const northbound_subpath = schema_ver_dir_ + "/latest/northbound/" + subpath;
 
     third_all_count[subpath] = 0;
     third_northbound_count[subpath] = 0;
@@ -540,13 +580,13 @@ TEST_F(FileProOpsTestsFixture, OnBoardSchema)
          it != fs::directory_iterator();
          ++it) {
       third_all_count[subpath]++;
-    }      
+    }
 
     for (fs::directory_iterator it(northbound_subpath);
          it != fs::directory_iterator();
          ++it) {
       third_northbound_count[subpath]++;
-    }      
+    }
 
   }
 
@@ -575,12 +615,18 @@ TEST_F(FileProOpsTestsFixture, SchemaOnboardReload)
   size_t ret = 0;
   // touch southbound files
   std::string sb_cmd = std::string("touch ") + schema_all_tmp_loc_;
-  auto sb_fxs_a = sb_cmd + "/fxs/a.fxs";
+  std::string sb_fxs_a = "/bin/true";
+#ifdef CONFD_ENABLED
+  sb_fxs_a = sb_cmd + "/fxs/a.fxs";
+#endif
   auto sb_yang_a = sb_fxs_a + ";" + sb_cmd + "/yang/a.yang";
   auto sb_xml_a = sb_yang_a + ";" + sb_cmd + "/xml/a.dsdl";
   auto sb_so_a = sb_xml_a + ";" + sb_cmd + "/lib/a.so";
 
-  auto sb_fxs_b = sb_cmd + "/fxs/b.fxs";
+  std::string sb_fxs_b = "/bin/true";
+#ifdef CONFD_ENABLED
+  sb_fxs_b = sb_cmd + "/fxs/b.fxs";
+#endif
   auto sb_yang_b = sb_fxs_b + ";" + sb_cmd + "/yang/b.yang";
   auto sb_xml_b = sb_yang_b + ";" + sb_cmd + "/xml/b.dsdl";
   auto sb_so_b = sb_xml_b + ";" + sb_cmd + "/lib/b.so";
@@ -593,7 +639,10 @@ TEST_F(FileProOpsTestsFixture, SchemaOnboardReload)
 
   // touch northbound files
   std::string nb_cmd = std::string("touch ") + schema_northbound_tmp_loc_;
-  auto fxs = nb_cmd + "/fxs/a.fxs";
+  std::string fxs = "/bin/true";
+#ifdef CONFD_ENABLED
+  fxs = nb_cmd + "/fxs/a.fxs";
+#endif
   auto yang = fxs + ";" + nb_cmd + "/yang/a.yang";
   auto xml = yang + ";" + nb_cmd + "/xml/a.dsdl";
   auto nb_so = xml + ";" + nb_cmd + "/lib/a.so";
@@ -650,7 +699,7 @@ TEST(YangUtils, LoadSchemaValidation)
 
   auto res = rwyangutil::validate_module_consistency(
       module_name,
-      mangled_name, 
+      mangled_name,
       upper_to_lower,
       err_str);
 
@@ -661,4 +710,92 @@ TEST(YangUtils, LoadSchemaValidation)
 
   std::system("rwyangutil --remove-schema-dir");
 
+}
+
+TEST_F(FileProOpsTestsFixture, RemovePersistXMLWSTest)
+{
+  bool present = false;
+  for (fs::directory_iterator entry(rift_install_);
+       entry != fs::directory_iterator(); ++entry)
+  {
+    if (!fs::is_directory(entry->path())) continue;
+    auto dir_name = entry->path().filename().string();
+    auto pos = dir_name.find(RW_SCHEMA_XML_PERSIST_PREFIX);
+
+    if (pos != std::string::npos) {
+      present = true;
+      break;
+    }
+  }
+
+  if (!present) {
+    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_XML_PERSIST_PREFIX) + "tmp4";
+    ASSERT_TRUE(fs::create_directory(dir));
+  }
+  auto ret = std::system("rwyangutil --rm-persist-xml-ws");
+  EXPECT_EQ (ret, 0);
+
+  std::for_each(fs::directory_iterator(rift_install_),
+                fs::directory_iterator(), [](const fs::directory_entry& et) {
+                  auto name = et.path().filename().string();
+                  EXPECT_EQ (name.find(RW_SCHEMA_XML_PERSIST_PREFIX), std::string::npos);
+                });
+}
+
+TEST_F(FileProOpsTestsFixture, RemoveUniqueXMLWSTest)
+{
+  bool present = false;
+  for (fs::directory_iterator entry(rift_install_);
+       entry != fs::directory_iterator(); ++entry)
+  {
+    if (!fs::is_directory(entry->path())) continue;
+    auto dir_name = entry->path().filename().string();
+    auto pos = dir_name.find(RW_SCHEMA_XML_TEST_PREFIX);
+
+    if (pos != std::string::npos) {
+      present = true;
+      break;
+    }
+  }
+
+  if (!present) {
+    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_XML_TEST_PREFIX) + "tmp5";
+    ASSERT_TRUE(fs::create_directory(dir));
+  }
+
+  auto ret = std::system("rwyangutil --rm-unique-xml-ws");
+  EXPECT_EQ (ret, 0);
+
+  std::for_each(fs::directory_iterator(rift_install_),
+                fs::directory_iterator(), [](const fs::directory_entry& et) {
+                  auto name = et.path().filename().string();
+                  EXPECT_EQ (name.find(RW_SCHEMA_XML_TEST_PREFIX), std::string::npos);
+                });
+}
+
+TEST_F(FileProOpsTestsFixture, ArchiveXMLPersistWS)
+{
+  auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_XML_PERSIST_PREFIX) + "tmp6";
+  ASSERT_TRUE(fs::create_directory(dir));
+
+  auto ret = std::system("rwyangutil --archive-xml-persist-ws");
+  ASSERT_EQ(ret, 0);
+
+  bool found = false;
+
+  for (fs::directory_iterator entry(rift_install_);
+       entry != fs::directory_iterator(); ++entry)
+  {
+    if (!fs::is_directory(entry->path())) continue;
+
+    auto dir_name = entry->path().filename().string();
+    auto pos = dir_name.find(RW_SCHEMA_XML_ARCHIVE_PREFIX);
+
+    if (pos != 0) continue;
+    found = true;
+    fs::remove(fs::path(rift_install_ + "/" + dir_name));
+    break;
+  }
+
+  ASSERT_TRUE(found);
 }

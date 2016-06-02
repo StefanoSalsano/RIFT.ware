@@ -8,7 +8,6 @@
 ##
 
 include(rift_yang)
-include(rift_cmdargs)
 
 set(source_yang_files rwsdn.yang)
 

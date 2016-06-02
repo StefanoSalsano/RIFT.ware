@@ -26,7 +26,6 @@ from rift.rwlib.schema import collect_children
 from rift.rwlib.util import iterate_with_lookahead
 from rift.rwlib.xml import (
     collect_siblings,
-    get_xml_element_name,
 )
 
 def _split_namespace(namespace):
@@ -86,7 +85,6 @@ class XmlToJsonTranslator(object):
         xml_root = lxml.etree.fromstring(xml_string)
 
         elements_to_translate = xml_root.xpath(xpath)
-
         json = list()
         prefixes = list()
 
@@ -113,21 +111,22 @@ class XmlToJsonTranslator(object):
         elif is_list:
             json.append('"%s%s":[' % (target_prefix, target_name))
 
+
         for element, is_last in iterate_with_lookahead(elements_to_translate):
 
             name, prefix, prefixes = _split_tag_and_update_prefixes(element, prefixes)
 
-            schema_node = find_child_by_name(self._schema, name)
+            schema_node = schema_root
 
             if is_collection or is_list:
                 json.append('{')
             elif is_leaf:
-                json.append('"%s%s" : ' % (prefix,name))
+                pass
             else:
                 json.append('"%s%s" :{' % (prefix,name))
 
             json.append(self._translate_node(is_collection, schema_root, element, prefixes))
-
+            
             if not is_leaf:
                 json.append('}')
 
@@ -147,6 +146,7 @@ class XmlToJsonTranslator(object):
         json.append("}")
 
         return ''.join(json)
+
 
     def convert_notification(self, xml_string):
         '''Converts the given XML Notification string into JSON
@@ -207,13 +207,18 @@ class XmlToJsonTranslator(object):
         first_child = False
 
         current_list = None
-        
-
+        current_name = schema_root.get_name()        
+        if schema_root.is_leafy():
+            schema_root = schema_root.get_parent()
 
         siblings = collect_siblings(xml_node)
 
         if len(siblings) == 0:
-            return '"%s"' % xml_node.text
+            if xml_node.text is None:
+                return '"empty":""' 
+            else:
+                return '"%s":"%s"' % (current_name,xml_node.text)
+
 
         for sibling_tag, is_last in iterate_with_lookahead(siblings):
             
@@ -239,18 +244,26 @@ class XmlToJsonTranslator(object):
                     else:
                         json.append('"%s%s":{' % (prefix,name))
     
-                    json.append(self._translate_node(is_collection,
+                    body = self._translate_node(is_collection,
                                                      child_schema_node,
                                                      child_xml_node,
                                                      prefixes,
-                                                     depth+1))
-    
+                                                     depth+1,
+                                            )
+
+                    json.append(body)
                     json.append('}')
                             
                 else:
                     if child_schema_node.node_type().leaf_type == RwYang.LeafType.LEAF_TYPE_EMPTY:
                         value = "[null]"
+                    elif child_schema_node.node_type().leaf_type == RwYang.LeafType.LEAF_TYPE_STRING:
+                        if not value:
+                            value = '""'
+                        else:
+                            value = tornado.escape.json_encode(value)
                     else:
+
                         if not value:
                             value = '""'
                         else:
@@ -258,8 +271,6 @@ class XmlToJsonTranslator(object):
                                 float(value)
                             except ValueError:
                                 value = tornado.escape.json_encode(value)
-
-
                     
                     if has_siblings:
                         json.append('%s' % (value))
@@ -314,70 +325,21 @@ def convert_xml_to_collection(url, xml_string):
 
     return "<collection>%s</collection>" % pruned_xml
 
-def convert_netconf_response_to_json(xml_string):
-    def walk(xml_node, depth=0):
-        
-        json = list()
-
-        children = xml_node.getchildren()
-
-        name = xml_node.tag.split("}")[-1]
-        body = xml_node.text
-        if body is not None:
-            body = tornado.escape.json_encode(body)
-
-        has_children = len(children) > 0
-
-        if has_children:
-            json.append('"%s" : {' % name)
-        else:
-            if body is not None:
-                json.append('"%s" : %s' % (name, body))
-            else:
-                json.append('"%s" : ""' % (name))
-
-        for child, is_last in iterate_with_lookahead(children):
-            
-            name = xml_node.tag.split("{")[-1]
-            body = xml_node.text
-
-            json.append(walk(child, depth + 1))
-
-            if not is_last:
-                json.append(',')
-
-        if has_children:
-            json.append('}')
-
-
-        return ''.join(json)
-
-            
-    root_xml_node = lxml.etree.fromstring(xml_string)
-    root_name = get_xml_element_name(root_xml_node)
-    
-    if root_name == "root":
-        root_xml_node = root_xml_node[0]
-        root_name = get_xml_element_name(root_xml_node)
-
-    json_string = walk(root_xml_node)
-
-    return "{%s}" % json_string
-
 def convert_rpc_to_xml_output(xml):
+    # strip off <rpc-reply> tags
+    root = lxml.etree.fromstring(bytes(xml, "utf-8"))
+    top_levels = list()
+    for e in root[:]:
+        top_levels.append(lxml.etree.tostring(e).decode("utf-8"))
 
-    pos_data_tag = xml.find(r'<rpc-reply', 0)
-    pos_data_start = xml.find(r'>', pos_data_tag) + 1
-    pos_data_end = xml.rfind(r'</rpc-reply', pos_data_start)
-    if pos_data_start >= 0 and pos_data_end >= 0:
-        xml = xml[pos_data_start:pos_data_end]
-
-    return "<output>%s</output>" % xml
+    return "<output>%s</output>" % "".join(top_levels)
 
 def convert_rpc_to_json_output(json_string):
-    json_dict = json.loads(json_string)
-    json_dict['output'] = json_dict.pop('rpc-reply')
+    real_dict = dict()
 
-    return json.dumps(json_dict)
+    json_dict = json.loads(json_string)
+    real_dict['output'] = list(json_dict.values())[0]
+
+    return json.dumps(real_dict)
 
         

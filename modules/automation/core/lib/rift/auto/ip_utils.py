@@ -52,7 +52,7 @@ def is_valid_ipv4_interface_address(ip_intf_address):
     return True
 
 
-def ip_list_from_string(ip_list_arg):
+def ip_list_from_string(ip_list_arg, as_string=False):
     """
     Generates a list of ip addresses from a string containing a combination
     of IP singlets (e.g. 1.1.1.1) and IP generators (1.1.1.[1,2-3,4,5])
@@ -106,6 +106,9 @@ def ip_list_from_string(ip_list_arg):
     for ip in ip_list:
         if not is_valid_ipv4_address(ip):
             raise ValueError ("Invalid IP address: %s", ip)
+
+    if as_string:
+         return ','.join(ip_list)
 
     return ip_list
 

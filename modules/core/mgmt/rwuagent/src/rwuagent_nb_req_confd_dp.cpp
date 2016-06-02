@@ -64,7 +64,7 @@ NbReqConfdDataProvider::~NbReqConfdDataProvider()
 }
 
 void NbReqConfdDataProvider::log_state(
-  RwMgmtagt_ConfdCallbackType type,
+  RwMgmtagt_Confd_CallbackType type,
   const char *hkey_path,
   const char *dts_ks)
 {
@@ -515,9 +515,9 @@ int NbReqConfdDataProvider::retrieve_operational_data(
   traverser.traverse();
 
   std::string capture_temporary;
-  RW_MA_NBREQ_LOG (this, ClientDebug, "XML path ", (capture_temporary=root->to_string()).c_str())
+  RW_MA_NBREQ_LOG (this, ClientDebug, "XML path ", (capture_temporary=root->to_string()).c_str());
 
-  SbReqGet* get = new SbReqGet (instance_, this, std::move(req));
+  SbReqGet* get = new SbReqGet (instance_, this, RequestMode::CONFD, std::move(req));
   log_state( RW_MGMTAGT_CONFD_CALLBACK_TYPE_CREATE, confd_hkeypath_buffer, get->req().c_str() );
 
   auto ss = get->start_xact();
@@ -727,7 +727,6 @@ bool NbReqConfdDataProvider::is_dom_sufficient(
     return false;
   }
 
-  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "is_dom_sufficient");
   rw_confd_hkeypath_cmp_t cmp = hkeypath_cmp(keypath_, keypath);
 
   switch (type_) {
@@ -925,8 +924,6 @@ int NbReqConfdDataProvider::convert_node_to_confd(
   confd_tag_value_t **array,
   bool multiple)
 {
-  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "convert_node_to_confd");
-
   RW_ASSERT(node);
   RW_ASSERT(cs_node);
   RW_ASSERT(array);

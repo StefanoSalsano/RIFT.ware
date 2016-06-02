@@ -55,15 +55,16 @@ static void rwdts_router_msg_regist(RWDtsQueryRouter_Service *mysrv,
 #define RWDTS_FORWARD_CB(t_rsp, t_rwreq, t_ud, t_type) {\
   rwdts_FORWARD_##t_type##_cb_data_t *FORWARD_##t_type##_cb_data = (rwdts_FORWARD_##t_type##_cb_data_t *)ud;\
   RW_ASSERT_TYPE(FORWARD_##t_type##_cb_data, rwdts_FORWARD_##t_type##_cb_data_t);\
-  RW_ASSERT(rsp); /* need to handle the bounce better */\
-  FORWARD_##t_type##_cb_data->clo(rsp, FORWARD_##t_type##_cb_data->rwreq);\
-  FORWARD_##t_type##_cb_data->dts->stats.req_rcv_##t_type##_fwdrsp++;\
-  RWDTS_ROUTER_LOG_EVENT(FORWARD_##t_type##_cb_data->dts, DtsrouterDebug, \
-                         RWLOG_ATTR_SPRINTF("%s::  _rwdts_forward_cb_%s for [%lu:%lu:%lu] ", \
-                                            FORWARD_##t_type##_cb_data->dts->rwmsgpath, \
-                                            #t_type, FORWARD_##t_type##_cb_data->router_idx, \
-                                            FORWARD_##t_type##_cb_data->client_idx, \
-                                            FORWARD_##t_type##_cb_data->serialno)); \
+  if (rsp) { /* need to handle the bounce better */\
+    FORWARD_##t_type##_cb_data->clo(rsp, FORWARD_##t_type##_cb_data->rwreq);\
+    FORWARD_##t_type##_cb_data->dts->stats.req_rcv_##t_type##_fwdrsp++;\
+    RWDTS_ROUTER_LOG_EVENT(FORWARD_##t_type##_cb_data->dts, DtsrouterDebug, \
+                           RWLOG_ATTR_SPRINTF("%s::  _rwdts_forward_cb_%s for [%lu:%lu:%lu] ", \
+                                              FORWARD_##t_type##_cb_data->dts->rwmsgpath, \
+                                              #t_type, FORWARD_##t_type##_cb_data->router_idx, \
+                                              FORWARD_##t_type##_cb_data->client_idx, \
+                                              FORWARD_##t_type##_cb_data->serialno)); \
+  } \
   RW_FREE_TYPE(FORWARD_##t_type##_cb_data, rwdts_FORWARD_##t_type##_cb_data_t); \
 }
 

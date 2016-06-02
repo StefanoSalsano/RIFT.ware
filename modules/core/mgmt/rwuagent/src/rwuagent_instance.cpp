@@ -12,22 +12,29 @@
  * Management agent instance.
  */
 
+#include <algorithm>
 #include <memory>
 
-#include "rwvcs.h"
-#include "rw_pb_schema.h"
- 
+#include <rwvcs.h>
+#include <rw_pb_schema.h>
+#include <rw_schema_defs.h>
+
 #include "rwuagent.hpp"
 #include "rwuagent_msg_client.h"
+#include "rwuagent_log_file_manager.hpp"
+#include "rwuagent_request_mode.hpp"
 
 using namespace rw_uagent;
 using namespace rw_yang;
+namespace fs = boost::filesystem;
 
 
 RW_CF_TYPE_DEFINE("RW.uAgent RWTasklet Component Type", rwuagent_component_t);
 RW_CF_TYPE_DEFINE("RW.uAgent RWTasklet Instance Type", rwuagent_instance_t);
 
 const char *rw_uagent::uagent_yang_ns = "http://riftio.com/ns/riftware-1.0/rw-mgmtagt";
+const char *rw_uagent::uagent_dts_yang_ns = "http://riftio.com/ns/riftware-1.0/rw-mgmtagt-dts";
+const char *rw_uagent::uagent_confd_yang_ns = "http://riftio.com/ns/riftware-1.0/rw-mgmtagt-confd";
 
 rwuagent_component_t rwuagent_component_init(void)
 {
@@ -94,6 +101,8 @@ void rwuagent_instance_start(
   instance->instance->start();
 }
 
+namespace rw_uagent {
+
 void rw_management_agent_xml_log_cb(void *user_data,
                                     rw_xml_log_level_e level,
                                     const char *fn,
@@ -124,6 +133,8 @@ void rw_management_agent_xml_log_cb(void *user_data,
       RW_ASSERT_NOT_REACHED();
   }
 }
+}
+
 
 /**
  * Construct a uAgent instance.
@@ -135,28 +146,49 @@ Instance::Instance(rwuagent_instance_t rwuai)
           "Instance",
           reinterpret_cast<intptr_t>(this)),
       rwuai_(rwuai),
-      //ATTN: management system handler could be either for Confd or
-      // libnetconf server. Currently defaulting to 
-      // Confd.
       initializing_composite_schema_(true),
-      mgmt_handler_(new ConfdMgmtSystem(this))      
+      log_file_manager_(new LogFileManager(this))
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "Instance constructor");
   RW_CF_TYPE_VALIDATE(rwuai_, rwuagent_instance_t);
 
-  // ATTN: stdout?  is that for error logs?  Don't we want to capture that?
-  confd_init ("rwUagent", stdout, CONFD_DEBUG);
+  RW_ASSERT (rwuai_ && rwuai_->rwtasklet_info);
+  RwmgmtAgentMode agent_mode = RW_MANIFEST_RWMGMT_AGENT_MODE_AUTOMODE;
+  if (   rwuai_->rwtasklet_info->rwvcs
+      && rwuai_->rwtasklet_info->rwvcs->pb_rwmanifest
+      && rwuai_->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase
+      && rwuai_->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt
+      && rwuai_->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->has_agent_mode) {
+    agent_mode = rwuai_->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->agent_mode;
+  }
+
+  switch (agent_mode) {
+    case RW_MANIFEST_RWMGMT_AGENT_MODE_CONFD:
+      request_mode_ = RequestMode::CONFD;
+      break;
+
+    case RW_MANIFEST_RWMGMT_AGENT_MODE_RWXML:
+      request_mode_ = RequestMode::XML;
+      break;
+
+    default:
+    case RW_MANIFEST_RWMGMT_AGENT_MODE_AUTOMODE: {
+      auto prototype_conf_file = get_rift_install() + "/" + RW_SCHEMA_CONFD_PROTOTYPE_CONF;
+      boost::system::error_code ec;
+      if (fs::exists(prototype_conf_file)) {
+        request_mode_ = RequestMode::CONFD;
+      } else {
+        request_mode_ = RequestMode::XML;
+      }
+      break;
+    }
+  }
 
   // Create a concurrent dispatch queue for multi-threading.
   concurrent_q_ = rwsched_dispatch_queue_create(
-      rwsched_tasklet(), 
-      "agent-cc-queue", 
-      RWSCHED_DISPATCH_QUEUE_CONCURRENT);
-  
-  upgrade_ctxt_.serial_upgrade_q_ = rwsched_dispatch_queue_create(
       rwsched_tasklet(),
-      "upgrade-queue",
-      RWSCHED_DISPATCH_QUEUE_SERIAL);
+      "agent-cc-queue",
+      RWSCHED_DISPATCH_QUEUE_CONCURRENT);
 
   schema_load_q_ = rwsched_dispatch_queue_create(
       rwsched_tasklet(),
@@ -167,6 +199,7 @@ Instance::Instance(rwuagent_instance_t rwuai)
       rwsched_tasklet(),
       "agent-serial-queue",
       RWSCHED_DISPATCH_QUEUE_SERIAL);
+
 }
 
 /**
@@ -200,7 +233,7 @@ void Instance::async_start(void *ctxt)
 #if 0 // RIFT-10722
   char* err_str = nullptr;
   rw_yang_validate_schema("rw-mgmtagt-composite", &err_str);
-  
+
   if (err_str) {
     RW_MA_INST_LOG(self, InstanceError, err_str);
     free (err_str);
@@ -225,7 +258,6 @@ void Instance::async_start(void *ctxt)
                            Instance::async_start_dts);
 }
 
-
 void Instance::async_start_dts(void *ctxt)
 {
   auto* self = static_cast<Instance*>(ctxt);
@@ -234,6 +266,9 @@ void Instance::async_start_dts(void *ctxt)
 
   RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "start dts member" );
   self->dts_ = new DtsMember(self);
+
+  // register with dts for boot-time schema
+  self->dts_->load_registrations(self->yang_model());
 
   RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "register rwmemlog" );
   rwmemlog_instance_dts_register( self->memlog_inst_,
@@ -257,11 +292,6 @@ void Instance::async_start_dts(void *ctxt)
   if (AgentDynSchemaHelper::register_for_dynamic_schema(self) != RW_STATUS_SUCCESS) {
     RW_MA_INST_LOG(self, InstanceError, "Error while registering for dynamic schema.");
     return;
-  } 
-
-  if (self->confd_addr_) {
-    RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "configure confd proc" );
-    self->mgmt_handler_->create_proxy_manifest_config();
   }
 
   // Instantiate the rw-msg interfaces
@@ -271,42 +301,31 @@ void Instance::async_start_dts(void *ctxt)
   rwsched_dispatch_async_f(self->rwsched_tasklet(),
                            rwsched_dispatch_get_main_queue(self->rwsched()),
                            self,
-                           Instance::async_start_confd);
+                           Instance::async_start_mgmt_system);
 
 }
 
-void Instance::async_start_confd(void* ctxt)
+void Instance::async_start_mgmt_system(void* ctxt)
 {
   auto* self = static_cast<Instance*>(ctxt);
   RW_ASSERT (self);
-  auto& memlog_buf = self->memlog_buf_;
 
   if (self->initializing_composite_schema_) {
     // still loading composite schema, try again
-    RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "waiting on composite to start confd" );
-    rwsched_dispatch_async_f(self->rwsched_tasklet(),
+    RWMEMLOG( self->memlog_buf_, RWMEMLOG_MEM2, "waiting on composite to start northbound" );
+    rwsched_dispatch_after_f(self->rwsched_tasklet(),
+                             dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC),
                              rwsched_dispatch_get_main_queue(self->rwsched()),
                              self,
-                             Instance::async_start_confd);
+                             Instance::async_start_mgmt_system);
     return;
   }
- 
-  // initialize confd 
-  if (self->confd_addr_) {
 
-    RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "start confd data provider" );
-    self->confd_config_ = new NbReqConfdConfig(self);
-
-    RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "start confd daemon" );
-    self->confd_daemon_ = new ConfdDaemon(self);
-
-    RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "attempt confd connection" );
-    self->try_confd_connection();
-  }
-
-  // Register for logrotate config subscription
-  RWMEMLOG( memlog_buf, RWMEMLOG_MEM2, "register logrotate cfg subscription" );
-  self->confd_daemon_->confd_log()->register_config();
+  rwsched_dispatch_async_f(self->rwsched_tasklet(),
+                           rwsched_dispatch_get_main_queue(self->rwsched()),
+                           self->mgmt_handler(),
+                           BaseMgmtSystem::system_startup_cb);
+  return;
 }
 
 
@@ -318,6 +337,25 @@ void Instance::dyn_schema_dts_registration(void *ctxt)
   self->dts_->load_registrations(self->yang_model());
 
   self->initializing_composite_schema_ = false;
+}
+
+bool Instance::registrations_propagated()
+{
+  if(exported_modules_app_data_.size() <= 0) {
+    // modules haven't been loaded yet
+    return false;
+  }
+
+  auto comparison = [](northbound_dts_registrations_app_data value) -> bool
+  {
+    return value.propagated;
+  };
+
+  bool const registrations_are_propagated = std::all_of(exported_modules_app_data_.begin(),
+                                                        exported_modules_app_data_.end(),
+                                                        comparison);
+
+  return registrations_are_propagated;
 }
 
 void Instance::start()
@@ -361,12 +399,41 @@ void Instance::start()
 
   // set rift environment variables for rw.cli to connect to confd
   // ATTN: this should be read from the manifest when the agent generates confd.conf at runtime (RIFT-5059)
-  rw_status_t const status = rw_setenv("NETCONF_PORT_NUMBER","2022");
+  rw_status_t status = rw_setenv("NETCONF_PORT_NUMBER","2022");
 
   if (status != RW_STATUS_SUCCESS) {
     RW_MA_INST_LOG(this,
                    InstanceError,
                    "Couldn't set NETCONF port number in Rift environment variable");
+  }
+
+  // Set the Management agent mode as a RIFT env variable. This can be used by
+  // other processes like RW.CLI to decide on which mode to operate.
+  const char* agent_mode = nullptr;
+  if (RequestMode::CONFD == request_mode_) {
+    agent_mode = "CONFD";
+  } else {
+    agent_mode = "XML";
+  }
+
+  status = rw_setenv("RWMGMT_AGENT_MODE", agent_mode);
+  if (status != RW_STATUS_SUCCESS) {
+    RW_MA_INST_LOG(this,
+                   InstanceError,
+                   "Couldn't set RW_MGMT_AGENT_MODE in Rift environment variable");
+  }
+
+  if (request_mode_ == RequestMode::CONFD) {
+    if (!MgmtSystemFactory::get().is_registered("ConfdMgmtSystem")) {
+      RW_MA_INST_LOG(this, InstanceCritInfo, "ConfdMgmtSystem Not Supported..Agent Will not start");
+      return;
+    }
+    mgmt_handler_.reset(
+        MgmtSystemFactory::get().create_object("ConfdMgmtSystem", this).release());
+  } else {
+    RW_ASSERT (MgmtSystemFactory::get().is_registered("XMLMgmtSystem"));
+    mgmt_handler_.reset(
+        MgmtSystemFactory::get().create_object("XMLMgmtSystem", this).release());
   }
 
   // Set the instance name
@@ -395,7 +462,7 @@ bool Instance::parse_cmd_args(const rwyangutil::ArgumentParser& arg_parser)
 
   if (proto == "AF_INET") {
     if (arg_parser.exists("--confd-ip")) {
-      auto ret = inet_aton(arg_parser.get_param("--confd-ip").c_str(), 
+      auto ret = inet_aton(arg_parser.get_param("--confd-ip").c_str(),
                            &confd_inet_addr_.sin_addr);
       if (ret == 0) {
         std::string log;
@@ -411,6 +478,7 @@ bool Instance::parse_cmd_args(const rwyangutil::ArgumentParser& arg_parser)
         status = false;
       }
     }
+#define CONFD_PORT 4565 //ATTN:- This is a temporary hack for now until we move this code to ConfdMgmtSystem
     uint32_t port = CONFD_PORT;
     if (arg_parser.exists("--confd-port")) {
       port = atoi(arg_parser.get_param("--confd-port").c_str());
@@ -425,23 +493,14 @@ bool Instance::parse_cmd_args(const rwyangutil::ArgumentParser& arg_parser)
     confd_inet_addr_.sin_addr.s_addr = INADDR_ANY;
     confd_addr_ = (struct sockaddr *) &confd_inet_addr_;
     confd_addr_size_ = sizeof (confd_inet_addr_);
-  } 
-  else if (proto == "AF_UNIX") {
-    if (arg_parser.exists("--confd-unix-path")) {
-      confd_unix_socket_ = arg_parser.get_param("--confd-unix-path");
 
-      memset (&confd_unix_addr_, 0, sizeof (confd_unix_addr_));
-      strcpy (confd_unix_addr_.sun_path, confd_unix_socket_.c_str());
-      confd_unix_addr_.sun_family = AF_UNIX;
-
-      confd_addr_ = (struct sockaddr *) &confd_unix_addr_;
-      confd_addr_size_ = sizeof (confd_unix_addr_);
-    }
+  } else {
+    RW_MA_INST_LOG (this, InstanceCritInfo, "Unsupported/Unknown proto option specified");
+    status = false;
   }
 
-  if (arg_parser.exists("--confd_ws")) {
-    unique_ws_ = true;
-    mgmt_workspace_ = arg_parser.get_param("--confd_ws");
+  if (arg_parser.exists("--unique")) {
+    non_persist_ws_ = true;
   }
 
   return status;
@@ -473,9 +532,9 @@ rw_status_t Instance::handle_dynamic_schema_update(const int batch_size,
   if (initializing_composite_schema_) {
     // loading composite schema on boot
     perform_dynamic_schema_update();
-  } else {   
+  } else {
     // normal dynamic schema operation
-    start_upgrade(1, nullptr);
+    mgmt_handler_->start_upgrade(batch_size);
   }
   RW_MA_INST_LOG(this, InstanceInfo, "Dynamic schema update callback completed");
 
@@ -483,112 +542,136 @@ rw_status_t Instance::handle_dynamic_schema_update(const int batch_size,
 }
 
 
-rw_status_t Instance::perform_dynamic_schema_update()
+void Instance::perform_dynamic_schema_update()
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "perform dynamic schema");
 
-  for (const module_details_t& module : pending_schema_modules_) {
-    auto module_name = module.module_name.c_str();
-    auto so_filename = module.so_filename.c_str();
-
-    const rw_yang_pb_schema_t* new_schema = rw_load_schema(so_filename, module_name);
-    RW_ASSERT(new_schema);
-    
-    // make a temporary model in case of failure
-    auto *tmp_model = rw_yang::YangModelNcx::create_model();
-    RW_ASSERT(tmp_model);
-
-    tmp_model->load_schema_ypbc(new_schema);
-    rw_status_t status = tmp_model->register_ypbc_schema(new_schema);
-    if ( RW_STATUS_SUCCESS != status ) {
-      RW_MA_INST_LOG(this, InstanceCritInfo, "Error while registering for ypbc schema.");
-    }
-
-    // Create new schema
-    const rw_yang_pb_schema_t * merged_schema = rw_schema_merge(nullptr, ypbc_schema_, new_schema);
-
-    if (!merged_schema) {
-      std::string log_str;
-      RW_MA_INST_LOG(this, InstanceError,
-                     (log_str=std::string("Dynamic schema update for ")
-                      + module_name + so_filename+ " failed").c_str());
-
-      return RW_STATUS_FAILURE;
-    }
-  
-    RW_MA_INST_LOG(this, InstanceDebug, "Load and merge completed.");
-
-    load_module(module_name);
-    // Overwrite the old schema with new
-    ypbc_schema_ = merged_schema;
-
-    if (module.exported) {
-      exported_modules_.emplace(module.module_name);
-    }
-
-    tmp_models_.emplace_back(tmp_model);
-    yang_model()->load_schema_ypbc(merged_schema);
-
-    status = yang_model()->register_ypbc_schema(merged_schema);
-    if ( RW_STATUS_SUCCESS != status ) {
-      RW_MA_INST_LOG(this, InstanceCritInfo, "Error while registering for ypbc schema.");
-    }
-  }
-
-  rwdts_api_set_ypbc_schema( dts_api(), ypbc_schema_ );
+  after_modules_loaded_cb_ = perform_dynamic_schema_update_end;
 
   rwsched_dispatch_async_f(rwsched_tasklet(),
-                           rwsched_dispatch_get_main_queue(rwsched()),
+                           schema_load_q_,
                            this,
+                           perform_dynamic_schema_update_load_modules);
+
+}
+
+void Instance::perform_dynamic_schema_update_load_modules(void * context)
+{
+  Instance * instance = static_cast<Instance*>(context);
+  RW_ASSERT (instance);
+
+  const module_details_t module = instance->pending_schema_modules_.front();
+  instance->pending_schema_modules_.pop_front();
+
+  auto module_name = module.module_name.c_str();
+  auto so_filename = module.so_filename.c_str();
+
+  const rw_yang_pb_schema_t* new_schema = rw_load_schema(so_filename, module_name);
+  RW_ASSERT(new_schema);
+
+  // make a temporary model in case of failure
+  auto *tmp_model = rw_yang::YangModelNcx::create_model();
+  RW_ASSERT(tmp_model);
+
+  tmp_model->load_schema_ypbc(new_schema);
+  rw_status_t status = tmp_model->register_ypbc_schema(new_schema);
+  if ( RW_STATUS_SUCCESS != status ) {
+    RW_MA_INST_LOG(instance, InstanceCritInfo, "Error while registering for ypbc schema.");
+  }
+
+  // Create new schema
+  const rw_yang_pb_schema_t * merged_schema = rw_schema_merge(nullptr, instance->ypbc_schema_, new_schema);
+
+  if (!merged_schema) {
+    std::string log_str;
+    RW_MA_INST_LOG(instance, InstanceError,
+                   (log_str=std::string("Dynamic schema update for ")
+                    + module_name + so_filename+ " failed").c_str());
+
+    instance->loading_modules_success_ = false;
+    rwsched_dispatch_async_f(instance->rwsched_tasklet(),
+                             rwsched_dispatch_get_main_queue(instance->rwsched()),
+                             instance,
+                             instance->after_modules_loaded_cb_);
+    return;
+  }
+
+  RW_MA_INST_LOG(instance, InstanceDebug, "Load and merge completed.");
+
+  instance->load_module(module_name);
+  // Overwrite the old schema with new
+  instance->ypbc_schema_ = merged_schema;
+
+  if (module.exported) {
+    instance->exported_modules_.emplace(module.module_name);
+  }
+
+  instance->tmp_models_.emplace_back(tmp_model);
+  instance->yang_model()->load_schema_ypbc(merged_schema);
+
+  status = instance->yang_model()->register_ypbc_schema(merged_schema);
+  if ( RW_STATUS_SUCCESS != status ) {
+    RW_MA_INST_LOG(instance, InstanceCritInfo, "Error while registering for ypbc schema.");
+  }
+
+  if (instance->pending_schema_modules_.size() > 0) {
+    // keep loading modules
+    rwsched_dispatch_async_f(instance->rwsched_tasklet(),
+                             instance->schema_load_q_,
+                             instance,
+                             perform_dynamic_schema_update_load_modules);
+   return;
+  }
+
+  rwsched_dispatch_async_f(instance->rwsched_tasklet(),
+                           rwsched_dispatch_get_main_queue(instance->rwsched()),
+                           instance,
+                           instance->after_modules_loaded_cb_);
+}
+
+void Instance::schema_registration_ready(rwdts_member_reg_handle_t  reg)
+{
+  auto comparison = [reg](northbound_dts_registrations_app_data const value) -> bool
+  {
+    return reg == value.registration;
+  };
+
+  exported_modules_app_data_itr_t found_value =
+      std::find_if(exported_modules_app_data_.begin(),
+                   exported_modules_app_data_.end(),
+                   comparison);
+
+  RW_ASSERT(found_value != exported_modules_app_data_.end());
+
+  found_value->propagated = true;
+}
+
+void Instance::perform_dynamic_schema_update_end(void * context)
+{
+  Instance * instance = static_cast<Instance*>(context);
+  RW_ASSERT (instance);
+  instance->after_modules_loaded_cb_ = nullptr;
+
+  RWMEMLOG_TIME_SCOPE(instance->memlog_buf_,
+                      RWMEMLOG_MEM2,
+                      "perform dynamic schema dts registrations and confd info");
+
+  if (!instance->loading_modules_success_) {
+    RW_MA_INST_LOG (instance, InstanceNotice,
+                    "RW.uAgent - module loading failed.");
+    return;
+  }
+
+  rwdts_api_set_ypbc_schema( instance->dts_api(), instance->ypbc_schema_ );
+
+  rwsched_dispatch_async_f(instance->rwsched_tasklet(),
+                           rwsched_dispatch_get_main_queue(instance->rwsched()),
+                           instance,
                            Instance::dyn_schema_dts_registration);
 
-  pending_schema_modules_.clear();
+  instance->pending_schema_modules_.clear();
 
-  return fill_in_confd_info();
-}
-
-rw_status_t Instance::fill_in_confd_info()
-{
-  if (!initializing_composite_schema_
-      && confd_load_schemas(confd_addr_, confd_addr_size_) != CONFD_OK) {
-    RW_MA_INST_LOG (this, InstanceNotice,
-                    "RW.uAgent - load of  Confdb schema failed.");
-    return RW_STATUS_FAILURE;
-  }
-
-  bool ret = xml_mgr_->get_yang_model()->app_data_get_token(
-      YANGMODEL_ANNOTATION_KEY, 
-      YANGMODEL_ANNOTATION_CONFD_NS,
-      &xml_mgr_->get_yang_model()->adt_confd_ns_);
-  RW_ASSERT(ret);
-
-  ret = xml_mgr_->get_yang_model()->app_data_get_token(
-      YANGMODEL_ANNOTATION_KEY, 
-      YANGMODEL_ANNOTATION_CONFD_NAME,
-      &xml_mgr_->get_yang_model()->adt_confd_name_);
-  RW_ASSERT(ret);
-
-  if (!initializing_composite_schema_) {
-    annotate_yang_model_confd();
-  }
-
-  return RW_STATUS_SUCCESS;
-}
-
-void Instance::close_cf_socket(rwsched_CFSocketRef s)
-{
-  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "close cf socket");
-  rwsched_instance_ptr_t sched = rwsched();
-  rwsched_tasklet_ptr_t tasklet = rwsched_tasklet();
-  rwsched_CFRunLoopRef runloop = rwsched_tasklet_CFRunLoopGetCurrent(tasklet);
-
-  cf_src_map_t::iterator src = cf_srcs_.find (s);
-  RW_ASSERT (src != cf_srcs_.end());
-
-  rwsched_tasklet_CFRunLoopRemoveSource(tasklet,runloop,src->second,sched->main_cfrunloop_mode);
-  cf_srcs_.erase(src);
-
-  rwsched_tasklet_CFSocketRelease(tasklet, s);
+  instance->mgmt_handler_->annotate_schema();
 }
 
 void Instance::setup_dom(const char *module_name)
@@ -602,16 +685,6 @@ void Instance::setup_dom(const char *module_name)
   xml_mgr_ = std::move(xml_manager_create_xerces());
   xml_mgr_->set_log_cb(rw_management_agent_xml_log_cb,this);
 
-  // register app data for confd hash registration
-  auto model = yang_model();
-  bool ret = model->app_data_get_token(YANGMODEL_ANNOTATION_KEY, YANGMODEL_ANNOTATION_CONFD_NS,
-                                       &model->adt_confd_ns_);
-  RW_ASSERT(ret);
-
-  ret =  model->app_data_get_token(YANGMODEL_ANNOTATION_KEY, YANGMODEL_ANNOTATION_CONFD_NAME,
-                                   &model->adt_confd_name_);
-  RW_ASSERT(ret);
-
   auto *module = load_module(module_name);
   module->mark_imports_explicit();
 
@@ -620,8 +693,6 @@ void Instance::setup_dom(const char *module_name)
 
 YangModule* Instance::load_module(const char* module_name)
 {
-  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "load new module",
-                      RWMEMLOG_ARG_STRNCPY(32, module_name) );
   RW_MA_INST_LOG(this, InstanceDebug, "Reloading dom with new module");
 
   YangModule *module = yang_model()->load_module(module_name);
@@ -634,6 +705,190 @@ YangModule* Instance::load_module(const char* module_name)
 
   return module;
 }
+
+void Instance::enqueue_pb_request(NbReqInternal* nbreq)
+{
+  RWMEMLOG( memlog_buf_, RWMEMLOG_MEM2, "enqueue_pb_request" );
+
+  auto main_q = rwsched_dispatch_get_main_queue(rwsched());
+  dispatch_queue_t q = dispatch_get_current_queue();
+  RW_ASSERT((void*)q == *(void**)main_q);
+
+  pb_req_q_.emplace_back(nbreq);
+  RW_MA_INST_LOG(this, InstanceDebug, "Enqueued pb-req");
+
+  if (pb_req_q_.size() == 1) {
+    rwsched_dispatch_async_f(rwsched_tasklet(),
+                             main_q,
+                             this,
+                             Instance::dispatch_next_pb_req);
+  }
+}
+
+void Instance::dispatch_next_pb_req(void* ud)
+{
+  RW_ASSERT (ud);
+  auto self = static_cast<Instance*>(ud);
+  if (self->pb_req_q_.size() == 0) return;
+
+  self->pb_req_q_.front()->execute();
+}
+
+void Instance::dequeue_pb_request()
+{
+  RWMEMLOG( memlog_buf_, RWMEMLOG_MEM2, "dequeue_pb_request" );
+
+  auto main_q = rwsched_dispatch_get_main_queue(rwsched());
+  dispatch_queue_t q = dispatch_get_current_queue();
+  RW_ASSERT((void*)q == *(void**)main_q);
+  RW_ASSERT (pb_req_q_.size());
+
+  pb_req_q_.pop_front();
+  RW_MA_INST_LOG(this, InstanceDebug, "Dequeued pb-req");
+
+  rwsched_dispatch_async_f(rwsched_tasklet(),
+                           main_q,
+                           this,
+                           Instance::dispatch_next_pb_req);
+}
+
+void Instance::start_tasks_ready_timer()
+{
+  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "start readiness timer");
+  rwsched_tasklet_ptr_t tasklet = rwsched_tasklet();
+  RW_MA_INST_LOG(this, InstanceInfo, "Starting timer to wait for critical tasklets");
+
+  tasks_ready_timer_ = rwsched_dispatch_source_create(
+      tasklet,
+      RWSCHED_DISPATCH_SOURCE_TYPE_TIMER,
+      0,
+      0,
+      rwsched_dispatch_get_main_queue(rwsched()));
+
+  rwsched_dispatch_source_set_event_handler_f(
+      tasklet,
+      tasks_ready_timer_,
+      Instance::tasks_ready_timer_expire_cb);
+
+  rwsched_dispatch_set_context(
+      tasklet,
+      tasks_ready_timer_,
+      this);
+
+  rwsched_dispatch_source_set_timer(
+      tasklet,
+      tasks_ready_timer_,
+      dispatch_time(DISPATCH_TIME_NOW, CRITICAL_TASKLETS_WAIT_TIME),
+      0,
+      0);
+
+  rwsched_dispatch_resume(tasklet, tasks_ready_timer_);
+}
+
+void Instance::tasks_ready_timer_expire_cb(void* ctx)
+{
+  RW_ASSERT(ctx);
+  static_cast<Instance*>(ctx)->tasks_ready_timer_expire();
+}
+
+void Instance::tasks_ready_timer_expire()
+{
+  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "ready timer expired, start mgmt server anyway");
+  RW_MA_INST_LOG(this, InstanceError,
+                 "Critical tasks not ready after 5 minutes, continuing");
+  tasks_ready();
+}
+
+void Instance::stop_tasks_ready_timer()
+{
+  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "stop ready timer",
+           RWMEMLOG_ARG_PRINTF_INTPTR("t=%" PRIdPTR, (intptr_t)tasks_ready_timer_));
+  if (tasks_ready_timer_) {
+    rwsched_tasklet_ptr_t tasklet = rwsched_tasklet();
+    rwsched_dispatch_source_cancel(tasklet, tasks_ready_timer_);
+    rwsched_dispatch_release(tasklet, tasks_ready_timer_);
+  }
+  tasks_ready_timer_ = nullptr;
+}
+
+void Instance::tasks_ready_cb(void* ctx)
+{
+  RW_ASSERT(ctx);
+  auto self = static_cast<Instance*>(ctx);
+  RW_MA_INST_LOG(self, InstanceCritInfo, "Critical tasklets are in running state.");
+
+  self->tasks_ready();
+}
+
+void Instance::tasks_ready()
+{
+  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "tasks ready");
+  stop_tasks_ready_timer();
+
+  try_start_mgmt_instance();
+}
+
+void Instance::try_start_mgmt_instance_cb(void* ctx)
+{
+  RW_ASSERT(ctx);
+  auto self = static_cast<Instance*>(ctx);
+  self->try_start_mgmt_instance();
+}
+
+void Instance::try_start_mgmt_instance()
+{
+  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "try management start");
+  RW_ASSERT (!mgmt_handler_->is_instance_ready());
+
+  if (!registrations_propagated()) {
+    auto when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 1);
+    RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "wait for registrations");
+
+    rwsched_dispatch_after_f(rwsched_tasklet(),
+                             when,
+                             rwsched_dispatch_get_main_queue(rwsched()),
+                             this,
+                             try_start_mgmt_instance_cb);
+    return;
+  }
+
+  rw_status_t rs = mgmt_handler_->create_mgmt_directory();
+  if (rs != RW_STATUS_SUCCESS) {
+    RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "create directory failed",
+             RWMEMLOG_ARG_PRINTF_INTPTR("rs=%" PRIX64,(intptr_t)rs) );
+    RW_MA_INST_LOG(this, InstanceError, "Directory creation failed for "
+        "management system. Retrying.");
+
+    auto when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 1);
+    rwsched_dispatch_after_f(rwsched_tasklet(),
+                             when,
+                             rwsched_dispatch_get_main_queue(rwsched()),
+                             this,
+                             try_start_mgmt_instance_cb);
+    return;
+  }
+
+  mgmt_handler_->start_mgmt_instance();
+}
+
+rw_status_t Instance::wait_for_critical_tasklets()
+{
+  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "wait for critical tasklets");
+  RW_ASSERT (!mgmt_handler_->is_instance_ready());
+
+  rw_status_t ret = RW_STATUS_SUCCESS;
+  // Wait for critical tasklets to come in Running state
+  RW_ASSERT(dts_api());
+
+  start_tasks_ready_timer();
+  rwdts_api_config_ready_register( dts_api(),
+                                   tasks_ready_cb,
+                                   this);
+
+  return ret;
+}
+
+
 
 static inline void recalculate_mean (uint32_t *mean,
                                      uint32_t old_count,
@@ -649,7 +904,6 @@ void Instance::update_stats(RwMgmtagt_SbReqType type,
                             const char *req,
                             RWPB_T_MSG(RwMgmtagt_SpecificStatistics_ProcessingTimes) *sbreq_stats)
 {
-  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM7, "update stats");
   RW_ASSERT(type < RW_MGMTAGT_SB_REQ_TYPE_MAXIMUM);
 
   if (nullptr == statistics_[type].get()) {
@@ -706,3 +960,4 @@ bool Instance::module_is_exported(std::string const & module_name)
 {
   return exported_modules_.count(module_name) > 0;
 }
+

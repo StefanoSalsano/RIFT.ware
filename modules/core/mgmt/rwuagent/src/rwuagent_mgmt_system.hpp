@@ -7,7 +7,7 @@
 
 
 /*
- * @file rwuagent_startup.hpp
+ * @file rwuagent_mgmt_system.hpp
  *
  * Management agent startup phase handler
  */
@@ -21,34 +21,125 @@
 #endif
 #endif
 
-#include "rwuagent.h"
+#define BOOST_NO_CXX11_SCOPED_ENUMS
+#include <boost/filesystem.hpp>
+#undef BOOST_NO_CXX11_SCOPED_ENUMS
+
+#include <map>
+#include <cstring>
+#include <memory>
+#include <utility>
+#include <functional>
+
 #include <rwmemlog.h>
 #include <rwmemlog_mgmt.h>
 #include <rwmemlogdts.h>
+#include <rw_xml.h>
+#include "rwuagent.hpp"
 
 namespace rw_uagent {
 
-static const char* CONFD_INIT_FILE = ".init_complete";
-static const uint64_t CRITICAL_TASKLETS_WAIT_TIME = NSEC_PER_SEC * 60 * 7; // 7 Mins
+class SbReqRpc;
+class BaseMgmtSystem;
 
-//Fwd decl
-class Instance;
+/*!
+ * Plugin registration interface
+ */
+class IPluginRegister
+{
+public:
+  IPluginRegister() = default;
+  IPluginRegister(const IPluginRegister&) = delete;
+  void operator=(const IPluginRegister&) = delete;
+  virtual BaseMgmtSystem* CreateObject(Instance*) = 0;
+  virtual ~IPluginRegister() {}
+};
+
+
+/*!
+ * MgmtSystemFactory is a singleton which
+ * enables registration of Nb plugins
+ * via NbPluginRegister
+ */
+class MgmtSystemFactory
+{
+public:
+  /*!
+   * Return the singleton instance
+   */
+  static MgmtSystemFactory& get();
+
+  /*!
+   * Register the provided ID and the constructor
+   * object in the plugin registration map
+   */
+  bool register_nb(const std::string& id, IPluginRegister* c);
+
+  /*!
+   * Checks if the plugin by the name 'id'
+   * is registered in the factory or not.
+   */
+  bool is_registered(const std::string& id) const;
+
+  /*
+   * Creates the object againt the registered ID
+   * Asserts if the object is not found in the
+   * plugin registration map.
+   * The caller should take the owner ship of
+   * the returned BaseMgmtSystem instance.
+   */
+  std::unique_ptr<BaseMgmtSystem>
+  create_object(const std::string& id, Instance* inst);
+
+private:
+  MgmtSystemFactory() {}
+  MgmtSystemFactory(const MgmtSystemFactory&);
+  void operator=(const MgmtSystemFactory&);
+
+private:
+
+  std::map<std::string, IPluginRegister*> plugin_map_;
+};
+
+
+
+/*!
+ * Concrete implementation of registration interface.
+ * On construction, registers the management system class
+ * with the factory and provides with an API to construct
+ * an object of the registered type.
+ */
+template <typename Product>
+class NbPluginRegister: public IPluginRegister
+{
+public:
+  NbPluginRegister(): IPluginRegister() {
+    MgmtSystemFactory::get().register_nb(Product::ID, this);
+  }
+
+  BaseMgmtSystem* CreateObject(Instance* inst) {
+    return static_cast<BaseMgmtSystem*>(new Product(inst));
+  }
+};
+
+
+//----------------------------------------------------------------------------
 
 /*!
  * Management agent system base class. This is
  * a pure virtual class. Concrete implementations exist for Confd
  * and libnetconf servers.
- * An instance of the concrete implementation will be created and 
- * owned by the rwuagent Instance class. This instance will be used 
+ * An instance of the concrete implementation will be created and
+ * owned by the rwuagent Instance class. This instance will be used
  * to make the confd/libnetconf daemon progress through its startup/
- * initialization phase till it opens up its northbound interfaces 
+ * initialization phase till it opens up its northbound interfaces
  * (NETCONF/CLI/REST etc).
  *
  * The need for such a management system class is to make the bootup of
- * of management agent in sync with the Confd/libnetconf server 
+ * of management agent in sync with the Confd/libnetconf server
  * startup.
  *
- * In case of Confd, it would be started in phase-0 and would be 
+ * In case of Confd, it would be started in phase-0 and would be
  * moved to next phase as and when management agent proceeds through
  * its startup phase.
  *
@@ -69,16 +160,26 @@ public:
 
 public:
   /*!
-   * Useful for doing init connections with the
-   * server or for some initialization steps
+   * Called/Scheduled from the Agent startup code.
+   * Calls the system_startup API of the concrete
+   * implementation.
    */
-  virtual rw_status_t initialize_conn() = 0;
+  static void system_startup_cb(void* ctx);
 
-  bool is_instance_ready() const noexcept {
-    return inst_ready_;
-  }
+  /*!
+   * Does the initialization of the mgmt system by creating instances
+   * of objects required for creating Nb transactions.  Will be called
+   * periodically and repeatedly until it returns true.
+   */
+   virtual bool system_startup() = 0;
 
-public:
+   /*!
+    * Do the system initialization.
+    * Called after the management system is detected
+    * to be running via is_instance_ready API.
+    */
+   virtual rw_status_t system_init() = 0;
+
   /*!
    * Calls the correct callback as per the current state
    * of the state machine.
@@ -87,38 +188,70 @@ public:
    */
   virtual void proceed_to_next_state() = 0;
 
-public:
-
-  /*!
-   * Waits for the critical tasklets to come into Running
-   * state before proceeding with the startup state machine.
-   * It waits for 5 mins(default) before getting timed out
-   * on waiting for critical tasklets.
-   */
-  virtual rw_status_t wait_for_critical_tasklets();
   /*!
    * Starts the configuration management process via
    * VCS by making an RPC call via DTS.
    */
-  virtual void start_mgmt_instance();
+  virtual void start_mgmt_instance() = 0;
+
+  virtual rw_status_t annotate_schema() {
+    return RW_STATUS_SUCCESS;
+  }
+
+  virtual void start_upgrade(int modules) {
+    return;
+  }
 
   /*!
-   * Receives start callback and verifies that it worked.
+   * Forwards the notification to the concrete implementation
+   * to handle
    */
-  virtual void config_mgmt_start(
-    rwdts_xact_t*        xact,
-    rwdts_xact_status_t* xact_status);
+  virtual rwdts_member_rsp_code_t
+  handle_notification(const ProtobufCMessage* msg) = 0;
 
   /*!
-   * Creates a configuration Item in the agent
-   * config DOM for vstart RPC to work.
+   * Creates the directory structure required by the management system.
    */
-  virtual void create_proxy_manifest_config() = 0;
+  virtual rw_status_t create_mgmt_directory() = 0;
+
+  /*!
+   * Forwards the RPC to the concreate implementation to handle.
+   *
+   * ATTN: The management system should register for all of its
+   * specific RPCs explicitly and directly.  The core should not be
+   * intercepting them.
+   */
+  virtual StartStatus handle_rpc(SbReqRpc* parent_rpc, const ProtobufCMessage* msg) = 0;
+
+  /*!
+   * Forwards the get request call to the concrete implementation.
+   *
+   * ATTN: The management system should register for all of its
+   * specific RPCs explicitly and directly.  The core should not be
+   * intercepting them.
+   *
+   * ATTN: The way the agent handles gets for local data must be fixed
+   * to be published through DTS as any other application.  RIFT-8794
+   */
+  virtual StartStatus handle_get(SbReqGet* parent_get, rw_yang::XMLNode* node) = 0;
 
   /*!
    * Get the management component name.
    */
   virtual const char* get_component_name() = 0;
+
+  /*!
+   * Prepare phase of a config transaction.
+   */
+  virtual rw_status_t prepare_config(rw_yang::XMLDocument* dom) = 0;
+
+  /*!
+   * Commit phase of a config transaction.
+   * This function must be left to do only trivial tasks.
+   * Most of the initial tasks must be done during
+   * prepare_config.
+   */
+  virtual rw_status_t commit_config() = 0;
 
   /*!
    * Gets the management system directory from which
@@ -132,169 +265,26 @@ public:
    */
   virtual bool is_under_reload() const noexcept = 0;
 
+  /*!
+   * Checks if the mgmt system is ready to accept requests
+   * from Nb agents
+   */
+  virtual bool is_ready_for_nb_clients() const noexcept = 0;
+
+  /*!
+   * Checks if the mgmt instance has been started or not.
+   */
+  virtual bool is_instance_ready() const noexcept = 0;
+
 protected:
   Instance* instance_ = nullptr;
   RwMemlogBuffer memlog_buf_;
-  void* cb_data_ = nullptr;
-  bool inst_ready_ = false;
 
-protected:
-  /*!
-   * Called once the criticals tasklets are ready
-   * OR when the timer gets timed out waiting for the
-   * critical tasklets to come up.
-   */
-  virtual void tasks_ready();
- 
 private:
-  static void tasks_ready_cb(void* ctx);
-
-  // Timer related functions
-  static void tasks_ready_timer_expire_cb(void* ctx);
-  void start_tasks_ready_timer();
-  void tasks_ready_timer_expire();
-  void stop_tasks_ready_timer();
-
   // Create config file for logrotate
   rw_status_t do_create_logrotate_config(
       RWPB_T_MSG(RwMgmtagt_LogrotateConf)*);
-
-  // Critical tasks timer
-  rwsched_dispatch_source_t tasks_ready_timer_ = nullptr;
 };
-
-
-
-/*!
- * Management system specialized for Confd interaction.
- * It makes use of MAAPI API's to talk with confd and
- * to monitor its progress.
- * Confd startup is divided into multiple phases:
- * 1. Phase-0:
- *    This is the phase in which Confd will be started.
- *    Once initialized in this phase, uAgent can start
- *    with data provider/notification registrations.
- *
- * 2. Phase-1:
- *    Once uAgent is done with doing the registrations and
- *    setting up the socket connections, it will signal 
- *    the Confd daemon to proceed to Phase-1. In this
- *    phase, Confd basically initializes the CDB.
- *    Once Confd is done initializing this phase, uAgent can
- *    now add CDB subscribers.
- *    It will immidiately signal Confd to proceed to phase-2.
- *
- * 3. Phase-2:
- *    In this phase, Confd will bind and start listening to
- *    NETCONF, CLI, REST etc addresses / ports.
- *    After this, the management system can be said to be
- *    ready for accepting traffic.
- *
- */
-class ConfdMgmtSystem final: public BaseMgmtSystem
-{
-public:
-  ConfdMgmtSystem(Instance* instance);
-
-  ~ConfdMgmtSystem() {
-    close(sock_);
-    close(read_sock_);
-  }
-
-public:
-  using CB = void(*)(void*);
-
-  rw_status_t initialize_conn() override;
-
-public:
-  void proceed_to_next_state() override;
-
-  void create_proxy_manifest_config() override;
-
-  const char* get_component_name() override
-  {
-    return "confd";
-  }
-
-  const std::string& mgmt_dir() const noexcept override {
-    return confd_dir_;
-  }
-
-  bool is_under_reload() const noexcept override {
-    return is_under_reload_;
-  }
-
-private:
-  enum confd_phase_t {
-    PHASE_0 = 0,
-    PHASE_1,
-    PHASE_2,
-    RELOAD,
-    DONE,
-    TRANSITIONING, // in between phase change
-  };
-
-  std::array<const char*, 6> phase_2_str {{
-    "PHASE_0", "PHASE_1", "PHASE_2", "RELOAD",
-    "DONE", "TRANSITIONING"
-  }};
-
-  void close_sockets();
-  void retry_phase_cb(CB cb);
-
-  // State-1 callback
-  static void start_confd_phase_1_cb(void* ctx);
-  void start_confd_phase_1();
-
-  // State-2 callback
-  static void start_confd_phase_2_cb(void* ctx);
-  void start_confd_phase_2();
-
-  // State-3 callback
-  static void start_confd_reload_cb(void* ctx);
-  void start_confd_reload();
-
-  confd_phase_t curr_phase() const noexcept {
-    return state_.first;
-  }
-  confd_phase_t next_phase() const noexcept {
-    return state_.second;
-  }
-
-private:
-  // Callback function pointer
-  typedef void (*MFP)(void*);
-
-  // pair.first = curr_state
-  // pair.second = next_state
-  using State = std::pair<confd_phase_t, confd_phase_t>;
-  State state_{PHASE_0, PHASE_1};
-  std::map<State, MFP> state_mc_;
-
-  int sock_ = -1;
-  int read_sock_ = -1;
-
-  std::string confd_dir_;
-  bool is_under_reload_ = false;
-
-  //ATTN: dont be lazy, create protobuf
-  constexpr static const char* manifest_cfg_ = 
-                                    "<root>"
-                                    "<rw-manifest:manifest xmlns:rw-manifest=\"http://riftio.com/ns/riftware-1.0/rw-manifest\">"
-                                    "<rw-manifest:inventory>"
-                                    "<rw-manifest:component>"
-                                    "<rw-manifest:component-name>confd</rw-manifest:component-name>"
-                                    "<rw-manifest:component-type>PROC</rw-manifest:component-type>"
-                                    "<rwvcstypes:native-proc xmlns:rwvcstypes=\"http://riftio.com/ns/riftware-1.0/rw-manifest\">"
-                                    "<rwvcstypes:exe-path>./usr/bin/rw_confd</rwvcstypes:exe-path>"
-                                    "<rwvcstypes:args>--unique $</rwvcstypes:args>"
-                                    "</rwvcstypes:native-proc>"
-                                    "</rw-manifest:component>"
-                                    "</rw-manifest:inventory>"
-                                    "</rw-manifest:manifest>"
-                                    "</root>";
-};
-
 
 }
 

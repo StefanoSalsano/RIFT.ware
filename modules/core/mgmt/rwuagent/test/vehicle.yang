@@ -20,7 +20,8 @@ module vehicle
   prefix "vehicle";
 
   import rw-pb-ext { prefix "rwpb"; }
-  
+
+
   description
     "Base yang for testing xml to pb and pb to xml conversion with flat PB";
 
@@ -48,6 +49,101 @@ module vehicle
       leaf capacity {
         type uint8;
       }
+
+      leaf category {
+        type string;
+      }
     }
   }
+
+  container heavy {
+    container passenger {
+      list bus {
+        key "brand";
+        leaf brand {
+          type string;
+        }
+        leaf model {
+          type string;
+        }
+        leaf capacity {
+          type uint8;
+        }
+        leaf ac {
+          type empty;
+        }
+        leaf axles {
+          type uint8;
+          default 1;
+        }
+      }
+    }
+  }
+
+  list car-config {
+    key "name";
+    leaf name {
+      type string;
+    }
+    leaf air-bags {
+      type uint8;
+      default 2;
+    }
+    container engine {
+      leaf displacement {
+        type uint32;
+      }
+      leaf fuel-type {
+        type enumeration {
+          enum petrol;
+          enum diesel;
+        }
+        default "petrol";
+      }
+    }
+    choice variants {
+      default mid;
+      case base {
+        leaf item1 {
+          type string;
+        }
+        leaf item2 {
+          type string;
+          default "item2val";
+        }
+      }
+      case mid {
+        leaf item3 {
+          type string;
+        }
+        leaf item4 {
+          type string;
+          default "item4val";
+        }
+      }
+      case top {
+        leaf item5 {
+          type string;
+        }
+        leaf item6 {
+          type string;
+          default "item6val";
+        }
+      }
+    }
+  }
+
+  container mfg-catalog {
+    list mfg {
+      key name;
+      leaf name {
+        type string;
+      }
+
+      leaf hq-country {
+        type string;
+      }
+    }
+  }
+
 }

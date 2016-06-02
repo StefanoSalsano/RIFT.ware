@@ -37,7 +37,9 @@ install(
     racfg/mission_control_systest_openstack.racfg
     racfg/mission_control_delete_systest_cloudsim.racfg
     racfg/mission_control_reload_systest_openstack.racfg
+    racfg/mission_control_reload_systest_openstack_xml.racfg
     racfg/mission_control_systest_cloudsim_negative.racfg
+    racfg/mission_control_systest_cloudsim_negative_xml.racfg
     racfg/mission_control_systest_openstack_negative.racfg
   DESTINATION
     usr/rift/systemtest/mission_control

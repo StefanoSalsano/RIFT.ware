@@ -30,8 +30,6 @@ include_directories(BEFORE
   ${CMAKE_INSTALL_PREFIX}/usr/include/zsh/Src/Zle
   )
 
-#set(CMAKE_EXE_LINKER_FLAGS "-ldl -lncursesw -lrt -lm  -lc")
-
 set(C_SOURCES rift.c)
 add_library(rift_zsh SHARED ${C_SOURCES})
 add_dependencies(rift_zsh zsh rwcli)
@@ -40,7 +38,7 @@ set_target_properties(rift_zsh
   PROPERTIES 
     PREFIX ""
     OUTPUT_NAME "rift"
-    LINK_FLAGS "-ldl -lncursesw -lrt -lm  -lc")
+    LINK_FLAGS "-lcrypto -ldl -lncursesw -lrt -lm  -lc")
 target_link_libraries(rift_zsh
   ${RIFT_SUBMODULE_BINARY_ROOT}/rwcli/src/librwcli.so)
 install(TARGETS rift_zsh

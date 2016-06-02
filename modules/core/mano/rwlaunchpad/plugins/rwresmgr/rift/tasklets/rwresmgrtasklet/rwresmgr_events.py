@@ -155,34 +155,66 @@ class ResourceMgrEvent(object):
 
         def monitor_vdu_state(response_xpath, pathentry):
             self._log.info("Initiating VDU state monitoring for xpath: %s ", response_xpath)
-            loop_cnt = 120
-            while loop_cnt > 0:
-                self._log.debug("VDU state monitoring: Sleeping for 1 second ")
+            loop_cnt = 180
+            for i in range(loop_cnt):
+                self._log.debug("VDU state monitoring for xpath: %s. Sleeping for 1 second", response_xpath)
                 yield from asyncio.sleep(1, loop = self._loop)
                 try:
                     response_info = yield from self._parent.read_virtual_compute_info(pathentry.key00.event_id)
                 except Exception as e:
                     self._log.info("VDU state monitoring: Received exception %s in VDU state monitoring for %s. Aborting monitoring",
                                    str(e),response_xpath)
-                    return
-                if response_info.resource_state == 'active' or response_info.resource_state == 'failed':
-                    self._log.info("VDU state monitoring: VDU reached terminal state. Publishing VDU info: %s at path: %s",
-                                   response_info, response_xpath)
+                    response_info = RwResourceMgrYang.VDUEventData_ResourceInfo()
+                    response_info.resource_state = 'failed'
                     yield from self._dts.query_update(response_xpath,
-                                                      rwdts.Flag.ADVISE,
+                                                      rwdts.XactFlag.ADVISE,
                                                       response_info)
                     return
                 else:
-                    loop_cnt -= 1
-            ### End of while loop. This is only possible if VDU did not reach active state
-            self._log.info("VDU state monitoring: VDU at xpath :%s did not reached active state in 120 seconds. Aborting monitoring",
+                    if response_info.resource_state == 'active' or response_info.resource_state == 'failed':
+                        self._log.info("VDU state monitoring: VDU reached terminal state. Publishing VDU info: %s at path: %s",
+                                       response_info, response_xpath)
+                        yield from self._dts.query_update(response_xpath,
+                                                          rwdts.XactFlag.ADVISE,
+                                                          response_info)
+                        return
+            else:
+                ### End of loop. This is only possible if VDU did not reach active state
+                self._log.info("VDU state monitoring: VDU at xpath :%s did not reached active state in 120 seconds. Aborting monitoring",
                            response_xpath)
-            response_info = RwResourceMgrYang.VDUEventData_ResourceInfo()
-            response_info.resource_state = 'failed'
-            yield from self._dts.query_update(response_xpath,
-                                              rwdts.Flag.ADVISE,
-                                              response_info)
+                response_info = RwResourceMgrYang.VDUEventData_ResourceInfo()
+                response_info.resource_state = 'failed'
+                yield from self._dts.query_update(response_xpath,
+                                                  rwdts.XactFlag.ADVISE,
+                                                  response_info)
             return
+
+        def allocate_vdu_task(ks_path, event_id, cloud_account, request_msg):
+            response_xpath = ks_path.to_xpath(RwResourceMgrYang.get_schema()) + "/resource-info"
+            schema = RwResourceMgrYang.VDUEventData().schema()
+            pathentry = schema.keyspec_to_entry(ks_path)
+            try:
+                response_info = yield from self._parent.allocate_virtual_compute(event_id,
+                                                                                 cloud_account,
+                                                                                 request_msg,)
+            except Exception as e:
+                self._log.error("Encountered exception : %s while creating virtual compute", str(e))
+                response_info = RwResourceMgrYang.VDUEventData_ResourceInfo()
+                response_info.resource_state = 'failed'
+                yield from self._dts.query_update(response_xpath,
+                                                  rwdts.XactFlag.ADVISE,
+                                                  response_info)
+            else:
+                if response_info.resource_state == 'failed' or response_info.resource_state == 'active' :
+                    self._log.info("Virtual compute create task completed. Publishing VDU info: %s at path: %s",
+                                   response_info, response_xpath)
+                    yield from self._dts.query_update(response_xpath,
+                                                      rwdts.XactFlag.ADVISE,
+                                                      response_info)
+                else:
+                    asyncio.ensure_future(monitor_vdu_state(response_xpath, pathentry),
+                                          loop = self._loop)
+
 
         @asyncio.coroutine
         def on_vdu_request_prepare(xact_info, action, ks_path, request_msg):
@@ -196,15 +228,19 @@ class ResourceMgrEvent(object):
             pathentry = schema.keyspec_to_entry(ks_path)
 
             if action == rwdts.QueryAction.CREATE:
-                response_info = yield from self._parent.allocate_virtual_compute(pathentry.key00.event_id,
-                                                                                 request_msg.cloud_account,
-                                                                                 request_msg.request_info,
-                                                                                 )
-                if response_info.resource_state == 'pending':
-                    asyncio.ensure_future(monitor_vdu_state(response_xpath, pathentry),
-                                          loop = self._loop)
+                response_info = RwResourceMgrYang.VDUEventData_ResourceInfo()
+                response_info.resource_state = 'pending'
                 request_msg.resource_info = response_info
-                self.create_record_dts(self._vdu_reg, None, ks_path.to_xpath(RwResourceMgrYang.get_schema()), request_msg)
+                self.create_record_dts(self._vdu_reg,
+                                       None,
+                                       ks_path.to_xpath(RwResourceMgrYang.get_schema()),
+                                       request_msg)
+                asyncio.ensure_future(allocate_vdu_task(ks_path,
+                                                        pathentry.key00.event_id,
+                                                        request_msg.cloud_account,
+                                                        request_msg.request_info),
+                                      loop = self._loop)
+                
             elif action == rwdts.QueryAction.DELETE:
                 yield from self._parent.release_virtual_compute(pathentry.key00.event_id)
                 self.delete_record_dts(self._vdu_reg, None, ks_path.to_xpath(RwResourceMgrYang.get_schema()))
@@ -217,7 +253,6 @@ class ResourceMgrEvent(object):
                             response_xpath, response_info)
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK, response_xpath, response_info)
-
 
 
         @asyncio.coroutine

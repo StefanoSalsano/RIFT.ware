@@ -23,7 +23,7 @@ import rift.auto.session
 
 
 logging.basicConfig(format='%(asctime)-15s %(levelname)s %(message)s')
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 parser = argparse.ArgumentParser()
@@ -49,9 +49,7 @@ time_elapsed = time.time() - start
 time_remaining = args.max_wait - time_elapsed
 
 try:
-    session = rift.auto.session.NetconfSession(args.confd_host)
-    session.connect(timeout=time_remaining)
-    logger.info("Successfully connected to confd (%s) SSH port (2022)", args.confd_host)
+    session = rift.auto.session.RestconfSession(args.confd_host)
     time_elapsed = time.time() - start
     time_remaining = args.max_wait - time_elapsed
     rift.vcs.vcs.wait_until_system_started(session, timeout_secs=time_remaining)

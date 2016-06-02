@@ -67,11 +67,12 @@ echo "BuildDir: %_builddir"
 %install
 echo "buildroot: %{buildroot}"
 echo "pwd: `pwd`";
+
 echo "running CMD: cp -Rpv ../SOURCES/%{name}-%{version}/* %{buildroot}/"
 #cp -Rpv ../SOURCES/%{name}-%{version}/* %{buildroot}/
 cp -Rpv %{RIFT_ROOT}/.install/rpmbuild/SOURCES/%{name}-%{version}/* %{buildroot}/ 
 
-#helper 
+#helpers
 cp -p %{RIFT_ROOT}/scripts/packaging/services/%{name}/prepare_lp.sh  %{buildroot}/%{DST_RIFT_ROOT}/
 
 rm -f \

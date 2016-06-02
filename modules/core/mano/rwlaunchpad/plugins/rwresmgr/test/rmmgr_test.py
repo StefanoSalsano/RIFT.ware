@@ -24,6 +24,8 @@ gi.require_version('RwManifestYang', '1.0')
 gi.require_version('RwResourceMgrYang', '1.0')
 gi.require_version('RwcalYang', '1.0')
 gi.require_version('RwTypes', '1.0')
+gi.require_version('RwCal', '1.0')
+
 
 import gi.repository.CF as cf
 import gi.repository.RwDts as rwdts
@@ -422,7 +424,7 @@ class RMMgrTestCase(rift.test.dts.AbstractDTSTest):
         msg = self.get_cloud_account_msg(acct_type)
         self.log.info("Configuring cloud-account: %s",msg)
         yield from dts.query_create(account_xpath,
-                                    rwdts.Flag.ADVISE,
+                                    rwdts.XactFlag.ADVISE,
                                     msg)
 
     @asyncio.coroutine
@@ -431,7 +433,7 @@ class RMMgrTestCase(rift.test.dts.AbstractDTSTest):
         msg = self.get_compute_pool_msg("virtual-compute", resource_type, cloud_type)
         self.log.info("Configuring compute-resource-pool: %s",msg)
         yield from dts.query_create(pool_xpath,
-                                    rwdts.Flag.ADVISE,
+                                    rwdts.XactFlag.ADVISE,
                                     msg)
             
 
@@ -441,7 +443,7 @@ class RMMgrTestCase(rift.test.dts.AbstractDTSTest):
         msg = self.get_network_pool_msg("virtual-network", resource_type, cloud_type)
         self.log.info("Configuring network-resource-pool: %s",msg)
         yield from dts.query_create(pool_xpath,
-                                    rwdts.Flag.ADVISE,
+                                    rwdts.XactFlag.ADVISE,
                                     msg)
 
     @asyncio.coroutine
@@ -468,7 +470,7 @@ class RMMgrTestCase(rift.test.dts.AbstractDTSTest):
     @asyncio.coroutine
     def read_resource(self, dts, xpath):
         self.log.debug("Reading data for XPATH:%s", xpath)
-        result = yield from dts.query_read(xpath, rwdts.Flag.MERGE)
+        result = yield from dts.query_read(xpath, rwdts.XactFlag.MERGE)
         msg = None
         for r in result:
             msg = yield from r

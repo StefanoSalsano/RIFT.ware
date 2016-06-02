@@ -192,7 +192,7 @@ namespace rw_yang {
     std::string usid_env_;
     std::string yang_root_;
     std::string yang_sl_;
-    std::string rift_root_;
+    std::string rift_install_;
     std::string ver_dir_;
     std::string latest_;
 

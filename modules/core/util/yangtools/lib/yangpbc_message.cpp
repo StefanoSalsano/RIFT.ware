@@ -1540,7 +1540,8 @@ PbField* PbMessage::add_field(
   PbMsgType pb_msg_type)
 {
   RW_ASSERT(field_pbnode);
-  PbField* pbfld = new PbField(this, field_pbnode);
+  PbField* pbfld = new PbField(this, field_pbnode, nullptr);
+                               
   field_list_.emplace_back(pbfld);
   return pbfld;
 }
@@ -2592,24 +2593,17 @@ void PbMessage::output_h_ypbc_msgdesc_body(output_t output_style, std::ostream& 
     case output_t::message:
       os << pad1 << "const size_t num_fields;" << std::endl;
       os << pad1 << "const rw_yang_pb_flddesc_t* ypbc_flddescs;" << std::endl;
-      os << "#ifdef RW_YANGPBC_ENABLE_UTCLI" << std::endl;
-      os << pad1 << "const rw_yang_utcli_callback_argv_f_t utcli_callback_argv;" << std::endl;
-      os << "#else" << std::endl;
-      os << pad1 << "const void* utcli_callback_argv;" << std::endl;
-      os << "#endif /* RW_YANG_ENABLE_UTCLI */" << std::endl;
       break;
 
     case output_t::list_only:
       os << pad1 << "const size_t num_fields;" << std::endl;
       os << pad1 << "const void* ypbc_flddescs;" << std::endl;
-      os << pad1 << "const void* utcli_callback_argv;" << std::endl;
       break;
 
     case output_t::path_entry:
     case output_t::path_spec:
       os << pad1 << "const size_t num_fields;" << std::endl;
       os << pad1 << "const void* ypbc_flddescs;" << std::endl;
-      os << pad1 << "const void* utcli_callback_argv;" << std::endl;
       break;
 
     default:
@@ -3062,7 +3056,6 @@ void PbMessage::output_cpp_ypbc_msgdesc_body(output_t output_style, std::ostream
 
   /*** const size_t num_fields ***/
   /*** const uint32_t* field_index ***/
-  /*** utcli_callback_argv ***/
   switch (output_style) {
     case output_t::message: {
       if (generate_field_descs()) {
@@ -3076,23 +3069,12 @@ void PbMessage::output_cpp_ypbc_msgdesc_body(output_t output_style, std::ostream
         os << pad1 << "0," << std::endl;
         os << pad1 << "nullptr," << std::endl;
       }
-      YangExtension* yext_utcli_callback_argv = pbnode_->get_yext_utcli_callback_argv();
-      if (yext_utcli_callback_argv) {
-        os << pad1 << "#ifdef RW_YANGPBC_ENABLE_UTCLI" << std::endl;
-        os << pad1 << "&" << yext_utcli_callback_argv->get_value() << "," << std::endl;
-        os << pad1 << "#else" << std::endl;
-        os << pad1 << "nullptr," << std::endl;
-        os << pad1 << "#endif /* RW_YANG_ENABLE_UTCLI */" << std::endl;
-      } else {
-        os << pad1 << "nullptr," << std::endl;
-      }
       break;
     }
     case output_t::list_only:
     case output_t::path_entry:
     case output_t::path_spec:
       os << pad1 << "0," << std::endl;
-      os << pad1 << "nullptr," << std::endl;
       os << pad1 << "nullptr," << std::endl;
       break;
     default:
@@ -3317,14 +3299,6 @@ void PbMessage::output_cpp_msgdesc_define_message(std::ostream& os, unsigned ind
 
     if (generate_field_descs()) {
       output_cpp_ypbc_field_descs(os, indent);
-    }
-
-    YangExtension* yext_utcli_callback_argv = pbnode_->get_yext_utcli_callback_argv();
-    if (yext_utcli_callback_argv) {
-      os << pad1 << "#ifdef RW_YANGPBC_ENABLE_UTCLI" << std::endl;
-      os << pad1 << "rw_status_t " << yext_utcli_callback_argv->get_value()
-         << "(int argc, const char** argv);" << std::endl;
-      os << pad1 << "#endif /* RW_YANG_ENABLE_UTCLI */" << std::endl;
     }
 
     os << pad1 << "const " << get_ypbc_global("t_msg_msgdesc") << " "
@@ -3877,7 +3851,7 @@ void PbMessage::output_doc_message(
       default:
         break;
     }
-
+    
     switch (doc_style) {
       case doc_t::api_entry: {
         std::string prefix;

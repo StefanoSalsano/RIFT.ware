@@ -9,6 +9,9 @@ import time
 
 class MessageException(Exception):
     def __init__(self, msg):
+        if not isinstance(msg, Message):
+            raise ValueError("{} is not a message".format(msg.__class__.__name__))
+
         self.msg = msg
 
 
@@ -106,29 +109,16 @@ class Logger(object):
         msg.log(self._rift_logger)
         self._messages.append(msg)
 
-    def debug(self, msg):
-        self._rift_logger.debug(msg)
+    def __getattr__(self, name):
+        """ Return the rift logger attribute
 
-    def info(self, msg):
-        self._rift_logger.info(msg)
-
-    def error(self, msg):
-        self._rift_logger.error(msg)
-
-    def fatal(self, msg):
-        self._rift_logger.fatal(msg)
-
-    def warn(self, msg):
-        self._rift_logger.warn(msg)
-
-    def warning(self, msg):
-        self._rift_logger.warning(msg)
-
-    def critical(self, msg):
-        self._rift_logger.critical(msg)
-
-    def exception(self, exc):
-        self._rift_logger.exception(exc)
+        By returning the rift logger attribute back to the client,
+        the line logged by rwlogger corresponds to the actual file/line
+        logged by the application instead of one in this class.  This makes
+        debugging easier and prevents rwlogd from inadvertantly triggering
+        dup detection (which uses event & line information).
+        """
+        return getattr(self._rift_logger, name)
 
 
 class OnboardStart(StatusMessage):
@@ -166,9 +156,19 @@ class OnboardDescriptorValidation(StatusMessage):
         super().__init__("onboard-dsc-validation", "descriptor validation")
 
 
+class OnboardDescriptorTimeout(OnboardError):
+    def __init__(self):
+        super().__init__("descriptor timeout")
+
+
 class OnboardDescriptorError(OnboardError):
     def __init__(self, filename):
         super().__init__("unable to onboard {}".format(filename))
+
+
+class OnboardDescriptorFormatError(OnboardError):
+    def __init__(self, filename):
+        super().__init__("{} has unrecognized format".format(filename))
 
 
 class OnboardDescriptorOnboard(StatusMessage):
@@ -307,9 +307,19 @@ class UpdateDescriptorError(UpdateError):
         super().__init__("unable to update {}".format(filename))
 
 
+class UpdateDescriptorFormatError(UpdateError):
+    def __init__(self, filename):
+        super().__init__("{} has unrecognized format".format(filename))
+
+
 class UpdateDescriptorUpdated(StatusMessage):
     def __init__(self):
         super().__init__("update-dsc-updated", "updated descriptors")
+
+
+class UpdateDescriptorTimeout(UpdateError):
+    def __init__(self):
+        super().__init__("descriptor timeout")
 
 
 class UpdateUnreadableHeaders(UpdateError):

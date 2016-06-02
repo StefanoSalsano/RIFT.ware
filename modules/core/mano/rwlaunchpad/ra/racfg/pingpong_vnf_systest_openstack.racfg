@@ -1,6 +1,6 @@
 {
   "test_name":"TC_PINGPONG_VNF_OPENSTACK",
-  "commandline":"./pingpong_vnf_systest --cloud-type 'openstack' --cloud-host '10.66.4.115'",
+  "commandline":"./pingpong_vnf_systest --cloud-type 'openstack' --cloud-host={cloud_host} --lp-standalone --user={user} {tenants}",
   "test_description":"System test for ping and pong vnf (Openstack)",
   "run_as_root": false,
   "status":"broken",
@@ -9,7 +9,7 @@
   "networks":[],
   "vms":[
     {
-      "name": "VM",
+      "name": "rift_auto_launchpad",
       "memory": 8192,
       "cpus": 4
     }

@@ -39,11 +39,13 @@ if [ -z "$PROMPT_COMMAND" ]; then
     }
     PROMPT_COMMAND=setps
 fi
-if [ -f /bin/ccache ]; then
-    if [ $USER == "jenkins" ]; then
-        /bin/ccache -M 50G >/dev/null
-    else
-        /bin/ccache -M 10G >/dev/null
-    fi
-fi
+
+# causing LOTs of IO for jenkins and regular users and making logins SLOW
+#if [ -f /bin/ccache ]; then
+#    if [ $USER == "jenkins" ]; then
+#        /bin/ccache -M 50G >/dev/null
+#    else
+#        /bin/ccache -M 10G >/dev/null
+#    fi
+#fi
 

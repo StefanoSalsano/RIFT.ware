@@ -54,7 +54,6 @@ set(rwext_yang_files
   rw-cli-ext.yang
   rw-pb-ext.yang
   rw-notify-ext.yang
-  rw-utcli-ext.yang
   rw-yang-types.yang
   rw-3gpp-types.yang
   rw-c-types.yang

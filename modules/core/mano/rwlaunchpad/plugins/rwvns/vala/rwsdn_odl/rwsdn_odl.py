@@ -9,6 +9,8 @@ import requests
 
 import json
 import re
+import socket
+import time
 
 import gi
 gi.require_version('RwTypes', '1.0')
@@ -32,7 +34,7 @@ logger = logging.getLogger('rwsdn.sdnodl')
 logger.setLevel(logging.DEBUG)
 
 
-sff_rest_based = True 
+sff_rest_based = True
 
 class UnknownAccountError(Exception):
     pass
@@ -62,10 +64,28 @@ class SdnOdlPlugin(GObject.Object, RwSdn.Topology):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
             logger.addHandler(
                 rwlogger.RwLogger(
-                    category="sdnodl",
+                    category="rw-cal-log",
+                    subcategory="odl", 
                     log_hdl=rwlog_ctx,
                 )
             )
+
+    @rwstatus(ret_on_failure=[None])
+    def do_validate_sdn_creds(self, account):
+        """
+        Validates the sdn account credentials for the specified account.
+        Performs an access to the resources using Keystone API. If creds
+        are not valid, returns an error code & reason string
+
+        @param account - a SDN account
+
+        Returns:
+            Validation Code and Details String
+        """
+        #logger.debug('Received validate SDN creds')
+        status = self.sdnodl.validate_account_creds(account)
+        #logger.debug('Done with validate SDN creds: %s', type(status))
+        return status
 
     @rwstatus(ret_on_failure=[None])
     def do_get_network_list(self, account):
@@ -142,39 +162,39 @@ class Sff(object):
     Create SFF object to hold SFF related details
     """
 
-    def __init__(self,sff_br_uid, sff_br_name , sff_ip, sff_br_ip):
-        import socket
-        self.name = socket.getfqdn(sff_ip)
-        self.br_uid = sff_br_uid
-        self.ip = sff_ip
-        self.br_ip = sff_br_ip
+    def __init__(self,sff_name, mgmt_address, mgmt_port, dp_address, dp_port,sff_dp_name, sff_br_name=''):
+        self.name = sff_name
+        self.ip = mgmt_address
+        self.sff_rest_port = mgmt_port
+        self.sff_port = dp_port
+        self.dp_name = sff_dp_name
+        self.dp_ip = dp_address
         self.br_name = sff_br_name
-        self.sff_port = 6633
-        self.sff_rest_port = 6000
         self.sf_dp_list = list()
     
     def add_sf_dp_to_sff(self,sf_dp):
         self.sf_dp_list.append(sf_dp)
 
     def __repr__(self):
-        return 'Name:{},Bridge Name:{}, IP: {}, SF List: {}'.format(self.br_uid,self.br_name, self.ip, self.sf_dp_list) 
+        return 'Name:{},Bridge Name:{}, IP: {}, SF List: {}'.format(self.dp_name,self.br_name, self.ip, self.sf_dp_list) 
 
 class SfDpLocator(object):
     """
     Create Service Function Data Plane Locator related Object to hold details related to each DP Locator endpoint
     """
-    def __init__(self,sfdp_id,vnfr_name,vm_id):
-        self.name = sfdp_id
+    def __init__(self,name,sfdp_id,vnfr_name,vm_id):
+        self.name = name
         self.port_id = sfdp_id
         self.vnfr_name = vnfr_name
         self.vm_id = vm_id
         self.sff_name = None 
+        self.ovsdb_tp_name = None
 
     def _update_sff_name(self,sff_name):
         self.sff_name = sff_name
 
     def _update_vnf_params(self,service_function_type,address, port,transport_type):
-        self.service_function_type = 'service-function-type:{}'.format(service_function_type)
+        self.service_function_type = service_function_type
         self.address = address
         self.port = port
         self.transport_type = "service-locator:{}".format(transport_type)
@@ -300,6 +320,34 @@ class SdnOdl(object):
         return nwtop
 
 
+    def validate_account_creds(self, account):
+        """
+            Validate the SDN account credentials by accessing the rest API using the provided credentials
+        """
+        status = RwsdnYang.SdnConnectionStatus()
+        url = '{}/{}'.format(account.odl.url,"restconf")
+        try:
+            r=requests.get(url,auth=(account.odl.username,account.odl.password))
+            r.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            msg = "SdnOdlPlugin: SDN account credential validation failed. Exception: %s", str(e)
+            #logger.error(msg)
+            print(msg)
+            status.status = "failure"
+            status.details = "Invalid Credentials: %s" % str(e)
+        except Exception as e:
+            msg = "SdnPdlPlugin: SDN connection failed. Exception: %s", str(e)
+            #logger.error(msg)
+            print(msg)
+            status.status = "failure"
+            status.details = "Connection Failed (Invlaid URL): %s" % str(e)
+        else:
+            print("SDN Successfully connected")
+            status.status = "success"
+            status.details = "Connection was successful"
+
+        return status
+
     def get_network_list(self, account):
         """
            Get the networks details from ODL
@@ -339,6 +387,13 @@ class SdnOdl(object):
     def _service_function_chain_path(self):
         return 'restconf/config/service-function-chain:service-function-chains/service-function-chain/{}'
    
+    @property
+    def _sfp_metadata_path(self):
+        return 'restconf/config/service-function-path-metadata:service-function-metadata/context-metadata/{}'
+   
+    @property
+    def _sfps_metadata_path(self):
+        return 'restconf/config/service-function-path-metadata:service-function-metadata'
    
     @property
     def _sfps_path(self):
@@ -402,7 +457,7 @@ class SdnOdl(object):
                 sf_dict = {}
                 sf_dict['name'] = vnfr.vnfr_name
                 sf_dict['nsh-aware'] = vnf.nsh_aware
-                sf_dict['type'] = 'service-function-type:{}'.format(vnf.service_function_type)
+                sf_dict['type'] = vnf.service_function_type
                 sf_dict['ip-mgmt-address'] = vnfr.mgmt_address
                 sf_dict['rest-uri'] = 'http://{}:{}'.format(vnfr.mgmt_address, vnfr.mgmt_port)
 
@@ -410,14 +465,21 @@ class SdnOdl(object):
                 for vdu in vnfr.vdu_list:
                     sf_dp = {}
                     if vdu.port_id in sf_dp_list.keys():
-                        sf_dp['name'] = vdu.name
+                        sf_dp_entry = sf_dp_list[vdu.port_id]
+                        sf_dp['name'] = sf_dp_entry.name
                         sf_dp['ip'] = vdu.address
                         sf_dp['port'] = vdu.port
                         sf_dp['transport'] = "service-locator:{}".format(vnf.transport_type)
-                        sff_name = sf_dp_list[vdu.port_id].sff_name
-                        if sff_name is None:
-                            logger.error("SFF not found for port %s in SF %s", vdu.port_id, vnfr.vnfr_name)
-                        sf_dp['service-function-forwarder'] = sff_name
+                        if vnfr.sff_name:
+                            sf_dp['service-function-forwarder'] = vnfr.sff_name
+                        else:
+                            sff_name = sf_dp_entry.sff_name
+                            if sff_name is None:
+                                logger.error("SFF not found for port %s in SF %s", vdu.port_id, vnfr.vnfr_name)
+                            sf_dp['service-function-forwarder'] = sff_name
+                            sf_dp['service-function-ovs:ovs-port'] = dict()
+                            if sf_dp_entry.ovsdb_tp_name is not None:
+                                sf_dp['service-function-ovs:ovs-port']['port-id'] =  sf_dp_entry.ovsdb_tp_name
                         sf_dict['sf-data-plane-locator'].append(sf_dp)
                     else:
                         logger.error("Port %s not found in SF DP list",vdu.port_id)
@@ -435,6 +497,8 @@ class SdnOdl(object):
         "Create SFF"
         sff_json = {}
         sff_dict = {}
+        #sff_dp_name = "SFF1" + '-' + 'DP1'
+        sff_dp_name = sff.dp_name 
                 
         sff_url = self._get_rest_url(account,self._service_function_forwarder_path.format(sff.name))
         print(sff_url)
@@ -457,7 +521,7 @@ class SdnOdl(object):
                     sff_sf_dict['name'] = sf_dp.vnfr_name
 
                     # Below two lines are enabled only for ODL Beryillium
-                    sff_sf_dp_loc['sff-dpl-name'] = sff.name
+                    sff_sf_dp_loc['sff-dpl-name'] = sff_dp_name
                     sff_sf_dp_loc['sf-dpl-name'] = sf_dp.name
 
                     sff_sf_dict['sff-sf-data-plane-locator'] = sff_sf_dp_loc
@@ -473,7 +537,7 @@ class SdnOdl(object):
         
         sff_name = sff.name
         sff_ip = sff.ip
-        sff_br_ip = sff.br_ip
+        sff_dp_ip = sff.dp_ip
         sff_port = sff.sff_port
         sff_bridge_name = ''
         sff_rest_port = sff.sff_rest_port
@@ -512,7 +576,7 @@ class SdnOdl(object):
             #sff_sf_dp_loc['service-function-forwarder-ovs:ovs-bridge'] = {}
 
             # Below two lines are enabled only for ODL Beryillium
-            sff_sf_dp_loc['sff-dpl-name'] = sff_name
+            sff_sf_dp_loc['sff-dpl-name'] = sff_dp_name
             sff_sf_dp_loc['sf-dpl-name'] = sf_dp.name
 
             sff_sf_dict['sff-sf-data-plane-locator'] = sff_sf_dp_loc
@@ -521,14 +585,15 @@ class SdnOdl(object):
         sff_dict['sff-data-plane-locator'] = list()
         sff_dp = {}
         dp_loc = {} 
-        sff_dp['name'] = sff_name 
-        dp_loc['ip'] = sff_br_ip
+        sff_dp['name'] = sff_dp_name 
+        dp_loc['ip'] = sff_dp_ip
         dp_loc['port'] = sff_port
         dp_loc['transport'] = 'service-locator:vxlan-gpe'
         sff_dp['data-plane-locator'] = dp_loc
         if sff_rest_based is False:
             sff_dp['service-function-forwarder-ovs:ovs-options'] = sff_ovs_op
-            sff_dp["service-function-forwarder-ovs:ovs-bridge"] = {'bridge-name':sff_bridge_name}
+            #sff_dp["service-function-forwarder-ovs:ovs-bridge"] = {'bridge-name':sff_bridge_name}
+            sff_dp["service-function-forwarder-ovs:ovs-bridge"] = {}
         sff_dict['sff-data-plane-locator'].append(sff_dp)
 
         sff_json['service-function-forwarder'] = sff_dict
@@ -547,7 +612,7 @@ class SdnOdl(object):
         for vnf in vnf_chain_list:
             sfc_sf_dict = {}
             sfc_sf_dict['name'] = vnf.service_function_type
-            sfc_sf_dict['type'] = 'service-function-type:{}'.format(vnf.service_function_type)
+            sfc_sf_dict['type'] = vnf.service_function_type
             sfc_sf_dict['order'] = vnf.order 
             sfc_dict['sfc-service-function'].append(sfc_sf_dict)
         sfc_json['service-function-chain'] = sfc_dict
@@ -557,14 +622,41 @@ class SdnOdl(object):
         print(sfc_data)
         r=requests.put(sfc_url,auth=(account.odl.username,account.odl.password),headers={'content-type': 'application/json'}, data=sfc_data)
         r.raise_for_status()
-        
-    def _create_sfp(self,account,vnffg_chain, sym_chain=False):
+       
+    def _create_sfp_metadata(self,account,sfc_classifier):
+        " Create SFP metadata"
+        sfp_meta_json = {}
+        sfp_meta_dict = {}
+        sfp_meta_dict['name'] = sfc_classifier.name
+        if sfc_classifier.vnffg_metadata.ctx1:
+            sfp_meta_dict['context-header1'] = sfc_classifier.vnffg_metadata.ctx1
+        if sfc_classifier.vnffg_metadata.ctx2:
+            sfp_meta_dict['context-header2'] = sfc_classifier.vnffg_metadata.ctx2
+        if sfc_classifier.vnffg_metadata.ctx3:
+            sfp_meta_dict['context-header3'] = sfc_classifier.vnffg_metadata.ctx3
+        if sfc_classifier.vnffg_metadata.ctx4:
+            sfp_meta_dict['context-header4'] = sfc_classifier.vnffg_metadata.ctx4
+
+        sfp_meta_json['context-metadata'] = sfp_meta_dict
+        sfp_meta_data = json.dumps(sfp_meta_json)
+        sfp_meta_url = self._get_rest_url(account,self._sfp_metadata_path.format(sfc_classifier.name))
+        print(sfp_meta_url)
+        print(sfp_meta_data)
+        r=requests.put(sfp_meta_url,auth=(account.odl.username,account.odl.password),headers={'content-type': 'application/json'}, data=sfp_meta_data)
+        r.raise_for_status()
+
+    def _create_sfp(self,account,vnffg_chain, sym_chain=False,classifier_name=None,vnffg_metadata_name=None):
         "Create SFP"
         sfp_json = {}
         sfp_dict = {}
         sfp_dict['name'] = vnffg_chain.name
         sfp_dict['service-chain-name'] = vnffg_chain.name
         sfp_dict['symmetric'] = sym_chain
+        sfp_dict['transport-type'] = 'service-locator:vxlan-gpe'
+        if vnffg_metadata_name:
+            sfp_dict['context-metadata'] = vnffg_metadata_name 
+        if classifier_name: 
+            sfp_dict['classifier'] = classifier_name 
 
         sfp_json['service-function-path'] = sfp_dict
         sfp_data = json.dumps(sfp_json)
@@ -627,6 +719,7 @@ class SdnOdl(object):
                                 if sf_dp_list[intfid].vm_id != vmid:
                                     logger.error("Intf ID %s is not present in VM %s", intfid, vmid)  
                                     continue 
+                                sf_dp_list[intfid].ovsdb_tp_name = term_point['ovsdb:name']
                            
                                 if 'ovsdb:managed-by' in node:
                                     rr=re.search('network-topology:node-id=\'([-\w\:\/]*)\'',node['ovsdb:managed-by'])
@@ -637,22 +730,24 @@ class SdnOdl(object):
                                             sff_ip = ovsdb_node[0]['ovsdb:connection-info']['local-ip']
                                             sff_br_name = node['ovsdb:bridge-name']
                                             sff_br_uuid = node['ovsdb:bridge-uuid']
-                                            sff_br_ip = sff_ip
+                                            sff_dp_ip = sff_ip
 
                                             if 'ovsdb:openvswitch-other-configs' in  ovsdb_node[0]: 
                                                 for other_key in ovsdb_node[0]['ovsdb:openvswitch-other-configs']:
                                                     if other_key['other-config-key'] == 'local_ip':
                                                         local_ip_str = other_key['other-config-value']
-                                                        sff_br_ip = local_ip_str.split(',')[0]
+                                                        sff_dp_ip = local_ip_str.split(',')[0]
                                                         break
 
+                                            sff_name = socket.getfqdn(sff_ip)
                                             if sff_br_uuid in sff_list:
-                                                sff_list[sff_br_uuid].add_sf_dp_to_sff(sf_dp_list[intfid])
-                                                sf_dp_list[intfid]._update_sff_name(sff_list[sff_br_uuid].name)
+                                                sff_list[sff_name].add_sf_dp_to_sff(sf_dp_list[intfid])
+                                                sf_dp_list[intfid]._update_sff_name(sff_name)
                                             else:
-                                                sff_list[sff_br_uuid] = Sff(sff_br_uuid,sff_br_name, sff_ip,sff_br_ip)
-                                                sff_list[sff_br_uuid].add_sf_dp_to_sff(sf_dp_list[intfid])
-                                                sf_dp_list[intfid]._update_sff_name(sff_list[sff_br_uuid].name)
+                                                sff_dp_ip = sff_ip   #overwrite sff_dp_ip to SFF ip for now
+                                                sff_list[sff_name] = Sff(sff_name,sff_ip,6000, sff_dp_ip, 4790,sff_br_uuid,sff_br_name)
+                                                sf_dp_list[intfid]._update_sff_name(sff_name)
+                                                sff_list[sff_name].add_sf_dp_to_sff(sf_dp_list[intfid])
         return sff_list
                                          
 
@@ -665,8 +760,10 @@ class SdnOdl(object):
         for vnf in vnffg_chain.vnf_chain_path:
             for vnfr in vnf.vnfr_ids:
                 for vdu in vnfr.vdu_list:
-                    sfdp = SfDpLocator(vdu.port_id,vnfr.vnfr_name, vdu.vm_id)
+                    sfdp = SfDpLocator(vdu.name,vdu.port_id,vnfr.vnfr_name, vdu.vm_id)
                     sfdp._update_vnf_params(vnf.service_function_type, vdu.address, vdu.port, vnf.transport_type)
+                    if vnfr.sff_name:
+                        sfdp._update_sff_name(vnfr.sff_name)
                     sfdp_list[vdu.port_id] = sfdp 
         return sfdp_list
 
@@ -675,13 +772,18 @@ class SdnOdl(object):
 
         sff_list = {}
         sf_dp_list = {}
+
         sf_dp_list = self._get_sf_dp_list_for_chain(account,vnffg_chain)
 
-        # Get the list of all SFFs required for vnffg chain
-        sff_list = self._get_sff_list_for_chain(account,sf_dp_list)
-      
-        #for name,sff in sff_list.items():
-        #    print(name, sff)
+        if sff_rest_based is False and len(vnffg_chain.sff) == 0:
+            # Get the list of all SFFs required for vnffg chain
+            sff_list = self._get_sff_list_for_chain(account,sf_dp_list)
+
+        for sff in vnffg_chain.sff:
+          sff_list[sff.name] = Sff(sff.name, sff.mgmt_address,sff.mgmt_port,sff.dp_endpoints[0].address, sff.dp_endpoints[0].port, sff.name)
+          for _,sf_dp in sf_dp_list.items():
+              if sf_dp.sff_name and sf_dp.sff_name == sff.name:
+                  sff_list[sff.name].add_sf_dp_to_sff(sf_dp) 
 
         #Create all the SF in VNFFG chain
         self._create_sf(account,vnffg_chain,sf_dp_list)
@@ -689,16 +791,45 @@ class SdnOdl(object):
         for _,sff in sff_list.items():
             self._create_sff(account,vnffg_chain,sff)
 
+
         self._create_sfc(account,vnffg_chain)
 
-        self._create_sfp(account,vnffg_chain)
+        self._create_sfp(account,vnffg_chain,classifier_name=vnffg_chain.classifier_name,
+                                   vnffg_metadata_name=vnffg_chain.classifier_name)
 
         ## Update to SFF could have deleted some RSP; so get list of SFP and 
         ## check RSP exists for same and create any as necessary
         #rsp_name = self._create_rsp(account,vnffg_chain)
         #return rsp_name
         self._create_all_rsps(account)
+        self._recreate_all_sf_classifiers(account)
         return vnffg_chain.name
+
+    def _recreate_all_sf_classifiers(self,account):
+        """
+        Re create all SF classifiers
+        """
+        sfcl_url = self._get_rest_url(account,self._service_function_classifiers_path)
+        print(sfcl_url)
+        #Get the classifier
+        r=requests.get(sfcl_url,auth=(account.odl.username,account.odl.password),headers={'content-type': 'application/json'})
+        if r.status_code == 200:
+            print(r)
+            sfcl_json = r.json()
+        elif r.status_code == 404:
+            return         
+        else: 
+            r.raise_for_status()
+
+        #Delete the classifiers and re-add same back
+        r=requests.delete(sfcl_url,auth=(account.odl.username,account.odl.password))
+        r.raise_for_status()
+        #Readd it back
+        time.sleep(3)
+        print(sfcl_json)
+        sfcl_data = json.dumps(sfcl_json)
+        r=requests.put(sfcl_url,auth=(account.odl.username,account.odl.password),headers={'content-type': 'application/json'}, data=sfcl_data)
+        r.raise_for_status()
 
     def _create_all_rsps(self,account):
         """
@@ -737,6 +868,13 @@ class SdnOdl(object):
         sfc_url = self._get_rest_url(account,self._service_function_chains_path)
         print(sfc_url)
         r=requests.delete(sfc_url,auth=(account.odl.username,account.odl.password))
+        r.raise_for_status()
+
+    def delete_all_sfp_metadata(self, account):
+        "Delete all the SFPs metadata"
+        sfp_metadata_url = self._get_rest_url(account,self._sfps_metadata_path)
+        print(sfp_metadata_url)
+        r=requests.delete(sfp_metadata_url,auth=(account.odl.username,account.odl.password))
         r.raise_for_status()
 
     def delete_all_sfp(self, account):
@@ -784,7 +922,6 @@ class SdnOdl(object):
         self.delete_all_sff(account)
         self.delete_all_sf(account)
 
-
     def _fill_rsp_list(self,sfc_rsp_list,sff_list):
         vnffg_rsps = RwsdnYang.VNFFGRenderedPaths()
         for sfc_rsp in sfc_rsp_list['rendered-service-paths']['rendered-service-path']:
@@ -823,12 +960,14 @@ class SdnOdl(object):
 
     def create_sfc_classifier(self, account, sfc_classifiers):
         "Create SFC Classifiers"
+        self._create_sfp_metadata(account,sfc_classifiers)
         self._add_acl_rules(account, sfc_classifiers)
         self._create_sf_classifier(account, sfc_classifiers)
         return sfc_classifiers.name
 
     def terminate_sfc_classifier(self, account, sfc_classifier_name):
         "Create SFC Classifiers"
+        self.delete_all_sfp_metadata(account)
         self._terminate_sf_classifier(account, sfc_classifier_name)
         self._del_acl_rules(account, sfc_classifier_name)
 
@@ -856,16 +995,18 @@ class SdnOdl(object):
         scl_sff = {}
         scl_sff_name = ''
 
-        if  sfc_classifiers.has_field('port_id') and sfc_classifiers.has_field('vm_id'):
-            sf_dp = SfDpLocator(sfc_classifiers.port_id,'', sfc_classifiers.vm_id)
+        if sfc_classifiers.has_field('sff_name') and sfc_classifiers.sff_name is not None:
+            scl_sff_name = sfc_classifiers.sff_name
+        elif  sfc_classifiers.has_field('port_id') and sfc_classifiers.has_field('vm_id'):
+            sf_dp = SfDpLocator(sfc_classifiers.port_id, sfc_classifiers.port_id,'', sfc_classifiers.vm_id)
             sf_dp_list= {}
             sf_dp_list[sfc_classifiers.port_id] = sf_dp
             self._get_sff_list_for_chain(account,sf_dp_list)
 
             if sf_dp.sff_name is None:
-                logger.error("SFF not found for port %s, VM: %s",sfc_classifiers.port.port_id,sfc_classifiers.vm_id) 
+                logger.error("SFF not found for port %s, VM: %s",sfc_classifiers.port_id,sfc_classifiers.vm_id) 
             else:
-                logger.error("SFF with name %s  found for port %s, VM: %s",sf_dp.sff_name, sfc_classifiers.port_id,sfc_classifiers.vm_id) 
+                logger.info("SFF with name %s  found for port %s, VM: %s",sf_dp.sff_name, sfc_classifiers.port_id,sfc_classifiers.vm_id) 
                 scl_sff_name = sf_dp.sff_name
         else:
             rsp_url = self._get_rest_url(account,self._get_rsp_path.format(sfc_classifiers.rsp_name))

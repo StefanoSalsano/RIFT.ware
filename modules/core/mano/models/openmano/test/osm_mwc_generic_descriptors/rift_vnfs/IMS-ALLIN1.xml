@@ -6,6 +6,60 @@
     <vnfd:name>IMS-ALLIN1_2p</vnfd:name>
     <vnfd:description>IMS-ALLIN1_2p</vnfd:description>
     <vnfd:mgmt-interface>
+      <vnfd:vnf-configuration>
+        <vnfd:config-type>juju</vnfd:config-type>
+        <vnfd:juju>
+          <vnfd:charm>clearwater-aio-proxy</vnfd:charm>
+        </vnfd:juju>
+        <vnfd:input-params>
+          <vnfd:config-priority>1</vnfd:config-priority>
+          <vnfd:config-delay>0</vnfd:config-delay>
+        </vnfd:input-params>
+        <vnfd:config-primitive>
+          <vnfd:name>config</vnfd:name>
+          <vnfd:parameter>
+            <vnfd:name>home_domain</vnfd:name>
+            <vnfd:data-type>string</vnfd:data-type>
+            <vnfd:mandatory>true</vnfd:mandatory>
+            <vnfd:default-value>ims.com</vnfd:default-value>
+          </vnfd:parameter>
+          <vnfd:parameter>
+            <vnfd:name>password</vnfd:name>
+            <vnfd:data-type>string</vnfd:data-type>
+            <vnfd:default-value>cw-aio</vnfd:default-value>
+            <vnfd:mandatory>true</vnfd:mandatory>
+          </vnfd:parameter>
+        </vnfd:config-primitive>
+        <vnfd:config-primitive>
+          <vnfd:name>create-update-user</vnfd:name>
+          <vnfd:parameter>
+            <vnfd:name>number</vnfd:name>
+            <vnfd:data-type>string</vnfd:data-type>
+            <vnfd:mandatory>true</vnfd:mandatory>
+          </vnfd:parameter>
+          <vnfd:parameter>
+            <vnfd:name>password</vnfd:name>
+            <vnfd:data-type>string</vnfd:data-type>
+            <vnfd:mandatory>true</vnfd:mandatory>
+          </vnfd:parameter>
+        </vnfd:config-primitive>
+        <vnfd:config-primitive>
+          <vnfd:name>delete-user</vnfd:name>
+          <vnfd:parameter>
+            <vnfd:name>number</vnfd:name>
+            <vnfd:data-type>string</vnfd:data-type>
+            <vnfd:mandatory>true</vnfd:mandatory>
+          </vnfd:parameter>
+        </vnfd:config-primitive>
+        <vnfd:initial-config-primitive>
+          <vnfd:seq>1</vnfd:seq>
+          <vnfd:name>config</vnfd:name>
+          <vnfd:parameter>
+            <vnfd:name>proxied_ip</vnfd:name>
+            <vnfd:value>&lt;rw_mgmt_ip&gt;</vnfd:value>
+          </vnfd:parameter>
+        </vnfd:initial-config-primitive>
+      </vnfd:vnf-configuration>
       <vnfd:vdu-id>47915d5e-c474-11e5-990a-fa163eb18cb8</vnfd:vdu-id>
     </vnfd:mgmt-interface>
     <vnfd:connection-point>

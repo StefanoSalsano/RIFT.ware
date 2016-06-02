@@ -1,0 +1,88 @@
+
+/*
+ * 
+ * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
+ *
+ */
+
+
+
+/**
+ * @file rw-agent-testbed.yang
+ * @date 2016/03/15
+ * @brief MgmtAgent tests
+ */
+
+module rw-agent-testbed
+{
+  namespace "http://riftio.com/ns/riftware-1.0/rw-agent-testbed";
+  prefix "rw-agent-testbed";
+
+  import rw-pb-ext {
+    prefix "rwpb";
+  }
+
+  revision 2016-03-15 {
+    description "Initial revision.";
+  }
+
+  rpc agent-tests {
+
+    input {
+
+      choice test {
+
+        container edit-config {
+          description "Test Edit config via NETCONF";
+        }
+
+        container notif {
+          description "Test notification via NETCONF";
+        }
+
+        container pb-request {
+          description "Test pb request int";
+        }
+
+        container large-binary-blob {
+          description "Test large binary data";
+        }
+
+        container all {
+          description "Run all tests";
+
+          leaf continue-on-failure {
+            description "Continue execution on failure";
+            type boolean;
+            default false; 
+          }
+        }
+      }
+    }
+
+    output {
+
+      rwpb:msg-new "AgentTestsOp";
+
+      leaf total_tests {
+        description "Total tests in the testbed";
+        type uint64;
+      }
+
+      leaf passed_count {
+        description "Number of failed tests";
+        type uint64;
+      }
+
+      leaf failed_count {
+        description "Number of failed tests";
+        type uint64;
+      }
+
+      leaf-list failed_tests {
+        description "List of failed tests";
+        type string;
+      }
+    }
+  }
+}

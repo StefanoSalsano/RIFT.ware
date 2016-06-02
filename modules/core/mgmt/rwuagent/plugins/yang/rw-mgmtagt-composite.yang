@@ -22,8 +22,9 @@ module rw-mgmtagt-composite
   import rw-mgmtagt {
     prefix "rw-mgmtagt";
   }
-
-
+  import rw-mgmtagt-dts {
+    prefix "rw-mgmtagt-dts";
+  }
   import rw-dts {
     prefix "rw-dts";
   }

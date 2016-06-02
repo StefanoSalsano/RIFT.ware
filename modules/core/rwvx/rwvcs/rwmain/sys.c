@@ -179,7 +179,10 @@ void rwmain_setup_cputime_monitor(struct rwmain_gi * rwmain)
       rwmain->rwvx->rwsched->main_cfrunloop_mode);
 
   fp = fopen("/proc/stat", "r");
-  RW_ASSERT(fp);
+  if (!fp) {
+    perror("fopen(\"/proc/stat\")");
+    return;
+  }
 
   line_len = getline(&line, &cline_len, fp);
   if (line_len < 0)

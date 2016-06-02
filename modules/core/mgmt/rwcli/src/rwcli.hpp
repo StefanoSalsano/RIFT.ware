@@ -29,7 +29,6 @@
 
 #include "yangncx.hpp"
 #include "yangcli.hpp"
-#include "rwcmdargs.h"
 #include "rw_xml.h"
 
 #include <algorithm>
@@ -54,7 +53,7 @@ namespace LIBXML {
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 #include <libxml/xpath.h>
-} using namespace LIBXML;
+};
 
 
 #ifdef RW_DOXYGEN_PARSING
@@ -178,6 +177,14 @@ class RwCliParser: public BaseCli {
                                      Nodes and tree */
 
   /**
+   * Invoked when CLI entere the config mode.
+   * @return true on successful completion, false otherwise
+   */
+  virtual bool config_behavioral (
+                  /// [in] Parsed input, YANG/Internal parse nodes and tree
+                  const ParseLineResult& r) override;
+
+  /**
    * The show parse node is created in the base CLI. When "show" is entered
    * this function is the callback in the base cli.
    * Over riding the function.
@@ -233,6 +240,20 @@ class RwCliParser: public BaseCli {
  */
 
 class CliManifest {
+  struct ReadingStatus {
+    rw_status_t status;
+    std::string message;
+    ReadingStatus(rw_status_t s,
+                  std::string m)
+        :status(s),
+         message(m)
+    {}
+    ReadingStatus(rw_status_t s)
+        :status(s),
+         message("")
+    {}
+  };
+
  public:
 
   typedef std::vector<std::string>      mfiles_t;
@@ -277,7 +298,7 @@ class CliManifest {
    * @returns RW_STATUS_SUCCESS on success
    * @returns RW_STATUS_FAILURE on failure
    */
-  rw_status_t add_cli_print_hook(
+  ReadingStatus add_cli_print_hook(
       const char *path,  /**< Path to the node which needs a new print method */
       const char *hook); /**< The name of the function that is the print hook */
 
@@ -287,7 +308,6 @@ class CliManifest {
    * @returns RW_STATUS_SUCCESS on success
    * @returns RW_STATUS_FAILURE on failure
    */
-
   rw_status_t add_plugin(
       char *plugin,    /**< name of the plugin */
       char *typelib);  /**< typelib */
@@ -298,7 +318,7 @@ class CliManifest {
    * @returns RW_STATUS_SUCCESS on success
    * @returns RW_STATUS_FAILURE on failure
    */
-  rw_status_t add_cli_mode(
+  ReadingStatus add_cli_mode(
       const char *mode,      /**< [in] Path which becomes a new mode */
       const char *display);  /**< [in] The string that gets added to the prompt
                               at the new mode*/
@@ -310,8 +330,35 @@ class CliManifest {
    * @returns RW_STATUS_SUCCESS on success
    * @returns RW_STATUS_FAILURE on failure
    */
-  rw_status_t read_cli_manifest(const char* name,
-                                const std::set<std::string> & module_names);
+  rw_status_t read_cli_manifest(const char* name);
+
+  /**
+   * Reads the base CLI Manifest file (rw.cli.xml).
+   * @returns RW_STATUS_SUCCESS on success
+   * @returns RW_STATUS_FAILURE on failure
+   */
+  rw_status_t read_base_cli_manifest(
+                /// [in] Base CLI Manifest File path
+                const char* file);
+
+  /**
+   * Read the common parts of the CLI Manifest document. Common parts include
+   * plugin-list, yang-modules, namespace-list, modifications.
+   * @returns RW_STATUS_SUCCESS on success
+   * @returns RW_STATUS_FAILURE on failure
+   */
+  rw_status_t read_cli_manifest_common(
+                  /// [in] CLI Manifest XML Doc
+                  LIBXML::xmlDoc *doc);
+
+  /**
+   * Read the defaults section of the CLI Manifest
+   * @returns RW_STATUS_SUCCESS on success
+   * @returns RW_STATUS_FAILURE on failure
+   */
+  rw_status_t read_cli_manifest_defaults(
+                  /// [in] CLI Manifest XML Doc
+                  LIBXML::xmlDoc *doc);
 
 };
 
@@ -319,9 +366,20 @@ class RwCLI
 : public rwcli_s
 {
  public:
-  RwCLI(bool no_editline, const char * schema_listing);
+  RwCLI(
+      bool no_editline,
+      const char * schema_listing,
+      rwcli_transport_mode_t transport_mode,
+      rwcli_user_mode_t user_mode);
   ~RwCLI();
   explicit RwCLI(RwCLI *other);
+
+  /**
+   * Initialize the RwCLI. Reads the base cli manifest, add builtins etc..
+   */
+  void initialize(
+          const char* base_manifest_file); /**< [in] Base Manifest file path*/
+
   void add_builtins(void);
 
   void setprompt(void);
@@ -410,6 +468,11 @@ class RwCLI
    * Clear the CLI history
    */
   bool clear_cli_history(const ParseLineResult& r);
+
+  /**
+   * Show the CLI transport mode (RW.MSG or NETCONF). 
+   */
+  bool show_cli_transport(const ParseLineResult& r);
 
   /**
    * Show the configuration in XML
@@ -544,6 +607,17 @@ class RwCLI
   std::set<std::string> module_names_;
 
   std::string schema_listing_;
+
+  rwcli_transport_mode_t transport_mode_ = RWCLI_TRANSPORT_MODE_NETCONF;
+  rwcli_user_mode_t user_mode_ = RWCLI_USER_MODE_NONE;
+
+  //
+  // Default Pretty Priting Hooks
+  //
+  std::string default_print_hook_; /**< Default XML to Text hook */ 
+  std::string config_print_hook_;  /**< Default config print hook */
+  std::string config_print_to_file_hook_; /**< Default config print to file hook */
+  std::string pretty_print_xml_hook_; /**< Default XML Pretty print hook */
 };
 
 typedef bool (RwCLI::*RwCliCallback) (const ParseLineResult& r);

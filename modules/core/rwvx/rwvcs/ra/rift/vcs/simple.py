@@ -55,11 +55,8 @@ class MgmtVM(rift.vcs.VirtualMachine):
         #self.add_proc(rift.vcs.LogdTasklet())
 
         self.add_proc(rift.vcs.procs.RiftCli());
-        #Confd would need RestConf present
         self.add_tasklet(rift.vcs.uAgentTasklet())
-        #self.add_proc(rift.vcs.Confd())
         self.add_proc(rift.vcs.RestconfTasklet())
-        self.add_proc(rift.vcs.Watchdog())
 
         #self.add_proc(rift.vcs.Webserver())
         #self.add_proc(rift.vcs.RedisCluster())

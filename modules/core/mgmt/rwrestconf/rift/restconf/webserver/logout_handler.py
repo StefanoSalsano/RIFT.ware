@@ -6,11 +6,11 @@ import tornado.ioloop
 import tornado.platform.asyncio
 
 class LogoutHandler(tornado.web.RequestHandler):
-    def initialize(self, logger, netconf_connection_manager, asyncio_loop, ):
+    def initialize(self, logger, connection_manager, asyncio_loop, ):
         # ATTN: can't call it _log because the base class has a _log instance already
         self.__log = logger
         self._asyncio_loop = asyncio_loop
-        self._netconf_connection_manager = netconf_connection_manager
+        self._connection_manager = connection_manager
         self._return_type_json = "application/vnd.yang.data+json"
         self._return_type_xml = "application/vnd.yang.data+xml"
 
@@ -45,7 +45,7 @@ class LogoutHandler(tornado.web.RequestHandler):
 
             auth_header = auth_header[6:]
 
-            if not self._netconf_connection_manager.is_logged_in(auth_header):
+            if not self._connection_manager.is_logged_in(auth_header):
                 if "json" in accept_type:
                     response = "{'logout':'user is not logged in'}"
                     return_type = self._return_type_json
@@ -56,7 +56,7 @@ class LogoutHandler(tornado.web.RequestHandler):
                 return 200, return_type, response
 
             try:
-                self._netconf_connection_manager.logout(auth_header)
+                self._connection_manager.logout(auth_header)
             except Exception as e:
                 self.__log.error(str(e))
                 if "json" in accept_type:

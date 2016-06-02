@@ -14,6 +14,10 @@ set(plugindir "${CMAKE_CURRENT_BINARY_DIR}/../plugins")
 add_definitions(-DPLUGINDIR="${plugindir}")
 add_definitions(-DINSTALLDIR="${CMAKE_INSTALL_PREFIX}")
 
+if (NOT RIFT_AGENT_BUILD STREQUAL "XML_ONLY")
+  add_definitions(-DCONFD_ENABLED)
+endif ()
+
 #
 # Converted unit test target yangtools_gtest (runs with GTest and Celero)
 ##
@@ -40,7 +44,6 @@ set(testdeps
 )
 
 set(testlibs
-  rwconfd
   rwyang
   rwlib
   rwtrace
@@ -55,7 +58,6 @@ set(testlibs
   yangtools_test_yang_gtest_gen
   yangtools_test_yang_gi_gen
 
-  ${CMAKE_INSTALL_PREFIX}/usr/local/confd/lib/libconfd.so
   # RIFT-5092 - this should be using rift_pkg_check_modules
   ${CMAKE_INSTALL_PREFIX}/usr/lib/libCoreFoundation.so
 
@@ -77,9 +79,7 @@ target_link_libraries(yangtools_gtest_lib PRIVATE
 )
 
 set(GTEST_C_SOURCES
-  confd_test.cpp            # confd-related unit tests, include the harness itself
   ctype_test.cpp            # C-Types testing
-  iter_test.cpp             # Rw Tree iterators
   ks_rrmerge_test.cpp       # keyspec reroot and merge tests
   leafref_test.cpp          # leafref testing
   pb_merge_test.cpp         # protobuf-c merge func unit test
@@ -101,7 +101,13 @@ set(GTEST_C_SOURCES
   pbc_delta_test.cpp        # Protobuf Delta API test
   test_pb_schema.cpp        # Dynamic PB Schema Merge tests and other tests
   yangjson_test.cpp         # Yang node to json conversion tests
+  yangtest_common.cpp       # common test support functions
 )
+
+if(NOT RIFT_AGENT_BUILD STREQUAL "XML_ONLY")
+  list(APPEND GTEST_C_SOURCES confd_test.cpp iter_test.cpp)
+  list(APPEND testlibs rwconfd ${CMAKE_INSTALL_PREFIX}/usr/local/confd/lib/libconfd.so)
+endif()
 
 rift_gtest(yangtools_gtest
   ADD_SETUP
@@ -205,6 +211,12 @@ rift_pytest(rw_pbcm_test
 
 rift_pytest(rw_yang_json_test
   TEST_ARGS rw_test_yang_json.py
+  TEST_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  DEPENDS yangtools_test_yang_gi
+  )
+
+rift_py3test(rw_test_gi_pb_yaml_json
+  TEST_ARGS test_gi_pb_yaml_json.py
   TEST_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS yangtools_test_yang_gi
   )

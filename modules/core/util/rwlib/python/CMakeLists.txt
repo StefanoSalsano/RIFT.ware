@@ -6,6 +6,8 @@
 
 rift_python_install_tree(
   FILES
+  rift/rwlib/testing/__init__.py
+  rift/rwlib/testing/xml_helpers.py
   rift/rwlib/translation/__init__.py
   rift/rwlib/translation/json2xml.py
   rift/rwlib/translation/xml2json.py

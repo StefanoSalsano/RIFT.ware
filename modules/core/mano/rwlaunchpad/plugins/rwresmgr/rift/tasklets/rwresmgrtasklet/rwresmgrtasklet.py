@@ -151,13 +151,13 @@ class ResourceManager(object):
 class ResMgrTasklet(rift.tasklets.Tasklet):
     def __init__(self, *args, **kwargs):
         super(ResMgrTasklet, self).__init__(*args, **kwargs)
+        self.rwlog.set_category("rw-resource-mgr-log")
         self._dts = None
         self._resource_manager = None
 
     def start(self):
         super(ResMgrTasklet, self).start()
         self.log.info("Starting ResMgrTasklet")
-        self.log.setLevel(logging.DEBUG)
 
         self.log.debug("Registering with dts")
 

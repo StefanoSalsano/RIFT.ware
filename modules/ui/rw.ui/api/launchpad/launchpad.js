@@ -12,6 +12,7 @@ var constants = require('../common/constants.js')
 var _ = require('underscore');
 var epa_aggregator = require('./epa_aggregator.js');
 var transforms = require('./transforms.js');
+var uuid = require('node-uuid');
 
 // Revealing module pattern objects
 var Catalog = {};
@@ -25,6 +26,10 @@ var VDUR = {};
 var CloudAccount = {};
 var ConfigAgentAccount = {};
 var RPC = {};
+
+// API Configuration Info
+var APIConfig = {}
+APIConfig.NfviMetrics = ['vcpu', 'memory'];
 
 RPC.executeNSConfigPrimitive = function(req) {
     var api_server = req.query['api_server'];
@@ -456,26 +461,46 @@ NSR.get = function(req) {
         });
     }).catch(function(error) {
         console.log('error getting aggregated NS opdata', error)
+        //note this will actually trigger the success callback
     });
     return new Promise(function(resolve, reject) {
         //Need smarter error handling here
         Promise.all([nsdInfo, config, opData]).then(function(resolves) {
             var aggregate = {};
             var nsdNames = {};
-            var nsdConfigPrimitive = {};
             // resolves[0] ==> nsd
             // resolves[1] ==> ns-instance-config
-            // resolves[2] ==> nsinstance-opdata
+            // resolves[2] ==> ns-instance-opdata
             if (!resolves[0] || !resolves[1] && !resolves[2]) return resolve({
                 nsrs: []
             });
             resolves[0].forEach(function(v, k) {
                 nsdNames[v.id] = v.name;
-                nsdConfigPrimitive[v.id] = v['config-primitive'];
             })
             resolves[1].forEach(function(v, k) {
                 v.nsd_name = nsdNames[v["nsd-ref"]];
-                v['config-primitive'] = nsdConfigPrimitive[v['nsd-ref']];
+                var scaling_group_descriptor = null;
+
+                scaling_group_descriptor = _.findWhere(resolves[0], {
+                    id:v['nsd-ref']
+                })['scaling-group-descriptor'];
+
+                if (scaling_group_descriptor) {
+                    scaling_group_descriptor.map(function(sgd, sgdi) {
+                        sgd['vnfd-member'].map(function(vnfd, vnfdi) {
+                            var vnfrObj = _.findWhere(_.findWhere(resolves[2], {
+                                    'ns-instance-config-ref': v.id
+                                }).vnfrs, {
+                                'member-vnf-index-ref': vnfd['member-vnf-index-ref']
+                            });
+                            if (vnfrObj) {
+                                vnfd['short-name'] = vnfrObj['short-name'];
+                            }
+                        })
+                    })
+                    v['scaling-group-descriptor'] = scaling_group_descriptor;
+                }
+
                 if (resolves[2] && resolves[2].constructor.name == "Array") {
                     resolves[2].forEach(function(w, l) {
                         if (v.id == w["ns-instance-config-ref"]) {
@@ -487,6 +512,20 @@ NSR.get = function(req) {
                         }
                     });
                 }
+
+                v['scaling-group-record'] && v['scaling-group-record'].map(function(sgr) {
+                    var scalingGroupName = sgr['scaling-group-name-ref'];
+                    sgr['instance'] && sgr['instance'].map(function(instance) {
+                        var scalingGroupInstanceId = instance['instance-id'];
+                        instance['vnfrs'] && instance['vnfrs'].map(function(vnfr) {
+                            var vnfrObj = _.findWhere(v['vnfrs'], {id: vnfr});
+                            if (vnfrObj) {
+                                vnfrObj['scaling-group-name'] = scalingGroupName;
+                                vnfrObj['scaling-group-instance-id'] = scalingGroupInstanceId;
+                            }
+                        });
+                    });
+                })
             });
             var nsrsData = resolves[1];
             nsrsData.sort(function(a, b) {
@@ -514,13 +553,14 @@ NSR.addVnfrDataPromise = function(req, nsrs) {
         var vnfrPromises = [];
         nsr["vnfrs"] = [];
         nsr["dashboard-urls"] = [];
+        nsr['nfvi-metrics'] = [];
         if (!constituent_vnfr_ref) {
             console.log('Something is wrong, there are no constituent-vnfr-refs');
             constituent_vnfr_ref = [];
         }
         //Get VNFR Static Data
-        constituent_vnfr_ref.map(function(vnfrID) {
-            req.params.id = vnfrID;
+        constituent_vnfr_ref && constituent_vnfr_ref.map(function(constituentVnfrObj) {
+            req.params.id = constituentVnfrObj['vnfr-id'];
             var vnfrPromise;
             vnfrPromise = VNFR.get(req).then(function(vnfr) {
                 try {
@@ -537,17 +577,17 @@ NSR.addVnfrDataPromise = function(req, nsrs) {
             Promise.all(vnfrPromises).then(function() {
                 var vnfrs = staticVNFRCache;
                 //Aggregate EPA Params
-                constituent_vnfr_ref.map(function(k) {
-                        if (vnfrs[k]) {
-                            epa_params = epa_aggregator(vnfrs[k].vdur, epa_params);
+                constituent_vnfr_ref && constituent_vnfr_ref.map(function(k) {
+                        if (vnfrs[k['vnfr-id']]) {
+                            epa_params = epa_aggregator(vnfrs[k['vnfr-id']].vdur, epa_params);
                         }
                     })
-                    //Add VNFR Name to monitoring params
+                //Add VNFR Name to monitoring params
                 try {
                     if (nsr["monitoring-param"]) {
                         nsr["monitoring-param"].map(function(m) {
                             var vnfr = vnfrs[m["vnfr-id"]];
-                            m["vnfr-name"] = vnfr["short-name"];
+                            m["vnfr-name"] = vnfr['name'] ? vnfr['name'] : (vnfr['short-name'] ? vnfr['short-name'] : 'VNFR');
                         });
                     }
                 } catch (e) {
@@ -567,14 +607,20 @@ NSR.addVnfrDataPromise = function(req, nsrs) {
             "member-vnf-index-ref": vnfr["member-vnf-index-ref"],
             "short-name": vnfr["short-name"],
             "vnf-configuration": vnfr["vnf-configuration"],
-            "nsr-id": nsr['ns-instance-config-ref']
+            "nsr-id": nsr['ns-instance-config-ref'],
+            "name": vnfr['name'],
+            "vdur": vnfr["vdur"]
         };
-        if (vnfr['vnf-configuration'] && vnfr['vnf-configuration']['config-type'] /* && vnfr['vnf-configuration']['config-type'] == 'juju' */ && vnfr['vnf-configuration']['config-primitive'] && vnfr['vnf-configuration']['config-primitive'].length > 0) {
+        var vnfrNfviMetrics = buildNfviGraphs(vnfr.vdur, vnfr["short-name"]);
+        if (vnfr['vnf-configuration'] && vnfr['vnf-configuration']['config-primitive'] && vnfr['vnf-configuration']['config-primitive'].length > 0) {
             vnfrObj['config-primitives-present'] = true;
         } else {
             vnfrObj['config-primitives-present'] = false;
         }
-        nsr["vnfrs"].push(vnfrObj);
+		transforms.mergeVnfrNfviMetrics(vnfrNfviMetrics, nsr["nfvi-metrics"]);
+        //TODO: Should be sorted by create-time when it becomes available instead of id
+        // nsr["vnfrs"].splice(_.sortedIndex(nsr['vnfrs'], vnfrObj, 'create-time'), 0, vnfrObj);
+        nsr["vnfrs"].splice(_.sortedIndex(nsr['vnfrs'], vnfrObj, 'id'), 0, vnfrObj);
         vnfrObj["dashboard-url"] = vnfr["dashboard-url"];
         nsr["dashboard-urls"].push(vnfrObj);
     }
@@ -597,9 +643,17 @@ NSR.create = function(req) {
             json: data
         }, function(error, response, body) {
             if (utils.validateResponse('VNFR.get', error, response, body, resolve, reject)) {
+                var nsr_id = null;
+                try {
+                    nsr_id = data.nsr[0].id;
+                } catch (e) {
+                    console.log("NSR.create unable to get nsr_id. Error: %s",
+                    e.toString());
+                }
                 resolve({
-                    statusCode: response.statusCode
-                });
+                    statusCode: response.statusCode,
+                    data: { nsr_id: nsr_id }
+                 });
             };
         });
     });
@@ -664,7 +718,8 @@ NSR.decorateAndTransformWithMonitoringParams = function(nsr) {
 }
 NSR.decorateAndTransformNFVI = function(nsr) {
         var toDecorate = [];
-        var metricsToUse = ["vcpu", "memory", "storage", "network"];
+        // var metricsToUse = ["vcpu", "memory", "storage", "network"];
+        var metricsToUse = ["vcpu", "memory"];
         try {
             var nfviMetrics = nsr["rw-nsr:nfvi-metrics"];
             if (nfviMetrics) {
@@ -760,6 +815,108 @@ NSR.setStatus = function(req) {
     });
 };
 
+NSR.createScalingGroupInstance = function(req) {
+    var api_server = req.query['api_server'];
+    var id = req.params.id;
+    var scaling_group_id = req.params.scaling_group_id;
+    if (!api_server || !id || !scaling_group_id) {
+        return new Promise(function(resolve, reject) {
+            return reject({
+                statusCode: 500,
+                errorMessage: {
+                    error: 'API server/NSR id/Scaling group not provided'
+                }
+            });
+        });
+    }
+
+    var instance_id = Math.floor(Math.random() * 65535);
+
+    var jsonData = {
+        instance: [{
+            // id: uuid.v1()
+            id: instance_id
+        }]
+    };
+
+    console.log('Creating scaling group instance for NSR ', id, ', scaling group ', scaling_group_id, ' with instance id ', instance_id);
+
+    return new Promise(function(resolve, reject) {
+        var requestHeaders = {};
+        _.extend(requestHeaders,
+            constants.HTTP_HEADERS.accept.data,
+            constants.HTTP_HEADERS.content_type.data,
+            {
+                'Authorization': req.get('Authorization')
+            }
+        );
+
+        request({
+            uri: utils.confdPort(api_server) + '/api/config/ns-instance-config/nsr/' + id + '/scaling-group/' + scaling_group_id + '/instance',
+            method: 'POST',
+            headers: requestHeaders,
+            json: jsonData,
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false
+        }, function (error, response, body) {
+            if (utils.validateResponse('NSR.createScalingGroupInstance', error, response, body, resolve, reject)) {
+                resolve({
+                    statusCode: response.statusCode,
+                    data: typeof response.body == 'string' ? JSON.parse(response.body):response.body
+                })
+            }
+        });
+    });
+};
+
+NSR.deleteScalingGroupInstance = function(req) {
+    var api_server=req.query['api_server'];
+    var id = req.params.id;
+    var scaling_group_id = req.params.scaling_group_id;
+    var scaling_instance_id = req.params.scaling_instance_id;
+
+    if (!api_server || !id || !scaling_group_id || !scaling_instance_id) {
+        return new Promise(function(resolve, reject) {
+            return reject({
+                statusCode: 500,
+                errorMessage: {
+                    error: 'API server/NSR id/Scaling group/Scaling instance id not provided'
+                }
+            });
+        });
+    }
+
+    console.log('Deleting scaling group instance id ', scaling_instance_id,
+        ' for scaling group ', scaling_group_id,
+        ', under NSR ', id);
+
+    return new Promise(function(resolve, reject) {
+        var requestHeaders = {};
+        _.extend(requestHeaders,
+            constants.HTTP_HEADERS.accept.data,
+            constants.HTTP_HEADERS.content_type.data,
+            {
+                'Authorization': req.get('Authorization')
+            }
+        );
+
+        request({
+            uri: utils.confdPort(api_server) + '/api/config/ns-instance-config/nsr/' + id + '/scaling-group/' + scaling_group_id + '/instance/' + scaling_instance_id,
+            method: 'DELETE',
+            headers: requestHeaders,
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false
+        }, function (error, response, body) {
+            if (utils.validateResponse('NSR.deleteScalingGroupInstance', error, response, body, resolve, reject)) {
+                resolve({
+                    statusCode: response.statusCode,
+                    data: typeof response.body == 'string' ? JSON.parse(response.body):response.body
+                })
+            }
+        });
+    });
+}
+
 VNFR.get = function(req) {
     var api_server = req.query["api_server"];
     var id = req.params.id;
@@ -780,14 +937,52 @@ VNFR.get = function(req) {
                 var data = JSON.parse(response.body);
                 var returnData = id ? [data["vnfr:vnfr"]] : data.collection["vnfr:vnfr"];
                 returnData.forEach(function(vnfr) {
+                    vnfr['nfvi-metrics'] = buildNfviGraphs(vnfr.vdur);
                     vnfr['epa-params'] = epa_aggregator(vnfr.vdur);
-                    vnfr['config-primitives-present'] = (vnfr['vnf-configuration'] && vnfr['vnf-configuration']['config-type'] /* && vnfr['vnf-configuration']['config-type'] == 'juju' */ && vnfr['vnf-configuration']['config-primitive'] && vnfr['vnf-configuration']['config-primitive'].length > 0) ? true : false;
+                    vnfr['config-primitives-present'] = (vnfr['vnf-configuration'] && vnfr['vnf-configuration']['config-primitive'] && vnfr['vnf-configuration']['config-primitive'].length > 0) ? true : false;
                 })
                 return resolve(returnData);
             };
         });
-    })
+    });
 }
+
+function buildNfviGraphs(VDURs, vnfrName){
+        var temp = {};
+        var toReturn = [];
+        APIConfig.NfviMetrics.map(function(k) {
+
+            VDURs && VDURs.map(function(v,i) {
+                //Check for RIFT-12699: VDUR NFVI Metrics not fully populated
+                if (v["rw-vnfr:nfvi-metrics"] && v["rw-vnfr:nfvi-metrics"][k] && v["rw-vnfr:nfvi-metrics"][k].hasOwnProperty('utilization')) {
+                    if(!temp[k]) {
+                        temp[k] = {
+                            title: '',
+                            data: []
+                        };
+                    };
+                    try {
+                        var data = v["rw-vnfr:nfvi-metrics"][k];
+                        var newData = {};
+                        newData.name = v.name ? v.name : v.id.substring(0,6);
+                        newData.name = vnfrName ? vnfrName + ': ' + newData.name : newData.name;
+                        newData.id = v.id;
+                        //converts to perentage
+                        newData.utilization = data.utilization * 0.01;
+                        temp[k].data.push(newData);
+                        temp[k].title = v["rw-vnfr:nfvi-metrics"][k].label;
+                    } catch (e) {
+                        console.log('Something went wrong with the VNFR NFVI Metrics. Check that the data is being properly returned. ERROR: ', e);
+                    }
+                }
+            });
+            if(temp[k]) {
+                toReturn.push(temp[k]);
+            }
+        });
+        return toReturn;
+    }
+
 
 //Cache NSR reference for VNFR
 VNFR.cachedNSR = {};
@@ -804,7 +999,7 @@ VNFR.getByNSR = function(req) {
     return new Promise(function(resolve, reject) {
         if (VNFR.cachedNSR[id]) {
             var data = VNFR.cachedNSR[id];
-            var vnfrList = data["constituent-vnfr-ref"];
+            var vnfrList = _.pluck(data["constituent-vnfr-ref"], 'vnfr-id');
             VNFR.get(reqClone).then(function(vnfrData) {
                 resolve(filterVnfrByList(vnfrList, vnfrData));
             });
@@ -821,7 +1016,7 @@ VNFR.getByNSR = function(req) {
                     data = data["nsr:nsr"];
                     //Cache NSR data with NSR-ID as
                     VNFR.cachedNSR[id] = data;
-                    var vnfrList = data["constituent-vnfr-ref"];
+                    var vnfrList = _.pluck(data["constituent-vnfr-ref"], 'vnfr-id');
                     var returnData = [];
                     VNFR.get(reqClone).then(function(vnfrData) {
                         resolve(filterVnfrByList(vnfrList, vnfrData));
@@ -843,7 +1038,7 @@ function filterVnfrByList(vnfrList, vnfrData) {
 RIFT.api = function(req) {
     var api_server = req.query["api_server"];
     var uri = utils.confdPort(api_server);
-    var url = req.originalUrl;
+    var url = req.originalUrl.split('?')[0];
     return new Promise(function(resolve, reject) {
         request({
             url: uri + url + '?deep',
@@ -914,7 +1109,9 @@ ComputeTopology.get = function(req) {
 
                 // Run separately to confirm that primary structure is populated before promise resolution takes over
                 // and starts modifying the data
-                data.forEach(function(vnfrId) {
+                data.forEach(function(vnfrObj) {
+
+		    var vnfrId = vnfrObj['vnfr-id'];
 
                     // If anything needs to be added to result for each vnfrId, do it here
 
@@ -1022,7 +1219,8 @@ NetworkTopology.get = function(req) {
             url: uri,
             method: 'GET',
             headers: headers,
-            forever: constants.FOREVER_ON
+            forever: constants.FOREVER_ON,
+            rejectUnauthorized: false
         }, function(error, response, body) {
             if (utils.validateResponse('NetworkTopology.get', error, response, body, resolve, reject)) {
                 var data = JSON.parse(response.body);
@@ -1239,7 +1437,8 @@ ConfigAgentAccount.create = function(req) {
             if (utils.validateResponse('ConfigAgentAccount.create', error, response, body, resolve, reject)) {
                 return resolve({
                     statusCode: response.statusCode,
-                    data: JSON.stringify(response.body)
+                    data: JSON.stringify(response.body),
+                    body:response.body.body
                 });
             };
         });

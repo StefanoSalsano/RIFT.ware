@@ -62,10 +62,30 @@ class SdnSimPlugin(GObject.Object, RwSdn.Topology):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
             logger.addHandler(
                 rwlogger.RwLogger(
-                    category="sdnsim",
+                    subcategory="sdnsim",
                     log_hdl=rwlog_ctx,
                 )
             )
+
+    @rwstatus(ret_on_failure=[None])
+    def do_validate_sdn_creds(self, account):
+        """
+        Validates the sdn account credentials for the specified account.
+        Performs an access to the resources using Keystone API. If creds
+        are not valid, returns an error code & reason string
+
+        @param account - a SDN account
+
+        Returns:
+            Validation Code and Details String
+        """
+        status = RwsdnYang.SdnConnectionStatus()
+        print("SDN Successfully connected")
+        status.status = "success"
+        status.details = "Connection was successful"
+        #logger.debug('Done with validate SDN creds: %s', type(status))
+        return status
+
 
     @rwstatus(ret_on_failure=[None])
     def do_get_network_list(self, account):

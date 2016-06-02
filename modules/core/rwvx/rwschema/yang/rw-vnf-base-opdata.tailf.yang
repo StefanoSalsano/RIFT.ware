@@ -20,7 +20,11 @@ module rw-vnf-base-opdata.tailf
   import tailf-common {
     prefix tailf;
   }
-    
+  /*
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:aggregated-port-stats" {
+    tailf:callpoint base_show;
+  }
+  */
   tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:logical-port" {
     tailf:callpoint base_show;
   }
@@ -37,6 +41,9 @@ module rw-vnf-base-opdata.tailf
   tailf:annotate "/rwvnfbaseopdata:start" {
     tailf:actionpoint rw_action;
   }
+  tailf:annotate "/rwvnfbaseopdata:insmod" {
+    tailf:actionpoint rw_action;
+  }
   tailf:annotate "/rwvnfbaseopdata:stop" {
     tailf:actionpoint rw_action;
   }
@@ -46,12 +53,13 @@ module rw-vnf-base-opdata.tailf
   tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:virtual-service-access-point" {
     tailf:callpoint base_show;
   }
-  /*
-  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:ip-flow-signatures" {
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:flow-hashbin" {
     tailf:callpoint base_show;
   }
-  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:ip-classifiers" {
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:flow-signature" {
     tailf:callpoint base_show;
   }
-  */
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf/rwvnfbaseopdata:classifiers" {
+    tailf:callpoint base_show;
+  }
 }

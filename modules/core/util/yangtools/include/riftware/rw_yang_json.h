@@ -4,6 +4,7 @@
 #include <array>
 #include <type_traits>
 #include <ostream>
+#include "yangmodel.h"
 
 namespace rw_yang {
 
@@ -25,22 +26,19 @@ public:
   { 
     os_ << "{"; 
     ++stk_level_;
-    if (pprint_) os_ << "\n";
-    manage_indentation();
+    newline();
   }
 
   void seperator() 
   {
     os_ << ","; 
-    if (pprint_) os_ << "\n";
-    manage_indentation();
+    newline();
   }
 
   void end_object() 
   { 
     --stk_level_;
-    if (pprint_) os_ << "\n";
-    manage_indentation();
+    newline();
     os_ << "}";
   }
 
@@ -48,15 +46,13 @@ public:
   { 
     os_ << "["; 
     ++stk_level_;
-    if (pprint_) os_ << "\n";
-    manage_indentation();
+    newline();
   }
 
   void end_object_list() 
   { 
     --stk_level_;
-    if (pprint_) os_ << "\n";
-    manage_indentation();
+    newline();
     os_ << "]";
   }
 
@@ -102,8 +98,7 @@ public:
 
   void print_string(const char* str)
   {
-    if (pprint_) os_ << "\n";
-    manage_indentation();
+    newline();
     os_ << str;
   }
 
@@ -119,9 +114,15 @@ private:
     }
   }
 
+  void newline()
+  {
+    if (pprint_) os_ << "\n";
+    manage_indentation();
+  }
+
   std::ostream& quote(const char* str)
   {
-    return (os_ << "\"" << str << "\"");
+    return (os_ << "\"" << YangModel::utf8_to_escaped_json_string(str) << "\"");
   }
 
 private:

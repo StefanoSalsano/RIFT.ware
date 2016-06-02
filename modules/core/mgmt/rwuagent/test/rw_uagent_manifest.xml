@@ -263,22 +263,6 @@
 	  </component>
 
 	  <!--
-	      Define the confd component 
-	      - Creating an instance of this component will start a new tasklet
-	      - This tasklet serves as an agent for management commands
-	  -->
-
-          <component>
-            <component-name>confd</component-name>
-            <rwproc>
-              <native>
-                <exe-path>./usr/local/confd/bin/rw_confd</exe-path>
-              </native>
-            </rwproc>
-          </component>
-
-
-	  <!--
 	      Define the RW.uAgent component 
 	      - Creating an instance of this component will start a new tasklet
 	      - This tasklet serves as an agent for management commands

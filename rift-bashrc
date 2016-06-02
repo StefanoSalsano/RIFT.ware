@@ -36,7 +36,11 @@ function rift-ssh(){
     shift
   fi
 
-  ssh $@ -t -t "cd ${RIFT_ROOT}; ${sudo} RIFT_ROOT_SAVE_OLDPWD=${PWD} ./rift-shell -e"
+  include_build_dirs=""
+  if [ $RIFT_INCLUDE_BUILD_DIRS == 1 ]; then
+    include_build_dirs="--include-build-dirs"
+  fi
+  ssh $@ -t -t "cd ${RIFT_ROOT}; ${sudo} RIFT_ROOT_SAVE_OLDPWD=${PWD} ./rift-shell -e ${include_build_dirs}"
 }
 
 function cdtop() {
@@ -187,6 +191,10 @@ if [ -z "${RIFT_CONFIG}" ]; then
   rift-refresh-env
 else
   source ${RIFT_CONFIG}
+fi
+if [ $RIFT_INCLUDE_BUILD_DIRS == 0 ]; then
+  export GI_TYPELIB_PATH=$(echo $GI_TYPELIB_PATH | tr ':' '\n' | grep -v .build | tr '\n' ':')
+  export PLUGINDIR=$(echo $PLUGINDIR | tr ':' '\n' | grep -v .build | tr '\n' ':')
 fi
 if [ -f "${HOME}/.riftshell.rc" ]; then
     source ${HOME}/.riftshell.rc

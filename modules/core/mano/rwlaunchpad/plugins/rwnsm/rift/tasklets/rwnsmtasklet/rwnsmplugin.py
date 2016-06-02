@@ -53,13 +53,13 @@ class NsmPluginBase(object):
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def instantiate_vnf(self, nsr, vnfr, xact):
+    def instantiate_vnf(self, nsr, vnfr):
         """ Instantiate the virtual network function """
         pass
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def instantiate_vl(self, nsr, vl, xact):
+    def instantiate_vl(self, nsr, vl):
         """ Instantiate the virtual link"""
         pass
 
@@ -83,18 +83,18 @@ class NsmPluginBase(object):
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def terminate_ns(self, nsr, xact):
+    def terminate_ns(self, nsr):
         """Terminate the network service """
         pass
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def terminate_vnf(self, vnfr, xact):
+    def terminate_vnf(self, vnfr):
         """Terminate the VNF """
         pass
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def terminate_vl(self, vlr, xact):
+    def terminate_vl(self, vlr):
         """Terminate the Virtual Link Record"""
         pass

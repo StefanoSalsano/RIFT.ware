@@ -33,6 +33,18 @@ __BEGIN_DECLS
 #define RW_CLI_MAX_ARGS 1024
 #endif
 
+typedef enum {
+  RWCLI_TRANSPORT_MODE_RWMSG,  /**< Transport mode is RW.MSG */
+  RWCLI_TRANSPORT_MODE_NETCONF /**< Using NETCONF transport */
+}rwcli_transport_mode_t;
+
+typedef enum {
+  RWCLI_USER_MODE_INVALID, /**< Invalid auth credentials */
+  RWCLI_USER_MODE_NONE,    /**< User mode not applicable */
+  RWCLI_USER_MODE_ADMIN,   /**< User has admin rights */
+  RWCLI_USER_MODE_OPER     /**< User has operator rights */
+}rwcli_user_mode_t;
+
 /**
  * Used for returning the list of matches when a <TAB> key is pressed
  */
@@ -51,8 +63,16 @@ typedef void (*rwcli_history_hook)(void);
 
 /**
  * Initializes the rw.cli library for use with ZSH
+ * @param[in] schema_listing  Schema Listing filename for the CLI
+ * @param[in] transport_mode  Transport mode in which the CLI is operating
+ * @param[in] user_mode       Specifies if the user is an operator/admin
+ * @returns 0 on success, -1 otherwise.
  */
-int rwcli_zsh_plugin_init(const char * schema_listing);
+int rwcli_zsh_plugin_init(
+        const char* schema_listing,
+        rwcli_transport_mode_t transport_mode,
+        rwcli_user_mode_t user_mode
+    );
 
 /**
  * Start the rw.cli library. Currently not used.

@@ -2441,15 +2441,9 @@ eth_igb_interrupt_action(struct rte_eth_dev *dev)
 		igb_pf_mbx_process(dev);
 		intr->flags &= ~E1000_FLAG_MAILBOX;
 	}
-#if defined(RTE_LIBRW_PIOT)
-        /*
-	igb_intr_enable(dev);
-	rte_intr_enable(&(dev->pci_dev->intr_handle));
-        */
-#else
         igb_intr_enable(dev);
 	rte_intr_enable(&(dev->pci_dev->intr_handle));
-#endif
+
 	if (intr->flags & E1000_FLAG_NEED_LINK_UPDATE) {
 		intr->flags &= ~E1000_FLAG_NEED_LINK_UPDATE;
 

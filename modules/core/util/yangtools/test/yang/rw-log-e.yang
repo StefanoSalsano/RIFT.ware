@@ -531,7 +531,6 @@ module rw-log-e
           description "Sender's hostname";
           rwpb:field-inline "true";
           rwpb:field-string-max 64;
-          //  MAX_HOSTNAME_SZ 64
         }
         leaf log-count {
           type uint32;

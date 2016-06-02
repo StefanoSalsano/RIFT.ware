@@ -15,14 +15,12 @@ from .core import (
         )
 
 from .procs import (
-        Confd,
         RedisCluster,
         RedisServer,
         Webserver,
         UIServerLauncher,
         RiftCli,
         CrossbarServer,
-        Watchdog,
         )
 
 from .tasklets import (

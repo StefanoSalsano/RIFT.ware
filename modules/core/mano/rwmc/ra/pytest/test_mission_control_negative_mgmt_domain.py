@@ -59,6 +59,7 @@ def proxy(request, mgmt_session):
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 class TestMgmtDomainNegativeSetup:
     '''Stand up object needed for the lifecycle of this test script '''
 
@@ -78,7 +79,7 @@ class TestMgmtDomainNegativeSetup:
         '''
         proxy.create_config('/cloud-account/account', cloud_account)
 
-    def test_create_vm_pool(self, proxy, cloud_account_name, vm_pool_name):
+    def test_create_vm_pool(self, proxy, cloud_account, vm_pool_name):
         '''Configure vm pool
 
         Arguments:
@@ -91,13 +92,13 @@ class TestMgmtDomainNegativeSetup:
             Newly configured vm pool has no resources assigned to it
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         cloud_account = proxy.get(xpath)
         assert cloud_account is not None
 
         pool_config = RwMcYang.VmPool(
                 name=vm_pool_name,
-                cloud_account=cloud_account_name,
+                cloud_account=cloud_account.name,
                 dynamic_scaling=True,
         )
         proxy.create_config('/vm-pool/pool', pool_config)
@@ -121,6 +122,7 @@ class TestMgmtDomainNegativeSetup:
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 class TestMgmtDomain:
     '''Test negative cases for the management domain'''
 
@@ -273,7 +275,7 @@ class TestMgmtDomain:
                 fail_on=['crashed'])
 
     def test_launchpad_starts_when_vm_pool_has_a_vm_resource(self, proxy,
-            cloud_account_name, vm_pool_name, mgmt_domain_name, network_pool_name):
+            cloud_account, vm_pool_name, mgmt_domain_name, network_pool_name):
         '''Tests that a launchpad can now start when the vm pool has a vm
         resource
 
@@ -292,7 +294,7 @@ class TestMgmtDomain:
             Launchpad reaches state 'started'
 
         '''
-        account = proxy.get("/cloud-account/account[name='%s']" % cloud_account_name)
+        account = proxy.get("/cloud-account/account[name='%s']" % cloud_account.name)
         cloud_vm_ids = [vm.id for vm in account.resources.vm]
         assert len(cloud_vm_ids) >= 1
 
@@ -304,7 +306,7 @@ class TestMgmtDomain:
 
         pool_config = RwMcYang.VmPool.from_dict({
             'name':vm_pool_name,
-            'cloud_account':cloud_account_name,
+            'cloud_account':cloud_account.name,
             'assigned':[{'id':available_ids[0]}]})
         proxy.replace_config("/vm-pool/pool[name='%s']" % vm_pool_name, pool_config)
 
@@ -315,7 +317,7 @@ class TestMgmtDomain:
         # Create NW pool
         pool_config = RwMcYang.NetworkPool(
                 name=network_pool_name,
-                cloud_account=cloud_account_name,
+                cloud_account=cloud_account.name,
                 dynamic_scaling=True,
         )
         proxy.create_config('/network-pool/pool', pool_config)
@@ -372,6 +374,7 @@ class TestMgmtDomain:
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 class TestMgmtDomainNegativeTeardown:
 
     @pytest.mark.xfail(raises=ProxyExpectTimeoutError)
@@ -468,7 +471,7 @@ class TestMgmtDomainNegativeTeardown:
         xpath = "/network-pool/pool[name='%s']" % network_pool_name
         proxy.delete_config(xpath)
 
-    def test_delete_cloud_account(self, proxy, cloud_account_name):
+    def test_delete_cloud_account(self, proxy, cloud_account):
         '''Unconfigure cloud_account
 
         Arguments:
@@ -479,6 +482,6 @@ class TestMgmtDomainNegativeTeardown:
             None
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         proxy.delete_config(xpath)
 

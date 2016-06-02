@@ -50,7 +50,6 @@ def get_add_delete_update_cfgs(dts_member_reg, xact, key_name):
 class CloudAccountConfigCallbacks(object):
     def __init__(self,
                  on_add_apply=None, on_add_prepare=None,
-                 on_update_apply=None, on_update_prepare=None,
                  on_delete_apply=None, on_delete_prepare=None):
 
         @asyncio.coroutine
@@ -62,12 +61,10 @@ class CloudAccountConfigCallbacks(object):
 
         self.on_add_apply = on_add_apply
         self.on_add_prepare = on_add_prepare
-        self.on_update_apply = on_update_apply
-        self.on_update_prepare = on_update_prepare
         self.on_delete_apply = on_delete_apply
         self.on_delete_prepare = on_delete_prepare
 
-        for f in ('on_add_apply', 'on_update_apply', 'on_delete_apply'):
+        for f in ('on_add_apply', 'on_delete_apply'):
             ref = getattr(self, f)
             if ref is None:
                 setattr(self, f, apply_noop)
@@ -76,7 +73,7 @@ class CloudAccountConfigCallbacks(object):
             if asyncio.iscoroutinefunction(ref):
                 raise ValueError('%s cannot be a coroutine' % (f,))
 
-        for f in ('on_add_prepare', 'on_update_prepare', 'on_delete_prepare'):
+        for f in ('on_add_prepare', 'on_delete_prepare'):
             ref = getattr(self, f)
             if ref is None:
                 setattr(self, f, prepare_noop)
@@ -114,16 +111,21 @@ class CloudAccountConfigSubscriber(object):
         self._cloud_callbacks.on_delete_apply(account_name)
 
     def update_account(self, account_msg):
-        self._log.info("updating cloud account: {}".format(account_msg))
-        account = accounts.CloudAccount(self._log, self._rwlog_hdl, account_msg)
-        self.accounts[account.name].update_from_cfg(account_msg)
+        """ Update an existing cloud account
 
-        # Block update callbacks for cloud accounts if due to SDN account changes
-        # If there are other cloud-account fields that are also updated at the same time, 
-        # in addition to sdn-account, this update will not be triggered. 
-        # The logic to detect this might not be worth it since this won't happen through UI 
-        if not account_msg.has_field("sdn_account"):
-            self._cloud_callbacks.on_update_apply(account)
+        In order to simplify update, turn an update into a delete followed by
+        an add.  The drawback to this approach is that we will not support
+        updates of an "in-use" cloud account, but this seems like a
+        reasonable trade-off.
+
+
+        Arguments:
+            account_msg - The cloud account config message
+        """
+        self._log.info("updating cloud account: {}".format(account_msg))
+
+        self.delete_account(account_msg.name)
+        self.add_account(account_msg)
 
     def register(self):
         @asyncio.coroutine
@@ -132,21 +134,19 @@ class CloudAccountConfigSubscriber(object):
 
             if xact.xact is None:
                 if action == rwdts.AppconfAction.INSTALL:
-                   curr_cfg = self._reg.elements
-                   for cfg in curr_cfg:
-                      self._log.debug("Cloud account being re-added after restart.")
-                      if not cfg.has_field('account_type'):
-                         raise CloudAccountError("New cloud account must contain account_type field.")
-                      print(cfg)
-                      print("Adding account .........")
-                      self.add_account(cfg)
-                   return 
+                    curr_cfg = self._reg.elements
+                    for cfg in curr_cfg:
+                        self._log.debug("Cloud account being re-added after restart.")
+                        if not cfg.has_field('account_type'):
+                            raise CloudAccountError("New cloud account must contain account_type field.")
+                        self.add_account(cfg)
                 else:
-                   # When RIFT first comes up, an INSTALL is called with the current config
-                   # Since confd doesn't actally persist data this never has any data so
-                   # skip this for now.
-                   self._log.debug("No xact handle.  Skipping apply config")
-                   return
+                    # When RIFT first comes up, an INSTALL is called with the current config
+                    # Since confd doesn't actally persist data this never has any data so
+                    # skip this for now.
+                    self._log.debug("No xact handle.  Skipping apply config")
+
+                return
 
             add_cfgs, delete_cfgs, update_cfgs = get_add_delete_update_cfgs(
                     dts_member_reg=self._reg,
@@ -175,22 +175,12 @@ class CloudAccountConfigSubscriber(object):
                             xact_info.query_action, msg)
 
             if action in [rwdts.QueryAction.CREATE, rwdts.QueryAction.UPDATE]:
-                # If the account already exists, then this is an update.  Update the
-                # cloud account and invoke the on_update_prepare callback
                 if msg.name in self.accounts:
-                    self._log.debug("Cloud account already exists. Invoking on_prepare update request")
-                    if msg.has_field("account_type"):
-                        raise CloudAccountError("Cannot change cloud's account-type")
+                    self._log.debug("Cloud account already exists. Invoking update request")
 
-                    account = self.accounts[msg.name]
-                    account.update_from_cfg(msg)
-
-                    # Block update callbacks for cloud accounts if due to SDN account changes
-                    # If there are other cloud-account fields that are also updated at the same time, 
-                    # in addition to sdn-account, this update will not be triggered. 
-                    # The logic to detect this might not be worth it since this won't happen through UI 
-                    if not msg.has_field("sdn_account"):
-                        yield from self._cloud_callbacks.on_update_prepare(account)
+                    # Since updates are handled by a delete followed by an add, invoke the
+                    # delete prepare callbacks to give clients an opportunity to reject.
+                    yield from self._cloud_callbacks.on_delete_prepare(msg.name)
 
                 else:
                     self._log.debug("Cloud account does not already exist. Invoking on_prepare add request")
@@ -206,12 +196,13 @@ class CloudAccountConfigSubscriber(object):
                 fref.goto_whole_message(msg.to_pbcm())
                 if fref.is_field_deleted():
                     yield from self._cloud_callbacks.on_delete_prepare(msg.name)
+
                 else:
                     fref.goto_proto_name(msg.to_pbcm(), "sdn_account")
                     if fref.is_field_deleted():
                         # SDN account disassociated from cloud account
                         account = self.accounts[msg.name]
-                        dict_account =  account.account_msg.as_dict()
+                        dict_account = account.account_msg.as_dict()
                         del dict_account["sdn_account"]
                         account.cloud_account_msg(dict_account)
                     else:

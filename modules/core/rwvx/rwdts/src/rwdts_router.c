@@ -47,6 +47,11 @@ static rwdts_member_rsp_code_t rwdts_router_publish_state_prepare(
     const ProtobufCMessage*  msg,
     void*                    user_data);
 
+static void
+rwdts_router_store_promoted_reg(rwdts_router_t *dts,
+                                rwdts_xact_t *xact,
+                                RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member)  *rcvreg);
+
 static void rwdts_router_fill_reg_msg(RWPB_T_MSG(RwDts_data_Dts_Routers_MemberInfo)* member_info, int j,
                                       rwdts_memb_router_registration_t *rmemb)
 {
@@ -1299,6 +1304,50 @@ rwdts_router_update_registration(rwdts_router_t *dts,
   }
 }
 
+static void
+rwdts_router_promote_subscriber(rwdts_router_t *dts,
+                                rwdts_xact_t* xact,
+                                RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member) *member_p,
+                                bool store_data)
+{
+  RW_ASSERT(member_p);
+  int i;
+
+
+  rwdts_router_member_t *memb=NULL;
+
+  HASH_FIND(hh, dts->members, member_p->name, strlen(member_p->name), memb);
+
+  if (!memb) {
+    return;
+  }
+
+  for (i= 0; i < member_p->n_registration; i++) {
+
+    rwdts_memb_router_registration_t *reg = NULL;
+
+    HASH_FIND(hh_reg, memb->sub_registrations, member_p->registration[i]->keyspec.data, member_p->registration[i]->keyspec.len, reg);
+
+    if (!reg) {
+      return;
+    }
+
+    rwdts_rts_shard_promote_element(reg->shard, reg->chunk_id, reg->membid, memb->msgpath);
+
+    HASH_DELETE(hh_reg, memb->sub_registrations, reg);
+
+    reg->flags &= ~RWDTS_FLAG_SUBSCRIBER;
+    reg->flags |= RWDTS_FLAG_PUBLISHER;
+
+    HASH_ADD_KEYPTR(hh_reg, memb->registrations, member_p->registration[i]->keyspec.data, member_p->registration[i]->keyspec.len, reg);
+  }
+
+  if (store_data) {
+    rwdts_router_store_promoted_reg(dts, xact, member_p);
+  }
+  return;
+}
+
 static rwdts_member_rsp_code_t
 rwdts_router_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
                                 RWDtsQueryAction         action,
@@ -1328,6 +1377,11 @@ rwdts_router_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
                                                                  &xact->id);
   if (rtr_xact && (rtr_xact->n_xact_blocks > 1)) {
     return rwdts_router_process_reg_xact(dts, rtr_xact, msg, key, xact_info);
+  }
+
+  if (member_p->has_promote_sub && member_p->promote_sub) {
+    rwdts_router_promote_subscriber(dts, xact, member_p, true);
+    return RWDTS_ACTION_OK;
   }
 
   if (action == RWDTS_QUERY_DELETE) {
@@ -1444,6 +1498,11 @@ rwdts_router_peer_reg_handle_prepare(const rwdts_xact_info_t* xact_info,
       }
     }
     rwdts_router_reg_handle_delete (dts, xact, keyspec, member_p);
+    return RWDTS_ACTION_OK;
+  }
+
+  if (member_p && member_p->has_promote_sub && member_p->promote_sub) {
+    rwdts_router_promote_subscriber(dts, NULL, member_p, false);
     return RWDTS_ACTION_OK;
   }
 
@@ -1629,8 +1688,7 @@ rwdts_router_get_peer_regs_cb (rwdts_xact_t*        xact,
                                 peer_reg_cb->keyspec,
                                 RWDTS_QUERY_READ,
                                 (RWDTS_XACT_FLAG_PEER_REG
-                                 |RWDTS_FLAG_STREAM
-                                 |RWDTS_FLAG_WAIT_RESPONSE), //|RWDTS_FLAG_TRACE,
+                                 |RWDTS_XACT_FLAG_STREAM), //|RWDTS_FLAG_TRACE, 
                                 rwdts_router_get_peer_regs_cb,
                                 peer_reg_cb,
                                 NULL);
@@ -1752,8 +1810,7 @@ rwdts_router_register_single_peer_router(rwdts_router_t *dts, int vm_id)
                                              peer_reg_cb->keyspec,
                                              RWDTS_QUERY_READ,
                                              (RWDTS_XACT_FLAG_PEER_REG
-                                              |RWDTS_FLAG_STREAM
-                                              |RWDTS_FLAG_WAIT_RESPONSE), //|RWDTS_FLAG_TRACE,
+                                              |RWDTS_XACT_FLAG_STREAM), //|RWDTS_FLAG_TRACE,
                                              rwdts_router_get_peer_regs_cb,
                                              peer_reg_cb,
                                              NULL);
@@ -1782,7 +1839,7 @@ rwdts_router_data_watcher_f(void *ctx)
   char zklock[256] = {0};
   char *rwzk_path = "/sys-router/R/RW.DTSRouter/";
   char my_rwzk_path[256] = {0};
-  struct timeval tv = { .tv_sec = 0, .tv_usec = 1000 };
+  struct timeval tv = { .tv_sec = 120, .tv_usec = 1000 };
   char ** children = NULL;;
   rw_status_t status;
 
@@ -1826,7 +1883,7 @@ rwdts_router_manage_peers(rwdts_router_t *dts,
     char *rwzk_path = "/sys-router/R/RW.DTSRouter/";
     char my_rwzk_path[256] = {0};
     char rwzk_set_data[256] = {0};
-    struct timeval tv = { .tv_sec = 0, .tv_usec = 1000 };
+    struct timeval tv = { .tv_sec = 120, .tv_usec = 1000 };
     char ** children = NULL;;
     rw_status_t status;
 
@@ -2591,6 +2648,117 @@ static rwdts_member_rsp_code_t rwdts_router_publish_state_prepare(
       (RWPB_T_PATHSPEC(RwBase_VcsInstance_Instance_ChildN_PublishState) *)keyspec);
     
   return dts_ret;
+}
+
+static void
+rwdts_router_store_promoted_reg(rwdts_router_t *dts,
+                                rwdts_xact_t *xact,
+                                RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member)  *rcvreg)
+{
+  RW_ASSERT(rcvreg);
+  int i;
+  rw_status_t rs;
+  rw_keyspec_path_t *keyspec = NULL;
+  rw_keyspec_path_t *out_ks = NULL;
+  ProtobufCMessage *out_msg = NULL;
+  RW_ASSERT(rcvreg->has_rtr_id);
+  {
+
+    RWPB_T_PATHSPEC(RwDts_data_RtrPeerRegKeyspec_Router_Member) router_pub_ks  =
+        (*RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrPeerRegKeyspec_Router_Member));
+
+    router_pub_ks.has_dompath = TRUE;
+    router_pub_ks.dompath.has_path001 = TRUE;
+    router_pub_ks.dompath.path001.has_key00 = TRUE;
+    strncpy(router_pub_ks.dompath.path001.key00.name, dts->rwmsgpath, sizeof(router_pub_ks.dompath.path001.key00.name));
+    router_pub_ks.dompath.has_path002 = TRUE;
+    router_pub_ks.dompath.path002.has_key00 = TRUE;
+    strncpy(router_pub_ks.dompath.path002.key00.name, rcvreg->name, sizeof(router_pub_ks.dompath.path001.key00.name));
+
+    keyspec = (rw_keyspec_path_t*)&router_pub_ks;
+    PRINT_STR (dts->rwmsgpath," update with %s member having %lu regns", rcvreg->name, rcvreg->n_registration);
+
+    rs = rwdts_member_reg_handle_get_element_keyspec(dts->local_regkeyh,
+                                                     keyspec,
+                                                     NULL,
+                                                     &out_ks,
+                                                     (const ProtobufCMessage**)&out_msg);
+
+    if (rs == RW_STATUS_SUCCESS) {
+      ProtobufCMessage* new_msg = protobuf_c_message_duplicate(NULL,
+                                                               out_msg,
+                                                               out_msg->descriptor);
+      int i;
+      RWPB_T_MSG(RwDts_data_RtrPeerRegKeyspec_Router_Member) *store_data = (RWPB_T_MSG(RwDts_data_RtrPeerRegKeyspec_Router_Member)*)new_msg;
+
+      for (i = 0; i < store_data->n_registration; i++) {
+         if (store_data->registration[i]->flags & RWDTS_FLAG_SUBSCRIBER) {
+           if (!strcmp(store_data->registration[i]->keystr, rcvreg->registration[0]->keystr)) {
+             store_data->registration[i]->flags &= ~RWDTS_FLAG_SUBSCRIBER;
+             store_data->registration[i]->flags |= RWDTS_FLAG_PUBLISHER;
+             store_data->has_promote_sub = 1;
+             store_data->promote_sub = 1;
+           }
+         }
+      }
+
+      rs = rwdts_member_data_block_advise_w_cb(dts->local_regkeyh,
+                                               RWDTS_QUERY_UPDATE,
+                                               keyspec,
+                                               &store_data->base,
+                                               xact, NULL);
+
+      RW_ASSERT(rs == RW_STATUS_SUCCESS);
+      RWDTS_ROUTER_LOG_XACT_EVENT(dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
+                                  RWLOG_ATTR_SPRINTF("publish %s:%s from %s", rcvreg->name, rcvreg->registration[0]->keystr, dts->rwmsgpath));
+      protobuf_c_message_free_unpacked_usebody(NULL, &store_data->base);
+    }
+  }
+  for (i=0; i < rcvreg->n_registration; i++) {
+    if (rcvreg->registration[i]->rtr_reg_id) {
+      out_ks = NULL;
+      out_msg = NULL;
+
+      RWPB_T_PATHSPEC(RwDts_data_RtrInitRegId_Member_Registration) ks  = (*RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrInitRegId_Member_Registration));
+
+      keyspec = (rw_keyspec_path_t*)&ks;
+      ks.has_dompath = TRUE;
+      ks.dompath.has_path001 = TRUE;
+      ks.dompath.path001.has_key00 = TRUE;
+      strncpy(ks.dompath.path001.key00.name, rcvreg->name, sizeof(ks.dompath.path001.key00.name));
+      ks.dompath.has_path002 = TRUE;
+      ks.dompath.path002.has_key00 = TRUE;
+      ks.dompath.path002.has_key01 = TRUE;
+      ks.dompath.path002.key00.rtr_reg_id = rcvreg->registration[i]->rtr_reg_id;
+      ks.dompath.path002.key01.rtr_id = rcvreg->rtr_id;
+
+      rs = rwdts_member_reg_handle_get_element_keyspec(dts->init_regidh,
+                                                       keyspec,
+                                                       NULL,
+                                                       &out_ks,
+                                                       (const ProtobufCMessage**)&out_msg);
+      if (rs == RW_STATUS_SUCCESS) {
+        ProtobufCMessage* new_msg = protobuf_c_message_duplicate(NULL,
+                                                                 out_msg,
+                                                                 out_msg->descriptor);
+        RWPB_T_MSG(RwDts_data_RtrInitRegId_Member_Registration) *store_data = (RWPB_T_MSG(RwDts_data_RtrInitRegId_Member_Registration)*)new_msg;
+
+        store_data->flags &= ~RWDTS_FLAG_SUBSCRIBER;
+        store_data->flags |= RWDTS_FLAG_PUBLISHER;
+
+        rs = rwdts_member_reg_handle_update_element_keyspec(dts->init_regidh,
+                                                            keyspec,
+                                                            &store_data->base,
+                                                            0,
+                                                            NULL);
+        RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+        protobuf_c_message_free_unpacked_usebody(NULL, (ProtobufCMessage*)store_data);
+      }
+    }
+  }
+    
+  return;
 }
 
 //LCOV_EXCL_STOP

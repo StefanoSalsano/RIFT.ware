@@ -46,6 +46,12 @@
 #include "linux_syscall_support.h"
 #include "linuxthreads.h"
 #include "thread_lister.h"
+ 
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+#define MAX_STACK_DEPTH 1024
+#include "python3.3m/Python.h"
+#include "python3.3m/frameobject.h"
 
 static const char *const no_args_bzip2[]    = { "bzip2",    NULL };
 static const char *const no_args_gzip[]     = { "gzip",     NULL };
@@ -210,12 +216,71 @@ int WriteCoreDumpLimited(const char *file_name, size_t max_length) {
   return WriteCoreDumpFunction(&frame, &params, file_name);
 }
 
+/* This function will record important python debugging symbols in the
+ * global array so that we do not remove the python debugging symbols
+ * while truncating the core file.
+ */
+int g_debug_py_sz = 0; /* globals needed */
+void *g_debug_py_frame[10*MAX_STACK_DEPTH];
+
+void RwRecordPyStack()
+{
+  unw_cursor_t cursor; unw_context_t uc;
+  unw_word_t off;
+  char name[256];
+  int depth = 0;
+  int loopcnt;
+  loopcnt = sizeof(g_debug_py_frame);
+
+  g_debug_py_sz = 0;
+  unw_getcontext(&uc);
+  unw_init_local(&cursor, &uc);
+  while (unw_step(&cursor) > 0) {
+    // Avoid going too deep
+    if (depth++ > MAX_STACK_DEPTH) {
+      return;
+    }
+
+    if (unw_get_proc_name(&cursor, name, sizeof (name), &off) != 0) {
+      return;
+    }
+    /* Check for Python backtrace */
+    if (!strncmp(name,"PyEval_EvalFrameEx", 18)) {
+      {
+        unw_word_t bp;
+        PyFrameObject *frame;
+        int pydepth = 0;
+        unw_get_reg(&cursor, UNW_X86_64_RBP, &bp);
+        frame = (PyFrameObject*)bp;
+        while (frame && (pydepth < loopcnt-10)) {
+          g_debug_py_frame[pydepth++] = (void*) frame;        /* frame pointer */
+          g_debug_py_frame[pydepth++] = (void*) frame->f_code;       /* code segment */
+          g_debug_py_frame[pydepth++] = (void*) frame->f_builtins;   /* builtin symbol table (PyDictObject) */
+          g_debug_py_frame[pydepth++] = (void*) frame->f_globals;    /* global symbol table (PyDictObject) */
+          g_debug_py_frame[pydepth++] = (void*) frame->f_locals;     /* local symbol table (any mapping) */
+          g_debug_py_frame[pydepth++] = (void*) frame->f_tstate;     /* State */
+          g_debug_py_frame[pydepth++] = (void*) frame->f_exc_type;
+          g_debug_py_frame[pydepth++] = (void*) frame->f_exc_value;
+          g_debug_py_frame[pydepth++] = (void*) frame->f_exc_traceback;
+          g_debug_py_frame[pydepth++] = (void*) frame->f_trace;
+
+          frame = frame->f_back;
+          pydepth++;
+        }
+        g_debug_py_sz = pydepth;
+      }
+      return;
+    }
+  }
+}
+
 /* This will limit the size of the core file by reducing or removing the
  * largest memory segments first, effectively prioritizing the smaller memory
  * segments. This behavior is preferred when the process has a large heap and
  * you would like to preserve the relatively small stack.
  */
 int WriteCoreDumpLimitedByPriority(const char *file_name, size_t max_length) {
+  RwRecordPyStack();
   FRAME(frame);
   struct CoreDumpParameters params;
   ClearCoreDumpParameters(&params);

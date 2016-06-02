@@ -2,7 +2,7 @@
 # RIFT.ware 4.2
 #
 [RIFT.ware-4.2]
-name=RIFT.ware
+name=RIFT.ware 4.2
 baseurl=http://repo.riftio.com/releases/riftware/4.2/$releasever/$basearch/release
 enabled=1
 metadata_expire=1m
@@ -10,7 +10,7 @@ gpgcheck=0
 skip_if_unavailable=False
 
 [RIFT.ware-4.2-testing]
-name=RIFT.ware Testing
+name=RIFT.ware 4.2 Testing
 baseurl=http://repo.riftio.com/releases/riftware/4.2/$releasever/$basearch/testing
 enabled=0
 metadata_expire=1m
@@ -18,7 +18,7 @@ gpgcheck=0
 skip_if_unavailable=False
 
 [RIFT.ware-4.2-nightly]
-name=RIFT.ware Nightly
+name=RIFT.ware 4.2 Nightly
 baseurl=http://repo.riftio.com/releases/riftware/4.2/$releasever/$basearch/nightly
 enabled=0
 metadata_expire=1m
@@ -33,7 +33,7 @@ skip_if_unavailable=False
 # RIFT.ware 4.1
 #
 [RIFT.ware-4.1]
-name=RIFT.ware
+name=RIFT.ware 4.1
 baseurl=http://repo.riftio.com/releases/riftware/4.1/$releasever/$basearch/release
 enabled=1
 metadata_expire=1m
@@ -41,7 +41,7 @@ gpgcheck=0
 skip_if_unavailable=False
 
 [RIFT.ware-4.1-testing]
-name=RIFT.ware Testing
+name=RIFT.ware 4.1 Testing
 baseurl=http://repo.riftio.com/releases/riftware/4.1/$releasever/$basearch/testing
 enabled=0
 metadata_expire=1m
@@ -49,7 +49,7 @@ gpgcheck=0
 skip_if_unavailable=False
 
 [RIFT.ware-4.1-nightly]
-name=RIFT.ware Nightly
+name=RIFT.ware 4.1 Nightly
 baseurl=http://repo.riftio.com/releases/riftware/4.1/$releasever/$basearch/nightly
 enabled=0
 metadata_expire=1m
@@ -64,7 +64,7 @@ skip_if_unavailable=False
 # RIFT.ware 4.0
 #
 [RIFT.ware]
-name=RIFT.ware
+name=RIFT.ware 4.0
 baseurl=http://repo.riftio.com/releases/riftware/4.0/$releasever/$basearch/release
 enabled=1
 metadata_expire=1m
@@ -72,7 +72,7 @@ gpgcheck=0
 skip_if_unavailable=False
 
 [RIFT.ware-testing]
-name=RIFT.ware Testing
+name=RIFT.ware 4.0 Testing
 baseurl=http://repo.riftio.com/releases/riftware/4.0/$releasever/$basearch/testing
 enabled=0
 metadata_expire=1m
@@ -80,7 +80,7 @@ gpgcheck=0
 skip_if_unavailable=False
 
 [RIFT.ware-nightly]
-name=RIFT.ware Nightly
+name=RIFT.ware 4.0 Nightly
 baseurl=http://repo.riftio.com/releases/riftware/4.0/$releasever/$basearch/nightly
 enabled=0
 metadata_expire=1m

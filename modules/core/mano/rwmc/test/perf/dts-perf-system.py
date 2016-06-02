@@ -93,7 +93,8 @@ def main(argv=sys.argv[1:]):
 
     # Create the prepared system from the demo
     system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args, 
-              northbound_listing="cli_rwfpath_schema_listing.txt")
+              northbound_listing="cli_rwfpath_schema_listing.txt",
+              netconf_trace_override=True)
 
     # Start the prepared system
     system.start()

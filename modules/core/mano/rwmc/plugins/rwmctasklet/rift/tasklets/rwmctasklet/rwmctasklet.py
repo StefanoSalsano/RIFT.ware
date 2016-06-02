@@ -15,6 +15,8 @@ gi.require_version('RwMcYang', '1.0')
 gi.require_version('RwMcYang', '1.0')
 gi.require_version('RwcalYang', '1.0')
 gi.require_version('RwTypes', '1.0')
+gi.require_version('RwCal', '1.0')
+
 
 from gi.repository import (
     RwDts as rwdts,
@@ -2253,7 +2255,8 @@ def construct_fallback_launchpad_vm_pool():
 class MissionControlTasklet(rift.tasklets.Tasklet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.rwlog.set_category('rw-mc')
+        self.rwlog.set_category('rw-mc-log')
+
         self._dts = None
         self._mgmt_domains = {}
         self._domain_config_hdl = None

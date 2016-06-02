@@ -17,13 +17,25 @@ import subprocess
 import time
 import uuid
 
+from gi import require_version
+require_version('RwcalYang', '1.0')
+require_version('RwTypes', '1.0')
+
 from gi.repository import RwcalYang, RwTypes
 import rw_peas
 import rwlogger
 
+import rift.auto.vm_utils
 
 logger = logging.getLogger()
 
+def resource_name(base):
+    name = '{user}-{task_id}-{base}'.format(
+            user=os.getenv('AUTO_USER', os.getenv('USER', 'nouser')),
+            task_id=os.getenv('AUTO_TASK_ID', '0'),
+            base=base
+    )
+    return name
 
 class TimeoutError(Exception):
     '''Thrown if object does not reach the desired state within the timeout'''
@@ -35,25 +47,39 @@ class ValidationError(Exception):
     pass
 
 
-class OpenstackCleanup(object):
-    """
-    A convenience class on top of cal interface to provide cleanup
-    functions.
-    """
-    DEFAULT_FLAVORS = ['m1.tiny', 'm1.small', 'm1.medium', 'm1.large', 'm1.xlarge']
-    DEFAULT_IMAGES = ['rwimage']
-    DEFAULT_NETWORKS =["public", "private"]
+class Openstack(object):
+    _DEFAULT_USERNAME = "pluto"
+    _DEFAULT_PASSWORD = "mypasswd"
 
-    def __init__(self, account, dry_run=False):
-        """
-        Args:
-            account (RwcalYang.CloudAccount): Accound details
-            dry_run (bool, optional): If enable, only log statements are
-                    printed.
-        """
-        self.account = account
+    def __init__(self, host, user, tenants):
+        self.host = host
+        self.tenants = tenants
+        self.user = user
+        self.accounts = self._generate_accounts()
         self.cal = self._get_cal_interface()
-        self.dry_run = dry_run
+
+    def _generate_accounts(self):
+        """
+        Generates the list of cal accounts for which setup and cleanup
+        has to be performed.
+        """
+        accounts = []
+        auth_url = 'http://{}:5000/v3/'.format(self.host)
+
+        for tenant, network in self.tenants:
+            account = RwcalYang.CloudAccount.from_dict({
+                    'name': 'rift.auto.openstack',
+                    'account_type': 'openstack',
+                    'openstack': {
+                      'key':  self.user or self._DEFAULT_USERNAME,
+                      'secret': self._DEFAULT_PASSWORD,
+                      'auth_url': auth_url,
+                      'tenant': tenant,
+                      'mgmt_network': network}})
+
+            accounts.append(account)
+
+        return accounts
 
     def _get_cal_interface(self):
         """Get an instance of the rw.cal interface
@@ -73,6 +99,53 @@ class OpenstackCleanup(object):
 
         return cal
 
+    @staticmethod
+    def parse_tenants(tenant_list):
+        """
+        Args:
+            tenant_list (str): format: "demo:private, mano:private"
+
+        Raises:
+            ValueError: If the format is incorrect
+
+        Returns:
+            list of tuples: (tenant, network)
+        """
+        tenants = []
+        if not tenant_list:
+            return tenants
+
+        try:
+            for tenant in tenant_list.split(","):
+                tenant = tenant.strip()
+                tenant, network = tenant.split(":")
+                tenants.append((tenant, network))
+        except ValueError:
+            raise ValueError("Tenant list should be specified as <TENANT>:<NETWORK>")
+
+        return tenants
+
+
+class OpenstackCleanup(Openstack):
+    """
+    A convenience class on top of cal interface to provide cleanup
+    functions.
+    """
+    DEFAULT_FLAVORS = ['m1.tiny', 'm1.small', 'm1.medium', 'm1.large', 'm1.xlarge']
+    DEFAULT_IMAGES = ['rwimage', 'rift.auto.image',
+                      'rift-root-latest-multivm-vnf.qcow2', 'rift-ui-latest.qcow2']
+    DEFAULT_NETWORKS =["public", "private"]
+
+    def __init__(self, host, user, tenants, dry_run=False):
+        """
+        Args:
+            account (RwcalYang.CloudAccount): Accound details
+            dry_run (bool, optional): If enable, only log statements are
+                    printed.
+        """
+        super().__init__(host, user, tenants)
+        self.dry_run = dry_run
+
     def delete_vms(self, skip_list=None):
         """Delete all the VM in the tenant.
 
@@ -81,13 +154,15 @@ class OpenstackCleanup(object):
                     VMs present in the list
         """
         skip_list = skip_list or []
-        rc, vdulist = self.cal.get_vdu_list(self.account)
-        for vduinfo in vdulist.vdu_info_list:
-            if vduinfo.name not in skip_list:
-                logger.info("Deleting VM: {}".format(vduinfo.name))
-                if self.dry_run:
-                    continue
-                self.cal.delete_vdu(self.account, vduinfo.vdu_id)
+
+        for account in self.accounts:
+            rc, vdulist = self.cal.get_vdu_list(account)
+            for vduinfo in vdulist.vdu_info_list:
+                if vduinfo.name not in skip_list:
+                    logger.info("Deleting VM: {}".format(vduinfo.name))
+                    if self.dry_run:
+                        continue
+                    self.cal.delete_vdu(account, vduinfo.vdu_id)
 
     def delete_networks(self, skip_list=None):
         """Delete all the networks.
@@ -97,16 +172,17 @@ class OpenstackCleanup(object):
                     networks present in the list
         """
         skip_list = skip_list or []
-        rc, rsp = self.cal.get_virtual_link_list(self.account)
+        for account in self.accounts:
+            rc, rsp = self.cal.get_virtual_link_list(account)
 
-        for vlink in rsp.virtual_link_info_list:
-            if vlink.name not in skip_list:
-                logger.info("Deleting Network: {}".format(vlink.name))
-                if self.dry_run:
-                    continue
-                self.cal.delete_virtual_link(
-                        self.account,
-                        vlink.virtual_link_id)
+            for vlink in rsp.virtual_link_info_list:
+                if vlink.name not in skip_list:
+                    logger.info("Deleting Network: {}".format(vlink.name))
+                    if self.dry_run:
+                        continue
+                    self.cal.delete_virtual_link(
+                            account,
+                            vlink.virtual_link_id)
 
     def delete_ports_on_default_network(self, skip_list=None):
         """Delete all the ports on the mgmt_network, except the ones
@@ -120,14 +196,15 @@ class OpenstackCleanup(object):
                     ports present in the list
         """
         skip_list = skip_list or []
-        rc, rsp = self.cal.get_port_list(self.account)
+        for account in self.accounts:
+            rc, rsp = self.cal.get_port_list(account)
 
-        for port in rsp.portinfo_list:
-            if port.port_name not in skip_list and len(port.vm_id) == 0:
-                logger.info("Deleting Port: {}".format(port.port_name))
-                if self.dry_run:
-                    continue
-                self.cal.delete_port(self.account, port.port_id)
+            for port in rsp.portinfo_list:
+                if port.port_name not in skip_list and len(port.vm_id) == 0:
+                    logger.info("Deleting Port: {}".format(port.port_name))
+                    if self.dry_run:
+                        continue
+                    self.cal.delete_port(account, port.port_id)
 
     def delete_flavors(self, skip_list=None):
         """Delete all the flavors.
@@ -137,13 +214,15 @@ class OpenstackCleanup(object):
                     flavors present in the list
         """
         skip_list = skip_list or []
-        rc, rsp = self.cal.get_flavor_list(self.account)
-        for flavor in rsp.flavorinfo_list:
-            if flavor.name not in skip_list:
-                logger.info("Deleting Flavor: {}".format(flavor.name))
-                if self.dry_run:
-                    continue
-                self.cal.delete_flavor(self.account, flavor.id)
+        for account in self.accounts:
+            rc, rsp = self.cal.get_flavor_list(account)
+
+            for flavor in rsp.flavorinfo_list:
+                if flavor.name not in skip_list:
+                    logger.info("Deleting Flavor: {}".format(flavor.name))
+                    if self.dry_run:
+                        continue
+                    self.cal.delete_flavor(account, flavor.id)
 
     def delete_images(self, skip_list=None):
         """Delete all the images.
@@ -153,17 +232,32 @@ class OpenstackCleanup(object):
                     images present in the list
         """
         skip_list = skip_list or []
-        rc, rsp = self.cal.get_image_list(self.account)
 
-        for image in rsp.imageinfo_list:
-            if image.name not in skip_list:
-                logger.info("Deleting Image: {}".format(image.name))
-                if self.dry_run:
-                    continue
-                self.cal.delete_image(self.account, image.id)
+        for account in self.accounts:
+            rc, rsp = self.cal.get_image_list(account)
+
+            for image in rsp.imageinfo_list:
+                if image.name not in skip_list:
+                    logger.info("Deleting Image: {}".format(image.name))
+                    if self.dry_run:
+                        continue
+                    self.cal.delete_image(account, image.id)
 
 
-class OpenstackManoSetup(object):
+def reset_openstack(openstack_cleanup):
+    """
+    A sample reset openstack callback that can be used by the client
+    """
+    openstack_cleanup.delete_vms()
+
+    openstack_cleanup.delete_networks(skip_list=OpenstackCleanup.DEFAULT_NETWORKS)
+    openstack_cleanup.delete_ports_on_default_network()
+
+    openstack_cleanup.delete_images(skip_list=OpenstackCleanup.DEFAULT_IMAGES)
+    openstack_cleanup.delete_flavors(skip_list=OpenstackCleanup.DEFAULT_FLAVORS)
+
+
+class OpenstackManoSetup(Openstack):
     """Provide a single entry point for setting up an openstack controller
     with launchpad and mission_control.
 
@@ -190,7 +284,7 @@ class OpenstackManoSetup(object):
     _MISSION_CONTROL_NAME = "rift_auto_mission_control"
     _LAUNCHPAD_NAME = "rift_auto_launchpad"
 
-    def __init__(self, account, site=None, image=None, flavor=None, use_existing=False, lp_standalone=False):
+    def __init__(self, host, user, tenants, site=None, image=None, flavor=None, use_existing=False, lp_standalone=False):
         """
         Args:
             account (RwcalYang.CloudAccount): Account details
@@ -205,8 +299,10 @@ class OpenstackManoSetup(object):
             lp_standalone (bool, optional): If set only Lp instance will be
                 created
         """
-        self.account = account
-        self.cal = self._get_cal_interface()
+        super().__init__(host, user, tenants)
+        # we just need a tenant to set up the LP and MC vms, so taking the
+        # first one.
+        self.account = self.accounts[0]
         self._site = site
         self.image = image or self._DEFAULT_IMG
         self.flavor = flavor or self._DEFAULT_FLAVOR
@@ -219,27 +315,37 @@ class OpenstackManoSetup(object):
         """
         return self._LAUNCHPAD_NAME if self._lp_standalone else self._MISSION_CONTROL_NAME
 
-    def _get_cal_interface(self):
-        """Get an instance of the rw.cal interface
+    def check_for_updated_image(self, image):
+        """Verify the currently loaded image is up-to-date
 
-        Load an instance of the rw.cal plugin via libpeas
-        and returns the interface to that plugin instance
+        Arguments:
+            image - image reference to check against the currently loaded image
 
-        Returns:
-            rw.cal interface to created rw.cal instance
+        Return:
+            image_id - id of the currently loaded image or None if the image is not
+                     up-to-date
         """
-        plugin = rw_peas.PeasPlugin('rwcal_openstack', 'RwCal-1.0')
-        engine, info, extension = plugin()
-        cal = plugin.get_interface("Cloud")
-        rwloggerctx = rwlogger.RwLog.Ctx.new("Cal-Log")
-        rc = cal.init(rwloggerctx)
-        assert rc == RwTypes.RwStatus.SUCCESS
+        for account in self.accounts:
+            rc, rsp = self.cal.get_image_list(account)
 
-        return cal
+            for curr_image in rsp.imageinfo_list:
+                if curr_image.name == image.name:
+                   local_cksum = rift.auto.vm_utils.md5checksum(image.location)
+                   if local_cksum == curr_image.checksum:
+                       return curr_image.id
+                   else:
+                       # delete out-dated image
+                       logger.debug("Deleting openstack image: %s", curr_image.name)
+                       self.cal.delete_image(account, curr_image.id)
+                       break
+        return None
 
-    def create_image(self):
+    def create_image(self, image=None):
         """Creates an image using the config provided.
 
+        Arguments:
+            image (RwcalYang.ImageInfoItem, optional): If specified the image
+                is created using that image
         Raises:
             TimeoutError: If the image does not reach a valid state
             ValidationError: If the image upload failed.
@@ -247,6 +353,13 @@ class OpenstackManoSetup(object):
         Returns:
             str: image_id
         """
+        if image is None:
+            image = self.image
+
+        current_image_id = self.check_for_updated_image(image)
+        if current_image_id is not None:
+            return current_image_id
+
         def wait_for_image_state(account, image_id, state, timeout=300):
             state = state.lower()
             current_state = 'unknown'
@@ -267,8 +380,8 @@ class OpenstackManoSetup(object):
 
             return image_info
 
-        logger.debug("Uploading VM Image")
-        rc, image_id = self.cal.create_image(self.account, self.image)
+        logger.debug("Uploading VM Image: %s", image.name)
+        rc, image_id = self.cal.create_image(self.account, image)
         assert rc == RwTypes.RwStatus.SUCCESS
         image_info = wait_for_image_state(self.account, image_id, 'active')
 
@@ -338,7 +451,7 @@ class OpenstackManoSetup(object):
             site = "-s blr"
         userdata = userdata.format(site=site)
 
-        vdu_info = RwcalYang.VDUInitParams.from_dict({
+        vdu_info_dict = {
             'name': name,
             'node_id': vdu_id,
             'flavor_id': str(self.flavor_id),
@@ -346,9 +459,11 @@ class OpenstackManoSetup(object):
             'allocate_public_address': False,
             'vdu_init': {
                 'userdata': userdata}
-        })
+        }
 
-        logger.debug("Creating Master VM")
+        vdu_info = RwcalYang.VDUInitParams.from_dict(vdu_info_dict)
+
+        logger.debug("Creating Master VM with VDU params: %s", vdu_info_dict)
         rc, vdu_id = self.cal.create_vdu(self.account, vdu_info)
 
         assert rc == RwTypes.RwStatus.SUCCESS
@@ -450,15 +565,16 @@ class OpenstackManoSetup(object):
         Returns:
             VduInfo: VduInfo instance of the VM.
         """
-        rc, vdulist = self.cal.get_vdu_list(self.account)
-        for vduinfo in vdulist.vdu_info_list:
-            if vduinfo.name == name:
-                return VduInfo(vduinfo)
+        for account in self.accounts:
+            rc, vdulist = self.cal.get_vdu_list(account)
+            for vduinfo in vdulist.vdu_info_list:
+                if vduinfo.name in [name, resource_name(name)]:
+                    return VduInfo(vduinfo)
 
         return None
 
     @contextlib.contextmanager
-    def setup(self, slave_resources=0, timeout=900, cleanup_clbk=None):
+    def setup(self, slave_resources=0, timeout=300, cleanup_clbk=None):
         """
         Args:
             slave_resources (int, optional): Number of additional slave resource
@@ -466,16 +582,19 @@ class OpenstackManoSetup(object):
             timeout (int, optional): timeout in seconds
             cleanup_clbk (callable, optional): Callback to perform any teardown
                 operations.
-                Signature: cleanup_clbk(account)
-                    account(RwcalYang.CloudAccount): Account details
+                Signature: cleanup_clbk(cleanup)
+                    cleanup(OpenstackCleanup): Account details
 
         Yields:
             A tuple of VduInfo- Master, Slaves.
         """
         try:
             if self._use_existing:
-                yield self._get_vdu(self._MISSION_CONTROL_NAME), \
-                      [self._get_vdu(self._LAUNCHPAD_NAME)] \
+                if self._lp_standalone:
+                    yield self._get_vdu(self._LAUNCHPAD_NAME), []
+                else:
+                    yield self._get_vdu(self._MISSION_CONTROL_NAME), \
+                          [self._get_vdu(self._LAUNCHPAD_NAME)] \
 
             else:
                 self.image_id = self.create_image()
@@ -484,7 +603,7 @@ class OpenstackManoSetup(object):
                 master = self.create_master_resource(self.master_name)
                 resources = collections.deque([master])
 
-                slave_names = ['rift_auto_resource_{}'.format(index) 
+                slave_names = ['rift_auto_resource_{}'.format(index)
                         for index in range(slave_resources)]
 
                 if not self._lp_standalone:
@@ -503,7 +622,8 @@ class OpenstackManoSetup(object):
 
         finally:
             if cleanup_clbk is not None:
-                cleanup_clbk(self.account)
+                # Clean up should be done for all the accounts.
+                cleanup_clbk(OpenstackCleanup(self.host, self.tenants))
 
 
 class VduInfo(object):
@@ -538,9 +658,12 @@ class VduInfo(object):
         if self._is_accessible:
             return self._is_accessible
 
-        check_host_cmd = 'ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -- {ip} ls > /dev/null'
+        check_host_cmd = '/usr/rift/bin/ssh_root {ip} -q -n -o BatchMode=yes -o StrictHostKeyChecking=no ls > /dev/null'
+
         rc = subprocess.call(check_host_cmd.format(ip=self._ip), shell=True)
         logger.info("Checking if {} is accessible".format(self._ip))
+
+
 
         if rc != 0:
             return False
@@ -559,7 +682,7 @@ class VduInfo(object):
         if not self.is_accessible:
             return False
 
-        is_ready_cmd = 'ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -- {ip} stat /var/lib/cloud/instance/boot-finished > /dev/null'
+        is_ready_cmd = '/usr/rift/bin/ssh_root {ip} -q -n -o BatchMode=yes -o StrictHostKeyChecking=no stat /var/lib/cloud/instance/boot-finished > /dev/null'
         rc = subprocess.call(is_ready_cmd.format(ip=self._ip), shell=True)
 
         logger.info("Checking if {} is ready".format(self._ip))

@@ -27,6 +27,7 @@ up_cmd="$SYSTEM_TEST_UTIL_DIR/wait_until_system_started.py \
     --max-wait $wait_system"
 
 system_args="\
+    --use-xml-mode
     --mode ethsim \
     --ip-list=\"192.168.122.1\" \
     --with-cntr-mgr"

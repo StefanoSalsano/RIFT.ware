@@ -48,8 +48,10 @@ def yield_vnfd_vnfr_pairs(proxy, nsr=None):
     vnfrs = proxy(RwVnfrYang).get(vnfr, list_obj=True)
     for vnfr in vnfrs.vnfr:
 
-        if nsr and vnfr.id not in nsr.constituent_vnfr_ref:
-            continue
+        if nsr:
+            const_vnfr_ids = [const_vnfr.vnfr_id for const_vnfr in nsr.constituent_vnfr_ref]
+            if vnfr.id not in const_vnfr_ids:
+                continue
 
         vnfd = get_vnfd(vnfr.vnfd_ref)
         yield vnfd, vnfr
@@ -84,7 +86,7 @@ def assert_records(proxy):
     assert len(vnf_tuple) == 2
 
 
-@pytest.mark.depends('pingpong')
+@pytest.mark.depends('nsr')
 @pytest.mark.incremental
 class TestRecords(object):
     def is_valid_ip(self, address):
@@ -187,14 +189,10 @@ class TestRecords(object):
         vnfdproxy = proxy(RwVnfdYang)
 
         for vnfd_record in [ping_vnfd, pong_vnfd]:
-            xpath = "/vnfd-catalog/vnfd"
-            vnfdproxy.create_config(xpath, vnfd_record.vnfd)
-
             xpath = "/vnfd-catalog/vnfd[id='{}']".format(vnfd_record.id)
+            vnfdproxy.replace_config(xpath, vnfd_record.vnfd)
             vnfd = vnfdproxy.get(xpath)
             assert vnfd.id == vnfd_record.id
-
-            vnfdproxy.replace_config(xpath, vnfd_record.vnfd)
 
     def test_create_update_nsd(self, proxy, ping_pong_records):
         """
@@ -206,14 +204,10 @@ class TestRecords(object):
         _, _, ping_pong_nsd = ping_pong_records
         nsdproxy = proxy(NsdYang)
 
-        xpath = "/nsd-catalog/nsd"
-        nsdproxy.create_config(xpath, ping_pong_nsd.descriptor)
-
         xpath = "/nsd-catalog/nsd[id='{}']".format(ping_pong_nsd.id)
+        nsdproxy.replace_config(xpath, ping_pong_nsd.descriptor)
         nsd = nsdproxy.get(xpath)
         assert nsd.id == ping_pong_nsd.id
-
-        nsdproxy.replace_config(xpath, ping_pong_nsd.descriptor)
 
     def test_wait_for_pingpong_configured(self, proxy):
         nsr_opdata = proxy(RwNsrYang).get('/ns-instance-opdata')
@@ -255,8 +249,8 @@ class TestRecords(object):
             4. Checks for a reachable IP in mgmt_interface
             5. Basic checks for connection point and cfg_location.
         """
-        def is_reachable(ip):
-            rc = subprocess.call(["ping", "-c1", ip])
+        def is_reachable(ip, timeout=10):
+            rc = subprocess.call(["ping", "-c1", "-w", str(timeout), ip])
             if rc == 0:
                 return True
             return False
@@ -283,13 +277,14 @@ class TestRecords(object):
 
             assert con_data.cfg_location is not None
 
-@pytest.mark.depends('pingpong')
+@pytest.mark.depends('nsr')
 @pytest.mark.incremental
 class TestNfviMetrics(object):
 
     def test_records_present(self, proxy):
         assert_records(proxy)
 
+    @pytest.mark.skipif(True, reason='NFVI metrics collected from NSR are deprecated, test needs to be updated to collected metrics from VNFRs')
     def test_nfvi_metrics(self, proxy):
         """
         Verify the NFVI metrics

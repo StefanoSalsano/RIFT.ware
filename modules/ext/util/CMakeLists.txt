@@ -31,6 +31,7 @@ set(subdirs
   libuinet
   libunwind
   xerces-c
+  xalan
   curl
   urcu
   tcpdump

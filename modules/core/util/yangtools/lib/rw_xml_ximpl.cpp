@@ -14,16 +14,39 @@
  * @brief Implementation of the RW XML library based on Xerces
  */
 
+#include <sstream>
+
 #include "rw_xml_ximpl.hpp"
 #include <yangncx.hpp>
 #include <rw_yang_mutex.hpp>
 
 #include <xercesc/util/PlatformUtils.hpp>
 #include <xercesc/util/XMLURL.hpp>
+#include <xalanc/XalanTransformer/XercesDOMWrapperParsedSource.hpp>
 
+#include <xalanc/XSLT/XSLTProcessorEnvSupportDefault.hpp>
+#include "xalanc/PlatformSupport/DOMStringHelper.hpp"
+#include <xalanc/XalanTransformer/XercesDOMWrapperParsedSource.hpp>
+#include <xalanc/Include/PlatformDefinitions.hpp>
+#include <xalanc/XalanTransformer/XalanTransformer.hpp>
+#include <xalanc/XalanSourceTree/XalanSourceTreeDOMSupport.hpp>
+#include <xalanc/XalanSourceTree/XalanSourceTreeParserLiaison.hpp>
+#include <xalanc/XPath/XObjectFactoryDefault.hpp>
+#include <xalanc/XPath/XPath.hpp>
+#include <xalanc/XPath/XPathConstructionContextDefault.hpp>
+#include <xalanc/XPath/XPathEnvSupportDefault.hpp>
+#include <xalanc/XPath/XPathExecutionContextDefault.hpp>
+#include <xalanc/XPath/XPathInit.hpp>
+#include <xalanc/XPath/XPathProcessorImpl.hpp>
+#include <xalanc/XPath/XPathFactoryDefault.hpp>
+#include <xalanc/XPath/ElementPrefixResolverProxy.hpp>
+#include "xalanc/XercesParserLiaison/XercesDocumentWrapper.hpp"
 using namespace rw_yang;
 
 namespace X = XERCES_CPP_NAMESPACE;
+
+XALAN_CPP_NAMESPACE_USE; //ATTN don't do this 
+typedef XPathConstructionContext::GetAndReleaseCachedString     GetAndReleaseCachedString;
 
 static const XMLCh rw_xml_ximpl_bkptr_key[] =
   {'R','W','_','X','M','L','_','X','I','M','P','L','_','B','K','P','T','R','_','K','E','Y'};
@@ -31,6 +54,7 @@ static const XMLCh rw_xml_ximpl_bkptr_key[] =
 
 
 /*****************************************************************************/
+size_t XMLManagerXImpl::manager_count_ = 0;
 
 XMLManager::uptr_t rw_yang::xml_manager_create_xerces(YangModel* model)
 {
@@ -47,8 +71,8 @@ rw_xml_manager_t* rw_xml_manager_create_xerces()
   return static_cast<XMLManager*>(new XMLManagerXImpl());
 }
 
-XMLManagerXImpl::XMLManagerXImpl(YangModel *model)
-: xrcs_ls_impl_(nullptr),
+XMLManagerXImpl::XMLManagerXImpl(YangModel *model, X::DOMImplementation* impl)
+: xrcs_ls_impl_(impl),
   yang_model_owned_(model == nullptr),
   yang_model_(model)
 {
@@ -56,6 +80,11 @@ XMLManagerXImpl::XMLManagerXImpl(YangModel *model)
   {
     GlobalMutex::guard_t guard(GlobalMutex::g_mutex);
     X::XMLPlatformUtils::Initialize();
+    if (manager_count_ == 0) {
+      XalanTransformer::initialize();
+    }
+    manager_count_++;
+
   }
 
   // ATTN: Create our own memory manager, that uses the special RW
@@ -63,16 +92,20 @@ XMLManagerXImpl::XMLManagerXImpl(YangModel *model)
   //   debugging.
 
   static const XMLCh ls[] = { 'L', 'S', 0 };
-  xrcs_ls_impl_ = static_cast<X::DOMImplementation*>(X::DOMImplementationRegistry::getDOMImplementation(ls));
+  if (!impl) {
+    xrcs_ls_impl_ = static_cast<X::DOMImplementation*>(X::DOMImplementationRegistry::getDOMImplementation(ls));
+  } 
 
   if (!yang_model_) {
     yang_model_owned_ = true;
     yang_model_ = YangModelNcx::create_model();
   }
+  ns_resolver_ = new XImpleDOMNamespaceResolver(yang_model_);  
 }
 
 void XMLManagerXImpl::obj_release() noexcept
 {
+  delete ns_resolver_;
   delete this;
 }
 
@@ -84,6 +117,13 @@ XMLManagerXImpl::~XMLManagerXImpl()
   }
   // Terminate the platform.  Really only happens when all XImpls are gone.
   GlobalMutex::guard_t guard(GlobalMutex::g_mutex);
+
+  manager_count_--;
+  if (manager_count_ == 0) {
+    // Terminate Xalan...
+    XalanTransformer::terminate();
+  }
+
   X::XMLPlatformUtils::Terminate();
 }
 
@@ -106,7 +146,7 @@ XMLDocument::uptr_t XMLManagerXImpl::create_document(const char* local_name, con
     if (nullptr == root_node->get_yang_node()) {
       YangNode *top_node = yang_model_->get_root_node()->search_child (root_node->get_local_name().c_str());
       if (nullptr != top_node) {
-        log_strm << " setting top_node to "<<root_node->get_local_name();
+        log_strm << " setting top_node to "<< root_node->get_local_name();
         root_node->set_yang_node(top_node);
         root_node->xrcs_set_prefix(top_node->get_prefix());
       } else {
@@ -130,7 +170,7 @@ XMLDocument::uptr_t XMLManagerXImpl::create_document(YangNode* yang_node)
   }
   std::stringstream log_strm;
 
-  log_strm << "Creating document " << ns <<":"<<root_name;
+  log_strm << "Creating document " << ns <<":"<< root_name;
 
   XMLDocumentXImpl::uptr_t doc(new XMLDocumentXImpl(*this));
   if (! doc->xi_initialize_empty(root_name, ns, prefix)) {
@@ -141,7 +181,7 @@ XMLDocument::uptr_t XMLManagerXImpl::create_document(YangNode* yang_node)
     // that tree walks can work correctly.
     XMLNodeXImpl* root_node = doc->get_root_node();
     if (yang_node) {
-      log_strm << " setting top_node to "<<root_node->get_local_name();
+      log_strm << " setting top_node to "<< root_node->get_local_name();
       root_node->set_yang_node(yang_node);
     } else {
       root_node->set_reroot_yang_node(yang_model_->get_root_node());
@@ -152,7 +192,7 @@ XMLDocument::uptr_t XMLManagerXImpl::create_document(YangNode* yang_node)
   return static_cast_move<XMLDocument::uptr_t>(doc);
 }
 
-XMLDocument::uptr_t XMLManagerXImpl::create_document_from_file(const char* file_name, bool validate)
+XMLDocument::uptr_t XMLManagerXImpl::create_document_from_file(const char* file_name, std::string& error_out, bool validate)
 {
   RW_ASSERT(file_name);
 
@@ -164,7 +204,9 @@ XMLDocument::uptr_t XMLManagerXImpl::create_document_from_file(const char* file_
   if (! xi_doc->xi_initialize_file(file_name, validate)) {
     // ATTN: Failed to parse!  Where did the errors go?
     // Reset the smart pointer to delete the object.
+    log_strm << "Failed to parse XML:" << xi_doc->get_error_handler().error_string() << std::endl;
     xi_doc.reset();
+    error_out = log_strm.str();
     RW_XML_MGR_LOG_ERROR (log_strm);
   } else {
     // provoke yang lookup
@@ -180,6 +222,12 @@ XMLDocument::uptr_t XMLManagerXImpl::create_document_from_file(const char* file_
     RW_XML_MGR_LOG_DEBUG (log_strm);
   }
   return static_cast_move<XMLDocument::uptr_t>(xi_doc);
+}
+XMLDocument::uptr_t XMLManagerXImpl::create_document_from_file(const char* file_name, bool validate)
+{
+  RW_ASSERT(file_name);
+  std::string error_out;
+  return create_document_from_file(file_name, error_out, validate);
 }
 
 XMLDocument::uptr_t XMLManagerXImpl::create_document_from_string(const char* xml_str, std::string& error_out, bool validate)
@@ -272,7 +320,7 @@ XMLDocument::uptr_t XMLManagerXImpl::create_document_from_pbcm(
   YangNode *yn = yang_model_->get_root_node();
 
   if (rooted) {
-    if (strcmp(name, "root")) {
+    if (strcmp(name, "data")) {
       yn = yn->search_child (name, y_mod->ns);
       RW_ASSERT(yn);
     }
@@ -449,7 +497,7 @@ bool XMLDocumentXImpl::xi_initialize_empty(const char* local_name,
 
   XImplXMLStr xml_local_name;
   if (nullptr == local_name) {
-    xml_local_name = "root";
+    xml_local_name = "data";
   } else {
     xml_local_name = local_name;
   }
@@ -507,7 +555,7 @@ bool XMLDocumentXImpl::xi_initialize_input_source(UPtr_InputSource input_source,
   XImplDOMLSResourceResolver resolver;
   config->setParameter(X::XMLUni::fgDOMResourceResolver, &resolver);
 
-//  XImplDOMErrorHandler handler;
+  //  XImplDOMErrorHandler handler;
   error_handler_.clear();
   config->setParameter(X::XMLUni::fgDOMErrorHandler, &error_handler_);
 
@@ -796,6 +844,125 @@ rw_status_t XMLDocumentXImpl::to_file(const char* file_name, const char* local_n
     return xi_node->to_file(file_name);
   }
   return get_root_node()->to_file(file_name);
+}
+
+
+
+rw_status_t XMLDocumentXImpl::evaluate_xpath(XMLNode * xml_node,                                      
+                                      std::string const xpath)
+{
+
+  // rooted xpaths must refer to the /root element
+  std::string const rooted("/");
+  std::string const any("//");
+
+  bool const is_rooted = 0 == xpath.compare(0, rooted.size(), rooted);
+  bool const is_any = 0 == xpath.compare(0, any.size(), any);
+  
+  std::string real_xpath(xpath);
+  if(is_rooted && !is_any) {
+    // ATNN: hack, rooted xpaths don't work so make them select any (i.e. start with //)
+    real_xpath = rooted + real_xpath;
+  }
+
+  // xalan boiler plate
+  XalanSourceTreeDOMSupport       theDOMSupport;
+  XalanSourceTreeParserLiaison    theLiaison(theDOMSupport);
+  XPathEnvSupportDefault          theEnvSupport;
+  theDOMSupport.setParserLiaison(&theLiaison);  
+
+  XalanTransformer theXalanTransformer;
+
+  // map the xerces dom to xalan
+  XercesDocumentWrapper xalan_dom(theXalanTransformer.getMemoryManager(),
+      xrcs_doc_.get(),
+      false, //thread safe, can't have both thread safety and xerces<->xalan mapping
+      true, // build wrappper
+      true //build maps
+      );
+
+  auto ximpl_node = static_cast<XMLNodeXImpl *>(xml_node);
+  XalanNode*   context_node = xalan_dom.mapNode(ximpl_node->xrcs_node_);
+  RW_ASSERT(context_node);
+  XalanElement * root_element = xalan_dom.getDocumentElement();
+  RW_ASSERT(root_element);
+
+  // xpath boiler plate
+  XObjectFactoryDefault           theXObjectFactory;
+  XPathExecutionContextDefault    theExecutionContext(theEnvSupport, theDOMSupport, theXObjectFactory);
+  XPathConstructionContextDefault theXPathConstructionContext;
+  XPathFactoryDefault             theXPathFactory;
+  XPathProcessorImpl              theXPathProcessor;
+
+  // create xpath
+  const GetAndReleaseCachedString     theGuard(theXPathConstructionContext);
+  XalanDOMString&     theString = theGuard.get();
+
+  XPath* const    xalan_xpath = theXPathFactory.create();
+
+  theString = real_xpath.c_str();
+
+  theXPathProcessor.initXPath(
+      *xalan_xpath,
+      theXPathConstructionContext,
+      theString,
+      *xi_manager_.ns_resolver_);
+
+  XObjectPtr xObj = xalan_xpath->execute(
+      context_node,
+      *xi_manager_.ns_resolver_,
+      theExecutionContext);
+
+  switch (xObj->getType())
+  {
+    case XObject::eTypeNodeSet:
+      {
+        const NodeRefListBase& nodeset = xObj->nodeset();
+        size_t len = nodeset.getLength();
+
+        if (len == 0) {
+          return RW_STATUS_FAILURE;
+        }
+        for (size_t i=0; i<len; i++)
+        {
+          XalanNode const * const node = nodeset.item(i);
+          XalanDOMString found_value;
+          int const theType = node->getNodeType();
+
+          if (theType == XalanNode::ELEMENT_NODE) {
+            // the text value of the target of the leafref will be a child of the node
+            XalanNode const * const value_node = node->getFirstChild();
+            if (value_node != nullptr) {
+              // we have a #text element to examine
+              found_value = value_node->getNodeValue();
+            } else {
+              continue;
+            }
+          } else {
+            continue;
+          }
+
+          XalanDOMString::CharVectorType value_cvec;
+          bool const add_null_terminator = true;
+
+          TranscodeToLocalCodePage(found_value, value_cvec, add_null_terminator);
+
+          std::string converted_value = c_str(value_cvec);
+
+          if (xml_node->get_text_value() == converted_value) {
+            return RW_STATUS_SUCCESS;            
+          } 
+        }
+
+        break;
+      }
+
+    default:
+      {
+        break;
+      }
+  }
+  return RW_STATUS_FAILURE;
 }
 
 bool XMLDocumentXImpl::is_equal(XMLDocument* other_doc)
@@ -1305,9 +1472,25 @@ XMLAttribute::uptr_t XMLNodeXImpl::get_attribute(const char* attr_name, const ch
   return static_cast<XMLAttribute::uptr_t>(xi_document_.map_xrcs_attribute(xrcs_attribute));
 }
 
+std::string XMLNodeXImpl::get_attribute_value(const char* attr_name, const char *ns)
+{
+  RW_ASSERT(attr_name);
+
+  if (ns && ns != rw_xml_namespace_none) {
+    const XMLCh* attr_val = static_cast<X::DOMElement*>(xrcs_node_)->getAttributeNS(
+          XImplXMLStr(ns),
+          XImplXMLStr(attr_name));
+    return XImplCharStr(attr_val);
+  }
+  const XMLCh* attr_val = static_cast<X::DOMElement*>(xrcs_node_)->getAttribute(
+          XImplXMLStr(attr_name));
+  return XImplCharStr(attr_val);
+
+}
+
 void XMLNodeXImpl::remove_attribute(XMLAttribute *attribute)
 {
-  RW_CRASH() ; // Implement this
+  RW_ASSERT(0) ; // Implement this
 }
 
 void XMLNodeXImpl::set_attribute(
@@ -1408,6 +1591,58 @@ XMLNodeXImpl* XMLNodeXImpl::find(const char* local_name, const char* ns)
   return nullptr;
 }
 
+std::unique_ptr<std::list<XMLNode*>> XMLNodeXImpl::find_all(const char* local_name, const char* ns)
+{
+  RW_ASSERT(xrcs_node_);
+  RW_ASSERT(local_name);
+  XImplXMLStr xml_name(local_name);
+
+  std::unique_ptr<std::list<XMLNode*>> found_nodes(new std::list<XMLNode*>);
+
+  XImplXMLStr xml_ns;
+  if (nullptr == ns || ns[0] == '\0' || rw_xml_namespace_any == ns) {
+    ns = rw_xml_namespace_any;
+  } else if (ns == rw_xml_namespace_node) {
+    xml_ns = xrcs_node_->getNamespaceURI();
+  } else {
+    RW_ASSERT(rw_xml_namespace_none != ns);
+    xml_ns = ns;
+  }
+
+  X::DOMNodeList* xrcs_children = xrcs_node_->getChildNodes();
+  for (size_t i = 0; i < xrcs_children->getLength(); i++) {
+    X::DOMNode* xrcs_node = xrcs_children->item(i);
+    if (X::XMLString::equals(xrcs_node->getLocalName(), xml_name)) {
+      if (ns != rw_xml_namespace_any) {
+        const XMLCh* node_ns = xrcs_node->getNamespaceURI();
+        if (node_ns && node_ns[0] != 0 && !X::XMLString::equals(node_ns, xml_ns)) {
+          continue;
+        }
+      }
+      found_nodes->push_back(get_xi_document().map_xrcs_node(xrcs_node));
+    }
+  }
+
+  if (found_nodes->size() > 0) {
+    return std::move(found_nodes);
+  }
+  return nullptr;
+}
+
+size_t XMLNodeXImpl::count(const char* local_name, const char* ns)
+{
+  RW_ASSERT(xrcs_node_);
+  RW_ASSERT(local_name);
+
+  std::unique_ptr<std::list<XMLNode*>> found_nodes = find_all(local_name, ns);
+
+  if (found_nodes == 0) {
+    return 0;
+  } else {
+    return found_nodes->size();
+  }
+}
+
 XMLNodeXImpl* XMLNodeXImpl::find_value(const char* local_name, const char* text_value, const char* ns)
 {
   RW_ASSERT(xrcs_node_);
@@ -1490,6 +1725,7 @@ rw_status_t XMLNodeXImpl::add_key_child(
       key_iter != yang_node->key_end(); key_iter++) {
     const char* kname = key_iter->get_key_node()->get_name();
     const char* kns   = key_iter->get_key_node()->get_ns();
+
     if ((*new_xi_node)->equals(kname, kns)) {
       // Key matches with the new xml node
       // Insert at the beginning if there were no key xml nodes found
@@ -1500,7 +1736,7 @@ rw_status_t XMLNodeXImpl::add_key_child(
         last_key_xnode->insert_after(new_xi_node);
       }
       return RW_STATUS_SUCCESS;
-    }
+    } 
 
     // Get the next key xml node in the XML
     xi_child = first_xi_child;
@@ -2170,7 +2406,61 @@ X::DOMLSInput* XImplDOMLSResourceResolver::resolveResource(
   return nullptr;
 }
 
+/*****************************************************************************/
+/* XImpleDOMNamespaceResolver methods */
 
+XImpleDOMNamespaceResolver::~XImpleDOMNamespaceResolver()
+{}
+
+XImpleDOMNamespaceResolver::XImpleDOMNamespaceResolver(YangModel* model)
+    : model_(model)
+{
+  XalanDOMString root_prefix;
+  XalanDOMString root_ns;
+
+  root_prefix = "rw-base";
+  root_ns = "\"http://riftio.com/ns/riftware-1.0/rw-base\"";
+  namespace_map_[root_prefix] = root_ns;
+}
+
+void XImpleDOMNamespaceResolver::cache_prefix(XalanDOMString const & prefix) const
+{
+  auto module_end = model_->module_end();
+
+  for (auto module_iter = model_->module_begin();
+       module_iter != module_end;
+       ++module_iter) {
+
+      XalanDOMString module_prefix;
+      module_prefix = module_iter->get_prefix();
+
+    if (module_prefix == prefix) {
+      XalanDOMString module_ns;
+      module_ns = module_iter->get_ns();
+
+      namespace_map_[prefix] = module_ns;
+      return;
+    }
+  }         
+
+  RW_ASSERT_NOT_REACHED();
+}
+
+const XalanDOMString* XImpleDOMNamespaceResolver::getNamespaceForPrefix (const XalanDOMString &prefix) const
+{
+
+  if (namespace_map_.count(prefix) == 0) {
+    cache_prefix(prefix);
+  } 
+
+  return &namespace_map_[prefix];
+}
+
+const XalanDOMString& XImpleDOMNamespaceResolver::getURI() const
+{
+
+  return base_uri_;
+}
 
 /*****************************************************************************/
 /* XMLAttributeXImpl functions */

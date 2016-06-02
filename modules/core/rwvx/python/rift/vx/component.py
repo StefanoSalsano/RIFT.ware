@@ -343,7 +343,7 @@ class ComponentInfoDBCreator(object):
         status = block.add_query(
                    '/rw-base:vcs/rw-base:info',
                    RwDts.QueryAction.READ,
-                   RwDts.Flag.MERGE,
+                   RwDts.XactFlag.MERGE,
                    0,
                 )
         if status != RwTypes.RwStatus.SUCCESS:

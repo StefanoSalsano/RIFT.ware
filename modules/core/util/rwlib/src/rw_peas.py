@@ -7,11 +7,11 @@
 # @date 06/19/2014
 # @brief Functions to create and load libpeas plugins
 
+import gi
 import importlib
 import logging
 import os
-import sys
-import gi
+import warnings
 gi.require_version('Peas', '1.0')
 gi.require_version('YangModelPlugin', '1.0')
 
@@ -166,7 +166,14 @@ class PeasPlugin(object):
         except:
             raise SystemExit('[rw_peas.PeasPlugin] Typelib filename "{}" is missing version'.format(typelib_filename))
 
-        self.typelib     = importlib.import_module('.{}'.format(self.typelib_name), 'gi.repository')
+        # Catch any import warnings from PyGI and adjust the stacklevel
+        # so it points to application code for easier analysis
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always", gi.PyGIWarning)
+            self.typelib = importlib.import_module('.{}'.format(self.typelib_name), 'gi.repository')
+
+        for warning in w:
+            warnings.warn(warning.message, warning.category, stacklevel=2)
 
         # This is nuts but the dynamic module is not actually fully initialized until after getattr() is called on
         # well, basically anything.  We need the module to fully initialize so that an honest attempt to load

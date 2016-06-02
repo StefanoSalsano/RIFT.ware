@@ -12,6 +12,9 @@
 #
 """
 
+from gi import require_version
+require_version('RwYang', '1.0')
+
 from gi.repository import RwYang as rwyang
 import unittest
 import logging
@@ -39,7 +42,7 @@ class TestConfigWriter(unittest.TestCase):
 end
 """
         out_stream = io.StringIO()
-        xml_stream = io.BytesIO(b"""<root/>""")
+        xml_stream = io.BytesIO(b"""<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base"/>""")
         writer = cliwriter.ConfigWriter(self.model, xml_stream)
         writer.write(out_stream)
         logger.debug("Outstream=%s", out_stream.getvalue())
@@ -49,8 +52,8 @@ end
         # Test multiple list with keys
         # Also list key without mode is also tested
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-  <colony>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+  <colony xmlns="http://riftio.com/ns/yangtools/rwclitest">
     <name>trafgen</name>
     <network-context>
         <name>trafgen-lb</name>
@@ -62,7 +65,7 @@ end
         </interface>
     </network-context>
   </colony>
-</root>""")
+</data>""")
         expected_output = """config
   colony trafgen
     network-context trafgen-lb
@@ -81,8 +84,8 @@ end
 
     def test_multi_mode_container(self):
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-  <colony>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+  <colony xmlns="http://riftio.com/ns/yangtools/rwclitest">
     <name>trafgen</name>
     <port>
       <name>trafgen/2/1</name>
@@ -117,7 +120,7 @@ end
       </trafgen>
     </port>
   </colony>
-</root>""")
+</data>""")
         expected_output = """config
   colony trafgen
     port trafgen/2/1
@@ -145,8 +148,8 @@ end
 
     def test_multi_mode_ignore_unknown(self):
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-  <colony>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+  <colony xmlns="http://riftio.com/ns/yangtools/rwclitest">
     <name>trafgen</name>
     <port>
       <name>trafgen/2/1</name>
@@ -181,7 +184,7 @@ end
       </trafsink>
     </port>
   </colony>
-</root>""")
+</data>""")
         expected_output = """config
   colony trafgen
     port trafgen/2/1
@@ -201,8 +204,8 @@ end
         # Test multiple list with keys
         # Also list key without mode is also tested
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-  <vnf-config>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+  <vnf-config xmlns="http://riftio.com/ns/yangtools/rwclitest">
   <vnf>
     <name>trafgen</name>
     <instance>0</instance>
@@ -220,7 +223,7 @@ end
     </network-context>
   </vnf>
   </vnf-config>
-</root>""")
+</data>""")
         expected_output = """config
   vnf-config vnf trafgen 0
     network-context trafgen-lb
@@ -242,8 +245,8 @@ end
         # Test multiple list with keys
         # Also list key without mode is also tested
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-  <vnf-config>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+  <vnf-config xmlns="http://riftio.com/ns/yangtools/rwclitest">
   <vnf>
     <name>trafgen</name>
     <instance>0</instance>
@@ -271,7 +274,7 @@ end
     </network-context>
   </vnf>
   </vnf-config>
-</root>""")
+</data>""")
         expected_output = """config
   vnf-config vnf trafgen 0
     network-context trafgen-lb
@@ -299,14 +302,14 @@ end
         # Test multiple list with keys
         # Also list key without mode is also tested
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-    <cloud>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+    <cloud xmlns="http://riftio.com/ns/yangtools/rwclitest">
         <account>
             <name>c1</name>
             <account-type>cloudsim</account-type>
         </account>
     </cloud>
-</root>""")
+</data>""")
         expected_output = """config
   cloud account c1 account-type cloudsim
 end
@@ -321,8 +324,8 @@ end
         # Test multiple list with keys
         # Also list key without mode is also tested
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-    <cloud>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+    <cloud xmlns="http://riftio.com/ns/yangtools/rwclitest">
         <account>
             <name>c1</name>
             <account-type>cloudsim</account-type>
@@ -336,7 +339,7 @@ end
             <account-type>cloudsim</account-type>
         </account>
     </cloud>
-</root>""")
+</data>""")
         expected_output = """config
   cloud account c1 account-type cloudsim
   cloud account c2 account-type openstack
@@ -351,8 +354,8 @@ end
 
     def test_list_within_list_one(self):
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-    <network>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+    <network xmlns="http://riftio.com/ns/yangtools/rwclitest">
         <network-id>l2net1</network-id>
         <node>
             <node-id>node1</node-id>
@@ -365,7 +368,7 @@ end
             </termination-point>
         </node>
     </network>
-</root>""")
+</data>""")
         expected_output = """config
   network l2net1 node node1 termination-point tp1 attributes  maximum-frame-size 1500 eth-encapsulation vxlan
 end
@@ -378,8 +381,8 @@ end
         
     def test_list_within_list_multi(self):
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-    <network>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+    <network xmlns="http://riftio.com/ns/yangtools/rwclitest">
         <network-id>l2net1</network-id>
         <node>
             <node-id>node1</node-id>
@@ -392,7 +395,7 @@ end
             </termination-point>
         </node>
     </network>
-    <network>
+    <network xmlns="http://riftio.com/ns/yangtools/rwclitest">
         <network-id>l2net2</network-id>
         <node>
             <node-id>node2</node-id>
@@ -405,7 +408,7 @@ end
             </termination-point>
         </node>
     </network>
-</root>""")
+</data>""")
         expected_output = """config
   network l2net1 node node1 termination-point tp1 attributes  maximum-frame-size 1500 eth-encapsulation vxlan
   network l2net2 node node2 termination-point tp2 attributes  maximum-frame-size 1500 eth-encapsulation ethernet
@@ -419,8 +422,8 @@ end
 
     def test_list_empty(self):
         xml_stream = io.BytesIO(b"""
-<root xmlns="http://riftio.com/ns/yangtools/rwclitest">
-    <vnf-config>
+<data xmlns="http://riftio.com/ns/riftware-1.0/rw-base">
+    <vnf-config xmlns="http://riftio.com/ns/yangtools/rwclitest">
     <vnf>
         <name>trafgen</name>
         <instance>0</instance>
@@ -432,7 +435,7 @@ end
         </network-context>
     </vnf>
     </vnf-config>
-</root>
+</data>
 """)
         expected_output="""config
   vnf-config vnf trafgen 0

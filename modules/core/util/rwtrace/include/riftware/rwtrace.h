@@ -112,7 +112,7 @@ struct _rwtrace_ctx {
   struct tm *_tm;                                                           \
   gettimeofday(&_tv, NULL);                                                 \
   _tm = localtime(&_tv.tv_sec);                                             \
-  fprintf((_ctx)->fileh,                                                    \
+  if ((_ctx)->fileh) fprintf((_ctx)->fileh,                                 \
           "%d-%02d-%02d %02d:%02d:%02d.%d %-6s "                            \
           "(%s-trace@%s:%d:0x%08x:%s:%d) - ",                               \
           _tm->tm_year+1900,                                                \
@@ -136,10 +136,14 @@ struct _rwtrace_ctx {
 {                                                                           \
   if (_ctx->category[_category].dest & RWTRACE_DESTINATION_CONSOLE) {       \
     RWTRACE_EMIT_PREFIX((_ctx), (_severity_str), (_category));              \
-    fprintf((_ctx)->fileh, _fmt "\n", ##__VA_ARGS__);			    \
-    /*fprintf((_ctx)->fileh, "\n");*/    				    \
-    fflush((_ctx)->fileh);                                                  \
-  }                                                                         \
+    if ((_ctx)->fileh) {  \
+        fprintf((_ctx)->fileh, _fmt "\n", ##__VA_ARGS__);			    \
+        fflush((_ctx)->fileh);                                             \
+    }                                                                      \
+    else {                                                                 \
+        printf(_fmt "\n", ##__VA_ARGS__);			                             \
+    }                                                                      \
+  }                                                                        \
 }
 
 /*!

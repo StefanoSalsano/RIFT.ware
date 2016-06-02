@@ -36,7 +36,7 @@ class TestYangModel(unittest.TestCase):
 
         root = model.get_root_node()
         print "root.get_name()=", root.get_name()
-        self.assertEqual(root.get_name(), "root")
+        self.assertEqual(root.get_name(), "data")
         self.assertFalse(root.is_leafy())
         self.assertFalse(root.node_type())
 

@@ -7,6 +7,7 @@
     <module name="rw-vnf-base-types"/>
     <module name="rw-appmgr"/>
     <module name="rw-mgmtagt"/>
+    <module name="rw-mgmtagt-confd"/>
     <module name="rw-manifest"/>
     <module name="rw-vcs"/>
     <module name="rwlog-mgmt"/>

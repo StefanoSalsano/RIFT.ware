@@ -32,6 +32,7 @@ struct wait_on_dts_cls {
   uint16_t attempts;
 };
 
+static rwsched_dispatch_queue_t g_zk_rwq = NULL;
 static rw_component_type component_type_str_to_enum(const char * type)
 {
   if (!strcmp(type, "rwcollection"))
@@ -117,7 +118,7 @@ static void init_rwtrace(rwvx_instance_ptr_t rwvx, char ** argv)
   g_free(cmdline);
 }
 
-static int main_function(int argc, char ** argv, char ** envp)
+int main_function(int argc, char ** argv, char ** envp)
 {
   rwmain_setup(argc, argv, envp);
 
@@ -807,7 +808,7 @@ static void usage() {
   printf("  -p,--parent [NAME]          Parent's instance-name.\n");
   printf("  -a,--ip_address [ADDRESS]   VM IP address.\n");
   printf("  -v,--vm_instance [ID]       VM instance id.\n");
-  printf("  -C,--core_test              Coredumper test.\n");
+  printf("  -C,--core_test <delay_s>    Coredumper test, segv after delay in sec.\n");
   printf("  -h, --help                  This screen.\n");
   printf("\n");
   printf("ENVIRONMENT VARIABLES\n");
@@ -888,10 +889,36 @@ static void rwmain_sigaction_setup(void) {
   }
 }
 
-void rwmain_sigaction_test(void) {  
+static void rwmain_sigaction_test(rwsched_CFRunLoopTimerRef timer, void *ctx) {  
   int *ptr = NULL;
   *ptr = 5;
 }
+
+static void rwmain_schedule_segv(struct rwmain_gi * rwmain, 
+				 int delay_s) {
+  rwsched_CFRunLoopTimerRef cftimer;
+  rwsched_CFRunLoopTimerContext cf_context;
+
+  bzero(&cf_context, sizeof(rwsched_CFRunLoopTimerContext));
+  cf_context.info = rwmain;
+
+  cftimer = rwsched_tasklet_CFRunLoopTimerCreate(
+      rwmain->rwvx->rwsched_tasklet,
+      kCFAllocatorDefault,
+      CFAbsoluteTimeGetCurrent() + (double)delay_s,
+      delay_s,
+      0,
+      0,
+      rwmain_sigaction_test,
+      &cf_context);
+
+  rwsched_tasklet_CFRunLoopAddTimer(
+      rwmain->rwvx->rwsched_tasklet,
+      rwsched_tasklet_CFRunLoopGetCurrent(rwmain->rwvx->rwsched_tasklet),
+      cftimer,
+      rwmain->rwvx->rwsched->main_cfrunloop_mode);
+}
+
 
 
 struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
@@ -908,6 +935,7 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
   char * ip_address = NULL;
   uint32_t instance_id = 0;
   uint32_t vm_instance_id = 0;
+  char * coretest = NULL;
 
   rwmain_sigaction_setup();
 
@@ -929,17 +957,17 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
       {"ip_address",    required_argument,  0, 'a'},
       {"vm_instance",   required_argument,  0, 'v'},
       {"help",          no_argument,        0, 'h'},
-      {"core_test",     no_argument,        0, 'C'},
+      {"core_test",     required_argument,  0, 'C'},
       {0,               0,                  0,  0},
     };
 
-    c = getopt_long(argc, argv, "m:n:i:t:p:a:v:hC", long_options, NULL);
+    c = getopt_long(argc, argv, "m:n:i:t:p:a:v:hC:", long_options, NULL);
     if (c == -1)
       break;
 
     switch (c) {
       case 'C':
-	rwmain_sigaction_test();
+	coretest = strdup(optarg);
 	break;
 
       case 'm':
@@ -1003,8 +1031,12 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
   rwvx->rwvcs->rwmain_exefile = strdup(argv[0]);
   RW_ASSERT(rwvx->rwvcs->rwmain_exefile);
 
+  if (g_zk_rwq)
+    rwvx->rwvcs->zk_rwq = g_zk_rwq;
   status = rwvcs_instance_init(rwvx->rwvcs, manifest, main_function);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
+  if (!g_zk_rwq && rwvx->rwvcs->pb_rwmanifest->init_phase->settings->rwvcs->collapse_each_rwprocess)
+    g_zk_rwq = rwvx->rwvcs->zk_rwq;
 
   rwmain = rwmain_alloc(rwvx, component_name, instance_id, component_type, parent, ip_address, vm_instance_id);
   RW_ASSERT(rwmain);
@@ -1021,7 +1053,12 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
         &config_ready_entries_);
     rwmain->rwvx->rwvcs->config_ready_fn = rwmain_dts_config_ready_process;
   }
-    
+
+  if (coretest) {
+    rwmain_schedule_segv(rwmain, atoi(coretest));
+    free(coretest);
+    coretest = NULL;
+  }
 
   if (rwmain->vm_ip_address) {
     rwmain->rwvx->rwvcs->identity.vm_ip_address = strdup(rwmain->vm_ip_address);

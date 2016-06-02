@@ -1,0 +1,38 @@
+# RIFT_IO_STANDARD_CMAKE_COPYRIGHT_HEADER(BEGIN)
+# Author(s): Philip Joseph
+# Creation Date: 2016-May-26
+# RIFT_IO_STANDARD_CMAKE_COPYRIGHT_HEADER(END)
+
+cmake_minimum_required(VERSION 2.8)
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/generate_packages.sh.in
+  ${CMAKE_CURRENT_BINARY_DIR}/generate_packages.sh
+  ESCAPE_QUOTES @ONLY
+  )
+
+set(PACKAGE_OUTPUT
+  ${CMAKE_CURRENT_BINARY_DIR}/ping_pong_csar.zip)
+
+add_custom_command(
+    OUTPUT ${PACKAGE_OUTPUT}
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/generate_packages.sh
+  )
+
+add_custom_target(ping_pong_tosca ALL
+    DEPENDS ${PACKAGE_OUTPUT}
+  )
+
+install(
+    FILES ${PACKAGE_OUTPUT}
+    DESTINATION
+      usr/rift/mano/examples/ping_pong_ns
+    COMPONENT ${PKG_LONG_NAME}
+    )
+
+install(
+    FILES tosca-translator
+    DESTINATION
+      usr/bin
+    COMPONENT ${PKG_LONG_NAME}
+    )

@@ -26,4 +26,12 @@ module vnfr-annotation
   tailf:annotate "/vnfr:vnfr-catalog" {
     tailf:callpoint base_show;
   }
+
+  tailf:annotate "/vnfr:create-alarm" {
+    tailf:actionpoint rw_action;
+  }
+
+  tailf:annotate "/vnfr:destroy-alarm" {
+    tailf:actionpoint rw_action;
+  }
 }

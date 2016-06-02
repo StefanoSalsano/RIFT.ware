@@ -219,9 +219,9 @@ class XactDetail(ExtendGi):
         msg = self.generate_content()
         query = getattr(dts, self.action)
 
-        args = (self.xpath, rwdts.Flag.ADVISE, msg)
+        args = (self.xpath, rwdts.XactFlag.ADVISE, msg)
         if self.xact_operation == 'read':
-            args = (self.xpath, rwdts.Flag.ADVISE)
+            args = (self.xpath, rwdts.XactFlag.ADVISE)
 
         yield from query(*args)
 

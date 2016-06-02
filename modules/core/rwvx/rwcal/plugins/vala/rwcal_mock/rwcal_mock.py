@@ -11,6 +11,9 @@ import logging
 import os
 import uuid
 
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import (
     GObject,
     RwCal,
@@ -68,7 +71,8 @@ class MockPlugin(GObject.Object, RwCal.Cloud):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
             logger.addHandler(
                 rwlogger.RwLogger(
-                    category="rwcal.mock",
+                    category="rw-cal-log",
+                    subcategory="rwcal.mock",
                     log_hdl=rwlog_ctx,
                 )
             )
@@ -363,32 +367,32 @@ class MockPlugin(GObject.Object, RwCal.Cloud):
         """
         link_list = []
         ### Add virtual links
-        for i in range(2):
-            vlink = RwcalYang.VirtualLinkReqParams()
-            vlink.name = 'link-'+str(i)
-            vlink.subnet = '10.0.0.0/24'
-            rs, vlink_id = self.do_create_virtual_link(account, vlink)
-            assert vlink_id != ''
-            logger.debug("Creating static virtual-link with name: %s", vlink.name)
-            link_list.append(vlink_id)
+        #for i in range(1):
+        #    vlink = RwcalYang.VirtualLinkReqParams()
+        #    vlink.name = 'link-'+str(i)
+        #    vlink.subnet = '10.0.0.0/24'
+        #    rs, vlink_id = self.do_create_virtual_link(account, vlink)
+        #    assert vlink_id != ''
+        #    logger.debug("Creating static virtual-link with name: %s", vlink.name)
+        #    link_list.append(vlink_id)
 
-        ### Add VDUs
-        for i in range(2):
-            vdu = RwcalYang.VDUInitParams()
-            vdu.name = 'vdu-'+str(i)
-            vdu.node_id = str(i)
-            vdu.image_id = self.get_uuid('image-'+str(i))
-            vdu.flavor_id = self.get_uuid('flavor'+str(i))
-            vdu.vm_flavor.vcpu_count = 4
-            vdu.vm_flavor.memory_mb = 4096*2
-            vdu.vm_flavor.storage_gb = 40
-            for j in range(2):
-                c = vdu.connection_points.add()
-                c.name = vdu.name+'-port-'+str(j)
-                c.virtual_link_id = link_list[j]
-            rs, vdu_id = self.do_create_vdu(account, vdu)
-            assert vdu_id != ''
-            logger.debug("Creating static VDU with name: %s", vdu.name)
+        #### Add VDUs
+        #for i in range(8):
+        #    vdu = RwcalYang.VDUInitParams()
+        #    vdu.name = 'vdu-'+str(i)
+        #    vdu.node_id = str(i)
+        #    vdu.image_id = self.get_uuid('image-'+str(i))
+        #    vdu.flavor_id = self.get_uuid('flavor'+str(i))
+        #    vdu.vm_flavor.vcpu_count = 4
+        #    vdu.vm_flavor.memory_mb = 4096*2
+        #    vdu.vm_flavor.storage_gb = 40
+        #    for j in range(2):
+        #        c = vdu.connection_points.add()
+        #        c.name = vdu.name+'-port-'+str(j)
+        #        c.virtual_link_id = link_list[j]
+        #    rs, vdu_id = self.do_create_vdu(account, vdu)
+        #    assert vdu_id != ''
+        #    logger.debug("Creating static VDU with name: %s", vdu.name)
 
         for i in range(2):
             flavor = RwcalYang.FlavorInfoItem()
@@ -430,7 +434,7 @@ class MockPlugin(GObject.Object, RwCal.Cloud):
 
     @rwstatus(ret_on_failure=[""])
     def do_create_virtual_link(self, account, link_params):
-        vlink_id = self.get_uuid(link_params.name)
+        vlink_id = self.get_uuid("%s_%s" % (link_params.name, len(self.resources[account.name].vlinks)))
         vlink = RwcalYang.VirtualLinkInfoParams()
         vlink.name = link_params.name
         vlink.state = 'active'
@@ -469,7 +473,7 @@ class MockPlugin(GObject.Object, RwCal.Cloud):
 
     @rwstatus(ret_on_failure=[""])
     def do_create_vdu(self, account, vdu_init):
-        vdu_id = self.get_uuid(vdu_init.name)
+        vdu_id = self.get_uuid("%s_%s" % (vdu_init.name, len(self.resources[account.name].vdus)))
         vdu = RwcalYang.VDUInfoParams()
         vdu.vdu_id = vdu_id
         vdu.name = vdu_init.name

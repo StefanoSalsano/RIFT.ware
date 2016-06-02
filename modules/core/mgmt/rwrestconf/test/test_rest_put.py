@@ -24,6 +24,14 @@ from rift.restconf import (
     load_multiple_schema_root,
 )
 
+from gi.repository import (
+        VehicleAYang,
+        RwYang,
+        )
+
+from rift.rwlib.testing import (
+    are_xml_doms_equal,
+)
 
 def _collapse_string(string):
     return ''.join([line.strip() for line in string.splitlines()])
@@ -38,6 +46,8 @@ def _ordered(obj):
         return obj
 
 class TestRestPut(unittest.TestCase):
+    def compare_doms(self, dom1, dom2):
+        self.assertEqual(dom1, dom2)
 
 
     def test_json_body_0(self):
@@ -59,7 +69,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_1(self):
         self.maxDiff = None
@@ -90,7 +100,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
 
     def test_json_body_2(self):
@@ -124,7 +134,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_3(self):
         self.maxDiff = None
@@ -172,7 +182,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_4(self):
         self.maxDiff = None
@@ -224,7 +234,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_5(self):
         self.maxDiff = None
@@ -249,7 +259,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_6(self):
         self.maxDiff = None
@@ -277,7 +287,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_7(self):
         self.maxDiff = None
@@ -302,7 +312,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_8(self):
         self.maxDiff = None
@@ -328,7 +338,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_9(self):
         self.maxDiff = None
@@ -340,7 +350,7 @@ class TestRestPut(unittest.TestCase):
         ''')
 
         expected_xml = _collapse_string('''
-<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-list-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><k>some%20key</k><vehicle-a:inner-container-shallow xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><a xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">yet a third string</a></vehicle-a:inner-container-shallow></top-list-deep></config>
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-list-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><k>some key</k><vehicle-a:inner-container-shallow xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><a xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">yet a third string</a></vehicle-a:inner-container-shallow></top-list-deep></config>
         ''')
 
         schema = load_multiple_schema_root(["vehicle-a"])
@@ -349,7 +359,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_10(self):
         self.maxDiff = None
@@ -370,7 +380,7 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_json_body_11(self):
         self.maxDiff = None
@@ -429,18 +439,170 @@ class TestRestPut(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (body,"json"))
 
-        self.assertEquals(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
+
+    def test_json_body_serialized_list_element(self):
+        self.maxDiff = None
+        url = "/api/config/misc/list-a/0"
+        model = RwYang.model_create_libncx()
+        model.load_schema_ypbc(VehicleAYang.get_schema())
+        list_a_msg = VehicleAYang.YangData_VehicleA_Misc_ListA(id=0, foo="asdf")
+        list_a_json = list_a_msg.to_json(model)
+        body = _collapse_string(list_a_json)
+
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><misc xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><list-a xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="replace"><id xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">0</id><foo xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">asdf</foo></list-a></misc></config>
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a"])
+
+        converter = ConfdRestTranslator(schema)
+
+        actual_xml = converter.convert("PUT", url, (body, "json"))
+
+        self.compare_doms(actual_xml, expected_xml)
+
+    def test_xml_body_0(self):
+        self.maxDiff = None
+        url = "/api/config/top-container-shallow"
+        body = _collapse_string('''
+<top-container-shallow>
+  <a>some leaf 0</a>
+</top-container-shallow>
+        ''')
+
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-container-shallow xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="replace"><a>some leaf 0</a></top-container-shallow></config>
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a"])
+
+        converter = ConfdRestTranslator(schema)
+
+        actual_xml = converter.convert("PUT", url, (body,"xml"))
+        
+        self.assertEqual(actual_xml, expected_xml)
+
+    def test_xml_body_1(self):
+        self.maxDiff = None
+        url = "/api/config/top-list-shallow/some%20key%201"
+        body = _collapse_string('''
+<top-list-shallow xmlns="http://riftio.com/ns/example">
+   <k xmlns="http://riftio.com/ns/example">some key 1</k>
+</top-list-shallow>
+        ''')
+
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-list-shallow xmlns="http://riftio.com/ns/example" xmlns="" xc:operation="replace"><k xmlns="http://riftio.com/ns/example">some key 1</k></top-list-shallow></config>
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a"])
+
+        converter = ConfdRestTranslator(schema)
+
+        actual_xml = converter.convert("PUT", url, (body,"xml"))
+
+        print(actual_xml)
+        print(expected_xml)
+
+        self.assertEqual(actual_xml, expected_xml)
 
 
+    def test_xml_body_2(self):
+        self.maxDiff = None
+        url = "/api/config/multi-key/key%20part%201,key%20part%202"
+        body = _collapse_string('''
+<multi-key>
+  <foo>key part 1</foo>
+  <bar>key part 2</bar>
+  <treasure>some string</treasure>
+</multi-key>
+        ''')
+
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><multi-key xmlns="" xc:operation="replace"><foo>key part 1</foo><bar>key part 2</bar><treasure>some string</treasure></multi-key></config>
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a"])
+
+        converter = ConfdRestTranslator(schema)
+
+        actual_xml = converter.convert("PUT", url, (body,"xml"))
+
+        self.assertEqual(actual_xml, expected_xml)
+
+    def test_xml_body_3(self):
+        self.maxDiff = None
+        url = "/api/config/top-list-deep"
+        body = _collapse_string('''
+<top-list-deep>
+  <k>some key<k>
+  <inner-list>
+    <k>some other key</k?
+    <a>some string</a>
+    <inner-container>
+      <a>some other string</a>
+    </inner-container>      
+  </inner-list>
+  <inner-container-shallow>
+    <a>yet a third string</a>
+  </inner-container-shallow>    
+  <inner-container-deep>
+    <bottom-list-shallow>
+      <k>yet a third key</a>
+    </bottom-list-shallow>
+  </inner-container-deep>    
+</top-list-deep>
+        ''')
+
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-list-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="replace"><k>some key<k><inner-list><k>some other key</k?<a>some string</a><inner-container><a>some other string</a></inner-container></inner-list><inner-container-shallow><a>yet a third string</a></inner-container-shallow><inner-container-deep><bottom-list-shallow><k>yet a third key</a></bottom-list-shallow></inner-container-deep></top-list-deep></config>
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a"])
+
+        converter = ConfdRestTranslator(schema)
+
+        actual_xml = converter.convert("PUT", url, (body,"xml"))
+
+        self.assertEqual(actual_xml, expected_xml)
 
 
+    def test_xml_body_4(self):
+        self.maxDiff = None
+        url = "/api/config/top-list-deep/key1/inner-list/key2"
+        body = _collapse_string('''
+<inner-list>
+  <k>key2</k>
+</inner-list>
+        ''')
+
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-list-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><k>key1</k><inner-list xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="replace"><k>key2</k></inner-list></top-list-deep></config>
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a"])
+
+        converter = ConfdRestTranslator(schema)
+
+        actual_xml = converter.convert("PUT", url, (body,"xml"))
+
+        self.assertEqual(actual_xml, expected_xml)
 
 ########################################
 # BEGIN BOILERPLATE JENKINS INTEGRATION
 
-def main():                                                                      
-    runner = xmlrunner.XMLTestRunner(output=os.environ["RIFT_MODULE_TEST"])      
-    unittest.main(testRunner=runner)   
+def main():
+    runner = xmlrunner.XMLTestRunner(output=os.environ["RIFT_MODULE_TEST"])
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('-n', '--no-runner', action='store_true')
+    args, unittest_args = parser.parse_known_args()
+    if args.no_runner:
+        runner = None
+
+    unittest.main(testRunner=runner, argv=[sys.argv[0]] + unittest_args)
 
 if __name__ == '__main__':
     main()

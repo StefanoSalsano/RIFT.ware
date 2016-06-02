@@ -4,16 +4,6 @@
     <nsd:name>gw_corpA</nsd:name>
     <nsd:short-name>gw_corpA</nsd:short-name>
     <nsd:description>Gateways to access as corpA to PE1 and PE2</nsd:description>
-    <nsd:input-parameter-xpath>
-      <nsd:xpath>/nsd:nsd-catalog/nsd:nsd[nsd:id=091e3932-c46c-11e5-8576-fa163eb18cb8]/nsd:vld[nsd:id=0947888c-c46c-11e5-8576-fa163eb18cb8]/nsd:provider-network/manotypes:segmentation_id</nsd:xpath>
-      <nsd:label>VLAN_CORPA_PE1</nsd:label>
-      <nsd:default-value>101</nsd:default-value>
-    </nsd:input-parameter-xpath>
-    <nsd:input-parameter-xpath>
-      <nsd:xpath>/nsd:nsd-catalog/nsd:nsd[nsd:id=091e3932-c46c-11e5-8576-fa163eb18cb8]/nsd:vld[nsd:id=0947bb90-c46c-11e5-8576-fa163eb18cb8]/nsd:provider-network/manotypes:segmentation_id</nsd:xpath>
-      <nsd:label>VLAN_CORPA_PE2</nsd:label>
-      <nsd:default-value>102</nsd:default-value>
-    </nsd:input-parameter-xpath>
     <nsd:vld>
       <nsd:id>194740d4-c46c-11e5-8576-fa163eb18cb8</nsd:id>
       <nsd:name>connection 0</nsd:name>

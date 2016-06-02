@@ -16,6 +16,9 @@ import uuid
 
 import pytest
 
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import RwcalYang
 from gi.repository.RwTypes import RwStatus
 import rw_peas

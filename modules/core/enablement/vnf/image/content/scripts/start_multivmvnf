@@ -1,9 +1,11 @@
 #!/bin/bash
 modprobe ixgbevf
+insmod /opt/rift/i40evf.ko
+modprobe i40evf
 sleep 30
 ifup eth1
 ifup eth2
-ifup eth2
+ifup eth3
 ulimit -c unlimited 
 echo /home/rift/.install/core-%e-%s-%u-%g-%p-%t > /proc/sys/kernel/core_pattern
 cd /home/rift/
@@ -13,7 +15,7 @@ sudo su
 myaddr=`hostname -I | awk '{ print $1 }'`
 if [ -z "$3" ]
 then
-./rift-shell -- ./install/demos/vnfcontents/start_multi_vm_vnf.sh -n $1 -d $2 -i $myaddr 2>&1 | logger 
+./rift-shell -- ./.install/demos/vnfcontents/start_multi_vm_vnf.sh -n $1 -d $2 -i $myaddr 2>&1 | logger 
 else
-./rift-shell -- ./install/demos/vnfcontents/start_multi_vm_vnf.sh -n $1 -d $2 -i $myaddr -l $3 2>&1 | logger 
+./rift-shell -- ./.install/demos/vnfcontents/start_multi_vm_vnf.sh -n $1 -d $2 -i $myaddr -l $3 2>&1 | logger 
 fi

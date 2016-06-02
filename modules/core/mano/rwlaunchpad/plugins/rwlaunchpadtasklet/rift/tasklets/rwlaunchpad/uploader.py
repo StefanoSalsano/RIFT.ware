@@ -4,22 +4,26 @@
 #
 
 import collections
-import mmap
+import json
 import os
+import re
 import shutil
 import tarfile
 import tempfile
 import threading
 import uuid
 import xml.etree.ElementTree as ET
-import json
 
-import requests
 import tornado
 import tornado.escape
 import tornado.ioloop
 import tornado.web
 import tornado.httputil
+import requests
+
+# disable unsigned certificate warning
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 import gi
 gi.require_version('RwLaunchpadYang', '1.0')
@@ -27,8 +31,6 @@ gi.require_version('RwYang', '1.0')
 gi.require_version('RwcalYang', '1.0')
 
 from gi.repository import (
-        RwLaunchpadYang as rwlaunchpad,
-        RwYang,
         RwcalYang as rwcal,
         NsdYang,
         VnfdYang,
@@ -45,8 +47,11 @@ from .message import (
         ExportSuccess,
         MessageException,
         OnboardDescriptorError,
+        OnboardDescriptorFormatError,
         OnboardDescriptorOnboard,
+        OnboardDescriptorTimeout,
         OnboardDescriptorValidation,
+        OnboardError,
         OnboardFailure,
         OnboardImageUpload,
         OnboardInvalidPath,
@@ -63,7 +68,10 @@ from .message import (
         OnboardUnsupportedMediaType,
         UpdateChecksumMismatch,
         UpdateDescriptorError,
+        UpdateDescriptorFormatError,
+        UpdateDescriptorTimeout,
         UpdateDescriptorUpdated,
+        UpdateError,
         UpdateFailure,
         UpdateMissingAccount,
         UpdateMissingContentBoundary,
@@ -76,29 +84,24 @@ from .message import (
         UpdateUnreadablePackage,
         UpdateUnsupportedMediaType,
         )
+from .tosca import ToscaPackage
 
 
-class UnreadableHeadersError(Exception):
+class UnreadableHeadersError(MessageException):
     pass
 
 
-class UnreadablePackageError(Exception):
+class UnreadablePackageError(MessageException):
+    pass
+
+
+class MissingTerminalBoundary(MessageException):
     pass
 
 
 class HttpMessageError(Exception):
     def __init__(self, code, msg):
         self.code = code
-        self.msg = msg
-
-
-class OnboardError(Exception):
-    def __init__(self, msg):
-        self.msg = msg
-
-
-class UpdateError(Exception):
-    def __init__(self, msg):
         self.msg = msg
 
 
@@ -187,6 +190,11 @@ def extract_package(log, fd, boundary, pkgfile):
     """
     log.debug("extracting archive from data")
 
+    # The boundary parameter in the message is defined as the boundary
+    # parameter in the message headers prepended by two dashes, i.e.
+    # "--{boundary}".
+    boundary = "--" + boundary
+
     # Find the indices of the message boundaries
     boundaries = boundary_search(fd, boundary)
     if not boundaries:
@@ -196,7 +204,7 @@ def extract_package(log, fd, boundary, pkgfile):
     fd.seek(boundaries[-1])
     terminal = fd.read(len(boundary) + 2)
     if terminal != boundary.encode() + b'--':
-        raise OnboardError(OnboardMissingTerminalBoundary())
+        raise MissingTerminalBoundary()
 
     log.debug("search for part containing archive")
     # find the part of the message that contains the descriptor
@@ -235,6 +243,8 @@ def extract_package(log, fd, boundary, pkgfile):
         if options.get('name', '') != 'descriptor':
             continue
 
+        file_uploaded = options.get('filename', '')
+
         # Write the archive section to disk
         with open(pkgfile + ".partial", 'wb') as tp:
             log.debug("writing archive ({}) to filesystem".format(pkgfile))
@@ -253,7 +263,7 @@ def extract_package(log, fd, boundary, pkgfile):
         # corresponding to '\r\n'.
         with open(pkgfile + ".partial", "rb+") as tp:
             tp.seek(-2, 2)
-            if tp.read(2) == "\r\n":
+            if tp.read(2) == b"\r\n":
                 tp.seek(-2, 2)
                 tp.truncate()
 
@@ -262,7 +272,7 @@ def extract_package(log, fd, boundary, pkgfile):
         # Strip the "upload" suffix from the basename
         shutil.move(pkgfile + ".partial", pkgfile)
 
-        return
+        return file_uploaded
 
     raise UnreadablePackageError()
 
@@ -618,14 +628,14 @@ class UpdatePackage(threading.Thread):
 
             self.log.message(UpdateSuccess())
 
-        except UpdateError as e:
+        except MessageException as e:
             self.log.message(e.msg)
             self.log.message(UpdateFailure())
 
         except Exception as e:
             self.log.exception(e)
             if str(e):
-                self.log.message(message.UpdateError(str(e)))
+                self.log.message(UpdateError(str(e)))
             self.log.message(UpdateFailure())
 
         finally:
@@ -638,7 +648,7 @@ class UpdatePackage(threading.Thread):
                 chksum = checksums.checksum(fp)
 
             if chksum != arch.checksums[filename]:
-                raise UpdateError(UpdateChecksumMismatch(filename))
+                raise MessageException(UpdateChecksumMismatch(filename))
 
     def remove_images(self, arch):
         pkg_dir = os.path.join(os.environ['RIFT_ARTIFACTS'], 'launchpad/packages', self.pkg_id)
@@ -649,7 +659,11 @@ class UpdatePackage(threading.Thread):
                 pass
 
     def validate_descriptors(self, arch):
-        self.validate_descriptor_checksums(arch)
+        if not isinstance(arch, archive.DescriptorFile):
+            # Checksum file is available only when a package is updated.
+            # It is not available when a XML/JSON file is directly updated
+            self.validate_descriptor_checksums(arch)
+
         self.validate_descriptor_existence(arch)
 
     def validate_descriptor_checksums(self, arch):
@@ -658,7 +672,7 @@ class UpdatePackage(threading.Thread):
                 chksum = checksums.checksum(fp)
 
             if chksum != arch.checksums[filename]:
-                raise UpdateError(UpdateChecksumMismatch(filename))
+                raise MessageException(UpdateChecksumMismatch(filename))
 
         for filename in arch.vnfds:
             checksum_comparison(filename)
@@ -668,7 +682,7 @@ class UpdatePackage(threading.Thread):
 
     def validate_descriptor_existence(self, arch):
         def validate_descriptor_existence_vnfd():
-            converter = convert.VnfdYangConverter()
+            serializer = convert.VnfdSerializer()
 
             descriptor_ids = set()
             for desc in self.app.tasklet.vnfd_catalog_handler.reg.elements:
@@ -676,24 +690,15 @@ class UpdatePackage(threading.Thread):
                 descriptor_ids.add(desc.id)
 
             for filename in arch.vnfds:
-                # Read the XML/JSON from file
+                # Read the VNFD from file
                 filepath = os.path.join(self.pkg_dir, filename)
-                with open(filepath) as fp:
-                    data = fp.read()
 
-                # Construct the VNFD descriptor object from the XML/JSON data. We
-                # use this to determine the ID of the VNFD, which is a
-                # necessary part of the URL.
-                if 'xml' in filename:
-                    vnfd = converter.from_xml_string(data)
-                elif 'json' in filename:
-                    vnfd = converter.from_json_string(data)
-
+                vnfd = serializer.from_file(filepath)
                 if vnfd.id not in descriptor_ids:
-                    raise UpdateError(UpdateNewDescriptor(filename))
+                    raise MessageException(UpdateNewDescriptor(filename))
 
         def validate_descriptor_existence_nsd():
-            converter = convert.NsdYangConverter()
+            serializer = convert.NsdSerializer()
 
             descriptor_ids = set()
             for desc in self.app.tasklet.nsd_catalog_handler.reg.elements:
@@ -701,21 +706,12 @@ class UpdatePackage(threading.Thread):
                 descriptor_ids.add(desc.id)
 
             for filename in arch.nsds:
-                # Read the XML/JSON from file
+                # Read the NSD from file
                 filepath = os.path.join(self.pkg_dir, filename)
-                with open(filepath) as fp:
-                    data = fp.read()
 
-                # Construct the NSD descriptor object from the XML data. We use
-                # this to determine the ID of the NSD, which is a necessary
-                # part of the URL.
-                if 'xml' in filename:
-                    vnfd = converter.from_xml_string(data)
-                elif 'json' in filename:
-                    vnfd = converter.from_json_string(data)
-
-                if vnfd.id not in descriptor_ids:
-                    raise UpdateError(UpdateNewDescriptor(filename))
+                nsd = serializer.from_file(filepath)
+                if nsd.id not in descriptor_ids:
+                    raise MessageException(UpdateNewDescriptor(filename))
 
         done = threading.Condition()
         error = None
@@ -731,7 +727,7 @@ class UpdatePackage(threading.Thread):
                 validate_descriptor_existence_vnfd()
                 validate_descriptor_existence_nsd()
 
-            except UpdateError as e:
+            except MessageException as e:
                 error = e
 
             except Exception as e:
@@ -803,99 +799,61 @@ class UpdatePackage(threading.Thread):
         self.log.debug("update complete")
 
     def update_descriptors_vnfd(self, arch):
-        converter = convert.VnfdYangConverter()
+        serializer = convert.VnfdSerializer()
 
         auth = ('admin', 'admin')
 
         for filename in arch.vnfds:
-            # Read the XML/JSON from file
+            # Read the descriptor from file
             filepath = os.path.join(self.pkg_dir, filename)
-            with open(filepath) as fp:
-                data = fp.read()
+            try:
+                vnfd_msg = serializer.from_file(filepath)
+            except convert.UnknownExtensionError:
+                raise MessageException(UpdateDescriptorFormatError(filename))
 
-            # Construct the VNFD descriptor object from the XML/JSON data. We use
-            # this to determine the ID of the VNFD, which is a necessary part
-            # of the URL.
-            if 'xml' in filename:
-                vnfd = converter.from_xml_string(data)
-
-                # Remove the top-level element of the XML (the 'catalog' element)
-                tree = ET.fromstring(data)
-                data = ET.tostring(tree.getchildren()[0])
-                headers = {"content-type": "application/vnd.yang.data+xml"}
-            elif 'json' in filename:
-                vnfd = converter.from_json_string(data)
-
-                # Remove the top-level element of the JSON (the 'catalog' element)
-                key = "vnfd:vnfd-catalog"
-                if key in data:
-                    newdict = json.loads(data)
-                    if (key in newdict):
-                        data = json.dumps(newdict[key])
-                headers = {"content-type": "application/vnd.yang.data+json"}
+            vnfd_json = serializer.to_json_string(vnfd_msg)
+            headers = {"content-type": "application/vnd.yang.data+json"}
 
             # Add authorization header if it has been specified
             if self.auth is not None:
                 headers['authorization'] = self.auth
 
-            # Send request to restconf
-            
-            if self.use_ssl:
-                url = "https://127.0.0.1:8008/api/config/vnfd-catalog/vnfd/{}"
+            url = "{}://127.0.0.1:8008/api/config/vnfd-catalog/vnfd/{}".format(
+                    "https" if self.use_ssl else "http",
+                    vnfd_msg.id
+                    )
+            try:
                 response = requests.put(
-                    url.format(vnfd.id),
-                    data=data,
+                    url,
+                    data=vnfd_json,
                     headers=headers,
                     auth=auth,
-                    verify=False, 
-                    cert=(self.ssl_cert, self.ssl_key),
-                )
-            else:
-                url = "http://127.0.0.1:8008/api/config/vnfd-catalog/vnfd/{}"
-                response = requests.put(
-                    url.format(vnfd.id),
-                    data=data,
-                    headers=headers,
-                    auth=auth,
-                )
+                    verify=False,
+                    cert=(self.ssl_cert, self.ssl_key) if self.use_ssl else None,
+                    timeout=5,
+                    )
+
+            except requests.Timeout:
+                raise MessageException(UpdateDescriptorTimeout())
 
             if not response.ok:
                 self.log.error(response.text)
-                raise UpdateError(UpdateDescriptorError(filename))
+                raise MessageException(UpdateDescriptorError(filename))
 
             self.log.debug('successfully updated: {}'.format(filename))
 
     def update_descriptors_nsd(self, arch):
-        converter = convert.NsdYangConverter()
+        serializer = convert.NsdSerializer()
 
         auth = ('admin', 'admin')
 
         for filename in arch.nsds:
-            # Read the XML/JSON from file
+            # Read the NSD from file
             filepath = os.path.join(self.pkg_dir, filename)
-            with open(filepath) as fp:
-                data = fp.read()
+            nsd_msg = serializer.from_file(filepath)
 
-            # Construct the NSD descriptor object from the XML/JSON data. We use
-            # this to determine the ID of the NSD, which is a necessary part
-            # of the URL.
-            if 'xml' in filename:
-                nsd = converter.from_xml_string(data)
-
-                # Remove the top-level element of the XML (the 'catalog' element)
-                tree = ET.fromstring(data)
-                data = ET.tostring(tree.getchildren()[0])
-                headers = {"content-type": "application/vnd.yang.data+xml"}
-            elif 'json' in filename:
-                nsd = converter.from_json_string(data)
-
-                # Remove the top-level element of the JSON (the 'catalog' element)
-                key = "nsd:nsd-catalog"
-                if key in data:
-                    newdict = json.loads(data)
-                    if (key in newdict):
-                        data = json.dumps(newdict[key])
-                headers = {"content-type": "application/vnd.yang.data+json"}
+            nsd_json = serializer.to_json_string(nsd_msg)
+            headers = {"content-type": "application/vnd.yang.data+json"}
 
             # Add authorization header if it has been specified
             if self.auth is not None:
@@ -903,83 +861,64 @@ class UpdatePackage(threading.Thread):
 
             # Send request to restconf
 
-            if self.use_ssl:
-                url = "https://127.0.0.1:8008/api/config/nsd-catalog/nsd/{}"
+            url = "{}://127.0.0.1:8008/api/config/nsd-catalog/nsd/{}".format(
+                    "https" if self.use_ssl else "http",
+                    nsd_msg.id
+                    )
+
+            try:
                 response = requests.put(
-                    url.format(nsd.id),
-                    data=data,
+                    url,
+                    data=nsd_json,
                     headers=headers,
                     auth=auth,
-                    verify=False, 
-                    cert=(self.ssl_cert, self.ssl_key),
+                    verify=False,
+                    cert=(self.ssl_cert, self.ssl_key) if self.use_ssl else None,
+                    timeout=5,
                 )
-            else:
-                url = "http://127.0.0.1:8008/api/config/nsd-catalog/nsd/{}"
-                response = requests.put(
-                    url.format(nsd.id),
-                    data=data,
-                    headers=headers,
-                    auth=auth,
-                )
+
+            except requests.Timeout:
+                raise MessageException(UpdateDescriptorTimeout())
 
             if not response.ok:
                 self.log.error(response.text)
-                raise UpdateError(UpdateDescriptorError(filename))
+                raise MessageException(UpdateDescriptorError(filename))
 
             self.log.debug('successfully updated: {}'.format(filename))
 
     def extract_package(self):
-        """Extract tarball from multipart message on disk
+        """Extract multipart message from tarball"""
 
-        The tarball contained in the message may be very large; Too large to
-        load into memory without possibly affecting the behavior of the
-        webserver. So the message is memory mapped and parsed in order to
-        extract just the tarball, and then to extract the contents of the
-        tarball.
-
-        Arguments:
-            filename - The name of a file that contains a multipart message
-            boundary - a string defining the boundary of different parts in the
-                       multipart message.
-
-        """
+        file_uploaded = None
         # Ensure the updates directory exists
         try:
             os.makedirs(self.updates_dir, exist_ok=True)
         except FileExistsError as e:
             pass
 
-        try:
-            pkgpath = os.path.join(self.updates_dir, self.pkg_id)
-            pkgfile = pkgpath + ".tar.gz"
-            with open(self.filename, 'r+b') as fp:
-                # A memory mapped representation of the file is used to reduce
-                # the memory footprint of the running application.
-                mapped = mmap.mmap(fp.fileno(), 0)
-                extract_package(
-                        self.log,
-                        mapped,
-                        self.boundary,
-                        pkgfile,
-                        )
+        pkgpath = os.path.join(self.updates_dir, self.pkg_id)
+        pkgfile = pkgpath + ".tar.gz"
+        with open(self.filename, 'r+b') as fp:
+            file_uploaded = extract_package(self.log, fp, self.boundary, pkgfile)
 
-            # Process the package archive
+        if file_uploaded is None:
+            raise MessageException(UpdateUnreadablePackage())
+
+        # Process the package archive
+        if tarfile.is_tarfile(pkgfile):
+            # Updated package was in a .tar.gz format
             tar = tarfile.open(pkgfile, mode="r:gz")
             arc = archive.LaunchpadArchive(tar, self.log)
-            self.log.debug("archive extraction complete")
+        elif convert.ProtoMessageSerializer.is_supported_file(file_uploaded):
+            # Updated file was a plain XML/JSON/YAML file
+            arc = archive.DescriptorFile(self.log, file_uploaded, pkgfile)
+        else:
+            raise MessageException(UpdateUnreadablePackage())
 
-            arc.extract(pkgpath)
+        self.log.debug("archive extraction complete")
+        arc.extract(pkgpath)
 
-            return arc
-
-        except MessageException as e:
-            raise OnboardError(e.msg)
-
-        except UnreadableHeadersError:
-            raise UpdateError(UpdateUnreadableHeaders())
-
-        except UnreadablePackageError:
-            raise UpdateError(UpdateUnreadablePackage())
+        return arc
 
 
 class OnboardPackage(threading.Thread):
@@ -1006,18 +945,20 @@ class OnboardPackage(threading.Thread):
             finally:
                 self.remove_images(arch)
 
+            self.upload_libs(arch)
+
             self.onboard_descriptors(arch)
 
             self.log.message(OnboardSuccess())
 
-        except OnboardError as e:
+        except MessageException as e:
             self.log.message(e.msg)
             self.log.message(OnboardFailure())
 
         except Exception as e:
             self.log.exception(e)
             if str(e):
-                self.log.message(message.OnboardError(str(e)))
+                self.log.message(OnboardError(str(e)))
             self.log.message(OnboardFailure())
 
         finally:
@@ -1076,6 +1017,28 @@ class OnboardPackage(threading.Thread):
 
         self.log.message(OnboardImageUpload())
 
+    def upload_libs(self, arch):
+        if not arch.libs:
+            return
+
+        artifacts_dir = os.getenv('RIFT_ARTIFACTS', '/var/run/rift')
+        libs_dir = os.path.join(artifacts_dir, 'launchpad/packages', self.pkg_id)
+        install_dir = os.path.join(artifacts_dir, 'launchpad')
+        try:
+            for fname in arch.libs:
+                fpath = os.path.join(install_dir, os.path.dirname(fname))
+                os.makedirs(fpath, exist_ok=True)
+                self.log.debug("%s: Copy file %s to %s" %
+                               (self.pkg_id, fname, fpath))
+                shutil.copy(os.path.join(libs_dir, fname), fpath)
+
+        except Exception as e:
+            self.log.error("Exception moving files for package {}: {}".
+                           format(self.pkg_id, e))
+            self.log.exception(e)
+            raise e
+
+
     def onboard_descriptors(self, arch):
 
         pkg_dir = os.path.join(os.environ['RIFT_ARTIFACTS'], "launchpad/packages", self.pkg_id)
@@ -1083,74 +1046,69 @@ class OnboardPackage(threading.Thread):
         def post(url, data, headers):
             auth = ('admin', 'admin')
 
-            if self.use_ssl:
-                response = requests.post(url, data=data, headers=headers, auth=auth, verify=False, cert=(self.ssl_cert, self.ssl_key))
-            else:
-                response = requests.post(url, data=data, headers=headers, auth=auth)
+            try:
+                if self.use_ssl:
+                    response = requests.post(
+                            url,
+                            data=data,
+                            headers=headers,
+                            auth=auth,
+                            verify=False,
+                            cert=(self.ssl_cert, self.ssl_key),
+                            timeout=5,
+                            )
+                else:
+                    response = requests.post(
+                            url,
+                            data=data,
+                            headers=headers,
+                            auth=auth,
+                            timeout=5,
+                            )
+            except requests.Timeout:
+                raise MessageException(OnboardDescriptorTimeout())
+
             if not response.ok:
                 self.log.error(response.text)
-                raise OnboardError(OnboardDescriptorError(filename))
+                raise MessageException(OnboardDescriptorError(filename))
 
             self.log.debug('successfully uploaded: {}'.format(filename))
 
         self.log.message(OnboardDescriptorValidation())
 
-        def prepare_xml(filename):
-            # Read the uploaded XML
-            with open(filename, 'r') as fp:
-                data = fp.read()
-
-            # Remove the top-level element of the XML (the 'catalog' element)
-            tree = ET.fromstring(data)
-            data = ET.tostring(tree.getchildren()[0])
-
-            return data
-
-        json_toplevel_keys = ["vnfd:vnfd-catalog", "nsd:nsd-catalog"]
-
-        def prepare_json(filename):
-            # Read the uploaded JSON
-            with open(filename, 'r') as fp:
-                data = fp.read()
-            # Remove the top-level element of the JSON (the 'catalog' element)
-            for key in json_toplevel_keys:
-                if key in data:
-                    newdict = json.loads(data)
-                    if (key in newdict):
-                        newstr = json.dumps(newdict[key])
-                        return newstr
-
-            return data
-
         endpoints = (
-                ("vnfd-catalog", arch.vnfds),
-                ("pnfd-catalog", arch.pnfds),
-                ("vld-catalog", arch.vlds),
-                ("nsd-catalog", arch.nsds),
-                ("vnffgd-catalog", arch.vnffgds),
+                ("vnfd-catalog/vnfd", arch.vnfds, convert.VnfdSerializer()),
+                ("pnfd-catalog/pnfd", arch.pnfds, convert.PnfdSerializer()),
+                ("vld-catalog/vld", arch.vlds, convert.VldSerializer()),
+                ("nsd-catalog/nsd", arch.nsds, convert.NsdSerializer()),
+                ("vnffgd-catalog/vnffgd", arch.vnffgds, convert.VnffgdSerializer()),
                 )
 
-        if self.use_ssl:
-            url = "https://127.0.0.1:8008/api/config/{catalog}"
-        else:
-            url = "http://127.0.0.1:8008/api/config/{catalog}"
-
         try:
-            for catalog, filenames in endpoints:
+            for catalog, filenames, serializer in endpoints:
                 for filename in filenames:
-                    path = os.path.join(pkg_dir, filename)
-                    if 'xml' in filename:
-                        data = prepare_xml(path)
-                        headers = {"content-type": "application/vnd.yang.data+xml"}
-                    elif 'json' in filename:
-                        data = prepare_json(path)
-                        headers = {"content-type": "application/vnd.yang.data+json"}
+                    filepath = os.path.join(pkg_dir, filename)
+
+                    try:
+                        msg = serializer.from_file(filepath)
+                    except convert.UnknownExtensionError:
+                        raise MessageException(OnboardDescriptorFormatError(filename))
+
+                    # Regardless of the input serialized format, re-serialize to JSON
+                    # so there is a single code-path through RESTCONF
+                    json_data = serializer.to_json_string(msg)
+                    headers = {"content-type": "application/vnd.yang.data+json"}
 
                     # Add authorization header if it has been specified
                     if self.auth is not None:
                         headers['authorization'] = self.auth
 
-                    post(url.format(catalog=catalog), data, headers)
+                    url = "{}://127.0.0.1:8008/api/config/{}".format(
+                            "https" if self.use_ssl else "http",
+                            catalog
+                            )
+
+                    post(url, json_data, headers)
 
             self.log.message(OnboardDescriptorOnboard())
             self.log.debug("onboard complete")
@@ -1162,58 +1120,48 @@ class OnboardPackage(threading.Thread):
             raise
 
     def extract_package(self):
-        """Extract tarball from multipart message on disk
+        """Extract multipart message from tarball"""
 
-        The tarball contained in the message may be very large; Too large to
-        load into memory without possibly affecting the behavior of the
-        webserver. So the message is memory mapped and parsed in order to
-        extract just the tarball, and then to extract the contents of the
-        tarball.
-
-        Arguments:
-            filename - The name of a file that contains a multipart message
-            boundary - a string defining the boundary of different parts in the
-                       multipart message.
-
-        """
         # Ensure the packages directory exists
         packages = os.path.join(os.environ["RIFT_ARTIFACTS"], "launchpad/packages")
+        file_uploaded = None
         try:
             os.makedirs(packages, exist_ok=True)
         except FileExistsError as e:
             pass
 
-        try:
-            pkgpath = os.path.join(packages, self.pkg_id)
-            pkgfile = pkgpath + ".tar.gz"
-            with open(self.filename, 'r+b') as fp:
-                # A memory mapped representation of the file is used to reduce
-                # the memory footprint of the running application.
-                mapped = mmap.mmap(fp.fileno(), 0)
-                extract_package(
-                        self.log,
-                        mapped,
-                        self.boundary,
-                        pkgfile,
-                        )
+        pkgpath = os.path.join(packages, self.pkg_id)
 
-            # Process the package archive
+        pkgfile = pkgpath + ".tar.gz"
+        with open(self.filename, 'r+b') as fp:
+            file_uploaded = extract_package(self.log, fp, self.boundary, pkgfile)
+
+        if file_uploaded is None:
+            raise MessageException(OnboardUnreadablePackage())
+
+        # Process the package archive
+        if ToscaPackage.is_tosca_package(pkgfile):
+            # This could be a tosca package, try processing
+            tosca = ToscaPackage(self.log, pkgfile)
+            if tosca.translate() is None:
+                raise MessageException("Could not process as a "
+                                        "TOSCA package {}".format(pkgfile))
+            else:
+                self.log.info("Tosca package was translated successfully")
+                # Fall through to process a YANG descriptor
+        if tarfile.is_tarfile(pkgfile):
+            # Uploaded package was in a .tar.gz format
             tar = tarfile.open(pkgfile, mode="r:gz")
             arc = archive.LaunchpadArchive(tar, self.log)
-            self.log.debug("archive extraction complete")
+        elif convert.ProtoMessageSerializer.is_supported_file(file_uploaded):
+            # Uploaded file was a plain XML/JSON file
+            arc = archive.DescriptorFile(self.log, file_uploaded, pkgfile)
+        else:
+            raise MessageException(OnboardUnreadablePackage())
 
-            arc.extract(pkgpath)
-
-            return arc
-
-        except MessageException as e:
-            raise OnboardError(e.msg)
-
-        except UnreadableHeadersError:
-            raise OnboardError(OnboardUnreadableHeaders())
-
-        except UnreadablePackageError:
-            raise OnboardError(OnboardUnreadablePackage())
+        self.log.debug("archive extraction complete")
+        arc.extract(pkgpath)
+        return arc
 
 
 class ExportHandler(RequestHandler):
@@ -1259,13 +1207,10 @@ class ExportHandler(RequestHandler):
 
         # Create a closure to create the actual package and run it in a
         # separate thread
-        def run():
-            pkg.create_archive(
-                    self.transaction_id,
-                    dest=self.application.export_dir,
-                    )
-
-        self.application.tasklet.loop.run_in_executor(None, run)
+        pkg.create_archive(
+                self.transaction_id,
+                dest=self.application.export_dir,
+                )
 
         self.log.message(ExportSuccess())
 

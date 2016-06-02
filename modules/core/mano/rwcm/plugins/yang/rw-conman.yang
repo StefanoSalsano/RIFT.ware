@@ -35,6 +35,10 @@ module rw-conman
     prefix "vnfr";
   }
 
+  import rw-vlr {
+    prefix "rwvlr";
+  }
+
   import rw-yang-types {
     prefix "rwt";
   }
@@ -53,6 +57,10 @@ module rw-conman
 
   import mano-types {
     prefix "manotypes";
+  }
+
+  import rw-config-agent {
+    prefix "rw-config-agent";
   }
 
   revision 2015-10-27 {

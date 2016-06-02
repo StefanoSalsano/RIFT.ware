@@ -161,6 +161,16 @@ module rw-vnf-base-opdata
         }
 
         container aggregation-members {
+          leaf load-balance{
+            type rwvnfbasetypes:lag-lb-mode;
+          }
+          container lacp-info{
+            rwpb:field-inline true;
+            leaf system-priority{
+              description "System priority configured on the port of bundle-ether type";
+              type uint32;
+            }
+          }
           list active-members {
             key "lport-id";
             rwpb:field-inline true;
@@ -249,7 +259,23 @@ module rw-vnf-base-opdata
         }
       }
     }
-
+    container aggregate-port-stats{
+      rwpb:msg-new RwAggregatePhysicalPortCounters;
+      leaf num-internal-ports{
+        type uint32;
+      }
+      leaf num-external-ports{
+        type uint32;
+      }
+      container internal-port-stats{
+        rwpb:field-inline true;
+        uses rwvnfbasetypes:port-counters;
+      }
+      container external-port-stats{
+        rwpb:field-inline true;
+        uses rwvnfbasetypes:port-counters;
+      }
+    }
     list port-state {
       description "Port state";
       config false;
@@ -415,22 +441,13 @@ module rw-vnf-base-opdata
             type rwvnfbasetypes:fast-slow;
           }
           leaf mode {
-            type uint32;
+            type rwvnfbasetypes:lacp-mode;
           }
           leaf bundle-name {
             rwpb:field-inline "true";
             type string {
               length "min..64";
             }
-          }
-          leaf lacp-mac {
-            rwpb:field-inline "true";
-            type rwt:mac-address;
-            rwpb:field-string-max 18;
-            rwpb:field-c-type "rw_mac_addr_t";
-          }
-          leaf lport-id{
-            type uint32;
           }
         }
 
@@ -526,59 +543,11 @@ module rw-vnf-base-opdata
 
       container counters {
         rwpb:msg-new RwPortStat;
-        leaf rx-rate-pps {
-          type rwt:gauge32;
-          description "Rx Rate(pps)";
-        }
-        leaf tx-rate-pps {
-          type rwt:gauge32;
-          description "Tx Rate(pps)";
-        }
-        leaf rx-rate-mbps {
-          type rwt:gauge32;
-          description "Rx Rate(Mbps)";
-        }
-        leaf tx-rate-mbps {
-          type rwt:gauge32;
-          description "Tx Rate(Mbps)";
-        }
-        leaf input-errors {
-          type rwt:zero-based-counter32;
-          description "Input Errors";
-        }
-        leaf output-errors {
-          type rwt:zero-based-counter32;
-          description "Output Errors";
-        }
-        leaf input-packets {
-          type rwt:zero-based-counter64;
-          description "Input packets";
-        }
-        leaf output-packets {
-          type rwt:zero-based-counter64;
-          description "Output packets";
-        }
-        leaf input-bytes {
-          type rwt:zero-based-counter64;
-          description "Total In bytes(MB)";
-        }
-        leaf output-bytes {
-          type rwt:zero-based-counter64;
-          description "Total Out Bytes(MB)";
-        }
-        leaf input-missed-pkts {
-          type rwt:zero-based-counter64;
-          description "Total of RX missed packets (e.g full FIFO)";
-        }
-        leaf input-mcast-pkts {
-          type rwt:zero-based-counter64;
-          description "Total of RX multicast packets";
-        }
-        leaf input-nombuf-pkts {
-          type rwt:zero-based-counter64;
-          description "Total number of RX mbuf allocation failures";
-        }
-        list extended-stats{
+        uses rwvnfbasetypes:port-counters;
+      }
+      container extended-stats{
+        rwpb:msg-new  RwPortExtendedStats;
+        list xstats{
           //??inline
           key "name";
           leaf name{
@@ -589,7 +558,6 @@ module rw-vnf-base-opdata
           }
         }
       }
-
       list ip {
         description "List of IPs for the port";
         config false;
@@ -799,24 +767,86 @@ module rw-vnf-base-opdata
         }
       }
     }
-/*
-    list ip-flow-signatures {
+
+    list flow-hashbin {
       config false;
-      key "service-component-id service-name service-subindex flow-type";
-      leaf service-component-id{
+      key "hashbin-id";
+      rwpb:msg-new RwIpFlowHashBin;
+            
+      leaf hashbin-id {
+        type uint32;
+      }
+      container controller-info {
+        rwpb:field-inline true;
+        leaf fastpath_instance{
+          type uint32;
+        }
+        
+        list vsap{
+          key "vsap-id";
+          max-elements 16;
+          rwpb:field-inline true;
+          
+          leaf vsap-id {
+            type uint32;
+          }
+        }
+      }
+      list fastpath-state{
+        key "component-id";
+        leaf component-id{
+          type uint32;
+        }
+        leaf state {
+          type enumeration{
+            enum none;
+            enum reconciled;
+          }
+        }
+      }
+    }
+
+    list flow-signature {
+      config false;
+      rwpb:msg-new RwFlowSignature;
+      key "service-component-id name service-name service-subindex signature-type nc-id ip-prefix ifname";
+      leaf nc-id{
+        type uint32;
+      }
+      leaf ip-prefix {
+        description "prefix for the nat-pool";
+        rwpb:field-inline true;
+        type rwt:ip-prefix-non-canonical;
+        rwpb:field-string-max 64;
+        rwpb:field-c-type "rw_ip_prefix_t";
+      }
+      leaf ifname{
+        type string;
+      }
+      leaf service-component-id {
         type uint32;
       }
       leaf service-name{
         type string;
       }
-      leaf service-subindex {
+      leaf service-subindex{
         type uint32;
       }
-      leaf flow-type{
-        type rwvnfbasetypes:flow-type;
+      leaf name{
+        type string;
       }
-
-      container signature-info{
+      leaf signature-type {
+        type enumeration{
+          enum load-balancer;
+          enum normal;
+        }
+      }
+      container controller-info {
+        leaf signature-id{
+          type uint32;
+        }
+      }
+      container info {
         leaf signature-key{
           rwpb:field-inline true;
           rwpb:field-string-max 256;
@@ -827,86 +857,103 @@ module rw-vnf-base-opdata
           rwpb:field-string-max 256;
           type binary;
         }
-        leaf nc-id{
-          type uint32;
+        leaf flow-type{
+          type rwvnfbasetypes:flow-type;
         }
-        leaf ip-prefix {
-          description "prefix for the nat-pool";
-          rwpb:field-inline true;
-          type rwt:ip-prefix-non-canonical;
-          rwpb:field-string-max 64;
-        }
-        
         leaf addr-type {
           type rwvnfbasetypes:signature-address-type;
         }
-        
         leaf include_l2 {
           type uint32;
         }
-        
         leaf priority{
           type uint32;
         }
-        
-        leaf application-id{
+        leaf component-only{
+          type boolean;
+        }
+        //temp
+        leaf app-id{
           type uint32;
         }
-        
-        leaf application-data{
+        leaf app-data{
           type uint32;
-        }
-      }
-      container controller-info {
-        leaf signature-id{
-          type uint32;
-        }
-      }
-    }
-    list ip-classifiers {
-      config false;
-      key "application-name application-id application-data extraction-method";
-      leaf application-name{
-      rwpb:field-inline true;
-      rwpb:field-string-max 64;
-      type string;
-      }
-      leaf application-id{
-      type uint32;
-      }
-      leaf application-data{
-          type uint32;
-          }
-          leaf extraction-method{
-        type lb-key-extraction-method;
-      }
-
-      container cache-behavior {
-        rwpb:field-inline true;
-        leaf absolute_timeout {
-          type int32;
         }
       }
       
-      container script-info{
-        rwpb:field-inline true;
-        leaf script-info{
-          rwpb:field-inline true;
-          rwpb:field-string-max 64;
-          type string;
-        }
+    }
+
+    list classifiers {
+      config false;
+      key "service-component-id name service-name service-subindex";
+      rwpb:msg-new RwFastpathClassifier;
+      leaf name{
+        type string;
+      }
+      leaf service-name{
+        rwpb:field-string-max 64;
+        type string;
+      }
+      leaf service-id{
+        type uint32;
+      }
+      leaf service-subindex{
+        type uint32;
+      }
+      leaf service-component-id {
+        type uint32;
       }
       container controller-info {
         leaf classifier-id{
           type uint32;
-          }
+        }
       }
+      container info {
+        leaf extraction-method{
+          type enumeration{
+            enum plugin;
+            enum script;
+          }
+        }
+        container cache-behavior {
+          rwpb:field-inline true;
+          leaf absolute_timeout {
+            type int32;
+          }
+        }
+        
+        container script-info{
+          rwpb:field-inline true;
+          leaf script-info{
+            rwpb:field-inline true;
+            rwpb:field-string-max 64;
+            type string;
+          }
+        }
+        leaf app-id{
+          type uint32;
+        }
+        leaf app-data{
+          type uint32;
+        }
+      } // list classifier
     }
-    
-*/
   }
 
   rpc start {
+    input {
+      container vnf {
+        description "This is a presence container that individual vnf's can augment on";
+      }
+    }
+    output {
+      container vnf-output {
+        description "This is a presence container that individual vnf's can augment on";
+      }
+    }
+  }
+
+  rpc insmod {
     input {
       container vnf {
         description "This is a presence container that individual vnf's can augment on";

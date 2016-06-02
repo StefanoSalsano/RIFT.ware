@@ -1088,7 +1088,11 @@ rte_eth_dev_start(uint8_t port_id)
 #endif
         {
 		RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->link_update, -ENOTSUP);
+#ifndef RTE_LIBRW_PIOT
 		(*dev->dev_ops->link_update)(dev, 0);
+#else
+                (*dev->dev_ops->link_update)(dev, 1);
+#endif
 	}
 	return 0;
 }
@@ -3246,6 +3250,19 @@ rte_eth_copy_pci_info(struct rte_eth_dev *eth_dev, struct rte_pci_device *pci_de
 	eth_dev->data->drv_name = pci_dev->driver->name;
 }
 #ifdef RTE_LIBRW_PIOT
+void
+rte_eth_hw_link_get(uint8_t port_id, struct rte_eth_link *eth_link, int wait)
+{
+  struct rte_eth_dev *dev;
+  
+  RTE_ETH_VALID_PORTID_OR_RET(port_id);
+  dev = &rte_eth_devices[port_id];
+  
+  RTE_FUNC_PTR_OR_RET(*dev->dev_ops->link_update);
+  (*dev->dev_ops->link_update)(dev, wait);
+  *eth_link = dev->data->dev_link;
+}
+
 /*
  * Find an eth device using pci_device
  * Added by RiftIO Inc for PIOT Integration

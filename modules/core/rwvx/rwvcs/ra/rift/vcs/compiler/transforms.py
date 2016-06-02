@@ -26,6 +26,10 @@ import rift.vcs
 
 from . import exc
 
+import gi
+gi.require_version('RwManifestYang', '1.0')
+from gi.repository.RwManifestYang import RwmgmtAgentMode
+
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +71,7 @@ class WebServersConfdHost(SystemTransform):
         """
         webservers = sysinfo.list_by_class(rift.vcs.Webserver)
         if webservers:
-            confd_proc = sysinfo.find_by_class(rift.vcs.Confd)
+            confd_proc = sysinfo.find_by_class(rift.vcs.uAgentTasklet)
             confd_vm = sysinfo.parent(confd_proc)
             confd_host = "localhost" if confd_vm.ip is None else confd_vm.ip
 
@@ -308,7 +312,7 @@ class AssignWebserversConfdHost(SystemTransform):
             # Iterate over the system info components until an instance of
             # Confd is found.
             for component in components:
-                if isinstance(component, rift.vcs.Confd):
+                if isinstance(component, rift.vcs.uAgentTasklet):
                     break
             else:
                 raise exc.TransformError('missing confd process')
@@ -636,22 +640,15 @@ class AddLogd(SystemTransform):
 
 class UseMockCli(SystemTransform):
     def __call__(self, sysinfo):
-        """ Remove the real Cli and insert a Mock CLI in place
+        """ Change the Rift CLI into a sleep command
 
         Arguments:
             sysinfo  - a SystemInfo object
         """
-        clis = sysinfo.list_by_class(rift.vcs.CliTasklet)
-        for cli in clis:
-            msg = 'removing {} from sysinfo'
-            logger.warning(msg.format(cli.name))
-            sysinfo.remove(cli)
-
-        # Insert our dtsperfmgr into the inventory
-        mock_cli = rift.vcs.MockCliTasklet(name='mockcli')
-
-        vm = sysinfo.find_by_class(rift.vcs.core.VirtualMachine)
-        vm.add_tasklet(mock_cli)
+        if sysinfo.mock_cli:
+            logger.info("Using Mock CLI.  Replacing rift CLI with sleep")
+            rift.vcs.RiftCli.exe = "/usr/bin/sleep"
+            rift.vcs.RiftCli.args = "1000000"
 
 
 class AddValgrind(ManifestTransform):
@@ -713,7 +710,12 @@ class AssignNetconfHostToRiftCli(SystemTransform):
         cli_proc.netconf_host = host
 
         #Pass the correct northbound schema listing to rwcli.
-        cli_proc.schema_listing = sysinfo.northbound_listing
-       
+        cli_proc.schema_listing = []
+        cli_proc.schema_listing.append(sysinfo.northbound_listing)
+        if sysinfo.agent_mode == RwmgmtAgentMode.CONFD:
+            cli_proc.schema_listing.append("confd_nb_schema_list.txt")
 
+        if sysinfo.agent_mode == RwmgmtAgentMode.RWXML:
+            cli_proc.use_netconf = False
+       
 # vim: sw=4 et

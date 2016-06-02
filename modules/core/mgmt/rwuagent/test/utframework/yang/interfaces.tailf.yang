@@ -26,12 +26,4 @@ module interfaces-tailf {
   tailf:annotate "/interfaces:clear-interface" {
     tailf:actionpoint rw_action;
   }
-
-  tailf:annotate "/interfaces:raise-new-route" {
-    tailf:actionpoint rw_action;
-  }
-
-  tailf:annotate "/interfaces:raise-temp-alarm" {
-    tailf:actionpoint rw_action;
-  }
 }

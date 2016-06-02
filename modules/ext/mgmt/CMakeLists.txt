@@ -33,29 +33,22 @@ include(rift_submodule)
 # specific it must be declared in the subdirectory.
 ##
 
-if(CONFD_FLAVOUR)
-  message(STATUS "Confd flavour set is ${CONFD_FLAVOUR}")
+message(STATUS "Agent build type set is ${RIFT_AGENT_BUILD}")
 
-  if(CONFD_FLAVOUR STREQUAL "FULL")
-    set(CONFD_DIR confd)
-  elseif(CONFD_FLAVOUR STREQUAL "BASIC")
-    set(CONFD_DIR confd_basic)
-  else()
-    message(FATAL_ERROR "Invalid value for CONFD_FLAVOUR: ${CONFD_FLAVOUR}")
-  endif()
-
-else()
-  message(FATAL_ERROR "CONFD_FLAVOUR definition not found")
+if(RIFT_AGENT_BUILD STREQUAL "CONFD_FULL")
+  set(CONFD_DIR confd)
+elseif(RIFT_AGENT_BUILD STREQUAL "CONFD_BASIC")
+  set(CONFD_DIR confd_basic)
 endif()
 
 ##
 # Include the subdirs
 ##
-set(subdirs
-  libconfd
-  loganalyzer
-  ${CONFD_DIR}
-  )
+set(subdirs loganalyzer)
+if(CONFD_DIR)
+  list(APPEND subdirs libconfd ${CONFD_DIR})
+endif()
+
 rift_add_subdirs(SUBDIR_LIST ${subdirs})
 
 ##

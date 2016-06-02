@@ -129,7 +129,7 @@ TEST(YangNcx, BasicModel)
 
   YangNode* root = model->get_root_node();
   ASSERT_TRUE(root);
-  EXPECT_STREQ("root",root->get_name());
+  EXPECT_STREQ("data",root->get_name());
   EXPECT_FALSE(root->is_leafy());
   EXPECT_FALSE(root->get_type());
 
@@ -806,7 +806,7 @@ TEST(YangNcx, IDRefCase1)
 
   YangNode* root = model->get_root_node();
   ASSERT_TRUE(root);
-  EXPECT_STREQ("root",root->get_name());
+  EXPECT_STREQ("data",root->get_name());
   EXPECT_FALSE(root->is_leafy());
   EXPECT_FALSE(root->get_type());
 
@@ -846,7 +846,7 @@ TEST(YangNcx, IDRefCase2)
 
   YangNode* root = model->get_root_node();
   ASSERT_TRUE(root);
-  EXPECT_STREQ("root",root->get_name());
+  EXPECT_STREQ("data",root->get_name());
   EXPECT_FALSE(root->is_leafy());
   EXPECT_FALSE(root->get_type());
 
@@ -887,7 +887,7 @@ TEST(YangNcx, IDRefCase3)
 
   YangNode* root = model->get_root_node();
   ASSERT_TRUE(root);
-  EXPECT_STREQ("root",root->get_name());
+  EXPECT_STREQ("data",root->get_name());
   EXPECT_FALSE(root->is_leafy());
   EXPECT_FALSE(root->get_type());
 

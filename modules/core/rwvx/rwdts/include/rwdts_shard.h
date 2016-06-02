@@ -293,6 +293,12 @@ rwdts_member_shard_create_element(rwdts_shard_t *shard, rwdts_shard_chunk_info_t
                      rwdts_chunk_member_info_t *mbr_info, bool publisher,
                      rwdts_chunk_id_t *chunk_id, char *msgpath);
 
+rw_status_t
+rwdts_rts_shard_promote_element(rwdts_shard_t *shard, rwdts_chunk_id_t chunk_id, 
+                                uint32_t membid, char *msgpath);
+
+rw_status_t
+rwdts_member_shard_promote_to_publisher(rwdts_shard_handle_t *shard, char* member);
 __END_DECLS
 
 #endif  /*__RWDTS_SHARD_H */

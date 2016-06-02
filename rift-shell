@@ -69,9 +69,15 @@ CURRENT_RIFT_SHELL=$RIFT_SHELL
 RIFT_ROOT=$(realpath "$(dirname "$0")")
 # Set the RIFT_SHELL to the ROOT to track which workspace the SHELL is set to.
 RIFT_SHELL=1
+
+RIFT_INCLUDE_BUILD_DIRS=${RIFT_INCLUDE_BUILD_DIRS}
 RIFT_CONFIG=
 CD_RIFT_ROOT=0
 USE_TEST_WRAPPER=0
+
+if [ -z ${RIFT_INCLUDE_BUILD_DIRS} ]; then
+  RIFT_INCLUDE_BUILD_DIRS=0
+fi
 
 # Parse command line arguments
 while [ $# -gt 0 ]; do
@@ -89,6 +95,9 @@ while [ $# -gt 0 ]; do
         RIFT_CONFIG="${RIFT_ROOT}"/.build/.rift-env
         [ -t 1 ] && echo " * Using existing configuration file" >&2
       fi
+      ;;
+    --include-build-dirs)
+      RIFT_INCLUDE_BUILD_DIRS=1
       ;;
     -E)
       export "$2"
@@ -112,8 +121,7 @@ done
 
 # At this point the commands have been parsed so it should be safe to export
 # these variables.
-export RIFT_ROOT RIFT_SHELL RIFT_CONFIG
-
+export RIFT_ROOT RIFT_SHELL RIFT_CONFIG RIFT_INCLUDE_BUILD_DIRS
 
 if [ -z "$CCACHE_DIR" ]; then
     echo "WARNING CCACHE_DIR not set"

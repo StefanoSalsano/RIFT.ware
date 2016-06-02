@@ -44,6 +44,7 @@ rift_files_prepend_path(
   base-conversion.yang          ## pb2xml and back base definitions
   bumpy-conversion.yang         ## pb2xml and back with bumpy
   company.yang                  ## For XMLWalker Tests
+  company-augment.yang          ## For XMLWalker Tests  
   ctype-test.yang               ## for ctype_test.cpp
   document.yang                 ## For documentation - need all artifacts
   flat-conversion.yang          ## pb2xml and back with flats
@@ -67,8 +68,9 @@ rift_files_prepend_path(
   test-field-merge-b.yang       ## for protobuf message diff test
   test-augment-a1.yang          ## for yangpbc_test.cpp
   test-augment-b1.yang          ## for yangpbc_test.cpp
-  test-yang-json-aug-base.yang
-  test-yang-json.yang
+  test-json-schema-aug-base.yang
+  test-json-schema.yang
+  test-vehicle-a.yang           ## for test_gi_pb_yaml_json.py
 )
 
 ##
@@ -94,7 +96,7 @@ rift_files_prepend_path(
   yangtools_test_yang_testing_files
   ${CMAKE_CURRENT_SOURCE_DIR}
 
-  mangle-base.yang                # Test some name mangling
+  mangle-base.yang
   mangle-test.yang                # Test some name mangling
   other-config_base.yang          ## sanity
   other-config_ipsec.yang         ## sanity

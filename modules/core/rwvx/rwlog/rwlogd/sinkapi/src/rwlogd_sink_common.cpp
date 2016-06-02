@@ -175,7 +175,7 @@ extern "C"
     if(schema_name) {
       rwlogd_sink_obj->load_log_yang_modules(schema_name);
       rwlogd_sink_obj->update_category_list();
-      rwlogd_instance_data->num_categories =  rwlogd_sink_obj->num_categories_;
+      //rwlogd_instance_data->num_categories =  rwlogd_sink_obj->num_categories_;
     }
     return;
   }
@@ -183,7 +183,7 @@ extern "C"
   void rwlogd_sink_obj_init(rwlogd_tasklet_instance_ptr_t rwlogd_instance_data,char *filter_shm_name,
                             const char *schema_name)
   {
-    rwlogd_instance_data->sink_data = new rwlogd_sink_data(filter_shm_name, schema_name);
+    rwlogd_instance_data->sink_data = new rwlogd_sink_data(rwlogd_instance_data,filter_shm_name, schema_name);
     RW_ASSERT(rwlogd_instance_data->sink_data);
     if (!rwlogd_instance_data->sink_data) {
       return;
@@ -635,11 +635,18 @@ extern "C"
     RW_ASSERT(obj);
     if (!obj) { return RW_STATUS_FAILURE; }
 
-    rw_status_t status = obj->dynamic_schema_update(batch_size,
-                                                    modules);
+    rwsched_tasklet_t * tinfo = instance->rwtasklet_info->rwsched_tasklet_info;
+    rwsched_dispatch_queue_t queue = rwsched_dispatch_queue_create(
+        tinfo,
+        "schema loding queue",
+        RWSCHED_DISPATCH_QUEUE_SERIAL);
+    obj->dynamic_schema_update(tinfo,
+                               queue,
+                               batch_size,
+                               modules);
     
     instance->rwlogd_info->num_categories = obj->num_categories_;
-    return status;
+    return RW_STATUS_SUCCESS;
   }
 
 }
@@ -700,11 +707,12 @@ static inline std::string c_escape_string(
         Maintains All the Sink queues. 
         Maintains All Eventlog circular buffer for the queus
 ******************************************************************************/
-rwlogd_sink_data::rwlogd_sink_data(char *filter_shm_name, const char* schema_name)
+rwlogd_sink_data::rwlogd_sink_data(rwlogd_tasklet_instance_ptr_t rwlogd_info, char *filter_shm_name, const char* schema_name)
 {
   sink_queue_ = new sink_queue_t();
   category_list_ = (category_str_t *)RW_MALLOC0(RWLOG_MAX_NUM_CATEGORIES * sizeof(category_str_t));
   num_categories_ = 0;
+  rwlogd_info_ = rwlogd_info;
 
   if(schema_name) {
     load_log_yang_modules(schema_name);
@@ -1580,57 +1588,99 @@ void rwlogd_sink_data::load_log_yang_modules(const char* schema_name)
 }
 
 
-rw_status_t rwlogd_sink_data::dynamic_schema_update(const size_t batch_size,
+void rwlogd_sink_data::dynamic_schema_update(rwsched_tasklet_t * tasklet_info,
+                                                    rwsched_dispatch_queue_t queue,
+                                                    const size_t batch_size,
                                                     rwdynschema_module_t *modules)
 {
-  rw_status_t status = RW_STATUS_SUCCESS;
   if(!yang_model_) {
-    return RW_STATUS_FAILURE;
+    return;
   }
 
+  dynamic_queue_ = queue;
+  tasklet_info_ = tasklet_info;
+  dynamic_module_count_ = batch_size;
+  dynamic_modules_ = modules;
+
+  rwsched_dispatch_async_f(tasklet_info_,
+                           dynamic_queue_,  
+                           this,
+                           dynamic_schema_load_modules);
+}
+
+void rwlogd_sink_data::dynamic_schema_load_modules(void * context)
+{
+  rwlogd_sink_data * instance = static_cast<rwlogd_sink_data *>(context);
+
   /* Get current schema and merge it with new schemas received */
-  const rw_yang_pb_schema_t *schema = yang_model_->get_ypbc_schema();
-  for (size_t i = 0; i < batch_size; ++i) {
-    RW_ASSERT(modules[i].module_name);
-    if (!modules[i].module_name) {
-      return RW_STATUS_FAILURE;
+  const rw_yang_pb_schema_t *schema = instance->yang_model_->get_ypbc_schema();
+  for (size_t i = 0; i < instance->dynamic_module_count_; ++i) {
+    RW_ASSERT(instance->dynamic_modules_[i].module_name);
+    if (!instance->dynamic_modules_[i].module_name) {
+      instance->dynamic_status_ = RW_STATUS_FAILURE;
+      break;
     }
-    RW_ASSERT(modules[i].so_filename);
-    if (!modules[i].so_filename) {
-      return RW_STATUS_FAILURE;
+    RW_ASSERT(instance->dynamic_modules_[i].so_filename);
+    if (!instance->dynamic_modules_[i].so_filename) {
+      instance->dynamic_status_ = RW_STATUS_FAILURE;
+      break;
     }
 
-    schema = rw_load_and_merge_schema(schema, modules[i].so_filename, modules[i].module_name);
+    schema = rw_load_and_merge_schema(schema, instance->dynamic_modules_[i].so_filename, instance->dynamic_modules_[i].module_name);
 
     if (!schema) {
-      return RW_STATUS_FAILURE;
+      instance->dynamic_status_ = RW_STATUS_FAILURE;
+      break;
     }
+  }
+
+  if (instance->dynamic_status_ == RW_STATUS_FAILURE) {
+    fprintf(stderr, "Failed to load dynamic schema \n");
+    return;
   }
 
   /* Delete existing yang model and build it again with new schema */
-  if(yang_model_)
-    delete yang_model_;
-  yang_model_ = NULL;
+  if(instance->yang_model_){
+    delete instance->yang_model_;
+  }
+  instance->yang_model_ = NULL;
 
-  yang_model_ = rw_yang::YangModelNcx::create_model();
-  RW_ASSERT(yang_model_);
-  if (!yang_model_) {
-    return RW_STATUS_FAILURE;
+  instance->yang_model_ = rw_yang::YangModelNcx::create_model();
+  RW_ASSERT(instance->yang_model_);
+  if (!instance->yang_model_) {
+    instance->dynamic_status_ = RW_STATUS_FAILURE;
+    return;
   }
 
   /* Build new yang model */
-  yang_model_->load_schema_ypbc(schema);
+  instance->yang_model_->load_schema_ypbc(schema);
 
   /* Annotate the yang model with the descriptors. */
-  status = yang_model_->register_ypbc_schema(schema);
+  rw_status_t status = instance->yang_model_->register_ypbc_schema(schema);
   if ( RW_STATUS_SUCCESS != status ) {
     fprintf(stderr, "Failed to register ypbc schema \n");
   }
 
-  status = update_category_list();
-  return status;
+  rwsched_dispatch_async_f(instance->tasklet_info_,
+                           instance->dynamic_queue_,  
+                           instance,
+                           dynamic_schema_end);
+
+
 }
 
+void rwlogd_sink_data::dynamic_schema_end(void * context)
+{
+  rwlogd_sink_data * instance = static_cast<rwlogd_sink_data *>(context);
+
+   rw_status_t status = instance->update_category_list();
+  if ( RW_STATUS_SUCCESS != status ) {
+    fprintf(stderr, "Failed to update category list \n");
+  }
+
+  rwsched_dispatch_release(instance->tasklet_info_, instance->dynamic_queue_);
+
+}
 
 rw_status_t
 rwlogd_sink_data::update_category_list()
@@ -1664,6 +1714,7 @@ rwlogd_sink_data::update_category_list()
       pe->update_category_list(); 
     }
   }
+  rwlogd_info_->num_categories = num_categories_;
 
   return RW_STATUS_SUCCESS;
 }

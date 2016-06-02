@@ -234,7 +234,7 @@ class SubscribeInsideXactExample(object):
         xact = self.dts_api_h.query(
                 self.intel_company_xpath,
                 RwDts.QueryAction.UPDATE,
-                RwDts.Flag.ADVISE,
+                RwDts.XactFlag.ADVISE,
                 self.publish_one_company_config_callback,
                 self,
                 riftiomsg.to_pbcm()
@@ -533,7 +533,7 @@ class Callback(object):
         # Begin a DTS transaction to send the config
         configxact = self.dts_api.query(riftiopath, 
                                 RwDts.QueryAction.UPDATE, 
-                                RwDts.Flag.ADVISE,
+                                RwDts.XactFlag.ADVISE,
                                 self.rwdts_api_config_callback,
                                 self,
                                 riftiomsg.to_pbcm())
@@ -827,14 +827,14 @@ class Callback(object):
           # Add some query(ies) to the block
           # Corrid is a nonzero int, useful for getting back specific query's results
           qcorrid = 1
-          status = blk.add_query(xpath, RwDts.QueryAction.READ, RwDts.Flag.STREAM, qcorrid, None)
+          status = blk.add_query(xpath, RwDts.QueryAction.READ, RwDts.XactFlag.STREAM, qcorrid, None)
           logger.debug(status)
 
           qcorrid = qcorrid + 1
-          status = blk.add_query(xpath, RwDts.QueryAction.READ, RwDts.Flag.STREAM, qcorrid, None)
+          status = blk.add_query(xpath, RwDts.QueryAction.READ, RwDts.XactFlag.STREAM, qcorrid, None)
 
           qcorrid = qcorrid + 1
-          status = blk.add_query(xpath, RwDts.QueryAction.READ, RwDts.Flag.STREAM, qcorrid, None) 
+          status = blk.add_query(xpath, RwDts.QueryAction.READ, RwDts.XactFlag.STREAM, qcorrid, None) 
 
           # Pull the trigger.  Callback+userdata are here.  The final "after" argument, 
           # not included here, is a block to be after; otherwise at end
@@ -921,7 +921,7 @@ class RwdtsMemberDataAPIs(object):
         emp.age = 41
         emp.phone = '978-863-099'
         emp.ssn = '123-45-0099'
-        status = self.mbdreg.update_element_keyspec(ks, emp.to_pbcm(), RwDts.Flag.REPLACE)
+        status = self.mbdreg.update_element_keyspec(ks, emp.to_pbcm(), RwDts.XactFlag.REPLACE)
         logger.info("Updated the object with key = %s status = %s", path, status)
 
         # Now read it back
@@ -987,7 +987,7 @@ class RwdtstaskletPython(GObject.Object, RwTaskletPlugin.Component):
         #self.rwlog_instance = tasklet_info.rwlog_instance
 
 
-        tasklet_logger = rwlogger.RwLogger(category="rw-vcs",
+        tasklet_logger = rwlogger.RwLogger(subcategory="rw-vcs",
                                            log_hdl=self.taskletinfo.rwlog_ctx)
         logger.addHandler(tasklet_logger)
 

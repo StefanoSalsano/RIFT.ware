@@ -32,8 +32,9 @@ TEST(RwCLI, PrintHook)
   bool status = false;
 
   TEST_DESCRIPTION("Test CLI print hooks");
-  RwCLI *rw_cli = new RwCLI(false, nullptr);
-  ((void)rw_cli);
+  RwCLI *rw_cli = new RwCLI(false, nullptr, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
+  rw_cli->initialize_plugin_framework();
+  rw_cli->initialize(nullptr);
   rw_cli->module_names_.insert("rwcli_test");
   status = rw_cli->load_manifest("../cli_test.xml");
   ASSERT_TRUE(status);
@@ -52,8 +53,9 @@ TEST(RwCLI, NewMode)
   bool status = false;
 
   TEST_DESCRIPTION("Test modes");
-  RwCLI *rw_cli = new RwCLI(false, nullptr);
-  ((void)rw_cli);
+  RwCLI *rw_cli = new RwCLI(false, nullptr, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
+  rw_cli->initialize_plugin_framework();
+  rw_cli->initialize(nullptr);
   rw_cli->module_names_.insert("rwcli_test");
   status = rw_cli->load_manifest("../cli_test.xml");
   ASSERT_TRUE(status);
@@ -72,5 +74,28 @@ TEST(RwCLI, NewMode)
   ASSERT_TRUE(!s.result_node_->is_mode());
 #endif  
 }
+
+TEST(RwCLI, ManifestDefaultsCheck)
+{
+  TEST_DESCRIPTION("Test CLI Manifest default's check");
+
+  std::string base_manifest = getenv("RIFT_INSTALL");
+  base_manifest += "/usr/data/yang/rw.cli.xml";
+
+  RwCLI *rw_cli = new RwCLI(false, nullptr, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
+  rw_cli->initialize_plugin_framework();
+  rw_cli->initialize(base_manifest.c_str());
+
+  EXPECT_EQ(rw_cli->default_print_hook_, "rwcli_plugin:default_print");
+  EXPECT_EQ(rw_cli->config_print_hook_, "rwcli_plugin:config_writer");
+  EXPECT_EQ(rw_cli->config_print_to_file_hook_, "rwcli_plugin:config_writer_file");
+  EXPECT_EQ(rw_cli->pretty_print_xml_hook_, ".:pretty_print_xml");
+
+  ASSERT_TRUE(rw_cli->parser->root_parse_node_->is_cli_print_hook());
+  EXPECT_STREQ(rw_cli->parser->root_parse_node_->get_cli_print_hook_string(),
+          "rwcli_plugin:default_print");
+
+}
+
 
 

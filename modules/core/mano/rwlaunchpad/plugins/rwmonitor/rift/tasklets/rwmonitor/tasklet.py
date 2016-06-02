@@ -3,48 +3,79 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
+"""
+NFVI MONITORING
+==================================================
+
+Data Model
+--------------------------------------------------
+
+The monitoring tasklet consists of several types of data that are associated
+with one another. The highest level data are the cloud accounts. These objects
+contain authentication information that is used to retrieve metrics as well as
+the provider (and hence the available data source platforms).
+
+Each cloud account is associated with an NfviMetricsPlugin. This is a
+one-to-one relationship. The plugin is the interface to the data source that
+will actually provide the NFVI metrics.
+
+Each cloud account is also associated with several VNFRs. Each VNFR, in turn,
+contains several VDURs. The VDURs represent the level that the NFVI metrics are
+collected at. However, it is important that the relationships among all these
+different objects are carefully managed.
+
+
+        CloudAccount -------------- NfviMetricsPlugin
+            / \
+           /   \
+          / ... \
+         /       \
+       VNFR     VNFR
+                 /\
+                /  \
+               /    \
+              / .... \
+             /        \
+           VDUR      VDUR
+            |          |
+            |          |
+         Metrics     Metrics
+
+
+Monitoring Tasklet
+--------------------------------------------------
+
+The monitoring tasklet (the MonitorTasklet class) is primarily responsible for
+the communicating between DTS and the application (the Monitor class), which
+provides the logic for managing and interacting with the data model (see
+above).
+
+"""
+
 import asyncio
-import collections
 import concurrent.futures
-import os
 import time
-import uuid
-import sys
 
 import gi
-gi.require_version('RwBaseYang', '1.0')
 gi.require_version('RwDts', '1.0')
-gi.require_version('RwLaunchpadYang', '1.0')
 gi.require_version('RwLog', '1.0')
-gi.require_version('RwcalYang', '1.0')
 gi.require_version('RwMonitorYang', '1.0')
-gi.require_version('RwmonYang', '1.0')
-gi.require_version('RwNsdYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
 gi.require_version('RwNsrYang', '1.0')
 gi.require_version('RwVnfrYang', '1.0')
-gi.require_version('RwTypes', '1.0')
-gi.require_version('RwYang', '1.0')
 from gi.repository import (
-    NsrYang,
-    RwBaseYang,
     RwDts as rwdts,
-    RwLaunchpadYang,
     RwLog as rwlog,
-    RwcalYang as rwcal,
     RwMonitorYang as rwmonitor,
-    RwmonYang as rwmon,
-    RwNsdYang as rwnsd,
-    RwTypes,
-    RwYang,
+    RwLaunchpadYang,
+    RwVnfrYang,
     VnfrYang,
 )
 
 import rift.tasklets
 import rift.mano.cloud
 
-import rw_peas
-
-from .core import (NfviMetricsAggregator, RecordManager)
+from . import core
 
 
 class DtsHandler(object):
@@ -73,100 +104,31 @@ class DtsHandler(object):
         return self.__class__.__name__
 
 
-class NsInstanceOpdataSubscriber(DtsHandler):
-    XPATH = "D,/nsr:ns-instance-opdata/nsr:nsr"
-
-    @asyncio.coroutine
-    def register(self):
-        def handle_create(msg):
-            self.tasklet.records.add_nsr(msg)
-            self.tasklet.start_ns_monitor(msg)
-
-        def handle_update(msg):
-            self.tasklet.records.add_nsr(msg)
-
-        def handle_delete(msg):
-            self.tasklet.records.remove_nsr(msg.ns_instance_config_ref)
-
-        def ignore(msg):
-            pass
-
-        dispatch = {
-                rwdts.QueryAction.CREATE: handle_create,
-                rwdts.QueryAction.UPDATE: handle_update,
-                rwdts.QueryAction.DELETE: handle_delete,
-                }
-
-        @asyncio.coroutine
-        def on_prepare(xact_info, action, ks_path, msg):
-            try:
-                # Disabling the following comments since they are too frequent
-                # self.log.debug("{}:on_prepare:msg {}".format(self.classname, msg))
-
-                if msg is not None:
-                    dispatch.get(action, ignore)(msg)
-
-            except Exception as e:
-                self.log.exception(e)
-
-            finally:
-                # Disabling the following comments since they are too frequent
-                # self.log.debug("{}:on_prepare complete".format(self.classname))
-                xact_info.respond_xpath(rwdts.XactRspCode.ACK)
-
-        handler = rift.tasklets.DTS.RegistrationHandler(
-                on_prepare=on_prepare,
-                )
-
-        with self.dts.group_create() as group:
-            group.register(
-                    xpath=NsInstanceOpdataSubscriber.XPATH,
-                    flags=rwdts.Flag.SUBSCRIBER,
-                    handler=handler,
-                    )
-
-
 class VnfrCatalogSubscriber(DtsHandler):
     XPATH = "D,/vnfr:vnfr-catalog/vnfr:vnfr"
 
     @asyncio.coroutine
     def register(self):
-        def handle_create(msg):
-            self.log.debug("{}:handle_create:{}".format(self.classname, msg))
-            self.tasklet.records.add_vnfr(msg)
-
-        def handle_update(msg):
-            self.log.debug("{}:handle_update:{}".format(self.classname, msg))
-            self.tasklet.records.add_vnfr(msg)
-
-        def handle_delete(msg):
-            self.tasklet.records.remove_vnfr(msg)
-
-        def ignore(msg):
-            pass
-
-        dispatch = {
-                rwdts.QueryAction.CREATE: handle_create,
-                rwdts.QueryAction.UPDATE: handle_update,
-                rwdts.QueryAction.DELETE: handle_delete,
-                }
-
         @asyncio.coroutine
         def on_prepare(xact_info, action, ks_path, msg):
             try:
-                self.log.debug("{}:on_prepare".format(self.classname))
-                self.log.debug("{}:on_preparef:msg {}".format(self.classname, msg))
+                if msg is None:
+                    return
 
-                xpath = ks_path.to_xpath(VnfrYang.get_schema())
-                xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath)
+                if action == rwdts.QueryAction.CREATE:
+                    self.tasklet.on_vnfr_create(msg)
 
-                dispatch.get(action, ignore)(msg)
+                elif action == rwdts.QueryAction.UPDATE:
+                    self.tasklet.on_vnfr_update(msg)
+
+                elif action == rwdts.QueryAction.DELETE:
+                    self.tasklet.on_vnfr_delete(msg)
 
             except Exception as e:
                 self.log.exception(e)
 
             finally:
-                self.log.debug("{}:on_prepare complete".format(self.classname))
+                xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
         handler = rift.tasklets.DTS.RegistrationHandler(
                 on_prepare=on_prepare,
@@ -180,7 +142,7 @@ class VnfrCatalogSubscriber(DtsHandler):
                     )
 
 
-class NfviPollingPeriodSubscriber(DtsHandler):
+class NsInstanceConfigSubscriber(DtsHandler):
     XPATH = "C,/nsr:ns-instance-config"
 
     @asyncio.coroutine
@@ -195,14 +157,7 @@ class NfviPollingPeriodSubscriber(DtsHandler):
 
             xact_config = list(self.reg.get_xact_elements(xact))
             for config in xact_config:
-                if config.nfvi_polling_period is not None:
-                    self.tasklet.polling_period = config.nfvi_polling_period
-                    self.log.debug("new polling period: {}".format(self.tasklet.polling_period))
-
-        self.log.debug(
-                "Registering for NFVI polling period config using xpath: %s",
-                NfviPollingPeriodSubscriber.XPATH,
-                )
+                self.tasklet.on_ns_instance_config_update(config)
 
         acg_handler = rift.tasklets.AppConfGroup.Handler(
                         on_apply=on_apply,
@@ -210,7 +165,7 @@ class NfviPollingPeriodSubscriber(DtsHandler):
 
         with self.dts.appconf_group_create(acg_handler) as acg:
             self.reg = acg.register(
-                    xpath=NfviPollingPeriodSubscriber.XPATH,
+                    xpath=NsInstanceConfigSubscriber.XPATH,
                     flags=rwdts.Flag.SUBSCRIBER,
                     )
 
@@ -220,89 +175,413 @@ class CloudAccountDtsHandler(DtsHandler):
         super().__init__(tasklet)
         self._cloud_cfg_subscriber = None
 
-    def on_account_added_apply(self, account):
-        self.log.info("adding cloud account: {}".format(account))
-        self.tasklet.cloud_accounts[account.name] = account.cal_account_msg
-        self.tasklet.account_nfvi_monitors[account.name] = self.load_nfvi_monitor_plugin(account.cal_account_msg)
-
-    def on_account_deleted_apply(self, account_name):
-        self.log.info("deleting cloud account: {}".format(account_name))
-        if account_name in self.tasklet.cloud_accounts:
-            del self.tasklet.cloud_accounts[account_name]
-
-        if account_name in self.tasklet.account_nfvi_monitors:
-            del self.tasklet.account_nfvi_monitors[account_name]
-
-    @asyncio.coroutine
-    def on_account_updated_prepare(self, account):
-        raise NotImplementedError("Monitor does not support updating cloud account")
-
-    def load_nfvi_monitor_plugin(self, cloud_account):
-        if cloud_account.account_type == "openstack":
-            self.log.debug('loading ceilometer plugin for NFVI metrics')
-            plugin = rw_peas.PeasPlugin(
-                    "rwmon_ceilometer",
-                    'RwMon-1.0',
-                    )
-
-        else:
-            self.log.debug('loading mock plugin for NFVI metrics')
-            plugin = rw_peas.PeasPlugin(
-                    "rwmon_mock",
-                    'RwMon-1.0',
-                    )
-
-        impl = plugin.get_interface("Monitoring")
-        impl.init(self.log_hdl)
-
-        # Check that the plugin is available on this platform
-        _, available = impl.nfvi_metrics_available(cloud_account)
-        if not available:
-            self.log.warning('NFVI monitoring unavailable on this host')
-            return None
-
-        return impl
-
     def register(self):
         self.log.debug("creating cloud account config handler")
         self._cloud_cfg_subscriber = rift.mano.cloud.CloudAccountConfigSubscriber(
                self.dts, self.log, self.log_hdl,
                rift.mano.cloud.CloudAccountConfigCallbacks(
-                   on_add_apply=self.on_account_added_apply,
-                   on_delete_apply=self.on_account_deleted_apply,
-                   on_update_prepare=self.on_account_updated_prepare,
+                   on_add_apply=self.tasklet.on_cloud_account_create,
+                   on_delete_apply=self.tasklet.on_cloud_account_delete,
                )
            )
         self._cloud_cfg_subscriber.register()
 
 
+class VdurNfviMetricsPublisher(DtsHandler):
+    """
+    A VdurNfviMetricsPublisher is responsible for publishing the NFVI metrics
+    from a single VDU.
+    """
+
+    XPATH = "D,/vnfr:vnfr-catalog/vnfr:vnfr[vnfr:id='{}']/vnfr:vdur[vnfr:id='{}']/rw-vnfr:nfvi-metrics"
+
+    # This timeout defines the length of time the publisher will wait for a
+    # request to a data source to complete. If the request cannot be completed
+    # before timing out, the current data will be published instead.
+    TIMEOUT = 2.0
+
+    def __init__(self, tasklet, vnfr, vdur):
+        """Create an instance of VdurNvfiPublisher
+
+        Arguments:
+            tasklet - the tasklet
+            vnfr    - the VNFR that contains the VDUR
+            vdur    - the VDUR of the VDU whose metrics are published
+
+        """
+        super().__init__(tasklet)
+        self._vnfr = vnfr
+        self._vdur = vdur
+
+        self._handle = None
+        self._xpath = VdurNfviMetricsPublisher.XPATH.format(vnfr.id, vdur.id)
+
+        self._deregistered = asyncio.Event(loop=self.loop)
+
+    @property
+    def vnfr(self):
+        """The VNFR associated with this publisher"""
+        return self._vnfr
+
+    @property
+    def vdur(self):
+        """The VDUR associated with this publisher"""
+        return self._vdur
+
+    @property
+    def vim_id(self):
+        """The VIM ID of the VDUR associated with this publisher"""
+        return self._vdur.vim_id
+
+    @property
+    def xpath(self):
+        """The XPATH that the metrics are published on"""
+        return self._xpath
+
+    @asyncio.coroutine
+    def dts_on_prepare(self, xact_info, action, ks_path, msg):
+        """Handles the DTS on_prepare callback"""
+        self.log.debug("{}:dts_on_prepare".format(self.classname))
+
+        if action == rwdts.QueryAction.READ:
+            # If the publisher has been deregistered, the xpath element has
+            # been deleted. So we do not want to publish the metrics and
+            # re-created the element.
+            if not self._deregistered.is_set():
+                metrics = self.tasklet.on_retrieve_nfvi_metrics(self.vdur.id)
+                xact_info.respond_xpath(
+                        rwdts.XactRspCode.MORE,
+                        self.xpath,
+                        metrics,
+                        )
+
+        xact_info.respond_xpath(rwdts.XactRspCode.ACK, self.xpath)
+
+    @asyncio.coroutine
+    def register(self):
+        """Register the publisher with DTS"""
+        self._handle = yield from self.dts.register(
+                xpath=self.xpath,
+                handler=rift.tasklets.DTS.RegistrationHandler(
+                    on_prepare=self.dts_on_prepare,
+                    ),
+                flags=rwdts.Flag.PUBLISHER,
+                )
+
+    def deregister(self):
+        """Deregister the publisher from DTS"""
+        # Mark the publisher for deregistration. This prevents the publisher
+        # from creating an element after it has been deleted.
+        self._deregistered.set()
+
+        # Now that we are done with the registration handle, delete the element
+        # and tell DTS to deregister it
+        self._handle.delete_element(self.xpath)
+        self._handle.deregister()
+        self._handle = None
+
+
+class LaunchpadConfigDtsSubscriber(DtsHandler):
+    """
+    This class subscribes to the launchpad configuration and alerts the tasklet
+    to any relevant changes.
+    """
+
+    @asyncio.coroutine
+    def register(self):
+        @asyncio.coroutine
+        def apply_config(dts, acg, xact, action, _):
+            if xact.xact is None:
+                # When RIFT first comes up, an INSTALL is called with the current config
+                # Since confd doesn't actally persist data this never has any data so
+                # skip this for now.
+                self.log.debug("No xact handle. Skipping apply config")
+                return
+
+            try:
+                cfg = list(self.reg.get_xact_elements(xact))[0]
+                if cfg.public_ip != self.tasklet.public_ip:
+                    yield from self.tasklet.on_public_ip(cfg.public_ip)
+
+            except Exception as e:
+                self.log.exception(e)
+
+        try:
+            acg_handler = rift.tasklets.AppConfGroup.Handler(
+                            on_apply=apply_config,
+                            )
+
+            with self.dts.appconf_group_create(acg_handler) as acg:
+                self.reg = acg.register(
+                        xpath="C,/rw-launchpad:launchpad-config",
+                        flags=rwdts.Flag.SUBSCRIBER,
+                        )
+
+        except Exception as e:
+            self.log.exception(e)
+
+
+class CreateAlarmRPC(DtsHandler):
+    """
+    This class is used to listen for RPC calls to /vnfr:create-alarm, and pass
+    them on to the tasklet.
+    """
+
+    def __init__(self, tasklet):
+        super().__init__(tasklet)
+        self._handle = None
+
+    @asyncio.coroutine
+    def register(self):
+        """Register this handler with DTS"""
+        @asyncio.coroutine
+        def on_prepare(xact_info, action, ks_path, msg):
+            try:
+                response = VnfrYang.YangOutput_Vnfr_CreateAlarm()
+                response.alarm_id = yield from self.tasklet.on_create_alarm(
+                        msg.cloud_account,
+                        msg.vdu_id,
+                        msg.alarm,
+                        )
+
+                xact_info.respond_xpath(
+                        rwdts.XactRspCode.ACK,
+                        "O,/vnfr:create-alarm",
+                        response,
+                        )
+
+            except Exception as e:
+                self.log.exception(e)
+                xact_info.respond_xpath(rwdts.XactRspCode.NACK)
+
+        self._handle = yield from self.dts.register(
+                xpath="I,/vnfr:create-alarm",
+                handler=rift.tasklets.DTS.RegistrationHandler(
+                    on_prepare=on_prepare
+                    ),
+                flags=rwdts.Flag.PUBLISHER,
+                )
+
+    def deregister(self):
+        """Deregister this handler"""
+        self._handle.deregister()
+        self._handle = None
+
+
+class DestroyAlarmRPC(DtsHandler):
+    """
+    This class is used to listen for RPC calls to /vnfr:destroy-alarm, and pass
+    them on to the tasklet.
+    """
+
+    def __init__(self, tasklet):
+        super().__init__(tasklet)
+        self._handle = None
+
+    @asyncio.coroutine
+    def register(self):
+        """Register this handler with DTS"""
+        @asyncio.coroutine
+        def on_prepare(xact_info, action, ks_path, msg):
+            try:
+                yield from self.tasklet.on_destroy_alarm(
+                        msg.cloud_account,
+                        msg.alarm_id,
+                        )
+
+                xact_info.respond_xpath(
+                        rwdts.XactRspCode.ACK,
+                        "O,/vnfr:destroy-alarm"
+                        )
+
+            except Exception as e:
+                self.log.exception(e)
+                xact_info.respond_xpath(rwdts.XactRspCode.NACK)
+
+        self._handle = yield from self.dts.register(
+                xpath="I,/vnfr:destroy-alarm",
+                handler=rift.tasklets.DTS.RegistrationHandler(
+                    on_prepare=on_prepare
+                    ),
+                flags=rwdts.Flag.PUBLISHER,
+                )
+
+    def deregister(self):
+        """Deregister this handler"""
+        self._handle.deregister()
+        self._handle = None
+
+
+class Delegate(object):
+    """
+    This class is used to delegate calls to collections of listener objects.
+    The listeners are expected to conform to the required function arguments,
+    but this is not enforced by the Delegate class itself.
+    """
+
+    def __init__(self):
+        self._listeners = list()
+
+    def __call__(self, *args, **kwargs):
+        """Delegate the call to the registered listeners"""
+        for listener in self._listeners:
+            listener(*args, **kwargs)
+
+    def register(self, listener):
+        """Register a listener
+
+        Arguments:
+            listener - an object that function calls will be delegated to
+
+        """
+        self._listeners.append(listener)
+
+
+class WebhookAlarmServer(object):
+    """
+    The WebhookAlarmServer is a streaming server that is used to handle alarms
+    that are sent to the launchpad.
+    """
+
+    DEFAULT_WEBHOOK_HOST = "127.0.0.1"
+    DEFAULT_WEBHOOK_PORT = 4568
+
+    def __init__(self, log, loop, host=None, port=None):
+        """Create a WebhookAlarmServer
+
+        Arguments:
+            loop - an asyncio event loop
+            host - the address that this server should use
+            port - the port that the server will listen on
+
+        """
+        self._server = None
+        self._log = log
+        self._loop = loop
+        self._host = host if host is not None else WebhookAlarmServer.DEFAULT_WEBHOOK_HOST
+        self._port = port if port is not None else WebhookAlarmServer.DEFAULT_WEBHOOK_PORT
+
+        self.handle_ok = Delegate()
+        self.handle_alarm = Delegate()
+        self.handle_insufficient_data = Delegate()
+
+    @property
+    def log(self):
+        return self._log
+
+    @property
+    def loop(self):
+        """The event loop used by the server"""
+        return self._loop
+
+    @asyncio.coroutine
+    def start(self, host):
+        """Starts the server to handle calls"""
+        if self._server is None:
+            self._host = host
+            self._server = yield from asyncio.start_server(
+                    self.on_alarm_webhook,
+                    self._host,
+                    self._port,
+                    reuse_address=True,
+                    loop=self.loop,
+                    )
+
+    @asyncio.coroutine
+    def stop(self):
+        """Stops the webhook server"""
+        if self._server is not None:
+            self._server.close()
+            yield from self._server.wait_closed()
+            self._server = None
+
+    @asyncio.coroutine
+    def on_alarm_webhook(self, reader, writer):
+        """Dispatches calls to the appropriate handlers
+
+        Argument:
+            reader - a StreamReader that provides the message content
+            writer - a StreamWriter that is used to send information but to the
+                     client
+        """
+        try:
+            # Read from the reader until a timeout occurs. Although there is an
+            # at_eof() function on the reader, that will not work with HTTP/TCP
+            # because an eof is not provided.
+            data = list()
+            try:
+                while True:
+                    chunk = yield from asyncio.wait_for(
+                            reader.read(4096),
+                            timeout=1,
+                            loop=self.loop,
+                            )
+                    data.append(chunk)
+
+            except asyncio.TimeoutError:
+                pass
+
+            msg = ''.join(d.decode() for d in data)
+
+            # TODO validate the message to ensure that it is syntactically correct.
+
+            # Return a simple message to the client to let it know that we received
+            # the message successfully.
+            writer.write(b"HTTP/1.1 200 alarm received\r\n")
+            writer.write_eof()
+
+        except Exception as e:
+            self.log.exception(e)
+
+            writer.write(b"HTTP/1.1 400 something went wrong :(\r\n")
+            writer.write_eof()
+
+        finally:
+            yield from writer.drain()
+            writer.close()
+
+
 class MonitorTasklet(rift.tasklets.Tasklet):
     """
-    The MonitorTasklet is responsible for sampling NFVI mettrics (via a CAL
-    plugin) and publishing the aggregate information.
+    The MonitorTasklet provides a interface for DTS to interact with an
+    instance of the Monitor class. This allows the Monitor class to remain
+    independent of DTS.
     """
 
     DEFAULT_POLLING_PERIOD = 1.0
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        try:
+            super().__init__(*args, **kwargs)
+            self.rwlog.set_category("rw-monitor-log")
 
-        self.nsr_subscriber = NsInstanceOpdataSubscriber(self)
-        self.vnfr_subscriber = VnfrCatalogSubscriber(self)
-        self.cloud_cfg_subscriber = CloudAccountDtsHandler(self)
-        self.poll_period_subscriber = NfviPollingPeriodSubscriber(self)
-        self.cloud_account_handler = CloudAccountDtsHandler(self)
+            self.vnfr_subscriber = VnfrCatalogSubscriber(self)
+            self.cloud_cfg_subscriber = CloudAccountDtsHandler(self)
+            self.ns_instance_config_subscriber = NsInstanceConfigSubscriber(self)
+            self.launchpad_cfg_subscriber = LaunchpadConfigDtsSubscriber(self)
 
-        self.vnfrs = collections.defaultdict(list)
-        self.vdurs = collections.defaultdict(list)
+            self.config = core.InstanceConfiguration()
+            self.config.polling_period = MonitorTasklet.DEFAULT_POLLING_PERIOD
 
-        self.monitors = dict()
-        self.cloud_accounts = {}
-        self.account_nfvi_monitors = {}
+            self.monitor = core.Monitor(self.loop, self.log, self.config)
+            self.vdur_handlers = dict()
 
-        self.records = RecordManager()
-        self.polling_period = MonitorTasklet.DEFAULT_POLLING_PERIOD
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
+            self.webhooks = WebhookAlarmServer(self.log, self.loop)
+            self.create_alarm_rpc = CreateAlarmRPC(self)
+            self.destroy_alarm_rpc = DestroyAlarmRPC(self)
+
+
+        except Exception as e:
+            self.log.exception(e)
+
+    @property
+    def polling_period(self):
+        return self.config.polling_period
+
+    @property
+    def public_ip(self):
+        """The public IP of the launchpad"""
+        return self.config.public_ip
 
     def start(self):
         super().start()
@@ -311,7 +590,7 @@ class MonitorTasklet(rift.tasklets.Tasklet):
         self.log.debug("Registering with dts")
         self.dts = rift.tasklets.DTS(
                 self.tasklet_info,
-                rwmonitor.get_schema(),
+                RwLaunchpadYang.get_schema(),
                 self.loop,
                 self.on_dts_state_change
                 )
@@ -320,30 +599,61 @@ class MonitorTasklet(rift.tasklets.Tasklet):
 
     def stop(self):
       try:
-         self.dts.deinit()
-      except Exception:
-         print("Caught Exception in RWMON stop:", sys.exc_info()[0])
-         raise
+          self.dts.deinit()
+      except Exception as e:
+          self.log.exception(e)
 
     @asyncio.coroutine
     def init(self):
         self.log.debug("creating cloud account handler")
         self.cloud_cfg_subscriber.register()
 
-        self.log.debug("creating NFVI poll period subscriber")
-        yield from  self.poll_period_subscriber.register()
+        self.log.debug("creating launchpad config subscriber")
+        yield from self.launchpad_cfg_subscriber.register()
 
-        self.log.debug("creating network service record subscriber")
-        yield from self.nsr_subscriber.register()
+        self.log.debug("creating NS instance config subscriber")
+        yield from  self.ns_instance_config_subscriber.register()
 
         self.log.debug("creating vnfr subscriber")
         yield from self.vnfr_subscriber.register()
 
-    def on_cloud_account_created(self, cloud_account):
-        pass
+        self.log.debug("creating create-alarm rpc handler")
+        yield from self.create_alarm_rpc.register()
 
-    def on_cloud_account_deleted(self, cloud_account):
-        pass
+        self.log.debug("creating destroy-alarm rpc handler")
+        yield from self.destroy_alarm_rpc.register()
+
+    @asyncio.coroutine
+    def on_public_ip(self, ip):
+        """Store the public IP of the launchpad
+
+        Arguments:
+            ip - a string containing the public IP address of the launchpad
+
+        """
+        try:
+            yield from self.webhooks.stop()
+            yield from self.webhooks.start(ip)
+            self.config.public_ip = ip
+
+        except Exception as e:
+            self.log.exception(e)
+
+    def on_ns_instance_config_update(self, config):
+        """Update configuration information
+
+        Arguments:
+            config - an NsInstanceConfig object
+
+        """
+        if config.nfvi_polling_period is not None:
+            self.config.polling_period = config.nfvi_polling_period
+
+    def on_cloud_account_create(self, account):
+        self.monitor.add_cloud_account(account.cal_account_msg)
+
+    def on_cloud_account_delete(self, account_name):
+        self.monitor.remove_cloud_account(account_name)
 
     @asyncio.coroutine
     def run(self):
@@ -383,47 +693,88 @@ class MonitorTasklet(rift.tasklets.Tasklet):
         if next_state is not None:
             self.dts.handle.set_state(next_state)
 
-    def start_ns_monitor(self, ns_instance_opdata_msg):
-        ns_instance_config_ref = ns_instance_opdata_msg.ns_instance_config_ref
-        nsr_cloud_account = ns_instance_opdata_msg.cloud_account
-
-        if nsr_cloud_account not in self.cloud_accounts:
-            self.log.error("cloud account %s has not been configured", nsr_cloud_account)
+    def on_vnfr_create(self, vnfr):
+        if not self.monitor.nfvi_metrics_available(vnfr.cloud_account):
+            msg = "NFVI metrics unavailable for {}"
+            self.log.warning(msg.format(vnfr.cloud_account))
             return
 
-        if nsr_cloud_account not in self.account_nfvi_monitors:
-            self.log.warning("No NFVI monitoring available for cloud account %s",
-                             nsr_cloud_account)
+        self.monitor.add_vnfr(vnfr)
+
+        # Create NFVI handlers for VDURs
+        for vdur in vnfr.vdur:
+            if vdur.vim_id is not None:
+                coro = self.register_vdur_nfvi_handler(vnfr.id, vdur.id)
+                self.loop.create_task(coro)
+
+    def on_vnfr_update(self, vnfr):
+        if not self.monitor.nfvi_metrics_available(vnfr.cloud_account):
+            msg = "NFVI metrics unavailable for {}"
+            self.log.warning(msg.format(vnfr.cloud_account))
             return
 
-        cloud_account = self.cloud_accounts[nsr_cloud_account]
-        nfvi_monitor = self.account_nfvi_monitors[nsr_cloud_account]
+        self.monitor.update_vnfr(vnfr)
 
-        try:
-            if ns_instance_config_ref not in self.monitors:
-                aggregator = NfviMetricsAggregator(
-                        tasklet=self,
-                        cloud_account=cloud_account,
-                        nfvi_monitor=nfvi_monitor,
-                        )
+        # TODO handle the removal of vdurs
+        for vdur in vnfr.vdur:
+            if vdur.vim_id is not None:
+                coro = self.register_vdur_nfvi_handler(vnfr, vdur)
+                self.loop.create_task(coro)
 
-                # Create a task to run the aggregator independently
-                coro = aggregator.publish_nfvi_metrics(ns_instance_config_ref)
-                task = self.loop.create_task(coro)
-                self.monitors[ns_instance_config_ref] = task
+    def on_vnfr_delete(self, vnfr):
+        self.monitor.remove_vnfr(vnfr.id)
 
-                msg = 'started monitoring NFVI metrics for {}'
-                self.log.info(msg.format(ns_instance_config_ref))
+        # Delete any NFVI handlers associated with the VNFR
+        for vdur in vnfr.vdur:
+            self.deregister_vdur_nfvi_handler(vdur.id)
 
-        except Exception as e:
-            self.log.exception(e)
-            raise
+    def on_retrieve_nfvi_metrics(self, vdur_id):
+        return self.monitor.retrieve_nfvi_metrics(vdur_id)
 
-    def stop_ns_monitor(self, ns_instance_config_ref):
-        if ns_instance_config_ref not in self.monitors:
-            msg = "Trying the destroy non-existent monitor for {}"
-            self.log.error(msg.format(ns_instance_config_ref))
+    @asyncio.coroutine
+    def register_vdur_nfvi_handler(self, vnfr, vdur):
+        if vdur.vim_id is None:
+            return
 
-        else:
-            self.monitors[ns_instance_config_ref].cancel()
-            del self.monitors[ns_instance_config_ref]
+        if vdur.operational_status != "running":
+            return
+
+        if vdur.id not in self.vdur_handlers:
+            publisher = VdurNfviMetricsPublisher(self, vnfr, vdur)
+            yield from publisher.register()
+            self.vdur_handlers[vdur.id] = publisher
+
+    def deregister_vdur_nfvi_handler(self, vdur_id):
+        if vdur_id in self.vdur_handlers:
+            handler = self.vdur_handlers[vdur_id]
+
+            del self.vdur_handlers[vdur_id]
+            handler.deregister()
+
+    @asyncio.coroutine
+    def on_create_alarm(self, account, vdur_id, alarm):
+        """Creates an alarm and returns an alarm ID
+
+        Arguments:
+            account - a name of the cloud account used to authenticate the
+                      creation of an alarm
+            vdur_id - the identifier of VDUR to create the alarm for
+            alarm   - a structure defining the alarm that should be created
+
+        Returns:
+            An identifier specific to the created alarm
+
+        """
+        return (yield from self.monitor.create_alarm(account, vdur_id, alarm))
+
+    @asyncio.coroutine
+    def on_destroy_alarm(self, account, alarm_id):
+        """Destroys an alarm with the specified identifier
+
+        Arguments:
+            account  - the name of the cloud account used to authenticate the
+                       destruction of the alarm
+            alarm_id - the identifier of the alarm to destroy
+
+        """
+        yield from self.monitor.destroy_alarm(account, alarm_id)

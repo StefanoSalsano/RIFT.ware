@@ -201,7 +201,8 @@ typedef struct rwdts_appconf_reg_s rwdts_appconf_reg_t;
 typedef enum {
   RWDTS_REG_INIT = 0,
   RWDTS_REG_SENT_TO_ROUTER,
-  RWDTS_REG_USABLE
+  RWDTS_REG_USABLE,
+  RWDTS_REG_DEL_PENDING
 } reg_state_t;
 
 typedef struct rwdts_pub_identifier_s rwdts_pub_identifier_t;
@@ -543,7 +544,8 @@ struct rwdts_member_registration_s {
   uint32_t cach_at_reg_ready:4;
   uint32_t pub_aft_reg_ready:4;
   uint32_t reg_ready_done:1;
-  uint32_t _pad:10;
+  uint32_t silent_retry:1; // try to overcome the commmit window
+  uint32_t _pad:9;
   uint64_t tx_serialnum;
   int      retry_count;
   int      pend_outstanding;

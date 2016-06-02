@@ -30,6 +30,7 @@ gi.require_version('RwDtsToyTaskletYang', '1.0')
 gi.require_version('RwMain', '1.0')
 gi.require_version('RwManifestYang', '1.0')
 gi.require_version('RwTasklet', '1.0')
+gi.require_version('RwTaskletPlugin', '1.0')
 gi.require_version('RwDtsYang', '1.0')
 gi.require_version('RwTypes', '1.0')
 
@@ -252,7 +253,7 @@ class TestRwDts(unittest.TestCase):
       Validate: either zero stats or stats object
       """
       try:
-        logger.debug("Test: JIRA-Benu-30 ")
+        logger.debug("Test: JIRA-B-30 ")
         xpath = ("C,/rw-dts-toy-tasklet:stats-data")
         self.pub.register(self, xpath, 
                           RwDts.Flag.PUBLISHER, self.pub.pub_reg_ready, 
@@ -352,7 +353,7 @@ class TestRwDts(unittest.TestCase):
          blk = xact.block_create()
          for i in range (1,10):
            qcorrid = i
-           status = blk.add_query(xpath, RwDts.QueryAction.READ, RwDts.Flag.STREAM, qcorrid, None)
+           status = blk.add_query(xpath, RwDts.QueryAction.READ, RwDts.XactFlag.STREAM, qcorrid, None)
            logger.debug("Added Block %d"%status)
   
          status = blk.execute(0, self.sub.read_query_response, self)
@@ -807,7 +808,7 @@ class Subscriber(object):
       logger.info("read_bigpayload_request .......%s"%xpath)
       xact = self.apih.query(xpath,
                           RwDts.QueryAction.READ,
-                          RwDts.Flag.TRACE,
+                          RwDts.XactFlag.TRACE,
                           self.read_bigpayload_response,
                           self)
 

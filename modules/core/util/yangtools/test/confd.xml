@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<root xmlns:conv="http://riftio.com/ns/core/util/yangtools/tests/conversion">
+<data xmlns:conv="http://riftio.com/ns/core/util/yangtools/tests/conversion">
 <conv:container-1 xmlns:conv="http://riftio.com/ns/core/util/yangtools/tests/conversion">
   <conv:container_1-1>
     <conv:leaf-1_1.1>leaf_1_1_1 - ONE</conv:leaf-1_1.1>
@@ -28,4 +28,4 @@
   <conv:enum_1-4>seventh</conv:enum_1-4>
   <conv:enum_1.5>seventh</conv:enum_1.5>
 </conv:container-1>
-</root>
+</data>

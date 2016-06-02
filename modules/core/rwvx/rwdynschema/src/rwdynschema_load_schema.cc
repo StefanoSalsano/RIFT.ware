@@ -67,7 +67,7 @@ void RWLoadSchema::collect_yang_modules(const fs::path& directory)
       continue;
     }
     auto current_module_name = current_file->path().stem().string();
-    auto it = std::find(exclusion_list.begin(), exclusion_list.end(), 
+    auto it = std::find(exclusion_list.begin(), exclusion_list.end(),
                         current_module_name);
     if (it != exclusion_list.end()) {
       continue;
@@ -75,7 +75,7 @@ void RWLoadSchema::collect_yang_modules(const fs::path& directory)
 
     dyn_module_details_t mod_details;
     mod_details.module_name = current_module_name;
-    // so_details_t is default initialized
+    // module_files_t is default initialized
     dyn_modules_vec_.emplace_back(mod_details);
   }
 }
@@ -88,7 +88,7 @@ void RWLoadSchema::collect_shared_objects(
   std::string rift_install_dir = rwyangutil::get_rift_install();
   const std::string& prefix_directory = rift_install_dir + "/usr";
 
-  if (!(fs::exists(prefix_directory) && 
+  if (!(fs::exists(prefix_directory) &&
         fs::is_directory(prefix_directory)))
   {
     auto log_str = "Prefix directory not found: " + prefix_directory;
@@ -99,7 +99,7 @@ void RWLoadSchema::collect_shared_objects(
   for (auto& mod_detail: dyn_modules_vec_)
   {
     const std::string& ymodule = mod_detail.module_name;
-  
+
     std::string so_path = rwyangutil::get_so_file_for_module(ymodule);
     if (!so_path.length()) {
       std::string log_str = "pkg-config failed: ";
@@ -114,13 +114,13 @@ void RWLoadSchema::collect_shared_objects(
       continue;
     }
 
-    mod_detail.so_details.so_file_name = so_path;
-    mod_detail.so_details.metainfo_file_name = rift_install_dir + "/usr/data/yang/" +
-      ymodule + META_INFO_FILE_PREFIX;
+    mod_detail.module_files.so_file_name = so_path;
+    mod_detail.module_files.metainfo_file_name = rift_install_dir + "/usr/data/yang/" +
+      ymodule + RW_SCHEMA_META_FILE_SUFFIX;
 
     // Mark the module for northbound
     if (northbound_schema_set.count(ymodule)) {
-      mod_detail.so_details.exported = 1; 
+      mod_detail.module_files.exported = 1;
     }
   }
 }
@@ -131,15 +131,15 @@ void RWLoadSchema::populate_rwdynschema_instance(
   reg->batch_size = 0;
 
   for (auto& mod_detail : dyn_modules_vec_) {
-    if (!mod_detail.so_details.so_file_name.length()) continue;
+    if (!mod_detail.module_files.so_file_name.length()) continue;
 
     rwdynschema_module_t mod_info = {
                   &mod_detail.module_name[0],
                   nullptr, // fxs file
-                  &mod_detail.so_details.so_file_name[0],
+                  &mod_detail.module_files.so_file_name[0],
                   nullptr, // yang file
-                  &mod_detail.so_details.metainfo_file_name[0],
-                  mod_detail.so_details.exported,
+                  &mod_detail.module_files.metainfo_file_name[0],
+                  mod_detail.module_files.exported,
     };
 
     rwdynschema_add_module_to_batch(reg, &mod_info);
@@ -148,26 +148,26 @@ void RWLoadSchema::populate_rwdynschema_instance(
 
 void rwdynschema_load_all_schema(void * context)
 {
-
   rwdynschema_dynamic_schema_registration_t * reg =
       reinterpret_cast<rwdynschema_dynamic_schema_registration_t *>(context);
 
   RW_ASSERT(reg);
 
-  bool const created_schema_directory = rw_create_runtime_schema_dir(reg->northbound_listing);
+  bool const created_schema_directory = rw_create_runtime_schema_dir(reg->northbound_listing,
+                                                                     reg->n_northbound_listing);
 
   while (!created_schema_directory) {
     // try again
     rwsched_dispatch_async_f(reg->dts_handle->tasklet,
-                             rwsched_dispatch_get_main_queue(reg->dts_handle->sched),
+                             reg->load_queue,
                              context,
                              rwdynschema_load_all_schema);
     return;
   }
 
-  // make sure the lates directory exists
+  // make sure the latest directory exists
   std::string rift_install_dir = rwyangutil::get_rift_install();
-  fs::path latest_version_directory(rift_install_dir + "/" + LATEST_VER_DIR);
+  fs::path latest_version_directory(rift_install_dir + "/" + RW_SCHEMA_VER_LATEST_PATH);
 
   RW_ASSERT_MESSAGE(fs::exists(latest_version_directory)
                     && fs::is_directory(latest_version_directory),
@@ -180,9 +180,14 @@ void rwdynschema_load_all_schema(void * context)
     yang_directory = latest_version_directory / "northbound" / "yang";
   }
 
-  std::set<std::string> const northbound_schema_set =
-    rwyangutil::read_northbound_schema_listing(rift_install_dir,
-                                               reg->northbound_listing);
+  std::vector<std::string> nb_listings;
+  for (int i = 0; i < reg->n_northbound_listing; ++i) {
+    nb_listings.emplace_back(reg->northbound_listing[i]);
+  }
+  std::set<std::string> const northbound_schema_set
+    = rwyangutil::read_northbound_schema_listing(
+        rift_install_dir,
+        nb_listings);
 
   RWLoadSchema load_schema {};
   load_schema.collect_yang_modules(yang_directory);
@@ -190,11 +195,13 @@ void rwdynschema_load_all_schema(void * context)
   load_schema.populate_rwdynschema_instance(reg);
 
   // set YUMA_MODPATH to something reasonable
-  auto yuma_modpath = rift_install_dir + "/usr/data/yang"
-          + ":" + ( latest_version_directory / "all" / "yang" ).string();
-
+  auto yuma_modpath = ( latest_version_directory / "all" / "yang" ).string()
+                    + ":" + rift_install_dir + "/usr/data/yang";
   size_t const overwrite_existing = 1;
   setenv("YUMA_MODPATH", yuma_modpath.c_str(), overwrite_existing);
+
+  std::string xsd_path = rift_install_dir + "/usr/data/xsd";
+  setenv("RIFT_XSD_PATH", xsd_path.c_str(), overwrite_existing);
 
   // push data through app callback
   RWMEMLOG_TIME_CODE((

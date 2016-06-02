@@ -53,11 +53,35 @@ extern "C" {
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <stdbool.h>
+#include <link.h>
 
 #include "google/coredumper.h"
 #include "linux_syscall_support.h"
 #include "linuxthreads.h"
 #include "thread_lister.h"
+
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+#include "python3.3m/Python.h"
+#include "python3.3m/frameobject.h"
+
+#if 0
+#ifdef NDEBUG
+#error Whoops this must be off in production
+#endif
+/* This is illegal in signal context, but it's darned handy when trying to figure stuff out */
+#include <stdio.h>              /* sprintf */
+#define DBG(x...) { sprintf(dbgbuf, x); write(STDOUT_FILENO, dbgbuf, strlen(dbgbuf)); }
+#else
+#define DBG(x...)
+#endif
+
+#ifndef TRUE
+#define TRUE (1)
+#endif
+#ifndef FALSE
+#define FALSE (0)
+#endif
 
 #ifndef CLONE_UNTRACED
 #define CLONE_UNTRACED 0x00800000
@@ -78,6 +102,10 @@ extern "C" {
     #define O_LARGEFILE 00100000 /* generic                                  */
   #endif
 #endif
+
+
+extern int g_debug_py_sz;
+extern void **g_debug_py_frame;
 
 /* Data structures found in x86-32/64, ARM, and MIPS core dumps on Linux;
  * similar data structures are defined in /usr/include/{linux,asm}/... but
@@ -405,9 +433,12 @@ static int PipeDone(void *f) {
 static ssize_t LimitWriter(void *f, const void *void_buf, size_t bytes) {
   struct WriterFds *fds = (struct WriterFds *)f;
   ssize_t rc;
-  if (bytes > fds->max_length) {
-    bytes = fds->max_length;
-  }
+  /* Assume that the mapping preservation logic limited our size
+     reasonably; merely truncating more or less always emits unusable
+     core files. */ 
+  //  if (bytes > fds->max_length) {
+  //  bytes = fds->max_length;
+  //  }
   rc = c_write(fds->out_fd, void_buf, bytes, &errno);
   if (rc > 0) {
     fds->max_length -= rc;
@@ -444,8 +475,8 @@ static ssize_t PipeWriter(void *f, const void *void_buf, size_t bytes) {
           l = fds->max_length;
         }
 
-	/* The following line is needed on MIPS. Not sure why. Compiler bug? */
-	errno = -1;
+        /* The following line is needed on MIPS. Not sure why. Compiler bug? */
+        errno = -1;
 
         NO_INTR(rc = sys_read(fds->compressed_fd, scratch, l));
         if (rc < 0) {
@@ -741,6 +772,146 @@ static Ehdr *SanitizeVDSO(Ehdr *ehdr, size_t start, size_t end) {
   return ehdr;
 }
 
+struct mapping {
+  size_t start_address, end_address, offset, write_size;
+  int flags;
+  int preserve;
+  int pruned;
+};
+
+static int AddrValidPreserve(void *addr, size_t addr_sz, int preserve, struct mapping *mappings, int num_mappings) {
+  if (!addr) {
+    return FALSE;
+  }
+  if (!addr_sz) {
+    addr_sz = 8;
+  }
+
+  int retval = FALSE;
+
+  /* Should probably do a bsearch, I think these are in order. */
+  int i;
+  for (i = 0; i < num_mappings; i++) {
+    if (mappings[i].write_size
+	&& mappings[i].start_address <= (uint64_t)addr
+	&& ((uint64_t)addr)+addr_sz <= mappings[i].end_address) {
+
+      if (preserve) {
+	mappings[i].preserve = TRUE;
+      }
+
+      retval = TRUE;
+      if (addr_sz <= 8 || !preserve) {
+	/* Objects larger than a word may be in multiple mappings, various overlap cases TBD */
+	break;
+      }
+    }
+  }
+
+  return retval;
+}
+
+
+/* This function will record important python debugging symbols in the
+ * global array so that we do not remove the python debugging symbols
+ * while truncating the core file.
+ */
+static int RwPyWalkAndMark(regs *regs, fpregs *fpregs, fpxregs *fpxregs,
+			   struct mapping *mappings, int num_mappings)
+{
+#define MAX_PYDEPTH (32)
+  char dbgbuf[128];		/* for DBG() */
+  unw_cursor_t cursor; unw_context_t uc;
+  unw_word_t off;
+  char name[1024];
+  int depth = 0;
+  int pyframes = 0;
+
+  if (!regs) {
+    unw_getcontext(&uc);
+  } else {
+    /* Synthesize a uc from the given registers */
+    memset(&uc, 0, sizeof(uc));
+
+    /* The unw_context_t is actually just ucontext_t from
+       sys/ucontext.h, the gregs is really just struct sigcontext, up
+       through err, anyway */
+    struct sigcontext *ctx = (struct sigcontext *)&uc.uc_mcontext.gregs;
+
+    ctx->r15 = regs->r15;
+    ctx->r14 = regs->r14;
+    ctx->r13 = regs->r13;
+    ctx->r12 = regs->r12;
+    ctx->r11 = regs->r11;
+    ctx->r10 = regs->r10;
+    ctx->r9 = regs->r9;
+    ctx->r8 = regs->r8;
+    ctx->rdi = regs->rdi;
+    ctx->rsi = regs->rsi;
+    ctx->rbp = regs->rbp;
+    ctx->rbx = regs->rbx;
+    ctx->rdx = regs->rdx;
+    ctx->rax = regs->rax;
+    ctx->rcx = regs->rcx;
+    ctx->rsp = regs->rsp;
+    ctx->rip = regs->rip;
+    ctx->eflags = regs->eflags;
+    ctx->cs = regs->cs;
+    ctx->gs = regs->gs;
+    ctx->fs = regs->fs;
+
+    // fregs?
+    // fxregs?
+  }
+  unw_init_local(&cursor, &uc);
+  /* Check for Python frames vaguely near the top of stack */
+  while (depth++ < 16 && unw_step(&cursor) > 0) {
+    if (unw_get_proc_name(&cursor, name, sizeof(name), &off) != 0) {
+      return;
+    }
+
+    DBG("unw step %d name='%s'\n", depth, name);
+
+    if (!strncmp(name,"PyEval_EvalFrameEx", 18)) {
+      unw_word_t bp;
+      PyFrameObject *frame;
+      int pydepth = 0;
+      unw_get_reg(&cursor, UNW_X86_64_RBP, &bp);
+
+      DBG("    py frame at bp=%p\n", (void*)bp);
+
+      for (pydepth = 0, frame = (PyFrameObject*)bp;
+	   frame && (pydepth < MAX_PYDEPTH);
+	   pydepth++, frame = frame->f_back) {
+	if (!AddrValidPreserve(frame, sizeof(PyFrameObject), TRUE, mappings, num_mappings)) {
+	  DBG("    py frame dud\n");
+	  break;
+	}
+	DBG("    py frame ok, marking frame and contents for pyframe=%d\n", pyframes);
+	AddrValidPreserve(frame->f_code, 0, TRUE, mappings, num_mappings);    // func/filename can be found through this PyCodeObject
+	AddrValidPreserve(frame->f_builtins, 0, TRUE, mappings, num_mappings);
+	AddrValidPreserve(frame->f_globals, 0, TRUE, mappings, num_mappings);
+	AddrValidPreserve(frame->f_locals, 0, TRUE, mappings, num_mappings);
+	AddrValidPreserve(frame->f_tstate, 0, TRUE, mappings, num_mappings);
+	AddrValidPreserve(frame->f_exc_type, 0, TRUE, mappings, num_mappings);
+	AddrValidPreserve(frame->f_exc_value, 0, TRUE, mappings, num_mappings);
+	AddrValidPreserve(frame->f_exc_traceback, 0, TRUE, mappings, num_mappings);
+	AddrValidPreserve(frame->f_trace, 0, TRUE, mappings, num_mappings);
+
+	pyframes++;
+      }
+      goto out;
+    }
+  }
+  
+ out:
+  return pyframes;
+}
+
+
+
+
+
 /* This function is invoked from a separate process. It has access to a
  * copy-on-write copy of the parents address space, and all crucial
  * information about the parent has been computed by the caller.
@@ -754,6 +925,8 @@ static int CreateElfCore(void *handle,
                          size_t prioritize_max_length, pid_t main_pid,
                          const struct CoredumperNote *extra_notes,
                          int extra_notes_count) {
+  char dbgbuf[128];             /* for DBG() */
+
   /* Count the number of mappings in "/proc/self/maps". We are guaranteed
    * that this number is not going to change while this function executes.
    */
@@ -785,10 +958,9 @@ static int CreateElfCore(void *handle,
     /* scope */ {
       static const int PF_ANONYMOUS = 0x80000000;
       static const int PF_MASK      = 0x00000007;
-      struct {
-        size_t start_address, end_address, offset, write_size;
-        int   flags;
-      } mappings[num_mappings];
+      struct mapping mappings[num_mappings];
+        int preserve;
+        int pruned;
       io.data = io.end = 0;
       NO_INTR(io.fd = sys_open("/proc/self/smaps", O_RDONLY, 0));
       if (io.fd >= 0) {
@@ -1081,34 +1253,232 @@ static int CreateElfCore(void *handle,
               }
             }
 
+            {
+               int i, pydepth;
+               for (pydepth = 0; pydepth< g_debug_py_sz; pydepth++) {
+                 if (g_debug_py_frame[pydepth]) {
+                   for (i = 0; i < num_mappings; i++) {
+                     if (mappings[i].start_address <= (uint64_t)g_debug_py_frame[pydepth] &&
+                         (uint64_t)g_debug_py_frame[pydepth] < mappings[i].end_address) {
+                       mappings[i].preserve = 1;
+                       break;
+                     }
+                   }
+                 }
+               }
+            }
+#if 0
+            /* Walk stacks and look for python interpreter function
+               calls so as to preserve interpreter state at each
+               interesting point. */
+            {
+              int t;
+              for (t = num_threads; t-- > 0; ) {
+                // x86_64 specific :(
+                uint64_t rsp = regs[t].rsp;
+                uint64_t rip = regs[t].rip;
+                
+                extern void PyEval_EvalFrameEx(void);
+                void *foo = &PyEval_EvalFrameEx;
+                if (rip) {
+                  void *val = (void *)rip;
+                  if (val && val >= foo && val < foo + 32000) { // approximate size of PyEval_EvalFrameEx from gdb disassembly
+                    DBG("thread %d rip location 0x%08Lx contains %p, within PyEval_EvalFrameEx@%p\n",
+                        t,
+                        rip,
+                        val,
+                        foo);
+                    goto nx_stk;
+                  }
+                }
+                int stkoff = 0;
+                for (stkoff=0; stkoff<327680; stkoff++) {
+                  uint64_t stkaddr = rsp + sizeof(void*) * stkoff;
+                  if ((!(stkaddr & 0x7))) {
+                    for (i = 0; i < num_mappings; i++) {
+                      if (mappings[i].write_size
+                          && mappings[i].start_address <= stkaddr
+                          && stkaddr+8 < mappings[i].end_address) {
+                        void *val = *((void **)stkaddr);
+                        if (val && val >= foo && val < foo + 32000) {
+                          DBG("thread %d stack rsp location 0x%08Lx offset [%d]=0x%Lx contains %p, within PyEval_EvalFrameEx@%p off +%d\n",
+                              t,
+                              rsp,
+                              stkoff,
+                              stkaddr,
+                              val,
+                              foo,
+                              (int)(((uint64_t)val) - (uint64_t)foo));
+                          /* And, now what?  We should look at the
+                             on-stack data beneath this (assumed)
+                             return addr for pointers to structs which
+                             contain the string which gdb shows as the
+                             Python function/file name.  There will be
+                             much heuristic guessing about what value
+                             on the stack that actually is.  The
+                             mapping with that struct and the mapping
+                             with that string should be marked
+                             preserve.  Hopefully that is enough */
+                          goto nx_stk;
+                        }
+                      }
+                    }
+                  }
+                nx_stk:
+                  ;
+                }
+              }
+            }
+
+#endif // #if0
+
+            /* Identify mappings to preserve */
+            for (i = 0; i < num_mappings; i++) {
+              int t;
+
+	      if (mappings[i].preserve) {
+		/* Already preserved, must have held python data or some such */
+		continue;
+	      }
+
+              if (i < 16) {
+                /* Heuristic low / early mappings preserved. */
+                DBG("preserve mapping[%4d]{start=0x%08Lx end=0x%08Lx}, early/low mapping\n",
+                    i,
+                    mappings[i].start_address,
+                    mappings[i].end_address);
+                mappings[i].preserve = 1;
+                continue;
+              }
+
+              /* This is dangerous, we are following a linked list
+                 throughout memory. There ought to be some sort of
+                 safe copy / mem addr checking.  Also we do this
+                 iteration on a per map basis, which is bad form
+                 perf-wise. */
+              extern struct r_debug _r_debug;
+              struct link_map *map;
+              for (map = _r_debug.r_map;
+                   map;
+                   map = map->l_next) {
+                /* BUG map entries which span two adjacent mappings are not handled */
+
+                if (mappings[i].start_address <= (uint64_t)map && (uint64_t)map < mappings[i].end_address) {
+                  /* This link_map entry is in this mapping.  So we must preserve this mapping. */
+                  DBG("preserve mapping[%4d]{start=0x%08Lx end=0x%08Lx}, contains link map entry %p\n",
+                      i,
+                      mappings[i].start_address,
+                      mappings[i].end_address,
+                      map);
+                  mappings[i].preserve = 1;
+                  break;
+                }
+                if (map->l_name && mappings[i].start_address <= (uint64_t)map->l_name && (uint64_t)map->l_name < mappings[i].end_address) {
+                  /* This link_map entry's name is in this mapping.  So we must preserve this mapping. */
+                  DBG("preserve mapping[%4d]{start=0x%08Lx end=0x%08Lx}, contains link map entry l_name %p\n",
+                      i,
+                      mappings[i].start_address,
+                      mappings[i].end_address,
+                      map->l_name);
+                  mappings[i].preserve = 1;
+                  break;
+                }
+              }
+              if (mappings[i].preserve) {
+                continue;
+              }
+
+              if ((mappings[i].start_address & 0xffffffff00000000) == 0x00007fff00000000) {
+                /* Heuristic stack-area mapping based on usual Linux
+                   proc layout.  Need way more robust logic here,
+                   growsdown plus probably other logic. */
+                DBG("preserve mapping[%4d]{start=0x%08Lx end=0x%08Lx}, has a stack-like 7fff00000000 addr\n",
+                    i,
+                    mappings[i].start_address,
+                    mappings[i].end_address);
+                mappings[i].preserve = 1;
+                continue;
+              }
+
+              /* Preserve mappings containing rsp (stack pointer) from various threads */
+              static int zz=0;
+              for (t = num_threads; t-- > 0; ) {
+                // x86_64 specific :(
+                uint64_t rsp = regs[t].rsp;
+
+                /* Also base pointer, contains stack */
+                uint64_t rbp=regs[t].BP;
+
+                /* Sometimes we're getting a ucontext with stack pointer that lost the upper bits, "borrow" them from base pointer. */
+                if (! (rsp & 0xffffffff00000000)) { 
+                  //                  regs[t].rsp |= (rbp & 0xffffffff00000000);
+                }
+
+                /* Sometimes rsp lacks prefix 32 bits, stack tends to be 00007fffxxxxxxxx, try in 32 bits for fun */
+                uint32_t rsp2 = (uint32_t)rsp;
+
+                if (!zz) {
+                  DBG("rsp[%d] = 0x%Lx rsp2=0x%x rbp=%Lx\n", t, rsp, rsp2, rbp);
+                }
+
+                if ((mappings[i].start_address <= (uint64_t)rsp && (uint64_t)rsp < mappings[i].end_address)
+                    || ((uint32_t)mappings[i].start_address <= rsp2 && rsp2 < (uint32_t)mappings[i].end_address)
+                    || (mappings[i].start_address <= (uint64_t)rbp && (uint64_t)rbp < mappings[i].end_address)) {
+                  /* This thread's rsp value is in this mapping.
+                     So we must preserve this mapping or we won't
+                     be able to unwind this stack. */
+                  DBG("preserve mapping[%4d]{start=0x%08Lx end=0x%08Lx}, contains rsp val 0x%Lx or maybe 0x%Lx\n",
+                      i,
+                      mappings[i].start_address,
+                      mappings[i].end_address,
+                      rsp,
+                      rsp2);
+                  mappings[i].preserve = 1;
+                  break;
+                }
+              }
+              zz=1;
+              if (mappings[i].preserve) {
+                continue;
+              }
+
+            }
+
             /* Loops while there isn't enough space for all the mappings. Each
              * iteration, the largest mapping will be reduced in size.
              */
-            for (;;) {
+            int jj;
+            for (jj=0; jj<num_mappings*500; jj++) {   // Well, this scales badly...
               int largest = -1;
               size_t total_core_size = offset + filesz + vdso_size;
               /* Get the largest and total size of the core dump.            */
               for (i = 0; i < num_mappings; i++) {
                 total_core_size += mappings[i].write_size;
-                if (largest < 0 ||
-                    mappings[largest].write_size < mappings[i].write_size) {
+                if (!mappings[i].preserve
+                    && (largest < 0 ||
+                        mappings[largest].write_size < mappings[i].write_size)) {
                   largest = i;
                 }
               }
+
               /* If the total size of all the maps is more than our file size,
                * we must reduce the size of the largest map.
                */
               if (largest >= 0 && total_core_size > prioritize_max_length) {
                 size_t space_needed = total_core_size - prioritize_max_length;
-                /* If there is no more space to free in the mappings, we must
-                 * stop. The size limit will be preserved since if the
-                 * prioritized limiting is enabled, the limited writer will be
-                 * used.
+                /* If there is no more space to free in the mappings,
+                 * we must stop. [ Not any more: ] The size limit will
+                 * be preserved since if the prioritized limiting is
+                 * enabled, the limited writer will be used.
                  */
                 if (mappings[largest].write_size > 0) {
                   if (space_needed > mappings[largest].write_size) {
-                    mappings[largest].write_size = 0;
-                    continue;
+                    mappings[largest].write_size = mappings[largest].write_size * 3 / 4;
+                    if (mappings[largest].write_size < 16384) {
+                      mappings[largest].write_size = 0;
+                    }
+                    mappings[largest].pruned = 1;
+                    continue;   /* next jj */
                   } else {
                     mappings[largest].write_size -= space_needed;
                   }
@@ -1124,6 +1494,15 @@ static int CreateElfCore(void *handle,
             phdr.p_offset = offset;
             phdr.p_vaddr  = mappings[i].start_address;
             phdr.p_memsz  = filesz;
+
+            if (mappings[i].write_size < filesz && mappings[i].pruned) {
+              DBG("shortened mapping[%4d]{start=0x%08Lx end=0x%08Lx write_size=%Lu full sz %u}\n",
+                  i,
+                  mappings[i].start_address,
+                  mappings[i].end_address,
+                  (uint64_t)mappings[i].write_size,
+                  (unsigned int)filesz);
+            }
 
             filesz        = mappings[i].write_size;
             phdr.p_filesz = filesz;
@@ -1277,7 +1656,8 @@ static int CreateElfCore(void *handle,
           if (mappings[i].write_size > 0 &&
               writer(handle, (void *)mappings[i].start_address,
                      mappings[i].write_size) != mappings[i].write_size) {
-            goto done;
+              DBG("writer fail 1?\n");
+              goto done;
           }
         }
         if (vdso.address) {
@@ -1291,6 +1671,7 @@ static int CreateElfCore(void *handle,
                */
             } else if (writer(handle, (void*)p->p_vaddr, p->p_filesz) !=
                        p->p_filesz) {
+              DBG("writer fail 2?\n");
               goto done;
             }
           }

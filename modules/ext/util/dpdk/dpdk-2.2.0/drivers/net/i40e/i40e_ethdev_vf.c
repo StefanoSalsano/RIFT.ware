@@ -1920,10 +1920,10 @@ i40evf_dev_link_update(struct rte_eth_dev *dev,
 	if (vf->version_major == I40E_DPDK_VERSION_MAJOR)
 		i40evf_get_link_status(dev, &new_link);
 	else {
-		/* Always assume it's up, for Linux driver PF host */
-		new_link.link_duplex = ETH_LINK_AUTONEG_DUPLEX;
-		new_link.link_speed  = ETH_LINK_SPEED_10000;
-		new_link.link_status = 1;
+          /* Linux driver PF host */
+          new_link.link_duplex = ETH_LINK_AUTONEG_DUPLEX;
+          new_link.link_speed  = ETH_LINK_SPEED_40G;
+          new_link.link_status = 1;
 	}
 	i40evf_dev_atomic_write_link_status(dev, &new_link);
 

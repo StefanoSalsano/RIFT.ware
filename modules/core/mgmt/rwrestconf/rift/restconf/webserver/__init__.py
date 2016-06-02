@@ -11,13 +11,14 @@ from .configuration import (
 
 from .http_handler import (
     HttpHandler,
+    ReadOnlyHandler,
 )
 
 from .logout_handler import (
     LogoutHandler,
 )
 
-from .netconf_wrapper import (
+from .connection_manager import (
     ConnectionManager,
 )
 

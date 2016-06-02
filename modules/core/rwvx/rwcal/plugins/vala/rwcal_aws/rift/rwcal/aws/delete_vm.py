@@ -7,10 +7,16 @@
 import rift.rwcal.aws as aws_drv
 import logging
 import argparse
+import rwlogger
 import sys, os, time
 
-#logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('rwcal.aws.delete_vm')
+logging.basicConfig(level=logging.DEBUG)
+
+logger = logging.getLogger()
+rwlog_handler = rwlogger.RwLogger(category="rw-cal-log",
+                                  subcategory="aws",)
+logger.addHandler(rwlog_handler)
+#logger.setLevel(logging.DEBUG)
 
         
 def cleanup_vm(drv,argument):

@@ -16,19 +16,39 @@ import uuid
 import xmlrunner
 
 import gi
+gi.require_version('NsrYang', '1.0')
 gi.require_version('RwcalYang', '1.0')
+gi.require_version('RwmonYang', '1.0')
 gi.require_version('RwVnfrYang', '1.0')
 gi.require_version('RwTypes', '1.0')
+gi.require_version('RwMon', '1.0')
 
 from gi.repository import (
-        RwcalYang,
-        RwVnfrYang,
-        RwTypes,
-        VnfrYang,
         NsrYang,
+        RwTypes,
+        RwVnfrYang,
+        RwcalYang,
+        RwmonYang,
+        VnfrYang,
         )
 
-from rift.tasklets.rwmonitor.core import (RecordManager, NfviMetricsAggregator)
+from rift.tasklets.rwmonitor.core import (
+        AccountAlreadyRegisteredError,
+        AccountInUseError,
+        InstanceConfiguration,
+        Monitor,
+        NfviInterface,
+        NfviMetricsPluginManager,
+        PluginFactory,
+        PluginNotSupportedError,
+        PluginUnavailableError,
+        UnknownAccountError,
+        VdurNfviMetrics,
+        )
+import rw_peas
+
+
+logger = logging.getLogger(__name__)
 
 
 class MockTasklet(object):
@@ -58,364 +78,466 @@ def make_vdur(id=str(uuid.uuid4()), vim_id=str(uuid.uuid4())):
     return vdur
 
 
-class MockNfviMonitorPlugin(object):
-    def __init__(self):
-        self.metrics = dict()
-
-    def nfvi_metrics(self, account, vim_id):
-        key = (account, vim_id)
-
-        if key in self.metrics:
-            return RwTypes.RwStatus.SUCCESS, self.metrics[key]
-
-        metrics = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur_NfviMetrics()
-        status = RwTypes.RwStatus.FAILURE
-
-        return status, metrics
-
-
-class TestAggregator(unittest.TestCase):
-    """
-    Ths NfviMetricsAggregator queries NFVI metrics from VIM components and
-    aggregates the data are the VNF and NS levels. This test case validates
-    that the aggregation happens as expected.
-    """
-
+class TestNfviInterface(unittest.TestCase):
     def setUp(self):
-        self.nfvi_monitor = MockNfviMonitorPlugin()
-        self.cloud_account = RwcalYang.CloudAccount(
-                    name="test-account",
-                    account_type="mock",
-                    ),
+        self.loop = asyncio.get_event_loop()
 
-        # Create a simple record hierarchy to represent the system
-        self.records = RecordManager()
+        self.account = RwcalYang.CloudAccount(
+                name='test-cloud-account',
+                account_type="mock",
+                )
 
-        nsr = make_nsr('test-nsr')
+        # Define the VDUR to avoid division by zero
+        self.vdur = make_vdur()
+        self.vdur.vm_flavor.vcpu_count = 4
+        self.vdur.vm_flavor.memory_mb = 100
+        self.vdur.vm_flavor.storage_gb = 2
+        self.vdur.vim_id = 'test-vim-id'
 
-        vnfr_1 = make_vnfr('test-vnfr-1')
-        vnfr_2 = make_vnfr('test-vnfr-1')
+        self.plugin_manager = NfviMetricsPluginManager(logger)
+        self.plugin_manager.register(self.account, "mock")
 
-        vdur_1 = make_vdur(vim_id='test-vdur-1')
-        vdur_1.vm_flavor.vcpu_count = 4
-        vdur_1.vm_flavor.memory_mb = 16e3
-        vdur_1.vm_flavor.storage_gb = 1e3
+        self.metrics_manager = NfviInterface(
+                self.loop,
+                logger,
+                self.plugin_manager,
+                )
 
-        vdur_2 = make_vdur(vim_id='test-vdur-2')
-        vdur_2.vm_flavor.vcpu_count = 4
-        vdur_2.vm_flavor.memory_mb = 16e3
-        vdur_2.vm_flavor.storage_gb = 1e3
-
-        vdur_3 = make_vdur(vim_id='test-vdur-3')
-        vdur_3.vm_flavor.vcpu_count = 8
-        vdur_3.vm_flavor.memory_mb = 32e3
-        vdur_3.vm_flavor.storage_gb = 1e3
-
-        nsr.constituent_vnfr_ref.append(vnfr_1.id)
-        nsr.constituent_vnfr_ref.append(vnfr_2.id)
-
-        vnfr_1.vdur.append(vdur_1)
-        vnfr_1.vdur.append(vdur_2)
-        vnfr_2.vdur.append(vdur_3)
-
-        self.records.add_nsr(nsr)
-        self.records.add_vnfr(vnfr_1)
-        self.records.add_vnfr(vnfr_2)
-
-        # Populate the NFVI monitor with static data
-        vdu_metrics_1 = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur_NfviMetrics()
-        vdu_metrics_1.vcpu.utilization = 10.0
-        vdu_metrics_1.memory.used = 2e9
-        vdu_metrics_1.storage.used = 1e10
-        vdu_metrics_1.network.incoming.bytes = 1e5
-        vdu_metrics_1.network.incoming.packets = 1e3
-        vdu_metrics_1.network.incoming.byte_rate = 1e6
-        vdu_metrics_1.network.incoming.packet_rate = 1e4
-        vdu_metrics_1.network.outgoing.bytes = 1e5
-        vdu_metrics_1.network.outgoing.packets = 1e3
-        vdu_metrics_1.network.outgoing.byte_rate = 1e6
-        vdu_metrics_1.network.outgoing.packet_rate = 1e4
-
-        vdu_metrics_2 = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur_NfviMetrics()
-        vdu_metrics_2.vcpu.utilization = 10.0
-        vdu_metrics_2.memory.used = 2e9
-        vdu_metrics_2.storage.used = 1e10
-        vdu_metrics_2.network.incoming.bytes = 1e5
-        vdu_metrics_2.network.incoming.packets = 1e3
-        vdu_metrics_2.network.incoming.byte_rate = 1e6
-        vdu_metrics_2.network.incoming.packet_rate = 1e4
-        vdu_metrics_2.network.outgoing.bytes = 1e5
-        vdu_metrics_2.network.outgoing.packets = 1e3
-        vdu_metrics_2.network.outgoing.byte_rate = 1e6
-        vdu_metrics_2.network.outgoing.packet_rate = 1e4
-
-        vdu_metrics_3 = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur_NfviMetrics()
-        vdu_metrics_3.vcpu.utilization = 20.0
-        vdu_metrics_3.memory.used = 28e9
-        vdu_metrics_3.storage.used = 1e10
-        vdu_metrics_3.network.incoming.bytes = 1e5
-        vdu_metrics_3.network.incoming.packets = 1e3
-        vdu_metrics_3.network.incoming.byte_rate = 1e6
-        vdu_metrics_3.network.incoming.packet_rate = 1e4
-        vdu_metrics_3.network.outgoing.bytes = 1e5
-        vdu_metrics_3.network.outgoing.packets = 1e3
-        vdu_metrics_3.network.outgoing.byte_rate = 1e6
-        vdu_metrics_3.network.outgoing.packet_rate = 1e4
-
-        metrics = self.nfvi_monitor.metrics
-        metrics[(self.cloud_account, vdur_1.vim_id)] = vdu_metrics_1
-        metrics[(self.cloud_account, vdur_2.vim_id)] = vdu_metrics_2
-        metrics[(self.cloud_account, vdur_3.vim_id)] = vdu_metrics_3
-
-    def test_aggregation(self):
+    def test_add_remove_vdur(self):
         """
-        The hierarchy of the network service tested here is,
-
-            test-nsr
-            |-- test-vnfr-1
-            |   |-- test-vdur-1
-            |   \-- test-vdur-2
-            \-- test-vnfr-2
-                \-- test-vdur-3
-
+        This test simply tests that a VDUR is correctly registered and
+        unregistered from an NfviInterface.
         """
-        loop = asyncio.get_event_loop()
+        # Register with the manager
+        self.metrics_manager.register_vdur(self.account, self.vdur)
+        self.assertIn(self.vdur.id, self.metrics_manager._metrics)
 
-        tasklet = MockTasklet(
-                dts=None,
-                loop=loop,
-                log=logging.getLogger(),
-                records=self.records,
+        # Unregister from the manager
+        self.metrics_manager.unregister_vdur(self.vdur.id)
+        self.assertNotIn(self.vdur.id, self.metrics_manager._metrics)
+
+
+class TestVdurNfviMetrics(unittest.TestCase):
+    def setUp(self):
+        # Reduce the sample interval so that test run quickly
+        VdurNfviMetrics.SAMPLE_INTERVAL = 0.1
+
+        # Create a mock plugin to define the metrics retrieved. The plugin will
+        # return a VCPU utilization of 0.5.
+        class MockPlugin(object):
+            def __init__(self):
+                self.metrics = RwmonYang.NfviMetrics()
+
+            def nfvi_metrics(self, account, vim_id):
+                self.metrics.vcpu.utilization = 0.5
+                return self.metrics
+
+        self.loop = asyncio.get_event_loop()
+
+        self.account = RwcalYang.CloudAccount(
+                name='test-cloud-account',
+                account_type="mock",
                 )
 
-        # Create an instance of the NfviMetricsAggregator using a mock cloud
-        # account and NFVI monitor
-        aggregator = NfviMetricsAggregator(
-                tasklet=tasklet,
-                cloud_account=self.cloud_account,
-                nfvi_monitor=self.nfvi_monitor,
+        # Define the VDUR to avoid division by zero
+        vdur = make_vdur()
+        vdur.vm_flavor.vcpu_count = 4
+        vdur.vm_flavor.memory_mb = 100
+        vdur.vm_flavor.storage_gb = 2
+        vdur.vim_id = 'test-vim-id'
+
+        # Instantiate the mock plugin
+        self.plugins = NfviMetricsPluginManager(logger)
+        self.plugins.register(self.account, "mock")
+
+        self.plugin = self.plugins.plugin(self.account.name)
+        self.plugin.set_impl(MockPlugin())
+
+        self.manager = NfviInterface(self.loop, logger, self.plugins)
+        self.metrics = VdurNfviMetrics(
+                self.manager,
+                self.account,
+                self.plugin,
+                vdur,
                 )
 
-        # Run the event loop to retrieve the metrics from the aggregator
-        task = loop.create_task(aggregator.request_ns_metrics('test-nsr'))
-        loop.run_until_complete(task)
+    def test_retrieval(self):
+        metrics_a = None
+        metrics_b = None
 
-        ns_metrics = task.result()
-
-        # Validate the metrics returned by the aggregator
-        self.assertEqual(ns_metrics.vm.active_vm, 3)
-        self.assertEqual(ns_metrics.vm.inactive_vm, 0)
-
-        self.assertEqual(ns_metrics.vcpu.total, 16)
-        self.assertEqual(ns_metrics.vcpu.utilization, 15.0)
-
-        self.assertEqual(ns_metrics.memory.used, 32e9)
-        self.assertEqual(ns_metrics.memory.total, 64e9)
-        self.assertEqual(ns_metrics.memory.utilization, 50.0)
-
-        self.assertEqual(ns_metrics.storage.used, 30e9)
-        self.assertEqual(ns_metrics.storage.total, 3e12)
-        self.assertEqual(ns_metrics.storage.utilization, 1.0)
-
-        self.assertEqual(ns_metrics.network.incoming.bytes, 3e5)
-        self.assertEqual(ns_metrics.network.incoming.packets, 3e3)
-        self.assertEqual(ns_metrics.network.incoming.byte_rate, 3e6)
-        self.assertEqual(ns_metrics.network.incoming.packet_rate, 3e4)
-
-        self.assertEqual(ns_metrics.network.outgoing.bytes, 3e5)
-        self.assertEqual(ns_metrics.network.outgoing.packets, 3e3)
-        self.assertEqual(ns_metrics.network.outgoing.byte_rate, 3e6)
-        self.assertEqual(ns_metrics.network.outgoing.packet_rate, 3e4)
-
-    def test_publish_nfvi_metrics(self):
-        loop = asyncio.get_event_loop()
-
-        class RegistrationHandle(object):
-            """
-            Normally the aggregator uses the DTS RegistrationHandle to publish
-            the NFVI metrics. This placeholder class is used to record the
-            first NFVI metric data published by the aggregator, and then
-            removes the NSR so that the aggregator terminates.
-
-            """
-
-            def __init__(self, test):
-                self.xpath = None
-                self.data = None
-                self.test = test
-
-            def deregister(self):
-                pass
-
-            def create_element(self, xpath, data):
-                pass
-
-            def update_element(self, xpath, data):
-                # Record the results
-                self.xpath = xpath
-                self.data = data
-
-                # Removing the NSR from the record manager will cause the
-                # coroutine responsible for publishing the NFVI metric data to
-                # terminate
-                self.test.records.remove_nsr('test-nsr')
-
-            @asyncio.coroutine
-            def delete_element(self, xpath):
-                assert xpath == self.xpath
-
-        class Dts(object):
-            """
-            Placeholder Dts class that is used solely for the purpose of
-            returning a RegistrationHandle to the aggregator.
-
-            """
-            def __init__(self, test):
-                self.handle = RegistrationHandle(test)
-
-            @asyncio.coroutine
-            def register(self, *args, **kwargs):
-                return self.handle
-
-        dts = Dts(self)
-
-        tasklet = MockTasklet(
-                dts=dts,
-                loop=loop,
-                log=logging.getLogger(),
-                records=self.records,
-                )
-
-        # Create an instance of the NfviMetricsAggregator using a mock cloud
-        # account and NFVI monitor
-        aggregator = NfviMetricsAggregator(
-                tasklet=tasklet,
-                cloud_account=self.cloud_account,
-                nfvi_monitor=self.nfvi_monitor,
-                )
-
-        # Create a coroutine wrapper to timeout the test if it takes too long.
+        # Define a coroutine that can be added to the asyncio event loop
         @asyncio.coroutine
-        def timeout_wrapper():
-            coro = aggregator.publish_nfvi_metrics('test-nsr')
-            yield from asyncio.wait_for(coro, timeout=1)
+        def update():
+            # Output from the metrics calls with be written to these nonlocal
+            # variables
+            nonlocal metrics_a
+            nonlocal metrics_b
 
-        loop.run_until_complete(timeout_wrapper())
+            # This first call will return the current metrics values and
+            # schedule a request to the NFVI to retrieve metrics from the data
+            # source. All metrics will be zero at this point.
+            metrics_a = self.metrics.retrieve()
 
-        # Verify the data published by the aggregator
-        self.assertEqual(dts.handle.data.vm.active_vm, 3)
-        self.assertEqual(dts.handle.data.vm.inactive_vm, 0)
+            # Wait for the scheduled update to take effect
+            yield from asyncio.sleep(0.2, loop=self.loop)
 
-        self.assertEqual(dts.handle.data.vcpu.total, 16)
-        self.assertEqual(dts.handle.data.vcpu.utilization, 15.0)
+            # Retrieve the updated metrics
+            metrics_b = self.metrics.retrieve()
 
-        self.assertEqual(dts.handle.data.memory.used, 32e9)
-        self.assertEqual(dts.handle.data.memory.total, 64e9)
-        self.assertEqual(dts.handle.data.memory.utilization, 50.0)
+        self.loop.run_until_complete(update())
 
-        self.assertEqual(dts.handle.data.storage.used, 30e9)
-        self.assertEqual(dts.handle.data.storage.total, 3e12)
-        self.assertEqual(dts.handle.data.storage.utilization, 1.0)
-
-        self.assertEqual(dts.handle.data.network.incoming.bytes, 3e5)
-        self.assertEqual(dts.handle.data.network.incoming.packets, 3e3)
-        self.assertEqual(dts.handle.data.network.incoming.byte_rate, 3e6)
-        self.assertEqual(dts.handle.data.network.incoming.packet_rate, 3e4)
-
-        self.assertEqual(dts.handle.data.network.outgoing.bytes, 3e5)
-        self.assertEqual(dts.handle.data.network.outgoing.packets, 3e3)
-        self.assertEqual(dts.handle.data.network.outgoing.byte_rate, 3e6)
-        self.assertEqual(dts.handle.data.network.outgoing.packet_rate, 3e4)
+        # Check that the metrics returned indicate that the plugin was queried
+        # and returned the appropriate value, i.e. 0.5 utilization
+        self.assertEqual(0.0, metrics_a.vcpu.utilization)
+        self.assertEqual(0.5, metrics_b.vcpu.utilization)
 
 
-class TestRecordManager(unittest.TestCase):
+class TestNfviMetricsPluginManager(unittest.TestCase):
     def setUp(self):
-        pass
+        self.plugins = NfviMetricsPluginManager(logger)
+        self.account = RwcalYang.CloudAccount(
+                name='test-cloud-account',
+                account_type="mock",
+                )
 
-    def test_add_and_remove_nsr(self):
-        records = RecordManager()
+    def test_mock_plugin(self):
+        # Register an account name with a mock plugin. If successful, the
+        # plugin manager should return a non-None object.
+        self.plugins.register(self.account, 'mock')
+        self.assertIsNotNone(self.plugins.plugin(self.account.name))
 
-        # Create an empty NSR and add it to the record manager
-        nsr = make_nsr()
-        records.add_nsr(nsr)
+        # Now unregister the cloud account
+        self.plugins.unregister(self.account.name)
 
-        # The record manager should ignore this NSR because it contains no
-        # VNFRs
-        self.assertFalse(records.has_nsr(nsr.ns_instance_config_ref))
+        # Trying to retrieve a plugin for a cloud account that has not been
+        # registered with the manager is expected to raise an exception.
+        with self.assertRaises(KeyError):
+            self.plugins.plugin(self.account.name)
+
+    def test_multiple_registration(self):
+        self.plugins.register(self.account, 'mock')
+
+        # Attempting to register the account with another type of plugin will
+        # also cause an exception to be raised.
+        with self.assertRaises(AccountAlreadyRegisteredError):
+            self.plugins.register(self.account, 'mock')
+
+        # Attempting to register the account with 'openstack' again with cause
+        # an exception to be raised.
+        with self.assertRaises(AccountAlreadyRegisteredError):
+            self.plugins.register(self.account, 'openstack')
+
+    def test_unsupported_plugin(self):
+        # If an attempt is made to register a cloud account with an unknown
+        # type of plugin, a PluginNotSupportedError should be raised.
+        with self.assertRaises(PluginNotSupportedError):
+            self.plugins.register(self.account, 'unsupported-plugin')
+
+    def test_anavailable_plugin(self):
+        # Create a factory that always raises PluginUnavailableError
+        class UnavailablePluginFactory(PluginFactory):
+            PLUGIN_NAME = "unavailable-plugin"
+
+            def create(self, cloud_account):
+                raise PluginUnavailableError()
+
+        # Register the factory
+        self.plugins.register_plugin_factory(UnavailablePluginFactory())
+
+        # Ensure that the correct exception propagates when the cloud account
+        # is registered.
+        with self.assertRaises(PluginUnavailableError):
+            self.plugins.register(self.account, "unavailable-plugin")
 
 
-        # Now add a VNFR (with a VDUR) to the NSR and, once again, add it to
-        # the record manager
-        vdur = make_vdur()
-        vnfr = make_vnfr()
+class TestMonitor(unittest.TestCase):
+    """
+    The Monitor class is the implementation that is called by the
+    MonitorTasklet. It provides the unified interface for controlling and
+    querying the monitoring functionality.
+    """
+
+    def setUp(self):
+        # Reduce the sample interval so that test run quickly
+        VdurNfviMetrics.SAMPLE_INTERVAL = 0.1
+
+        self.loop = asyncio.get_event_loop()
+        self.config = InstanceConfiguration()
+        self.monitor = Monitor(self.loop, logger, self.config)
+
+        self.account = RwcalYang.CloudAccount(
+                name='test-cloud-account',
+                account_type="mock",
+                )
+
+    def test_instance_config(self):
+        """
+        Configuration data for an instance is pass to the Monitor when it is
+        created. The data is passed in the InstanceConfiguration object. This
+        object is typically shared between the tasklet and the monitor, and
+        provides a way for the tasklet to update the configuration of the
+        monitor.
+        """
+        self.assertTrue(hasattr(self.monitor._config, "polling_period"))
+        self.assertTrue(hasattr(self.monitor._config, "min_cache_lifetime"))
+        self.assertTrue(hasattr(self.monitor._config, "max_polling_frequency"))
+
+    def test_monitor_cloud_accounts(self):
+        """
+        This test checks the cloud accounts are correctly added and deleted,
+        and that the correct exceptions are raised on duplicate adds or
+        deletes.
+
+        """
+        # Add the cloud account to the monitor
+        self.monitor.add_cloud_account(self.account)
+        self.assertIn(self.account.name, self.monitor._cloud_accounts)
+
+        # Add the cloud account to the monitor again
+        with self.assertRaises(AccountAlreadyRegisteredError):
+            self.monitor.add_cloud_account(self.account)
+
+        # Delete the cloud account
+        self.monitor.remove_cloud_account(self.account.name)
+        self.assertNotIn(self.account.name, self.monitor._cloud_accounts)
+
+        # Delete the cloud account again
+        with self.assertRaises(UnknownAccountError):
+            self.monitor.remove_cloud_account(self.account.name)
+
+    def test_monitor_cloud_accounts_illegal_removal(self):
+        """
+        A cloud account may not be removed while there are plugins or records
+        that are associated with it. Attempting to delete such a cloud account
+        will raise an exception.
+        """
+        # Add the cloud account to the monitor
+        self.monitor.add_cloud_account(self.account)
+
+        # Create a VNFR associated with the cloud account
+        vnfr = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr()
+        vnfr.cloud_account = self.account.name
+        vnfr.id = 'test-vnfr-id'
+
+        # Add a VDUR to the VNFR
+        vdur = vnfr.vdur.add()
+        vdur.vim_id = 'test-vim-id-1'
+        vdur.id = 'test-vdur-id-1'
+
+        # Now add the VNFR to the monitor
+        self.monitor.add_vnfr(vnfr)
+
+        # Check that the monitor contains the VNFR, VDUR, and metrics
+        self.assertTrue(self.monitor.is_registered_vdur(vdur.id))
+        self.assertTrue(self.monitor.is_registered_vnfr(vnfr.id))
+        self.assertEqual(1, len(self.monitor.metrics))
+
+        # Deleting the cloud account now should raise an exception because the
+        # VNFR and VDUR are associated with the cloud account.
+        with self.assertRaises(AccountInUseError):
+            self.monitor.remove_cloud_account(self.account.name)
+
+        # Now remove the VNFR from the monitor
+        self.monitor.remove_vnfr(vnfr.id)
+        self.assertFalse(self.monitor.is_registered_vdur(vdur.id))
+        self.assertFalse(self.monitor.is_registered_vnfr(vnfr.id))
+        self.assertEqual(0, len(self.monitor.metrics))
+
+        # Safely delete the cloud account
+        self.monitor.remove_cloud_account(self.account.name)
+
+    def test_vdur_registration(self):
+        """
+        When a VDUR is registered with the Monitor it is registered with the
+        VdurNfviMetricsManager. Thus it is assigned a plugin that can be used
+        to retrieve the NFVI metrics associated with the VDU.
+        """
+        # Define the VDUR to be registered
+        vdur = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur()
+        vdur.vm_flavor.vcpu_count = 4
+        vdur.vm_flavor.memory_mb = 100
+        vdur.vm_flavor.storage_gb = 2
+        vdur.vim_id = 'test-vim-id'
+        vdur.id = 'test-vdur-id'
+
+        # Before registering the VDUR, the cloud account needs to be added to
+        # the monitor.
+        self.monitor.add_cloud_account(self.account)
+
+        # Register the VDUR with the monitor
+        self.monitor.add_vdur(self.account, vdur)
+        self.assertTrue(self.monitor.is_registered_vdur(vdur.id))
+
+        # Unregister the VDUR
+        self.monitor.remove_vdur(vdur.id)
+        self.assertFalse(self.monitor.is_registered_vdur(vdur.id))
+
+    def test_vnfr_add_update_delete(self):
+        """
+        When a VNFR is added to the Monitor a record is created of the
+        relationship between the VNFR and any VDURs that it contains. Each VDUR
+        is then registered with the VdurNfviMetricsManager. A VNFR can also be
+        updated so that it contains more of less VDURs. Any VDURs that are
+        added to the VNFR are registered with the NdurNfviMetricsManager, and
+        any that are removed are unregistered. When a VNFR is deleted, all of
+        the VDURs contained in the VNFR are unregistered.
+        """
+        # Define the VDUR to be registered
+        vdur = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur()
+        vdur.vim_id = 'test-vim-id-1'
+        vdur.id = 'test-vdur-id-1'
+
+        vnfr = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr()
+        vnfr.cloud_account = self.account.name
+        vnfr.id = 'test-vnfr-id'
 
         vnfr.vdur.append(vdur)
 
-        nsr.constituent_vnfr_ref.append(vnfr.id)
-        records.add_nsr(nsr)
+        self.monitor.add_cloud_account(self.account)
 
-        # The mapping from the NSR to the VNFR has been added, but the
-        # relationship between the VNFR and the VDUR is not added.
-        self.assertTrue(records.has_nsr(nsr.ns_instance_config_ref))
-        self.assertFalse(records.has_vnfr(vnfr.id))
+        # Add the VNFR to the monitor. This will also register VDURs contained
+        # in the VNFR with the monitor.
+        self.monitor.add_vnfr(vnfr)
+        self.assertTrue(self.monitor.is_registered_vdur('test-vdur-id-1'))
 
+        # Add another VDUR to the VNFR and update the monitor. Both VDURs
+        # should now be registered
+        vdur = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur()
+        vdur.vim_id = 'test-vim-id-2'
+        vdur.id = 'test-vdur-id-2'
 
-        # Try adding the same NSR again. The record manager should be
-        # unchanged.
-        records.add_nsr(nsr)
-
-        self.assertEqual(1, len(records._nsr_to_vnfrs.keys()))
-        self.assertEqual(1, len(records._nsr_to_vnfrs.values()))
-
-
-        # Now remove the NSR and check that the internal structures have been
-        # properly cleaned up.
-        records.remove_nsr(nsr.ns_instance_config_ref)
-
-        self.assertFalse(records.has_nsr(nsr.ns_instance_config_ref))
-        self.assertFalse(records.has_vnfr(vnfr.id))
-
-    def test_add_and_remove_vnfr(self):
-        records = RecordManager()
-
-        # Create an empty VNFR and add it to the record manager
-        vnfr = make_vnfr()
-        records.add_vnfr(vnfr)
-
-        # The record manager should ignore this VNFR because it contains no
-        # VDURs
-        self.assertFalse(records.has_vnfr(vnfr.id))
-
-
-        # Now add a VDUR to the VNFR and, once again, add it to the record
-        # manager.
-        vdur = make_vdur()
         vnfr.vdur.append(vdur)
 
-        records.add_vnfr(vnfr)
+        self.monitor.update_vnfr(vnfr)
+        self.assertTrue(self.monitor.is_registered_vdur('test-vdur-id-1'))
+        self.assertTrue(self.monitor.is_registered_vdur('test-vdur-id-2'))
 
-        # The mapping from the VNFR to the VDUR has been added, and the VDUR
-        # has been added the internal dictionary for mapping a vim_id to a
-        # VDUR.
-        self.assertTrue(records.has_vnfr(vnfr.id))
-        self.assertIn(vdur.vim_id, records._vdurs)
+        # Delete the VNFR from the monitor. This should remove the VNFR and all
+        # of the associated VDURs from the monitor.
+        self.monitor.remove_vnfr(vnfr.id)
+        self.assertFalse(self.monitor.is_registered_vnfr('test-vnfr-id'))
+        self.assertFalse(self.monitor.is_registered_vdur('test-vdur-id-1'))
+        self.assertFalse(self.monitor.is_registered_vdur('test-vdur-id-2'))
 
+        with self.assertRaises(KeyError):
+            self.monitor.retrieve_nfvi_metrics('test-vdur-id-1')
 
-        # Try adding the same VNFR again. The record manager should be
-        # unchanged.
-        records.add_vnfr(vnfr)
+        with self.assertRaises(KeyError):
+            self.monitor.retrieve_nfvi_metrics('test-vdur-id-2')
 
-        self.assertEqual(1, len(records._vnfr_to_vdurs.keys()))
-        self.assertEqual(1, len(records._vnfr_to_vdurs.values()))
-        self.assertEqual(1, len(records._vdurs))
+    def test_complete(self):
+        """
+        This test simulates the addition of a VNFR to the Monitor (along with
+        updates), and retrieves NFVI metrics from the VDUR. The VNFR is then
+        deleted, which should result in a cleanup of all the data in the
+        Monitor.
+        """
+        # Create the VNFR
+        vnfr = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr()
+        vnfr.cloud_account = self.account.name
+        vnfr.id = 'test-vnfr-id'
 
+        # Create 2 VDURs
+        vdur = vnfr.vdur.add()
+        vdur.id = 'test-vdur-id-1'
+        vdur.vim_id = 'test-vim-id-1'
+        vdur.vm_flavor.vcpu_count = 4
+        vdur.vm_flavor.memory_mb = 100
+        vdur.vm_flavor.storage_gb = 2
 
-        # Now remove the VNFR and check that the internal structures have been
-        # properly cleaned up.
-        records.remove_vnfr(vnfr.id)
+        vdur = vnfr.vdur.add()
+        vdur.id = 'test-vdur-id-2'
+        vdur.vim_id = 'test-vim-id-2'
+        vdur.vm_flavor.vcpu_count = 4
+        vdur.vm_flavor.memory_mb = 100
+        vdur.vm_flavor.storage_gb = 2
 
-        self.assertFalse(records.has_vnfr(vnfr.id))
-        self.assertNotIn(vdur.vim_id, records._vdurs)
+        class MockPlugin(object):
+            def __init__(self):
+                self._metrics = dict()
+                self._metrics['test-vim-id-1'] = RwmonYang.NfviMetrics()
+                self._metrics['test-vim-id-2'] = RwmonYang.NfviMetrics()
+
+            def nfvi_metrics(self, account, vim_id):
+                metrics = self._metrics[vim_id]
+
+                if vim_id == 'test-vim-id-1':
+                    metrics.memory.used += 1000
+                else:
+                    metrics.memory.used += 2000
+
+                return metrics
+
+        class MockFactory(PluginFactory):
+            PLUGIN_NAME = "mock"
+
+            def create(self, cloud_account):
+                plugin = rw_peas.PeasPlugin("rwmon_mock", 'RwMon-1.0')
+                impl = plugin.get_interface("Monitoring")
+                impl.set_impl(MockPlugin())
+                return impl
+
+        # Modify the mock plugin factory
+        self.monitor._nfvi_plugins._factories["mock"] = MockFactory()
+
+        # Add the cloud account the monitor
+        self.monitor.add_cloud_account(self.account)
+
+        # Add the VNFR to the monitor.
+        self.monitor.add_vnfr(vnfr)
+
+        @asyncio.coroutine
+        def process():
+            # call #1 (time = 0.00s)
+            # The metrics for these VDURs have not been populated yet so a
+            # default metrics object (all zeros) is returned, and a request is
+            # scheduled with the data source to retrieve the metrics.
+            metrics1 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-1')
+            metrics2 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-2')
+
+            self.assertEqual(0, metrics1.memory.used)
+            self.assertEqual(0, metrics2.memory.used)
+
+            yield from asyncio.sleep(0.05, loop=self.loop)
+
+            # call #2 (time = 0.05s)
+            # The metrics have been populated with data from the data source
+            # due to the request made during call #1.
+            metrics1 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-1')
+            metrics2 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-2')
+
+            self.assertEqual(1000, metrics1.memory.used)
+            self.assertEqual(2000, metrics2.memory.used)
+
+            yield from asyncio.sleep(0.45, loop=self.loop)
+
+            # call #3 (time = 0.50s)
+            # This call exceeds 0.1s (the sample interval of the plugin)
+            # from when the data was retrieved. The cached metrics are
+            # immediately returned, but a request is made to the data source to
+            # refresh these metrics.
+            metrics1 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-1')
+            metrics2 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-2')
+
+            self.assertEqual(1000, metrics1.memory.used)
+            self.assertEqual(2000, metrics2.memory.used)
+
+            yield from asyncio.sleep(0.5, loop=self.loop)
+
+            # call #4 (time = 1.00s)
+            # The metrics retrieved differ from those in call #3 because the
+            # cached metrics have been updated.
+            metrics1 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-1')
+            metrics2 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-2')
+
+            self.assertEqual(2000, metrics1.memory.used)
+            self.assertEqual(4000, metrics2.memory.used)
+
+        @asyncio.coroutine
+        def timeout(coro, duration):
+            yield from asyncio.wait_for(coro, timeout=duration)
+
+        self.loop.run_until_complete(timeout(process(), 2))
 
 
 def main(argv=sys.argv[1:]):
@@ -428,6 +550,9 @@ def main(argv=sys.argv[1:]):
 
     # Set the global logging level
     logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.ERROR)
+
+    # Set the logger in this test to use a null handler
+    logger.addHandler(logging.NullHandler())
 
     # The unittest framework requires a program name, so use the name of this
     # file instead (we do not want to have to pass a fake program name to main

@@ -6,23 +6,14 @@
 # 
 
 import asyncio
-import base64
-from enum import Enum
 import lxml
 
 import ncclient.asyncio_manager
 
-NCCLIENT_WORKER_COUNT = 5
-
-class Result(Enum):
-    OK = 1
-    Upgrade_In_Progress = 2
-    Upgrade_Performed = 3
-    Operation_Failed = 4
-    Rpc_Error = 5
-    Data_Exists = 6
-    Unknown_Error = 7
-    Commit_Failed = 8
+from ..util import (
+    Result,
+    NetconfOperation,
+)
 
 def _check_exception(error_text):
     if ("session close" in error_text) or ("Not connected" in error_text) or ("Capabilities changed" in error_text) or ("capabilities-changed" in error_text) or ("Not connected to NETCONF server" in error_text):
@@ -32,7 +23,6 @@ def _check_exception(error_text):
     return result
 
 def _check_netconf_response(netconf_response, commit_response):
-
     if netconf_response.ok:
         netconf_result = Result.OK
         if "data-exists" in netconf_response.xml:
@@ -50,64 +40,10 @@ def _check_netconf_response(netconf_response, commit_response):
     else:
         return netconf_result
 
-class ConnectionManager(object):
-    def __init__(self, log, loop, netconf_ip, netconf_port):
-        self._log = log
-        self._loop = loop
-        self._netconf_ip = netconf_ip 
-        self._netconf_port = netconf_port
-        self._connections = {}
-
-    def is_logged_in(self, encoded_username_and_password):
-        return encoded_username_and_password in self._connections.keys()
-
-    def logout(self, encoded_username_and_password):
-        if not self.is_logged_in(encoded_username_and_password):
-            raise ValueError("User is not logged in")
-        
-        auth_decoded = base64.decodestring(bytes(encoded_username_and_password, "utf-8")).decode("utf-8")
-        username, password = auth_decoded.split(":",2)
-        self._log.info("logging out user: %s", username)
-
-        del self._connections[encoded_username_and_password]
-
-    @asyncio.coroutine
-    def get_connection(self, encoded_username_and_password):
-        auth_decoded = base64.decodestring(bytes(encoded_username_and_password, "utf-8")).decode("utf-8")
-        username, password = auth_decoded.split(":",2)
-
-        if encoded_username_and_password in self._connections.keys():
-            index, connections = self._connections[encoded_username_and_password][:]
-            ret = connections[index]
-            index += 1
-
-            if index >= len(connections):
-                index = 0
-
-            self._connections[encoded_username_and_password] = (index, connections)
-                
-            return ret
-
-        wrappers = list()
-        
-        self._log.debug("starting new connection with confd for %s" % username)
-        for _ in range(NCCLIENT_WORKER_COUNT):
-            new_wrapper = NetconfWrapper(self._log, self._loop, self._netconf_ip, self._netconf_port, username, password)
-            yield from new_wrapper.connect()
-
-            wrappers.append(new_wrapper)
-
-        self._connections[encoded_username_and_password] = (0, wrappers)
-
-        return wrappers[0]
-
-    @asyncio.coroutine
-    def reconnect(self, encoded_username_and_password):
-        for itr in range(NCCLIENT_WORKER_COUNT):
-            yield from self._connections[encoded_username_and_password][1][itr].connect()
-
 class NetconfWrapper(object):
-
+    '''
+    This class handles the communication with the NETCONF server.
+    '''
     def __init__(self, logger, loop, netconf_ip, netconf_port, username, password):
         self._log = logger
         self._loop = loop
@@ -115,6 +51,15 @@ class NetconfWrapper(object):
         self._netconf_port = netconf_port
         self._username = username
         self._password = password
+
+        self._operation_map = {
+            NetconfOperation.DELETE : self.delete,
+            NetconfOperation.GET : self.get,
+            NetconfOperation.GET_CONFIG : self.get_config,
+            NetconfOperation.CREATE : self.post,
+            NetconfOperation.REPLACE : self.put,
+            NetconfOperation.RPC : self.rpc,
+        }
 
     def set_notification_callback(self, notification_cbk):
         """Sets the notification callback for the Netconf session.
@@ -153,7 +98,11 @@ class NetconfWrapper(object):
                 yield from asyncio.sleep(2, loop=self._loop)
 
     @asyncio.coroutine
-    def get(self, xml):
+    def get(self, url, xml):
+        # strip off <data> tags
+        root = lxml.etree.fromstring(xml)
+        xml = lxml.etree.tostring(root[0]).decode("utf-8") 
+
         if not self._netconf.connected:
             yield from self.connect()
 
@@ -176,7 +125,11 @@ class NetconfWrapper(object):
         return result, response
 
     @asyncio.coroutine
-    def get_config(self, xml):
+    def get_config(self, url, xml):
+        # strip off <data> tags
+        root = lxml.etree.fromstring(xml)
+        xml = lxml.etree.tostring(root[0]).decode("utf-8") 
+
         if not self._netconf.connected:
             yield from self.connect()
 
@@ -201,7 +154,7 @@ class NetconfWrapper(object):
         return result, response
 
     @asyncio.coroutine
-    def delete(self, xml):
+    def delete(self, url, xml):
         if not self._netconf.connected:
             yield from self.connect()
 
@@ -211,17 +164,12 @@ class NetconfWrapper(object):
 
         self._log.debug("netconf delete response: %s", netconf_response.xml)
 
-        # ATTN: uncomment when candidate is the target
-        commit_response = None
-        #commit_response = yield from self._netconf.commit()
-        #self._log.debug("netconf delete commit netconf_response: %s", commit_response.xml)
-
         result = _check_netconf_response(netconf_response, None)
 
         return result, netconf_response.xml
 
     @asyncio.coroutine
-    def put(self, xml):
+    def put(self, url, xml):
         if not self._netconf.connected:
             yield from self.connect()
 
@@ -230,39 +178,39 @@ class NetconfWrapper(object):
             config=xml)
         self._log.debug("netconf put response: %s", netconf_response.xml)
 
-        # ATTN: uncomment when candidate is the target
-        commit_response = None
-        #commit_response = yield from self._netconf.commit()
-        #self._log.debug("netconf put commit netconf_response: %s", commit_response.xml)
-
         result = _check_netconf_response(netconf_response, None)
 
         return result, netconf_response.xml
             
     @asyncio.coroutine
-    def post(self, xml, is_operation):
+    def rpc(self, url, xml):
         if not self._netconf.connected:
             yield from self.connect()
 
-
-        if is_operation:
-            netconf_response = yield from self._netconf.dispatch(lxml.etree.fromstring(xml))
-            self._log.debug("netconf post-rpc response: %s", netconf_response.xml)
-            commit_response = None
-        else:
-            netconf_response = yield from self._netconf.edit_config(
-                target="running",
-                config=xml)
-        # ATTN: uncomment when candidate is the target
-        commit_response = None
-        #commit_response = yield from self._netconf.commit()
-        #self._log.debug("netconf post-config commit netconf_response: %s", commit_response.xml)
-
-        
+        netconf_response = yield from self._netconf.dispatch(lxml.etree.fromstring(xml))
+        self._log.debug("netconf post-rpc response: %s", netconf_response.xml)
 
         result = _check_netconf_response(netconf_response, None)
 
         return result, netconf_response.xml
+
+    @asyncio.coroutine
+    def post(self, url, xml):
+        if not self._netconf.connected:
+            yield from self.connect()
+
+        netconf_response = yield from self._netconf.edit_config(
+            target="running",
+            config=xml)
+
+        result = _check_netconf_response(netconf_response, None)
+
+        return result, netconf_response.xml
+
+    @asyncio.coroutine
+    def execute(self, operation, url, xml):
+        functor = self._operation_map[operation]
+        return functor(url, xml)
 
     @asyncio.coroutine
     def create_subscription(self, stream, filter, start_time, stop_time):

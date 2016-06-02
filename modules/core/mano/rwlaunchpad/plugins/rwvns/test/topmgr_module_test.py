@@ -76,7 +76,7 @@ class TopMgrTestCase(rift.test.dts.AbstractDTSTest):
         nw_xpath = "C,/nd:network"
         self.log.info("Configuring l2 network: %s",nwtop)
         yield from dts.query_create(nw_xpath,
-                                    rwdts.Flag.ADVISE,
+                                    rwdts.XactFlag.ADVISE,
                                     nwtop)
 
     @asyncio.coroutine
@@ -90,7 +90,7 @@ class TopMgrTestCase(rift.test.dts.AbstractDTSTest):
         nw_xpath = "C,/nd:network"
         self.log.info("Configuring provider network: %s",nwtop)
         yield from dts.query_create(nw_xpath,
-                                    rwdts.Flag.ADVISE,
+                                    rwdts.XactFlag.ADVISE,
                                     nwtop)
 
     @asyncio.coroutine
@@ -107,7 +107,7 @@ class TopMgrTestCase(rift.test.dts.AbstractDTSTest):
         nw_xpath = "C,/nd:network"
         self.log.info("Configuring VM network: %s",nwtop)
         yield from dts.query_create(nw_xpath,
-                                    rwdts.Flag.ADVISE,
+                                    rwdts.XactFlag.ADVISE,
                                     nwtop)
 
     @asyncio.coroutine
@@ -128,7 +128,7 @@ class TopMgrTestCase(rift.test.dts.AbstractDTSTest):
         nw_xpath = "C,/nd:network"
         self.log.info("Configuring SFC network: %s",nwtop)
         yield from dts.query_create(nw_xpath,
-                                    rwdts.Flag.ADVISE,
+                                    rwdts.XactFlag.ADVISE,
                                     nwtop)
 
 

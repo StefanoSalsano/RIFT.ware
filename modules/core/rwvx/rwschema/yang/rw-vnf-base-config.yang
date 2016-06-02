@@ -47,6 +47,20 @@ module rw-vnf-base-config
   augment /manobase:vnf-config/manobase:vnf {
     description
       "Container for VNF base configuration";
+    container fabric {
+      list ip {
+        rwpb:msg-new ConfigFabricIp;
+        key "subnet";
+        leaf subnet{
+          description "IP address assigned to the interface";
+          type rwt:ip-prefix-non-canonical;
+          rwpb:field-string-max 46;
+          rwpb:field-inline true;
+          rwpb:field-c-type "rw_ip_prefix_t";
+        }
+      }
+    }
+    
     list network-context {
       description "Network Context configuration";
       rwpb:msg-new ConfigNetworkContext;
@@ -627,13 +641,17 @@ module rw-vnf-base-config
           container minimum-active {
             leaf links {
               description "Minimum number of active links to bring up the bundle";
-              type uint32;
+              type uint32{
+                range "1..16";
+              }
             }
           }
           container maximum-active {
             leaf links {
               description "Maximum number of active links in the bundle";
-              type uint32;
+              type uint32{
+                range "1..16";
+              }
             }
           }
           leaf load-balance {

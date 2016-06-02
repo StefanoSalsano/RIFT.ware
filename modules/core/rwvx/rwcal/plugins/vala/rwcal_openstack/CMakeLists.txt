@@ -17,6 +17,7 @@ rift_python_install_tree(
   FILES
     rift/rwcal/openstack/__init__.py
     rift/rwcal/openstack/openstack_drv.py
+    rift/rwcal/openstack/openstack_utils.py
     rift/rwcal/openstack/prepare_vm.py
   PYTHON3_ONLY
   COMPONENT ${PKG_LONG_NAME})

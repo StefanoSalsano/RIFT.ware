@@ -6,6 +6,7 @@
  *
  */
 
+#include "rw_confd_annotate.hpp"
 #include "confd_xml.h"
 
 
@@ -288,11 +289,66 @@ rw_status_t get_confd_case ( rw_yang::XMLNode *root,
 rw_status_t get_element (XMLNode *node, confd_cs_node *cs_node,
                          confd_value_t *value)
 {
-  std::string value_string = node->get_text_value();
-  int ret = confd_str2val (cs_node->info.type, value_string.c_str(), value);
-  RW_ASSERT(CONFD_OK == ret)
-  return RW_STATUS_SUCCESS;
+  YangNode *yang_node = node->get_yang_node();
+  RW_ASSERT (yang_node);
 
+  if (RW_YANG_LEAF_TYPE_EMPTY == yang_node->get_type()->get_leaf_type()) {
+
+    value->type = C_XMLTAG;
+
+  } else if (RW_YANG_STMT_TYPE_LEAF_LIST == yang_node->get_stmt_type()) {
+
+    std::string y_name = node->get_local_name();
+    std::string ns = node->get_name_space();
+
+    XMLNode *sibling = node->get_next_sibling(y_name, ns);
+    if (yang_node->get_type()->get_leaf_type() != RW_YANG_LEAF_TYPE_STRING) { 
+
+      std::string all_values = node->get_text_value();
+      while (nullptr != sibling) {
+        all_values += " ";
+        all_values += sibling->get_text_value();
+        sibling = sibling->get_next_sibling(y_name, ns);
+      }
+
+      int ret = confd_str2val (cs_node->info.type, all_values.c_str(), value);
+      if (CONFD_OK != ret) {
+        return RW_STATUS_FAILURE;
+      }
+
+    } else {
+
+       std::vector<std::string> values;
+       values.push_back(node->get_text_value());
+
+       while (nullptr != sibling) {
+         values.push_back (sibling->get_text_value());
+         sibling = sibling->get_next_sibling (y_name, ns);
+       }
+
+       value->type = C_LIST;
+       value->val.list.ptr =(confd_value_t *) malloc (sizeof (confd_value_t) *  values.size());
+       value->val.list.size = values.size();
+
+       size_t i = 0;
+       for (auto iter:values) {
+         CONFD_SET_CBUF(&value->val.list.ptr[i], strdup(iter.c_str()), iter.length());
+         i++;
+       }
+
+       RW_ASSERT(i == values.size());
+    }
+
+  } else {
+
+    std::string value_string = node->get_text_value();
+    int ret = confd_str2val (cs_node->info.type, value_string.c_str(), value);
+    if (CONFD_OK != ret) {
+      return RW_STATUS_FAILURE;
+    }
+  }
+
+  return RW_STATUS_SUCCESS;
 }
 
 
@@ -585,21 +641,18 @@ ConfdKeypathTraverser::~ConfdKeypathTraverser()
 }
 
 
-
 rw_xml_next_action_t ConfdKeypathTraverser::build_next()
 {
-
-  if (C_NOEXISTS == keypath_->v[curr_idx_][curr_key_].type) {
-    curr_key_ = 0;
-    curr_idx_ --;
-  }
-
   if (curr_idx_ < 0 ) {
     // The last node has been traversed, indicate a stop
-    std::string log("Index not valid: ");
-    log += std::to_string(curr_idx_);
-    RW_TRAVERSER_LOG_ERROR (log);
     return RW_XML_ACTION_TERMINATE;
+  }
+
+  if (C_NOEXISTS == keypath_->v[curr_idx_][curr_key_].type) {
+    // No more keys, go to next node.
+    curr_key_ = 0;
+    curr_idx_ --;
+    return RW_XML_ACTION_NEXT;
   }
 
   char value[CONFD_MAX_STRING_LENGTH];
@@ -608,15 +661,19 @@ rw_xml_next_action_t ConfdKeypathTraverser::build_next()
   confd_value_t *val = &keypath_->v[curr_idx_][curr_key_];
 
   if (C_XMLTAG == val->type) {
+
     tag = confd_hash2str (val->val.xmltag.tag);
     ns = confd_hash2str (val->val.xmltag.ns);
     curr_idx_ --;
+
   } else {
-    if (curr_idx_ == keypath_->len - 1) {
+    // Key values
+
+    if (curr_idx_ == keypath_->len - 1) {  // Cannot be the top node.
       std::string log("Parent does not exist : ");
       log += std::to_string(curr_idx_);
       RW_TRAVERSER_LOG_ERROR (log);
-      return RW_XML_ACTION_TERMINATE;
+      return RW_XML_ACTION_ABORT;
     }
     struct confd_cs_node *node = confd_find_cs_node (keypath_,
                                                      keypath_->len - curr_idx_ - 1);
@@ -705,81 +762,34 @@ rw_xml_next_action_t ConfdTLVBuilder::append_child (XMLNode *node)
     RW_BUILDER_LOG_ERROR (log);
     return RW_XML_ACTION_ABORT;
   }
-  // Find the childs confd schema node
 
-  struct confd_cs_node *cs_node =
-      confd_find_cs_node_child(current_schema_node_, val.tag);
-  RW_ASSERT (cs_node);
+  // Build the leaf-list values only for the first node.
 
-  // set the value
-  if (RW_YANG_LEAF_TYPE_EMPTY == yang_node->get_type()->get_leaf_type()) {
-    val.v.type = C_XMLTAG;
-    values_.push_back (val);
-  }
-  
-  
-  else if (RW_YANG_STMT_TYPE_LEAF_LIST == yang_node->get_stmt_type()) {
-    
+  if ( RW_YANG_STMT_TYPE_LEAF_LIST == yang_node->get_stmt_type() ) {
+
     std::string y_name = node->get_local_name();
     std::string ns = node->get_name_space();
-    
-    // Build the leaf-list values only for the first node.
+
     if ( nullptr != node->get_previous_sibling(y_name, ns)) {
       // The First leaf-list node already visited, just return
       return RW_XML_ACTION_NEXT;
     }
-
-    XMLNode *sibling = node->get_next_sibling(y_name, ns);
-    
-    if (yang_node->get_type()->get_leaf_type() != RW_YANG_LEAF_TYPE_STRING) {
-
-       std::string all_values = node->get_text_value();
-       while (nullptr != sibling) {
-         all_values += " ";
-         all_values += sibling->get_text_value();
-         sibling = sibling->get_next_sibling(y_name, ns);
-       }
-       //Set value
-       int ret = confd_str2val (cs_node->info.type, all_values.c_str(), &val.v);
-       if (CONFD_OK != ret) {
-         std::string log("Failed in string to value conversion.");
-         log += all_values;
-         RW_BUILDER_LOG_ERROR (log);
-         return RW_XML_ACTION_ABORT;
-       }
-       values_.push_back (val);       
-    } else {      
-      std::vector <std::string> values;
-      values.push_back(node->get_text_value());
-
-      while (nullptr != sibling) {
-        values.push_back (sibling->get_text_value());
-        sibling = sibling->get_next_sibling (y_name,ns);
-      }
-      val.v.type = C_LIST;
-      val.v.val.list.ptr =(confd_value_t *) malloc (sizeof (confd_value_t) *  values.size());
-      val.v.val.list.size = values.size();
-
-      size_t i = 0;
-      for (auto iter:values) {        
-        CONFD_SET_CBUF(&val.v.val.list.ptr[i], strdup(iter.c_str()), iter.length());
-        i++;
-      }
-      RW_ASSERT(i == values.size());
-      values_.push_back (val);
-    }
-  } else {
-    std::string value_string = node->get_text_value();
-    int ret = confd_str2val (cs_node->info.type, value_string.c_str(), &val.v);
-    if (CONFD_OK != ret) {
-      std::string log("Failed in string to value conversion.");
-      log += value_string;
-      RW_BUILDER_LOG_ERROR (log);
-      return RW_XML_ACTION_ABORT;
-    }
-    values_.push_back (val);
   }
 
+  // Find the childs confd schema node
+  struct confd_cs_node *cs_node =
+      confd_find_cs_node_child(current_schema_node_, val.tag);
+  RW_ASSERT (cs_node);
+
+  status = get_element (node, cs_node, &val.v);
+
+  if (status != RW_STATUS_SUCCESS) {
+    std::string log("Failed xml to confd conversion.");
+    log += node->get_text_value();
+    RW_BUILDER_LOG_ERROR (log);
+    return RW_XML_ACTION_ABORT;
+  }
+  values_.push_back (val);
   return RW_XML_ACTION_NEXT;
 }
 

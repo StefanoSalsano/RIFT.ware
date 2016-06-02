@@ -84,7 +84,7 @@ if [ $# -ne 1 ]; then
   exit 1
 fi
 
-if [[ "$1" != "Debug_FILES" &&"$1" != "Debug" && "$1" != "Debug_Coverage" && $1 != "Release" ]]; then
+if [[ "$1" != "Debug_FILES" && "$1" != "Debug" && "$1" != "Debug_Coverage" && $1 != "Release" ]]; then
   echo "ERROR: Build type should be in the set (Debug, Debug_Coverage, Release)."
   exit 1
 fi

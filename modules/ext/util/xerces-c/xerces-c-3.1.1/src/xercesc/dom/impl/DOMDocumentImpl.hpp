@@ -401,7 +401,8 @@ getPooledNString(const XMLCh *in, XMLSize_t n)
   pspe = &fNameTable[inHash];
   while (*pspe != 0)
   {
-    if (XMLString::equalsN((*pspe)->fString, in, n))
+    // XERCESC-1978 patch
+    if (XMLString::equalsN((*pspe)->fString, in, n) && XMLString::stringLen((*pspe)->fString)<=n)
       return (*pspe)->fString;
     pspe = &((*pspe)->fNext);
   }

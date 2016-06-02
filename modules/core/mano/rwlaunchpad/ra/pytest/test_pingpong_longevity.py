@@ -15,19 +15,6 @@ gi.require_version('RwMcYang', '1.0')
 from gi.repository import RwMcYang
 
 @pytest.fixture(scope='module')
-def launchpad_session(request, mgmt_session, mgmt_domain_name, session_type):
-    launchpad_host = mgmt_session.proxy(RwMcYang).get("/mgmt-domain/domain[name='%s']/launchpad/ip_address" % mgmt_domain_name)
-
-    if session_type == 'netconf':
-        launchpad_session = rift.auto.session.NetconfSession(host=launchpad_host)
-    elif session_type == 'restconf':
-        launchpad_session = rift.auto.session.RestconfSession(host=launchpad_host)
-
-    launchpad_session.connect()
-    rift.vcs.vcs.wait_until_system_started(launchpad_session)
-    return launchpad_session
-
-@pytest.fixture(scope='module')
 def rwnsr_proxy(launchpad_session):
     return launchpad_session.proxy(RwNsrYang)
 

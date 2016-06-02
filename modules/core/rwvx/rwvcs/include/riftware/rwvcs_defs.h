@@ -106,7 +106,9 @@ typedef RWPB_T_MSG(RwVcs_input_Vstop)     vcs_rpc_stop_input;
 typedef RWPB_T_MSG(RwVcs_output_Vstart)   vcs_rpc_start_output;
 typedef RWPB_T_MSG(RwVcs_input_Vstart)    vcs_rpc_start_input;
 typedef RWPB_T_MSG(RwVcs_output_Vcrash)   vcs_rpc_crash_output;
-typedef RWPB_T_MSG(RwVcs_input_Vcrash)     vcs_rpc_crash_input;
+typedef RWPB_T_MSG(RwVcs_input_Vcrash)    vcs_rpc_crash_input;
+typedef RWPB_T_MSG(RwVcs_output_Vsnap)    vcs_rpc_snap_output;
+typedef RWPB_T_MSG(RwVcs_input_Vsnap)     vcs_rpc_snap_input;
 
 #define vcs_rpc_stop_output__init(x)      RWPB_F_MSG_INIT(RwVcs_output_Vstop, x)
 #define vcs_rpc_stop_input__init(x)       RWPB_F_MSG_INIT(RwVcs_input_Vstop, x)

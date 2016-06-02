@@ -12,3 +12,4 @@ scripts/env/ppid_monitor.sh
 bin/pip-install
 bin/pip3-install
 bin/pip3-kilo-install
+scripts/cloud/UpdateHostsFile

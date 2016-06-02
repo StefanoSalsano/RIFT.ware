@@ -502,9 +502,11 @@ class RwTLVAIterator
     RW_ASSERT(parent);
     RW_ASSERT(position_ < length_);
 
-    return parent->search_child_confd_tags(root_[position_].tag.ns,
-                                           root_[position_].tag.tag);
+    return rw_confd_search_child_tags (parent,
+                                       root_[position_].tag.ns,
+                                       root_[position_].tag.tag);
   }
+
   /*!
    * The value held in this iterator. 
    */
@@ -657,7 +659,7 @@ class RwHKeyPathIterator
     }
     
     xml_tag *tag = &h_key_path_->v[depth_][0].val.xmltag;
-    return (parent->search_child_confd_tags( tag->ns, tag->tag));
+    return ( rw_confd_search_child_tags (parent, tag->ns, tag->tag));
   }
 
   /*!

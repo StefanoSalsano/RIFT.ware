@@ -428,7 +428,7 @@ static rw_status_t do_vstart_component_lookup(
 
   comp_xact = rwdts_api_xact_create(
       rwmain->dts,
-      (trace ? RWDTS_FLAG_TRACE : RWDTS_FLAG_NONE),
+      (trace ? RWDTS_XACT_FLAG_TRACE : RWDTS_FLAG_NONE),
       on_vstart_component_lookup_new,
       cls);
   RW_ASSERT(comp_xact);
@@ -445,7 +445,7 @@ static rw_status_t do_vstart_component_lookup(
       comp_blk,
       (rw_keyspec_path_t *)&pathspec2,
       RWDTS_QUERY_READ,
-      (trace ? RWDTS_FLAG_TRACE : RWDTS_FLAG_NONE),
+      (trace ? RWDTS_XACT_FLAG_TRACE : RWDTS_FLAG_NONE),
       222222222222222,
       NULL);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -459,7 +459,7 @@ static rw_status_t do_vstart_component_lookup(
       comp_blk,
       (rw_keyspec_path_t *)&pathspec1,
       RWDTS_QUERY_READ,
-      (trace ? RWDTS_FLAG_TRACE : RWDTS_FLAG_NONE),
+      (trace ? RWDTS_XACT_FLAG_TRACE : RWDTS_FLAG_NONE),
       111111111111111,
       NULL);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -736,6 +736,56 @@ done:
   return dts_ret;
 }
 
+static rwdts_member_rsp_code_t on_vsnap(
+    const rwdts_xact_info_t * xact_info,
+    RWDtsQueryAction action,
+    const rw_keyspec_path_t * key,
+    const ProtobufCMessage * msg,
+    uint32_t credits,
+    void *getnext_ptr)
+{
+  rw_status_t status;
+  rwdts_member_rsp_code_t dts_ret = RWDTS_ACTION_OK;
+  struct rwmain_gi * rwmain;
+  rwvcs_instance_ptr_t rwvcs;
+  vcs_rpc_snap_input * snap_req;
+  rw_component_info target_info;
+  char * instance_name = NULL;
+  rwmain = (struct rwmain_gi *)xact_info->ud;
+  rwvcs = rwmain->rwvx->rwvcs;
+  RW_CF_TYPE_VALIDATE(rwvcs, rwvcs_instance_ptr_t);
+
+  snap_req = (vcs_rpc_snap_input *)msg;
+
+  rw_component_info__init(&target_info);
+
+  status = rwvcs_rwzk_lookup_component(rwvcs, snap_req->instance_name, &target_info);
+
+  if (status == RW_STATUS_NOTFOUND) {
+    dts_ret = RWDTS_ACTION_NA;
+    goto done;
+  }
+
+
+  instance_name = to_instance_name(rwmain->component_name, rwmain->instance_id);
+
+  if (!rwvcs_rwzk_responsible_for(rwvcs, instance_name, snap_req->instance_name)
+      && !is_this_instance(rwmain, snap_req->instance_name)) {
+    dts_ret = RWDTS_ACTION_NA;
+    goto done;
+  }
+
+  int r;
+  r = kill(getpid(), SIGUSR1);
+  RW_ASSERT(r != -1);
+
+done:
+  if (instance_name) {
+    RW_FREE(instance_name);
+  }
+  return dts_ret;
+}
+
 rwdts_member_rsp_code_t do_vstart(
     const rwdts_xact_info_t* xact_info,
     struct rwmain_gi * rwmain,
@@ -778,7 +828,7 @@ rwdts_member_rsp_code_t do_vstart(
     dts_ret = RWDTS_ACTION_OK;
   } else {
     struct dts_start_stop_closure * cls = NULL;
-    cls = (struct dts_start_stop_closure *)malloc(sizeof(struct dts_start_stop_closure));
+    cls = (struct dts_start_stop_closure *)RW_MALLOC0(sizeof(struct dts_start_stop_closure));
     RW_ASSERT(cls);
 
     cls->rwmain = rwmain;
@@ -1167,6 +1217,18 @@ rw_status_t rwmain_setup_dts_rpcs(struct rwmain_gi * rwmain)
       .flags = RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_SHARED,
       .callback = {
         .cb.prepare = &on_vcrash,
+
+       }
+    },
+
+
+    // RPC snap
+    {
+      .keyspec = (rw_keyspec_path_t *)RWPB_G_PATHSPEC_VALUE(RwVcs_input_Vsnap),
+      .desc = RWPB_G_MSG_PBCMD(RwVcs_input_Vsnap),
+      .flags = RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_SHARED,
+      .callback = {
+        .cb.prepare = &on_vsnap,
 
        }
     },

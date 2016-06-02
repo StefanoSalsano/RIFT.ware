@@ -67,6 +67,7 @@ install(
 install(
   PROGRAMS
     util/multi_vm_vnf/add_vnf_vm.py
+    util/multi_vm_vnf/multivm_vnf_startvm.py
   DESTINATION usr/rift/systemtest/util/multi_vm_vnf
   COMPONENT RWAUTO)
 

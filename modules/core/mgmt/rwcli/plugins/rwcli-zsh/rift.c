@@ -18,6 +18,7 @@
 #include "rwcli_agent.h"
 
 #include <poll.h>
+#include <openssl/sha.h>
 
 #ifdef alloca
 # undef alloca
@@ -35,7 +36,6 @@
 
 #define RW_DEFAULT_MANIFEST "cli_rwfpath.xml"
 #define RW_DEFAULT_SCHEMA_LISTING "cli_rwfpath_schema_listing.txt"
-#define RW_VM_ID "RIFT_VM_INSTANCE_ID"
 
 extern rift_cmdargs_t rift_cmdargs;
 
@@ -394,6 +394,52 @@ static void rift_del_zlewatch(int fd)
   }  
 }
 
+/**
+ * Authenticates the provided username and password agains the stored SHA1 Hash
+ * values.
+ * @param[in] cmdargs  Command line arguments struct containinng username and
+ *                      password.
+ * @returns User-mode based on the username. If authentication fails then 
+ *          RWCLI_USER_MODE_INVALID is returned.
+ */
+rwcli_user_mode_t rift_authenticate(rift_cmdargs_t *cmdargs)
+{
+  static uint8_t admin_sha[] = {
+    0xd0, 0x33, 0xe2, 0x2a, 0xe3, 0x48, 0xae, 0xb5, 0x66, 0x0f,
+    0xc2, 0x14, 0x0a, 0xec, 0x35, 0x85, 0x0c, 0x4d, 0xa9, 0x97
+  };
+  static uint8_t oper_sha[]  = {
+    0xd6, 0x3d, 0xec, 0xb2, 0x5a, 0x2e, 0x73, 0x69, 0x87, 0xdd,
+    0x8b, 0xcd, 0x39, 0xe6, 0x5f, 0xb0, 0x12, 0x43, 0x79, 0xc0
+  };
+  uint8_t computed_sha[SHA_DIGEST_LENGTH] = {0};
+
+  if (cmdargs->username == NULL || 
+      cmdargs->passwd == NULL) {
+    return RWCLI_USER_MODE_INVALID;
+  }
+
+  if (strcmp(cmdargs->username, "admin") == 0) {
+    unsigned long len = strlen(cmdargs->passwd);
+    SHA1((uint8_t*)cmdargs->passwd, len, computed_sha);
+    if (memcmp(computed_sha, admin_sha, SHA_DIGEST_LENGTH) != 0) {
+      // admin password mismatch
+      return RWCLI_USER_MODE_INVALID;
+    }
+    return RWCLI_USER_MODE_ADMIN;
+  } else if (strcmp(cmdargs->username, "oper") == 0) {
+    unsigned long len = strlen(cmdargs->passwd);
+    SHA1((uint8_t*)cmdargs->passwd, len, computed_sha);
+    if (memcmp(computed_sha, oper_sha, SHA_DIGEST_LENGTH) != 0) {
+      // oper password mismatch
+      return RWCLI_USER_MODE_INVALID;
+    }
+    return RWCLI_USER_MODE_OPER;
+  }
+ 
+  return RWCLI_USER_MODE_INVALID;
+}
+
 /* Module Features. We don't have any. */
 static struct features module_features = {
     NULL, 0,
@@ -530,22 +576,37 @@ boot_(Module m)
   recv_buf = (uint8_t*)calloc(sizeof(uint8_t), RW_CLI_MAX_BUF);
   recv_buf_len = RW_CLI_MAX_BUF;
   
-  if (rift_cmdargs.vm_instance_id == 0) {
-    // No VM Instance id passed, check the env var
-    char* env_str = getenv(RW_VM_ID);
-    if (env_str) {
-      rift_cmdargs.vm_instance_id = atoi(env_str);
-    }
-  }
-
   if (rift_cmdargs.schema_listing == NULL) {
     rift_cmdargs.schema_listing = strdup(RW_DEFAULT_SCHEMA_LISTING);
   }
 
-  RWTRACE_DEBUG(rwcli_trace, RWTRACE_CATEGORY_RWCLI,
-      "RIFT_VM_INSTANCE_ID=%d", rift_cmdargs.vm_instance_id);
-  
-  rwcli_zsh_plugin_init(rift_cmdargs.schema_listing);
+  // Decide the RW.CLI communication mode with RW.MgmtAgent
+  if (rift_cmdargs.use_netconf == -1) {
+    const char* agent_mode = rw_getenv("RWMGMT_AGENT_MODE");
+    if (agent_mode && strcmp(agent_mode, "XML") == 0) {
+      // If the agent mode is XML only RW.MSG mode is possible. Override the
+      // command line option for netconf and opt for RW.MSG mode.
+      rift_cmdargs.use_netconf = 0;
+    } else {
+      // Transport mode not chosen in command line and not XML mode. Choose
+      // Netconf mode by default.
+      rift_cmdargs.use_netconf = 1;
+    }
+  }
+
+  // Authenticate in case of RW.MSG mode
+  rwcli_transport_mode_t transport_mode =  RWCLI_TRANSPORT_MODE_NETCONF;
+  rwcli_user_mode_t user_mode = RWCLI_USER_MODE_NONE;
+  if (!rift_cmdargs.use_netconf) {
+    user_mode = rift_authenticate(&rift_cmdargs);
+    if (user_mode == RWCLI_USER_MODE_INVALID) {
+      printf("\nERROR: Invalid username/password\n");
+      exit(-1);
+    }
+    transport_mode = RWCLI_TRANSPORT_MODE_RWMSG;
+  }
+
+  rwcli_zsh_plugin_init(rift_cmdargs.schema_listing, transport_mode, user_mode);
   rwcli_set_messaging_hook(messaging_hook);
   rwcli_set_history_hook(history_hook);
 

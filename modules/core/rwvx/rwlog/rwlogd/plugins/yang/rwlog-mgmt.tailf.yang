@@ -22,6 +22,10 @@ module rw-base-annotation
   tailf:annotate "/rwlogmgmt:show-logs" {
     tailf:actionpoint rw_action;
   }
+
+  tailf:annotate "/rwlogmgmt:logging/rwlogmgmt:categories" {
+    tailf:callpoint base_show;
+  }
   
   tailf:annotate "/rwlogmgmt:log-event" {
     tailf:actionpoint rw_action;

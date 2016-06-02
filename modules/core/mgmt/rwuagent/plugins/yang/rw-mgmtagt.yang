@@ -65,6 +65,10 @@ module rw-mgmtagt
         description
           "Internally created client";
       }
+      enum RwXml {
+        description
+          "Internal XML client";
+      }
     }
   }
 
@@ -97,46 +101,6 @@ module rw-mgmtagt
         description
           "A value used as MAX in indexing";
       }
-    }
-  }
-
-  typedef confd-callback-type {
-    description
-      "An enumeration for the types of callbacks invoked by confd to
-      the uagent in context of the uagent being a data provider";
-    type enumeration
-    {
-      enum exists-optional;
-      enum get-elem;
-      enum get-next;
-      enum set-elem;
-      enum create;
-      enum remove;
-      enum find-next;
-      enum num-instances;
-      enum get-object;
-      enum get-next-object;
-      enum find-next-object;
-      enum get-case;
-      enum set-case;
-      enum get-attrs;
-      enum set-attr;
-      enum move-after;
-      enum write-all;
-    }
-  }
-
-  typedef pb-request-type {
-    type enumeration {
-      enum edit-config { value 1; }
-      enum rpc { value 2; }
-    }
-  }
-
-  typedef pb-edit-type {
-    type enumeration {
-      enum merge { value 1; }
-      enum delete { value 4; }
     }
   }
 
@@ -187,107 +151,6 @@ module rw-mgmtagt
 
   container uagent {
 
-    container confd {
-      rwpb:msg-new Confd;
-      config false;
-      description
-        "Information regarding interaction with the confd agent";
-
-      leaf total-dom-lifetime {
-        type uint64;
-        description
-          "Total time spent in DOM operations";
-      }
-
-      container dom-refresh-period {
-        leaf cli-dom-refresh-period {
-          type uint32;
-          units milliseconds;
-          description
-            "Time in milliseconds after which cached DOM data will get
-            flushed for CLI session.";
-        }
-
-        leaf nc-rest-dom-refresh-period {
-          type uint32;
-          units milliseconds;
-          description
-            "Time in milliseconds after which cached DOM data will get
-            flushed for RESTCONF/NETCONF session.";
-        }
-      }
-
-      list  client {
-        rwpb:msg-new Client;
-        description
-          "Interaction with each client type";
-
-        key identifier;
-        leaf identifier {
-          description
-            "An internal identifier for each client used by confd.  0
-            corresponds to clients that have exited";
-          type uint64;
-        }
-
-        list cached_dom {
-          rwpb:msg-new CachedDom;
-          key index;
-
-          leaf index {
-          type uint16;
-          description
-            "A false index";
-          }
-
-          leaf path {
-            type string;
-            description
-              "The hkey path that created this entry";
-          }
-
-          leaf dts-keyspec {
-            description
-              "Keyspec used for DTS if a query was needed.  Not set for
-              requests served from local operational dom";
-            type string;
-          }
-
-
-          leaf create-time {
-            type uint64;
-            description
-              "Time in microseconds from when the dom was created to
-              its last access";
-          }
-
-          leaf usage-time {
-            type uint64;
-            description
-              "Time in microseconds from when the dom was created to
-              its last access";
-          }
-
-          list callbacks {
-            rwpb:msg-new Callbacks;
-            key type;
-
-            leaf type {
-              description
-                "The type of callback invoked";
-              type confd-callback-type;
-            }
-
-            leaf count {
-              description
-                "Number of times a callback was invoked";
-              type uint16;
-            }
-          }
-        }
-      }
-    }
-
     container logrotate-conf {
       rwpb:msg-new LogrotateConf;
       description
@@ -320,9 +183,18 @@ module rw-mgmtagt
 
     container state {
       description
-        "Information pertaining to the state of the micro-agent";
+        "Information pertaining to the state of the Management Agent";
       rwpb:msg-new State;
       config false;
+
+      container config-state {
+        leaf ready {
+          description
+            "Indicates readiness of critical tasks, schema loading and init configuration";
+          type boolean;
+          default false;
+        }
+      }
 
       list statistics {
         rwpb:msg-flat "true";
@@ -339,7 +211,7 @@ module rw-mgmtagt
 
         leaf request-count {
           description
-            "The types of requests of this type handled by the UAGENT";
+            "The types of requests of this type handled by the Management Agent";
           type uint32;
         }
 
@@ -393,148 +265,75 @@ module rw-mgmtagt
       description
         "Displays the last-error, reported by Mgmt Agent";
     }
-
   }
 
   rpc mgmt-agent {
     input {
       choice action {
-        container clear-stats {
-          rwpb:msg-new ClearStats;
-          description
-            "Clear the stats";
-          leaf confd {
-            type empty;
-          }
-        }
-
-        container dts-trace {
-          rwpb:msg-new DtsTrace;
-          description
-            "Trace the next Management Agent transaction";
-          leaf next-command {
+        case dts-trace {
+          container dts-trace {
+            rwpb:msg-new DtsTrace;
             description
-              "Trace the next mangement/ netconf command";
-            type empty;
-          }
-        }
-
-        container load-yang-module {
-          rwpb:msg-new LoadYangModule;
-          description
-            "Load a new yang module and upgrade Confd CDB";
-
-          leaf-list module-name {
-            description
-              "Yang module name to be loaded.";
-            type string;
-          }
-        }
-
-        container dom-refresh-period {
-          rwpb:msg-new DomRefreshPeriod;
-
-          leaf cli-dom-refresh-period {
-            type uint32;
-            units milliseconds;
-            description
-              "Time in milliseconds after which cached DOM data will get
-              flushed for CLI session.";
-          }
-
-          leaf nc-rest-dom-refresh-period {
-            type uint32;
-            units milliseconds;
-            description
-              "Time in milliseconds after which cached DOM data will get
-              flushed for RESTCONF/NETCONF session.";
-          }
-        }
-
-        container pb-request {
-          rwpb:msg-new PbRequest;
-          presence true; // ATTN: Hack workaround for RIFT-9591
-          choice key {
-            mandatory true;
-            leaf keyspec {
-              type binary;
-            }
-            leaf xpath {
-              type string;
+              "Trace the next Management Agent transaction";
+            leaf next-command {
+              description
+                "Trace the next mangement/ netconf command";
+              type empty;
             }
           }
-          leaf data {
-            mandatory true;
-            type binary;
-          }
+        } // end dts-trace
 
-          leaf request-type {
-            mandatory true;
-            type rw-mgmtagt:pb-request-type;
-          }
-
-          leaf edit-type {
-            type rw-mgmtagt:pb-edit-type;
-          }
+        leaf show-agent-dom {
+          type empty;
         }
       }
     }
 
     output {
       choice action {
-        container pb-request {
-          rwpb:msg-new PbIntRsp;
-          leaf error {
-            type string;
-          }
-          leaf keyspec {
-            type binary;
-          }
-          leaf xpath {
-            type string;
-          }
-          leaf data {
-            type binary;
-          }
+        leaf agent-dom {
+          type string;
         }
       }
     }
   }
 
   rpc show-system-info {
-
     description
-        "Generate a detailed system description and status dump.  This
-        output is used to debug the system and diagnose issues.";
+      "Generate a detailed system description and status dump.  This
+      output is used to debug the system and diagnose issues.";
 
     input {
-       rwpb:msg-new SysInfoInput;
-       choice output {
-         default string;
+      rwpb:msg-new SysInfoInput;
+      choice output {
+        default string;
+        case string {
+          leaf string {
+            description
+                "Return the information in a string in the RPC response.";
+            type empty;
+          }
+        }
 
-         leaf string {
-           description
-               "Return the information in a string in the RPC response.";
-           type empty;
-         }
-
-         leaf file {
-           description
-               "Save the information to a file.  This element contains the
-               filename.";
-           type string;
-         }
-       }
+        case file {
+          leaf file {
+            description
+                "Save the information to a file.  This element contains the
+                filename.";
+            type string;
+          }
+        }
+      }
     }
 
     output {
-       rwpb:msg-new SysInfoOutput;
+      rwpb:msg-new SysInfoOutput;
 
-        leaf result {
-           description
-            "The system information string.  This may be very large.";
-            type string;
-       }
+       leaf result {
+          description
+           "The system information string.  This may be very large.";
+           type string;
+      }
     }
   }
 
@@ -542,22 +341,26 @@ module rw-mgmtagt
   rpc show-agent-logs {
     description
       "Show management system logs.";
-    
+
     input {
       rwpb:msg-new AgentLogsInput;
       choice output {
         default string;
 
-        leaf string {
-          description
-            "Show the management system logs on console.";
-          type empty;
+        case string {
+          leaf string {
+            description
+              "Show the management system logs on console.";
+            type empty;
+          }
         }
 
-        leaf file {
-          description
-            "Saves the log records to the provided filename.";
-          type string;
+        case file {
+          leaf file {
+            description
+              "Saves the log records to the provided filename.";
+            type string;
+          }
         }
       }
     }
@@ -583,6 +386,5 @@ module rw-mgmtagt
         }
       }
     }
-
   }
 }

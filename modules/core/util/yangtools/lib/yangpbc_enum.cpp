@@ -59,7 +59,7 @@ YangValue* PbEnumValue::get_yvalue() const
 
 int PbEnumValue::get_int_value() const
 {
-  return yvalue_->get_integer_value();
+  return yvalue_->get_position();
 }
 
 std::string PbEnumValue::get_yang_enumerator() const
@@ -517,7 +517,7 @@ void PbEnumType::parse()
     }
 
     if (!has_aliases_) {
-      auto status = value_int_set.emplace(yvi->get_integer_value());
+      auto status = value_int_set.emplace(yvi->get_position());
       if (!status.second) {
         has_aliases_ = true;
       }

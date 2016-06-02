@@ -9,8 +9,8 @@ import os
 class BootstrapSslMissingException(Exception):
     pass
 
-# True if the environment variable is set, otherwise False
-USE_SSL = os.environ.get("RIFT_BOOT_WITH_HTTPS", None) is not None
+# True if the environment variable is unset, otherwise False
+USE_SSL = os.environ.get("RIFT_BOOT_WITHOUT_HTTPS", None) is None
 
 def get_bootstrap_cert_and_key():
     '''

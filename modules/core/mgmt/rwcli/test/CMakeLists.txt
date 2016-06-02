@@ -81,8 +81,6 @@ set(rwcli_utest_libs
   rwtrace
   rwsched
   rwlog
-  rwcmdargs
-  rwcmdargs_yang_gen
   rwyang
   talloc
   rw_tasklet_plugin-1.0

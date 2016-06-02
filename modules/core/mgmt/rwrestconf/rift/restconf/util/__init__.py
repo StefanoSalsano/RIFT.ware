@@ -18,21 +18,25 @@ from .schema import (
 
 from .util import (
     iterate_with_lookahead,
+    Result,
+    PayloadType,
+    NetconfOperation,
+    naive_xml_to_json,
 )
 
 from .xml import (
     create_xpath_from_url,
+    create_dts_xpath_from_url,
 )
 
 from .web import (
+    determine_payload_type,
     is_config,
     is_schema_api,
     split_url,
     split_stream_url,
     get_username_and_password_from_auth_header,
-)
-
-from .watchdog_status import (
-    watchdog_mapping,
-    WatchdogStatus,
+    map_error_to_http_code,
+    format_error_message,
+    map_request_to_netconf_operation,
 )

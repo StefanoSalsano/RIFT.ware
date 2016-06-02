@@ -31,6 +31,7 @@ rift_python_install_tree(
     rift/auto/ip_utils.py
     rift/auto/json_utils.py
     rift/auto/mano.py
+    rift/auto/ssh.py
     rift/auto/__init__.py
   COMPONENT RWAUTO)
 

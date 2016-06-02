@@ -1,5 +1,37 @@
-
+/*
+ * 
+ * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
+ *
+ */
 var _ = require('lodash');
+
+/**
+ * Merges vnfr["nfvi-metrics"] with nsr["nfvi-metrics"] into a format consumable by the UI LP and Record Cards
+ * @param  {Array} vnfr vnfr nfvi metrics
+ * @param  {Array} nsr  nsr nfvi metrics
+ * @return {Array}      Merged NSR nfvi metrics
+ */
+function mergeVnfrNfviMetrics(vnfr, nsr) {
+    for (var i = 0; i < vnfr.length; i ++) {
+        var title = vnfr[i].title;
+        var matched = false;
+        for (var j = 0; j < nsr.length; j++) {
+            if (nsr[j] && nsr[j].title == title) {
+                matched = true;
+                nsr[j].data = nsr[j].data.concat(vnfr[i].data).sort(function(a,b) {
+                    return (a.name > b.name) ? 1 : -1;
+                });
+                break;
+            }
+        }
+        if (!matched) {
+            nsr.push({
+                title: title,
+                data: vnfr[i].data
+            });
+        }
+    }
+}
 
 function terminationPointValues (node) {
     var tpids = [];
@@ -54,13 +86,13 @@ function transformNetworkTopology(raw) {
         if (network_ids.indexOf(network_id) == -1) {
             network_ids.push(network_id);
         }
-        var raw_nodes = network['node'];
+        var raw_nodes = network['node'] || [];
         var x = 0;
         for (var index=0, tot=raw_nodes.length; index < tot; index++) {
             var termination_point = [];
             var new_node = {
                 id: id,
-                // TODO: make short name, 
+                // TODO: make short name,
                 name: raw_nodes[index]['node-id'],
                 full_name: raw_nodes[index]['node-id'],
                 network: network_id,
@@ -103,5 +135,6 @@ function transformNetworkTopology(raw) {
 
 
 module.exports = {
-    transformNetworkTopology: transformNetworkTopology
+    transformNetworkTopology: transformNetworkTopology,
+    mergeVnfrNfviMetrics: mergeVnfrNfviMetrics
 }

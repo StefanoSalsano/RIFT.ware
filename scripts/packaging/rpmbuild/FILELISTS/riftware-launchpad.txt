@@ -21,4 +21,4 @@
 # all sorch files = ~50K
 #
 # all charms files = ~6MB
-.install/usr/rift/charms/*
+# .install/usr/rift/charms/*

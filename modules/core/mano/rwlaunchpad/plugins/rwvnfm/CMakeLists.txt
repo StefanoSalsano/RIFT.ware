@@ -25,3 +25,5 @@ rift_python_install_tree(
     rift/tasklets/${TASKLET_NAME}/mon_params.py
   COMPONENT ${PKG_LONG_NAME}
   PYTHON3_ONLY)
+
+rift_add_subdirs(test)

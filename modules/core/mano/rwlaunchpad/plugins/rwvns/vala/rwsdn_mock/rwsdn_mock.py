@@ -127,7 +127,7 @@ class MockPlugin(GObject.Object, RwSdn.Topology):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
             logger.addHandler(
                 rwlogger.RwLogger(
-                    category="rwsdn.mock",
+                    subcategory="rwsdn.mock",
                     log_hdl=rwlog_ctx,
                 )
             )

@@ -293,7 +293,7 @@ void rwdts_respond_router_f(void *arg)
           RW_ASSERT(xquery->qres->base.descriptor == (const struct ProtobufCMessageDescriptor*)&rwdts_query_result__concrete_descriptor);
 
           RW_ASSERT(bres->n_result < n_queries);
-          if (xquery->query && !(xquery->query->flags & RWDTS_FLAG_STREAM)
+          if (xquery->query && !(xquery->query->flags & RWDTS_XACT_FLAG_STREAM)
               && (xquery->query->action == RWDTS_QUERY_READ))
           {
             rwdts_merge_single_responses(xquery->qres);
@@ -653,11 +653,10 @@ rwdts_member_find_matches(rwdts_api_t* apih,
                           rw_sklist_t* matches)
 {
   rw_keyspec_path_t*            ks_query          = NULL;
-  char                          *query_ks_str     = NULL;
-  rw_keyspec_path_t*            spec_ks           = NULL;
   RWDtsQueryAction              action;
   RwSchemaCategory              in_category;
   uint32_t                      matchid           = 0;
+  rw_status_t                   retval            = RW_STATUS_FAILURE;
 
   RW_ASSERT(query);
   RW_ASSERT(query->key);
@@ -671,7 +670,7 @@ rwdts_member_find_matches(rwdts_api_t* apih,
     RWDTS_MEMBER_SEND_ERROR(NULL, NULL, query, apih, NULL,
                             RW_STATUS_FAILURE,
                             "No registrations in apih");
-    return RW_STATUS_FAILURE;
+    goto done;
   }
 
   RW_ASSERT(matches);
@@ -683,16 +682,8 @@ rwdts_member_find_matches(rwdts_api_t* apih,
     RWDTS_MEMBER_SEND_ERROR(NULL, NULL, query, apih, NULL,
                             RW_STATUS_FAILURE,
                             RWDTS_ERRSTR_KEY_BINPATH);
-    return RW_STATUS_FAILURE;
+    goto done;
   }
-#if 1
-  rw_keyspec_path_find_spec_ks(ks_query, NULL,
-                               rwdts_api_get_ypbc_schema(apih), &spec_ks);
-#endif
-  rw_keyspec_path_get_new_print_buffer((spec_ks)?spec_ks:ks_query,
-                                   NULL,
-                              rwdts_api_get_ypbc_schema(apih),
-                              &query_ks_str);
 
   /*
    * Search for complete matches - The keyspec registered and the keyspec in the
@@ -708,14 +699,13 @@ rwdts_member_find_matches(rwdts_api_t* apih,
       RWDTS_MEMBER_SEND_ERROR(NULL, NULL, query, apih, NULL,
                               RW_STATUS_FAILURE,
                               RWDTS_ERRSTR_KEY_WILDCARDS);
-      RW_FREE(query_ks_str);
-      return RW_STATUS_FAILURE;
+      goto done;
     }
   }
 
   rwdts_member_registration_t *entry = NULL;
   rwdts_shard_chunk_info_t **chunks = NULL; 
-  uint32_t isadvise = (query->flags & RWDTS_FLAG_ADVISE);
+  uint32_t isadvise = (query->flags & RWDTS_XACT_FLAG_ADVISE);
   rwdts_shard_t *head = apih->rootshard;
   int j;
   uint32_t n_chunks = 0;
@@ -751,16 +741,13 @@ rwdts_member_find_matches(rwdts_api_t* apih,
     chunks = NULL;
   }
 
+  retval = RW_STATUS_SUCCESS;
+
+done:
   if (ks_query) {
     RW_KEYSPEC_PATH_FREE(ks_query, NULL ,NULL);
   }
-
-  if (spec_ks){
-    RW_KEYSPEC_PATH_FREE(spec_ks, NULL ,NULL);
-  }
-  free(query_ks_str);
-
-  return RW_STATUS_SUCCESS;
+  return retval;
 }
 
 /*
@@ -1236,13 +1223,13 @@ rwdts_member_match_read(rwdts_member_registration_t *entry, RWDtsQuery*  query,
     return;
   }
 
-  if (query->flags & RWDTS_FLAG_DEPTH_LISTS) {
+  if (query->flags & RWDTS_XACT_FLAG_DEPTH_LISTS) {
     if (!(((depth_i+1) == depth_o) || (depth_i == depth_o))){
       return;
     }
   }
 
-  if (query->flags & RWDTS_FLAG_DEPTH_ONE) {
+  if (query->flags & RWDTS_XACT_FLAG_DEPTH_ONE) {
     if (depth_o != depth_i) {
       return;
     }
@@ -1408,7 +1395,9 @@ rwdts_member_match_create_update(rwdts_member_registration_t *entry, RWDtsQuery*
                                          (const rw_yang_pb_msgdesc_t **)&result,
                                          &local_keyspec);
 
-    if (local_keyspec ) {
+    if (local_keyspec != NULL) {
+      RW_KEYSPEC_PATH_FREE(local_keyspec, NULL ,NULL);
+      local_keyspec = NULL;
       return;
     }
 
@@ -1460,10 +1449,6 @@ rwdts_member_match_create_update(rwdts_member_registration_t *entry, RWDtsQuery*
       protobuf_c_message_free_unpacked(&protobuf_c_default_instance, trans_msg);
       trans_msg = NULL;
     }
-    if (local_keyspec != NULL) {
-      RW_KEYSPEC_PATH_FREE(local_keyspec, NULL ,NULL);
-      local_keyspec = NULL;
-    }
   }
   return;
 }
@@ -1485,6 +1470,23 @@ rwdts_member_match_keyspecs(rwdts_api_t* apih, rwdts_member_registration_t *entr
     return;
   }
 
+  /*
+   * if the registration and request doesn't match skp this entry
+   */
+
+  if (entry->reg_state == RWDTS_REG_DEL_PENDING) {
+    goto done;
+  }
+
+  if (!(((entry->flags & RWDTS_FLAG_SUBSCRIBER) && (query->flags & RWDTS_XACT_FLAG_ADVISE)) ||
+        ((entry->flags & RWDTS_FLAG_PUBLISHER) && !(query->flags & RWDTS_XACT_FLAG_ADVISE)))) {
+    goto done;
+  }
+
+  if (!(entry->flags & RWDTS_FLAG_PUBLISHER) && (query->action == RWDTS_QUERY_READ)) {
+    goto done;
+  }
+
   RW_ASSERT(entry->keyspec);
   // Get the schema for this registration
   ks_schema = ((ProtobufCMessage*)entry->keyspec)->descriptor->ypbc_mdesc->module->schema;
@@ -1498,19 +1500,6 @@ rwdts_member_match_keyspecs(rwdts_api_t* apih, rwdts_member_registration_t *entr
   // ATTN -- Thes are needed for debugging an understandable keyspec
   rw_keyspec_path_get_new_print_buffer(entry->keyspec,
                                        NULL, ks_schema, &reg_ks_str);
-
-  /*
-   * if the registration and request doesn't match skp this entry
-   */
-
-  if (!(((entry->flags & RWDTS_FLAG_SUBSCRIBER) && (query->flags & RWDTS_FLAG_ADVISE)) ||
-        ((entry->flags & RWDTS_FLAG_PUBLISHER) && !(query->flags & RWDTS_FLAG_ADVISE)))) {
-    goto done;
-  }
-
-  if (!(entry->flags & RWDTS_FLAG_PUBLISHER) && (query->action == RWDTS_QUERY_READ)) {
-    goto done;
-  }
   // For READS  and DELETES do not need not have any payload
   if (query->action == RWDTS_QUERY_READ) {
     rwdts_member_match_read(entry, query, ks_query, ks_schema, matches, matchid);

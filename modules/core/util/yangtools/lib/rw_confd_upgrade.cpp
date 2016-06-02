@@ -28,13 +28,10 @@
 #include <boost/algorithm/string.hpp>
 #include <errno.h>
 
+#include <rw_schema_defs.h>
+
 using namespace rw_yang;
 namespace fs = boost::filesystem;
-
-static const char* ROOT_DIR_NAME = "var/rift/schema";
-static const char* VERSION_DIR_NAME = "var/rift/schema/version";
-static const char* YANG_SYMLINK_NAME = "var/rift/schema/version/latest/northbound";
-static const char* LATEST_VERSION = "var/rift/schema/version/latest";
 
 // This is required only because we are copying ietf*yang files to
 // usr/data/yang but not creating its *.fxs files there
@@ -268,15 +265,15 @@ FSHelper::remove_all_files(const std::string& dir)
 ConfdUpgradeMgr::ConfdUpgradeMgr(): version_(0)
                                   , confd_addr_size_(0)
 {
-  const char* rift_root = getenv("RIFT_INSTALL");
-  if (nullptr == rift_root) {
-    rift_root = "/";
+  const char* rift_install = getenv("RIFT_INSTALL");
+  if (nullptr == rift_install) {
+    rift_install = "/";
   }
-  rift_root_ = std::string(rift_root);
-  yang_root_ = rift_root_ + "/" + ROOT_DIR_NAME;
-  yang_sl_ = rift_root_ + "/" + YANG_SYMLINK_NAME;
-  ver_dir_ = rift_root_ + "/" + VERSION_DIR_NAME;
-  latest_ = rift_root_ + "/" + LATEST_VERSION;
+  rift_install_ = std::string(rift_install);
+  yang_root_ = rift_install_ + "/" + RW_SCHEMA_ROOT_PATH;
+  yang_sl_ = rift_install_ + "/" + RW_SCHEMA_VER_LATEST_NB_PATH;
+  ver_dir_ = rift_install_ + "/" + RW_SCHEMA_VER_PATH;
+  latest_ = rift_install_ + "/" + RW_SCHEMA_VER_LATEST_PATH;
 
   confd_addr_ = nullptr;
 }
@@ -285,16 +282,16 @@ ConfdUpgradeMgr::ConfdUpgradeMgr(uint32_t version, const struct sockaddr *addr,
                                  size_t addr_size): version_(version)
                                                   , confd_addr_size_(addr_size)
 {
-  const char* rift_root = getenv("RIFT_INSTALL");
+  const char* rift_install = getenv("RIFT_INSTALL");
 
-  if (nullptr == rift_root) {
-    rift_root = "/";
+  if (nullptr == rift_install) {
+    rift_install = "/";
   }
-  rift_root_ = std::string(rift_root);
-  yang_root_ = rift_root_ + "/" + ROOT_DIR_NAME;
-  yang_sl_ = rift_root_ + "/" + YANG_SYMLINK_NAME;
-  ver_dir_ = rift_root_ + "/" + VERSION_DIR_NAME;
-  latest_ = rift_root_ + "/" + LATEST_VERSION;
+  rift_install_ = std::string(rift_install);
+  yang_root_ = rift_install_ + "/" + RW_SCHEMA_ROOT_PATH;
+  yang_sl_ = rift_install_ + "/" + RW_SCHEMA_VER_LATEST_NB_PATH;
+  ver_dir_ = rift_install_ + "/" + RW_SCHEMA_VER_PATH;
+  latest_ = rift_install_ + "/" + RW_SCHEMA_VER_LATEST_PATH;
 
   memcpy(&confd_addr_in_, addr, confd_addr_size_);
   confd_addr_ = (struct sockaddr *)&confd_addr_in_;
@@ -422,7 +419,7 @@ ConfdUpgradeMgr::start_confd_upgrade()
   const auto& path_2 = base_path + "/xml";
   const auto& path_3 = base_path + "/lib";
   const auto& path_4 = base_path + "/yang";
-  const auto& path_5 = rift_root_ + "/" + ADD_CONFD_LOAD_PATH;
+  const auto& path_5 = rift_install_ + "/" + ADD_CONFD_LOAD_PATH;
 
   const char* load_paths[] = {
     path_1.c_str(),

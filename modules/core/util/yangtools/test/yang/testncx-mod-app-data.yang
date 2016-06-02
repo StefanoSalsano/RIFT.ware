@@ -19,7 +19,6 @@ module testncx-mod-app-data
   namespace "http://riftio.com/ns/core/util/yangtools/tests/testncx-app-data";
   prefix "tmnad";
 
-  import rw-utcli-ext { prefix "rwutcli"; }
   import rw-pb-ext { prefix "rwpb"; }
 
   description "Test application data extensions.";
@@ -65,7 +64,6 @@ module testncx-mod-app-data
 
     container b {
       rwpb:msg-new TmnadContainerB;
-      rwutcli:callback-argv "tmnad_app_data_callback_b";
       tmnad:mext2 "ext2 in b";
       tmnad:mext2 "ext2 in b";
 

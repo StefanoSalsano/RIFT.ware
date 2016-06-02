@@ -37,5 +37,12 @@ rift_python_install_tree(
     rift/tasklets/${TASKLET_NAME}/${TASKLET_NAME}.py
     rift/tasklets/${TASKLET_NAME}/rwconman_config.py
     rift/tasklets/${TASKLET_NAME}/rwconman_events.py
+    rift/tasklets/${TASKLET_NAME}/jujuconf.py
+    rift/tasklets/${TASKLET_NAME}/juju_if.py
+    rift/tasklets/${TASKLET_NAME}/juju_intf.py
+    rift/tasklets/${TASKLET_NAME}/RiftCA.py
+    rift/tasklets/${TASKLET_NAME}/riftcm_config_plugin.py
+    rift/tasklets/${TASKLET_NAME}/RiftCM_rpc.py
+    rift/tasklets/${TASKLET_NAME}/rwconman_conagent.py
   COMPONENT ${PKG_LONG_NAME}
   PYTHON3_ONLY)

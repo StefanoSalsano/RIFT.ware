@@ -19,6 +19,8 @@ import uuid
 
 from gi.repository import NsrYang
 
+import rift.auto.mano
+
 logger = logging.getLogger(__name__)
 
 class DescriptorOnboardError(Exception):
@@ -128,7 +130,7 @@ def generate_nsr(
     '''
 
     nsr = NsrYang.YangData_Nsr_NsInstanceConfig_Nsr()
-    nsr.name = name
+    nsr.name = rift.auto.mano.resource_name(name)
     nsr.nsd_ref = nsd_ref
     nsr.short_name = short_name
     nsr.description = description

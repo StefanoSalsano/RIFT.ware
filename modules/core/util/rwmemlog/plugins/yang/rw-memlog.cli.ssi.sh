@@ -1,2 +1,2 @@
-#echo "------------- show rw-memlog-state ------------------"
-#show rw-memlog-state
+echo "------------- show rw-memlog-state ------------------"
+show rw-memlog-state

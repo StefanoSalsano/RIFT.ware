@@ -4,15 +4,242 @@
 
 import asyncio
 import concurrent.futures
+import jujuclient
 import time
 
 from gi.repository import (
     NsrYang,
+    RwTypes,
+    RwcalYang,
     RwNsrYang,
+    RwConfigAgentYang,
     RwDts as rwdts)
 
 import rift.tasklets
 
+class ConfigAgentAccountNotFound(Exception):
+    pass
+
+class JujuClient(object):
+    def __init__(self, log, ip, port, user, passwd):
+        self._log = log
+        self._ip= ip
+        self._port = port
+        self._user = user
+        self._passwd = passwd
+
+        self.endpoint = 'wss://%s:%d' % (ip, port)
+
+    def validate_account_creds(self):
+        status = RwcalYang.CloudConnectionStatus()
+        try:
+            self.env = jujuclient.Environment(self.endpoint)
+            self.env.login(self._passwd, self._user)
+        except jujuclient.EnvError as e:
+            msg = "JujuClient: Invalid account credentials: %s", str(e.message)
+            self._log.error(msg)
+            raise Exception(msg)
+        except ConnectionRefusedError as e:
+            msg = "JujuClient: Wrong IP or Port: %s", str(e)
+            self._log.error(msg)
+            raise Exception(msg)
+        except Exception as e:
+            msg = "JujuClient: Connection Failed: %s", str(e)
+            self._log.error(msg)
+            raise Exception(msg)
+        else:
+            status.status = "success"
+            status.details = "Connection was successful"
+            self._log.info("JujuClient: Connection Successful")
+
+        self.env.close()
+        return status
+
+
+class ConfigAgentAccount(object):
+    def __init__(self, log, account_msg):
+        self._log = log
+        self._account_msg = account_msg.deep_copy()
+
+        if account_msg.account_type == "juju":
+            self._cfg_agent_client_plugin = JujuClient(
+                    log,
+                    account_msg.juju.ip_address,
+                    account_msg.juju.port,
+                    account_msg.juju.user,
+                    account_msg.juju.secret)
+        else:
+            self._cfg_agent_client_plugin = None
+
+        self._status = RwConfigAgentYang.ConfigAgentAccount_ConnectionStatus(
+                status="unknown",
+                details="Connection status lookup not started"
+                )
+
+        self._validate_task = None
+
+    @property
+    def name(self):
+        return self._account_msg.name
+
+    @property
+    def account_msg(self):
+        return self._account_msg
+
+    @property
+    def account_type(self):
+        return self._account_msg.account_type
+
+    @property
+    def connection_status(self):
+        return self._status
+
+    def update_from_cfg(self, cfg):
+        self._log.debug("Updating parent ConfigAgentAccount to %s", cfg)
+        raise NotImplementedError("Update config agent account not yet supported")
+
+    @asyncio.coroutine
+    def validate_cfg_agent_account_credentials(self, loop):
+        self._log.debug("Validating Config Agent Account %s, credential status %s", self._account_msg, self._status)
+
+        self._status = RwConfigAgentYang.ConfigAgentAccount_ConnectionStatus(
+                status="validating",
+                details="Config Agent account connection validation in progress"
+                )
+
+        if self._cfg_agent_client_plugin is None:
+            self._status = RwConfigAgentYang.ConfigAgentAccount_ConnectionStatus(
+                    status="unknown",
+                    details="Config Agent account does not support validation of account creds"
+                    )
+        else:
+            try:
+                status = yield from loop.run_in_executor(
+                    None,
+                    self._cfg_agent_client_plugin.validate_account_creds
+                    )
+                self._status = RwConfigAgentYang.ConfigAgentAccount_ConnectionStatus.from_dict(status.as_dict())
+            except Exception as e:
+                self._status = RwConfigAgentYang.ConfigAgentAccount_ConnectionStatus(
+                    status="failure",
+                    details="Error - " + str(e)
+                    )
+
+        self._log.info("Got config agent account validation response: %s", self._status)
+
+    def start_validate_credentials(self, loop):
+        if self._validate_task is not None:
+            self._validate_task.cancel()
+            self._validate_task = None
+
+        self._validate_task = asyncio.ensure_future(
+                self.validate_cfg_agent_account_credentials(loop),
+                loop=loop
+                )
+
+class CfgAgentDtsOperdataHandler(object):
+    def __init__(self, dts, log, loop):
+        self._dts = dts
+        self._log = log
+        self._loop = loop
+
+        self.cfg_agent_accounts = {}
+
+    def add_cfg_agent_account(self, account_msg):
+        account = ConfigAgentAccount(self._log, account_msg)
+        self.cfg_agent_accounts[account.name] = account
+        self._log.info("ConfigAgent Operdata Handler added. Starting account validation")
+
+        account.start_validate_credentials(self._loop)
+
+    def delete_cfg_agent_account(self, account_name):
+        del self.cfg_agent_accounts[account_name]
+        self._log.info("ConfigAgent Operdata Handler deleted.")
+
+    def get_saved_cfg_agent_accounts(self, cfg_agent_account_name):
+        ''' Get Config Agent Account corresponding to passed name, or all saved accounts if name is None'''
+        saved_cfg_agent_accounts = []
+
+        if cfg_agent_account_name is None or cfg_agent_account_name == "":
+            cfg_agent_accounts = list(self.cfg_agent_accounts.values())
+            saved_cfg_agent_accounts.extend(cfg_agent_accounts)
+        elif cfg_agent_account_name in self.cfg_agent_accounts:
+            account = self.cfg_agent_accounts[cfg_agent_account_name]
+            saved_cfg_agent_accounts.append(account)
+        else:
+            errstr = "Config Agent account {} does not exist".format(cfg_agent_account_name)
+            raise KeyError(errstr)
+
+        return saved_cfg_agent_accounts
+
+
+    def _register_show_status(self):
+        def get_xpath(cfg_agent_name=None):
+            return "D,/rw-config-agent:config-agent/account{}/connection-status".format(
+                    "[name='%s']" % cfg_agent_name if cfg_agent_name is not None else ''
+                    )
+
+        @asyncio.coroutine
+        def on_prepare(xact_info, action, ks_path, msg):
+            path_entry = RwConfigAgentYang.ConfigAgentAccount.schema().keyspec_to_entry(ks_path)
+            cfg_agent_account_name = path_entry.key00.name
+            self._log.debug("Got show cfg_agent connection status request: %s", ks_path.create_string())
+
+            try:
+                saved_accounts = self.get_saved_cfg_agent_accounts(cfg_agent_account_name)
+                for account in saved_accounts:
+                    connection_status = account.connection_status
+                    self._log.debug("Responding to config agent connection status request: %s", connection_status)
+                    xact_info.respond_xpath(
+                            rwdts.XactRspCode.MORE,
+                            xpath=get_xpath(account.name),
+                            msg=account.connection_status,
+                            )
+            except KeyError as e:
+                self._log.warning(str(e))
+                xact_info.respond_xpath(rwdts.XactRspCode.NA)
+                return
+
+            xact_info.respond_xpath(rwdts.XactRspCode.ACK)
+
+        yield from self._dts.register(
+                xpath=get_xpath(),
+                handler=rift.tasklets.DTS.RegistrationHandler(
+                    on_prepare=on_prepare),
+                flags=rwdts.Flag.PUBLISHER,
+                )
+
+    def _register_validate_rpc(self):
+        def get_xpath():
+            return "/rw-config-agent:update-cfg-agent-status"
+
+        @asyncio.coroutine
+        def on_prepare(xact_info, action, ks_path, msg):
+            if not msg.has_field("cfg_agent_account"):
+                raise ConfigAgentAccountNotFound("Config Agent account name not provided")
+
+            cfg_agent_account_name = msg.cfg_agent_account
+            try:
+                account = self.cfg_agent_accounts[cfg_agent_account_name]
+            except KeyError:
+                raise ConfigAgentAccountNotFound("Config Agent account name %s not found" % cfg_agent_account_name)
+
+            account.start_validate_credentials(self._loop)
+
+            xact_info.respond_xpath(rwdts.XactRspCode.ACK)
+
+        yield from self._dts.register(
+                xpath=get_xpath(),
+                handler=rift.tasklets.DTS.RegistrationHandler(
+                    on_prepare=on_prepare
+                    ),
+                flags=rwdts.Flag.PUBLISHER,
+                )
+
+    @asyncio.coroutine
+    def register(self):
+        yield from self._register_show_status()
+        yield from self._register_validate_rpc()
 
 class ConfigAgentJob(object):
     """A wrapper over the config agent job object, providing some
@@ -354,10 +581,11 @@ class CfgAgentJobDtsHandler(object):
                 try:
                     nsr_id = path_entry.key00.ns_instance_config_ref
 
+                    #print("###>>> self.nsm.nsrs:", self.nsm.nsrs)
                     nsr_ids = []
                     if nsr_id is None or nsr_id == "":
                         nsrs = list(self.nsm.nsrs.values())
-                        nsr_ids = [nsr.id for nsr in nsrs]
+                        nsr_ids = [nsr.id for nsr in nsrs if nsr is not None]
                     else:
                         nsr_ids = [nsr_id]
 
@@ -374,7 +602,7 @@ class CfgAgentJobDtsHandler(object):
                             job)
 
                 except Exception as e:
-                    self._log.exception("Caught exception:", str(e))
+                    self._log.exception("Caught exception:%s", str(e))
                 xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
             else:

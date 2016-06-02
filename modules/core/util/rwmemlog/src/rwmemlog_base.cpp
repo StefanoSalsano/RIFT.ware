@@ -403,7 +403,7 @@ void rwmemlog_buffer_slow_path(
     // retire the buffer under next
     ns = ns ? ns : rwmemlog_ns();
     auto old = header->next;
-    if (buffer != old) {
+    if (buffer != old && old) {
       header->next = old->header.next;
       rwmemlog_instance_locked_buffer_retire( instance, old, ns );
     }

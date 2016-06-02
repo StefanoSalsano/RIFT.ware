@@ -34,7 +34,6 @@ target_link_libraries(rwlogd_cli_sink
   rwdts_api
   rwschema_yang_gen
   rwlogdproto
-  rwcmdargs
   rwlib
   rwmsg
   rwpython_util-1.0

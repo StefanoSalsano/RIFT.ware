@@ -4,6 +4,9 @@
 #
 
 import logging
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import (
     GObject,
     RwCal,
@@ -46,7 +49,8 @@ class RwcalOpenmanoPlugin(GObject.Object, RwCal.Cloud):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
             logger.addHandler(
                 rwlogger.RwLogger(
-                    category="rwcal.openmano",
+                    category="rw-cal-log",
+                    subcategory="openmano",
                     log_hdl=rwlog_ctx,
                 )
             )

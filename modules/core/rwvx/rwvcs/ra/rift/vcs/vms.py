@@ -84,7 +84,6 @@ class MgmtVM(rift.vcs.VirtualMachine):
         self.add_proc(rift.vcs.MsgBrokerTasklet())
         self.add_tasklet(rift.vcs.uAgentTasklet())
         self.add_proc(rift.vcs.RestconfTasklet(rest_port="8008"))
-        self.add_proc(rift.vcs.Watchdog())
         self.add_proc(rift.vcs.RestPortForwardTasklet())
         # Redis is not currently used by DTS
         # Disable but leave ready for easy enablement
@@ -116,7 +115,6 @@ class MasterVM(rift.vcs.VirtualMachine):
         self.add_proc(rift.vcs.RiftCli(netconf_username=netconf_username, netconf_password=netconf_password))
         self.add_proc(rift.vcs.MsgBrokerTasklet())
         self.add_proc(rift.vcs.RestconfTasklet(rest_port="8008"))
-        self.add_proc(rift.vcs.Watchdog())
         self.add_proc(rift.vcs.RestPortForwardTasklet())
 
         # Redis is not currently used by DTS

@@ -39,12 +39,15 @@ typedef struct {
 } rwmemory_padding_t;
 
 #define MEM_ALLOC_PADDING (sizeof(rwmemory_padding_t)+RW_MAGIC_PAD)
-#define MY_MAGIC 0xDEADFEED
+#define RWMALLOC_MAGIC_TRACK 0xDEADFEED
+#define RWMALLOC_MAGIC_NOTRACK 0xDEADFEEB
 
 extern void *__libc_malloc(size_t);
 
 int g_malloc_intercepted = 1;
-int g_callstack_depth = 5;
+int g_callstack_depth = 10;
+int g_heap_track_nth = 1000;
+int g_heap_track_bigger_than = 999;
 
 /* PER THREAD GLOBAL VARIABLE - this is populated when scheduler dispatches events into  tasks */
 __thread void *g_tasklet_info;
@@ -82,12 +85,24 @@ _update_tasklet_memory_allocated(rwsched_tasklet_t *sched_tasklet, int size) {
 }
 
 static inline void
-_fill_padding(rwmemory_padding_t *pad, size_t len, void *g_tasklet_info) {
-  pad->magic = MY_MAGIC;
-  pad->size = len;
-  pad->tasklet = g_tasklet_info;
-  memset((char*)(pad+1), '\0', RW_MAGIC_PAD);
-  _update_tasklet_memory_allocated(g_tasklet_info, len);
+_fill_padding(rwmemory_padding_t *pad, size_t len, void *g_tasklet_info, int *track_this) {
+  static int malloc_track_nth = 0;
+  if (++malloc_track_nth>g_heap_track_nth
+      || len>g_heap_track_bigger_than) {
+    malloc_track_nth = 0;
+    pad->magic = RWMALLOC_MAGIC_TRACK;
+    pad->size = len;
+    pad->tasklet = g_tasklet_info;
+    memset((char*)(pad+1), '\0', RW_MAGIC_PAD);
+    _update_tasklet_memory_allocated(g_tasklet_info, len);
+    *track_this = 1;
+  } else {
+    pad->magic = RWMALLOC_MAGIC_NOTRACK;
+    pad->size = len;
+    pad->tasklet = g_tasklet_info;
+    memset((char*)(pad+1), '\0', RW_MAGIC_PAD);
+    *track_this = 0;
+  }
 }
 
 static inline void
@@ -109,27 +124,31 @@ _remove_tracking(void *addr) {
 }
 
 static inline void *
-_do_malloc(size_t len, void *(*malloc_fn) (size_t)) {
+_do_malloc(size_t len, void *(*malloc_fn) (size_t), int *track_this) {
   void *ret = (*malloc_fn)(len+MEM_ALLOC_PADDING);
   if (ret) {
-    _fill_padding((rwmemory_padding_t*)ret, len, g_tasklet_info);
+    _fill_padding((rwmemory_padding_t*)ret, len, g_tasklet_info, track_this);
     ret = (char*)ret+MEM_ALLOC_PADDING;
   }
   return ret;
 }
 
 static inline void *
-_do_realloc(void *ptr, size_t len, void *(*realloc_fn) (void*, size_t)) {
+_do_realloc(void *ptr, size_t len, void *(*realloc_fn) (void*, size_t), int *track_this) {
   void *ret;
-  if (ptr && *(int*)((char*)ptr-MEM_ALLOC_PADDING) == MY_MAGIC) {
-    _remove_tracking(ptr);
-    ptr = (char*)ptr-MEM_ALLOC_PADDING;
-    rwmemory_padding_t *pad = (rwmemory_padding_t*)ptr;
-    _update_tasklet_memory_allocated(pad->tasklet, -pad->size);
+  if (ptr) {
+    if (*(int*)((char*)ptr-MEM_ALLOC_PADDING) == RWMALLOC_MAGIC_TRACK) {
+      _remove_tracking(ptr);
+      ptr = (char*)ptr-MEM_ALLOC_PADDING;
+      rwmemory_padding_t *pad = (rwmemory_padding_t*)ptr;
+      _update_tasklet_memory_allocated(pad->tasklet, -pad->size);
+    } else if (*(int*)((char*)ptr-MEM_ALLOC_PADDING) == RWMALLOC_MAGIC_NOTRACK) {
+      ptr = (char*)ptr-MEM_ALLOC_PADDING;
+    }
   }
   ret = (*realloc_fn)(ptr, len+MEM_ALLOC_PADDING);
   if (ret) {
-    _fill_padding((rwmemory_padding_t*)ret, len, g_tasklet_info);
+    _fill_padding((rwmemory_padding_t*)ret, len, g_tasklet_info, track_this);
     ret = (char*)ret+MEM_ALLOC_PADDING;
   }
   return ret;
@@ -137,11 +156,15 @@ _do_realloc(void *ptr, size_t len, void *(*realloc_fn) (void*, size_t)) {
 
 static inline void
 _do_free(void *ptr, void (*free_fn) (void*)) {
-  if (ptr && *(int*)((char*)ptr-MEM_ALLOC_PADDING) == MY_MAGIC) {
-    _remove_tracking(ptr);
-    ptr = (char*)ptr-MEM_ALLOC_PADDING;
-    rwmemory_padding_t *pad = (rwmemory_padding_t*)ptr;
-    _update_tasklet_memory_allocated(pad->tasklet, -pad->size);
+  if (ptr) {
+    if (*(int*)((char*)ptr-MEM_ALLOC_PADDING) == RWMALLOC_MAGIC_TRACK) {
+      _remove_tracking(ptr);
+      ptr = (char*)ptr-MEM_ALLOC_PADDING;
+      rwmemory_padding_t *pad = (rwmemory_padding_t*)ptr;
+      _update_tasklet_memory_allocated(pad->tasklet, -pad->size);
+    } else if (*(int*)((char*)ptr-MEM_ALLOC_PADDING) == RWMALLOC_MAGIC_NOTRACK) {
+      ptr = (char*)ptr-MEM_ALLOC_PADDING;
+    }
   }
   (*free_fn)(ptr);
 }
@@ -155,16 +178,18 @@ void *calloc (size_t n, size_t len)
 {
   void *ret;
   void *caller;
+  int track_this = 0;
+
   if (no_hook) {
     if (callocp == NULL) {
-      ret = _do_malloc(n*len, __libc_malloc);
+      ret = _do_malloc(n*len, __libc_malloc, &track_this);
       memset((char*)ret, '\0', n*len);
      goto _return;
     }
     if (mallocp == NULL) {
       _alloc_init();
     }
-    ret = _do_malloc(n*len, mallocp);
+    ret = _do_malloc(n*len, mallocp, &track_this);
     memset((char*)ret, '\0', n*len);
     goto _return;
   }
@@ -172,83 +197,90 @@ void *calloc (size_t n, size_t len)
   if (mallocp == NULL) {
     _alloc_init();
   }
-  caller = RETURN_ADDRESS(0);
-  void *callers[RW_RESOURCE_TRACK_MAX_CALLERS+2];
-  int callstack_depth = g_callstack_depth;
-  int size = rw_btrace_backtrace(callers, callstack_depth+2);
-  memset(&callers[callstack_depth+2], '\0',
-         (RW_RESOURCE_TRACK_MAX_CALLERS-callstack_depth)*sizeof(callers[0]));
-  if (g_tasklet_info) MEM_ALLOC_PRINTF("%p-%p calloc(%zu, %zu", caller, g_tasklet_info, n, len);
-  ret = _do_malloc(n*len, mallocp);
+  ret = _do_malloc(n*len, mallocp, &track_this);
   memset((char*)ret, '\0', n*len);
-  if (g_tasklet_info) MEM_ALLOC_PRINTF(") -> %p\n", ret);
-  _add_tracking(ret, n*len, "calloc", (void*)(&callers[2]));
+  void *callers[RW_RESOURCE_TRACK_MAX_CALLERS+2];
+  if (track_this) {
+    int callstack_depth = g_callstack_depth;
+    rw_btrace_backtrace(callers, callstack_depth+2);
+    memset(&callers[callstack_depth+2], '\0',
+           (RW_RESOURCE_TRACK_MAX_CALLERS-callstack_depth)*sizeof(callers[0]));
+    caller = (void*)(&callers[2]);
+    if (g_tasklet_info) MEM_ALLOC_PRINTF("%p-%p calloc(%zu, %zu", caller, g_tasklet_info, n, len);
+    if (g_tasklet_info) MEM_ALLOC_PRINTF(") -> %p\n", ret);
+    _add_tracking(ret, n*len, "calloc", (void*)(&callers[2]));
+  }
   no_hook = 0;
 
 _return:
   return ret;
   caller = caller;
   callers[0] = callers[0];
-  size = size;
 }
 
 void *malloc (size_t len)
 {
   void *ret;
   void *caller;
+  int track_this = 0;
+
   if (mallocp == NULL) {
     _alloc_init();
   }
   if (no_hook) {
-    ret = _do_malloc(len, mallocp);
+    ret = _do_malloc(len, mallocp, &track_this);
     goto _return;
   }
   no_hook = 1;
-  caller = RETURN_ADDRESS(0);
+  ret = _do_malloc(len, mallocp, &track_this);
   void *callers[RW_RESOURCE_TRACK_MAX_CALLERS+2];
-  int callstack_depth = g_callstack_depth;
-  int size = rw_btrace_backtrace(callers, callstack_depth+2);
-  memset(&callers[callstack_depth+2], '\0',
-         (RW_RESOURCE_TRACK_MAX_CALLERS-callstack_depth)*sizeof(callers[0]));
-  if (g_tasklet_info) MEM_ALLOC_PRINTF("%p-%p malloc(%zu", caller, g_tasklet_info, len);
-  ret = _do_malloc(len, mallocp);
-  if (g_tasklet_info) MEM_ALLOC_PRINTF(") -> %p\n", ret);
-  _add_tracking(ret, len, "malloc", (void*)(&callers[2]));
+  if (track_this) {
+    int callstack_depth = g_callstack_depth;
+    rw_btrace_backtrace(callers, callstack_depth+2);
+    memset(&callers[callstack_depth+2], '\0',
+           (RW_RESOURCE_TRACK_MAX_CALLERS-callstack_depth)*sizeof(callers[0]));
+    caller = (void*)(&callers[2]);
+    if (g_tasklet_info) MEM_ALLOC_PRINTF("%p-%p malloc(%zu", caller, g_tasklet_info, len);
+    if (g_tasklet_info) MEM_ALLOC_PRINTF(") -> %p\n", ret);
+    _add_tracking(ret, len, "malloc", (void*)(&callers[2]));
+  }
   no_hook = 0;
 
 _return:
   return ret;
   caller = caller;
   callers[0] = callers[0];
-  size = size;
 }
 
 void *realloc(void *ptr, size_t len)
 {
   void *ret;
   void *caller;
+  int track_this = 0;
+
   if (no_hook) {
-    ret = _do_realloc(ptr, len, reallocp);
+    ret = _do_realloc(ptr, len, reallocp, &track_this);
     goto _return;
   }
   no_hook = 1;
-  caller = RETURN_ADDRESS(0);
   void *callers[RW_RESOURCE_TRACK_MAX_CALLERS+2];
-  int callstack_depth = g_callstack_depth;
-  int size = rw_btrace_backtrace(callers, callstack_depth+2);
-  memset(&callers[callstack_depth+2], '\0',
-         (RW_RESOURCE_TRACK_MAX_CALLERS-callstack_depth)*sizeof(callers[0]));
-  if (g_tasklet_info) MEM_ALLOC_PRINTF("%p-%p realloc(%p, %zu", caller, g_tasklet_info, ptr, len);
-  ret = _do_realloc(ptr, len, reallocp);
-  if (g_tasklet_info) MEM_ALLOC_PRINTF(") -> %p\n", ret);
-  _add_tracking(ret, len, "realloc", (void*)(&callers[2]));
+  ret = _do_realloc(ptr, len, reallocp, &track_this);
+  if (track_this) {
+    int callstack_depth = g_callstack_depth;
+    rw_btrace_backtrace(callers, callstack_depth+2);
+    memset(&callers[callstack_depth+2], '\0',
+           (RW_RESOURCE_TRACK_MAX_CALLERS-callstack_depth)*sizeof(callers[0]));
+    caller = (void*)(&callers[2]);
+    if (g_tasklet_info) MEM_ALLOC_PRINTF("%p-%p realloc(%p, %zu", caller, g_tasklet_info, ptr, len);
+    if (g_tasklet_info) MEM_ALLOC_PRINTF(") -> %p\n", ret);
+    _add_tracking(ret, len, "realloc", (void*)(&callers[2]));
+  }
   no_hook = 0;
 
 _return:
   return ret;
   caller = caller;
   callers[0] = callers[0];
-  size = size;
 }
 
 void free (void *ptr)

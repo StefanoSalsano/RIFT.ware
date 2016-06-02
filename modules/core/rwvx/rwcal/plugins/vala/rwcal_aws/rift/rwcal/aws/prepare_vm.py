@@ -7,17 +7,24 @@
 import rift.rwcal.aws as aws_drv
 import logging
 import argparse
+import rwlogger
 import sys, os, time
 
-#logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('rwcal.aws.prepare_vm')
+logging.basicConfig(level=logging.DEBUG)
+
+logger = logging.getLogger()
+rwlog_handler = rwlogger.RwLogger(category="rw-cal-log",
+                                  subcategory="aws",)
+logger.addHandler(rwlog_handler)
+#logger.setLevel(logging.DEBUG)
+
 
         
 def prepare_vm_after_boot(drv,argument):
     vm_inst = drv.get_instance(argument.server_id)
     logger.info("Waiting for VM instance to get to running state")
     vm_inst.wait_until_running()
-    logger.info("VM inst is now in running state") 
+    logger.info("VM instance is now in running state") 
     if argument.vdu_name:
         vm_inst.create_tags(Tags=[{'Key': 'Name','Value':argument.vdu_name}])
     if argument.vdu_node_id is not None:

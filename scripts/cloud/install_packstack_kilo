@@ -165,6 +165,13 @@ else
       fi
 fi
 
+# Customize packstack
+# we do this here to save us from adding a bunch of arguments to this script
+# cobbler writes out this file if customizations to answers.cfg are necessary
+if [ -f /root/rift-openstack-customize.cfg ]; then
+	. /root/rift-openstack-customize.cfg
+fi
+
 # Install packstack
 packstack --answer-file=answers.cfg
 source /root/keystonerc_admin

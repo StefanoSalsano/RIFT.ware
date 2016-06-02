@@ -20,6 +20,8 @@ import threading
 import time
 import random
 import gc
+from gi import require_version
+require_version('CompanyYang', '1.0')
 from gi.repository import CompanyYang
 
 logger = logging.getLogger(__name__)

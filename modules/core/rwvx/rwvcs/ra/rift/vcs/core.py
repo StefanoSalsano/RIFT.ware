@@ -20,6 +20,10 @@
 
 from .ext import ClassProperty
 
+import gi
+gi.require_version('RwManifestYang', '1.0')
+from gi.repository.RwManifestYang import RwmgmtAgentMode
+
 from enum import Enum
 class RecoveryType(Enum):
    NONE = 0
@@ -27,7 +31,7 @@ class RecoveryType(Enum):
    FAILCRITICAL = 2
    IGNORE = 3
    CUSTOM = 4
-    
+
 
 class Collection(object):
     """
@@ -48,6 +52,7 @@ class Collection(object):
             subcomponents=None,
             config_ready=True,
             recovery_action=RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Create a Collection object
 
@@ -65,7 +70,7 @@ class Collection(object):
             subcomponents - a list of subcomponents to add to the collection
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
-
+            start         - Flag denotes whether to initially start this collection
         """
         self.uid = uid
         self.type = type
@@ -74,6 +79,7 @@ class Collection(object):
         self._subcomponents = [] if subcomponents is None else subcomponents
         self.config_ready = config_ready
         self.recovery_action = recovery_action
+        self.start = start
 
     @property
     def subcomponents(self):
@@ -128,6 +134,7 @@ class Collection(object):
             "subcomponents": self.subcomponents,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
+            "start": self.start
             })
 
 
@@ -137,8 +144,8 @@ class Colony(Collection):
     class in future work. Use the Collection class instead.
     """
 
-    def __init__(self, clusters=None, uid=None, name='rw.colony', config_ready=True, 
-                 recovery_action=RecoveryType.FAILCRITICAL.value,
+    def __init__(self, clusters=None, uid=None, name='rw.colony', config_ready=True,
+                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True
                 ):
         """Creates a Colony object.
 
@@ -148,7 +155,7 @@ class Colony(Collection):
             name     - the name of the cluster
             config_ready - config readiness check enable
             recovery_action - recovery action mode
-
+            start        - Flag denotes whether to initially start this collection
         """
         super(Colony, self).__init__(
                 uid=uid,
@@ -157,6 +164,7 @@ class Colony(Collection):
                 subcomponents=clusters,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
     @property
@@ -182,6 +190,7 @@ class Colony(Collection):
             "uid": self.uid,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
+            "start": self.start
             })
 
 
@@ -192,7 +201,7 @@ class Cluster(Collection):
     """
 
     def __init__(self, virtual_machines=None, uid=None, name='rw.cluster', config_ready=True,
-                 recovery_action=RecoveryType.FAILCRITICAL.value,
+                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True
                  ):
         """Creates a Cluster object.
 
@@ -202,7 +211,7 @@ class Cluster(Collection):
             name             - the name of the cluster
             config_ready     - config readiness check enable
             recovery_action  - recovery action mode
-
+            start            - Flag denotes whether to initially start this collection
         """
         super(Cluster, self).__init__(
                 uid=uid,
@@ -211,6 +220,7 @@ class Cluster(Collection):
                 subcomponents=virtual_machines,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
     @property
@@ -236,6 +246,7 @@ class Cluster(Collection):
             "uid": self.uid,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
+            "start": self.start
             })
 
 
@@ -254,6 +265,7 @@ class VirtualMachine(object):
             valgrind_procs=None,
             config_ready=True,
             recovery_action=RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a VirtualMachine object.
 
@@ -270,6 +282,7 @@ class VirtualMachine(object):
             valgrind_procs - a list of procs to add to the VM with valgrind enabled
             config_ready   - config readiness check enable
             recovery_action - recovery action mode
+            start          - Flag denotes whether to initially start this component
         """
         self.subcomponents = []
         self.leader = leader
@@ -279,6 +292,7 @@ class VirtualMachine(object):
         self.valgrind = valgrind
         self.config_ready = config_ready
         self.recovery_action = recovery_action
+        self.start =  start
 
         if procs is not None:
             for proc in procs:
@@ -286,7 +300,7 @@ class VirtualMachine(object):
 
         if restart_procs is not None:
             for proc in restart_procs:
-                self.add_proc(proc, 
+                self.add_proc(proc,
                               recovery_action=RecoveryType.RESTART.value,
                              )
 
@@ -325,6 +339,7 @@ class VirtualMachine(object):
             proc - the proc to add
 
         """
+        proc.config_ready = proc.config_ready and self.start
         if isinstance(proc, Tasklet):
             self.subcomponents.append(Proc(tasklets=[proc], valgrind=valgrind,
                                       recovery_action=recovery_action,
@@ -346,6 +361,7 @@ class VirtualMachine(object):
             tasklet - the tasklet to add to the virtual machine.
 
         """
+        tasklet.config_ready = tasklet.config_ready and self.start
         self.subcomponents.append(tasklet)
 
     def __repr__(self):
@@ -360,6 +376,7 @@ class VirtualMachine(object):
             "ip": self.ip,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
+            "start": self.start
             })
 
 
@@ -367,7 +384,7 @@ class Tasklet(object):
     """Represents a tasklet."""
 
     def __init__(self, name='rw.tasklet', uid=None, config_ready=True,
-                 recovery_action=RecoveryType.FAILCRITICAL.value,
+                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True
                 ):
         """Creates a Tasklet object.
 
@@ -376,12 +393,13 @@ class Tasklet(object):
             uid              - a unique ID
             config_ready     - config readiness check enable
             recovery_action  - recovery action mode
-
+            start            - Flag denotes whether to initially start this component
         """
         self.name = name
         self.uid = uid
         self.config_ready = config_ready
         self.recovery_action = recovery_action
+        self.start = start
 
     def __repr__(self):
         """Returns a representation of the object."""
@@ -393,6 +411,7 @@ class Tasklet(object):
             "uid": self.uid,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
+            "start": self.start
             })
 
     # Each tasklet represents a plugin and has a name associated with the
@@ -417,6 +436,7 @@ class NativeProcess(object):
             interactive=False,
             config_ready=True,
             recovery_action=RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a NativeProcess object.
 
@@ -430,6 +450,7 @@ class NativeProcess(object):
             interactive - Native process runs in an interactive mode (like CLI)
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
         """
         self.uid = uid
         self.name = name
@@ -440,6 +461,7 @@ class NativeProcess(object):
         self.interactive = interactive
         self.config_ready = config_ready
         self.recovery_action = recovery_action
+        self.start = start
 
     def __repr__(self):
         """Returns a representation of the object."""
@@ -453,6 +475,7 @@ class NativeProcess(object):
             "interactive": self.interactive,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
+            "start": self.start
             })
 
     @property
@@ -462,6 +485,14 @@ class NativeProcess(object):
     @property
     def args(self):
         return self._args
+
+    def set_exe(self, exe):
+        """ Set this Processes exe"""
+        self._exe = exe
+
+    def set_args(self, args):
+        """ Set this Processes argument string"""
+        self._args = args
 
 
 class Proc(object):
@@ -475,6 +506,7 @@ class Proc(object):
             valgrind=None,
             config_ready=True,
             recovery_action=RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a Tasklet object.
 
@@ -485,6 +517,7 @@ class Proc(object):
             tasklets - a list of tasklets
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         self.uid = uid
@@ -494,6 +527,7 @@ class Proc(object):
         self.valgrind = valgrind
         self.config_ready = config_ready
         self.recovery_action = recovery_action
+        self.start = start
 
     @property
     def tasklets(self):
@@ -507,6 +541,7 @@ class Proc(object):
             tasklet - the tasklet to add to the proc
 
         """
+        tasklet.config_ready = tasklet.config_ready and self.start
         self.subcomponents.append(tasklet)
 
     def __repr__(self):
@@ -520,6 +555,7 @@ class Proc(object):
             "uid": self.uid,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
+            "start": self.start
             })
 
 
@@ -538,28 +574,34 @@ class SystemInfo(object):
             valgrind=None,
             vm_bootstrap=None,
             proc_bootstrap=None,
-            northbound_listing="rwbase_schema_listing.txt"
+            northbound_listing="rwbase_schema_listing.txt",
+            netconf_trace=None,
+            agent_mode=RwmgmtAgentMode.AUTOMODE,
             ):
         """Creates a SystemInfo object.
 
         Arguments:
-            colonies         - a list of the colonies in the system
-            mode             - the mode of the system
-            collapsed        - a flag indicating whether the system should be run
-                              in collapsed (True) more or expanded (False).
-            zookepper        - the zookeeper instance to use
-            multi_broker     - a flag the determines whether the system will run in
-                              single-broker or multi-broker mode.
-            multi_dtsrouter  - a flag the determines whether the system will run in
-                              single-dtsrouter or multi-dtsrouter mode.
-            dtsperfmgr      - a flag that determines whether the system will run the
-                              dtsperfmgr or not.
-            valgrind         - a list of components that are wrapped by valgrind
-            vm_bootstrap     - a list of components that are part of RWVM bootstrapping
-            proc_bootstrap   - a list of components that are part of RWProc bootstrapping
+            colonies           - a list of the colonies in the system
+            mode               - the mode of the system
+            collapsed          - a flag indicating whether the system should be run
+                                 in collapsed (True) more or expanded (False).
+            zookepper          - the zookeeper instance to use
+            multi_broker       - a flag the determines whether the system will run in
+                                 single-broker or multi-broker mode.
+            multi_dtsrouter    - a flag the determines whether the system will run in
+                                 single-dtsrouter or multi-dtsrouter mode.
+            dtsperfmgr         - a flag that determines whether the system will run the
+                                 dtsperfmgr or not.
+            valgrind           - a list of components that are wrapped by valgrind
+            vm_bootstrap       - a list of components that are part of RWVM bootstrapping
+            proc_bootstrap     - a list of components that are part of RWProc bootstrapping
             northbound_listing - the northbound schema list.
+            agent-mode         - Management Agent mode; RwmgmtAgentMode.CONFD or RwmgmtAgentMode.RWXML
+            netconf_trace      - Knob to enable/disable netconf trace generation.
+                                  Valid values - ENABLE / DISABLE / AUTO
 
         """
+        assert agent_mode in [RwmgmtAgentMode.CONFD, RwmgmtAgentMode.RWXML, RwmgmtAgentMode.AUTOMODE]
         self.collapsed = collapsed
         self.subcomponents = [] if colonies is None else colonies
         self.mode = mode
@@ -572,6 +614,9 @@ class SystemInfo(object):
         self.proc_bootstrap = [] if proc_bootstrap is None else proc_bootstrap
         self.use_rw_shell = False
         self.northbound_listing = northbound_listing
+        self.mock_cli = False
+        self.agent_mode = agent_mode
+        self.netconf_trace = netconf_trace
 
         def add_to_subcomponents(components):
             for component in components:

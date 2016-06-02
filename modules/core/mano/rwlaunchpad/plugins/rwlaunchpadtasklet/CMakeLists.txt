@@ -27,6 +27,9 @@ rift_python_install_tree(
     rift/tasklets/${TASKLET_NAME}/datacenters.py
     rift/tasklets/${TASKLET_NAME}/message.py
     rift/tasklets/${TASKLET_NAME}/tasklet.py
+    rift/tasklets/${TASKLET_NAME}/tosca.py
     rift/tasklets/${TASKLET_NAME}/uploader.py
   COMPONENT ${PKG_LONG_NAME}
   PYTHON3_ONLY)
+
+rift_add_subdirs(test)

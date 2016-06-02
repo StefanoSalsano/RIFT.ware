@@ -1147,7 +1147,7 @@ module rw-dts-api-log
   notification trace-set {
     rwnotify:log-event-id 00030056;
     description "DTS API trace configured/set event";
-    uses rwlog:severity-critical;
+    uses rwlog:severity-error;
     uses dts-api-attr;
     leaf xpath {
       description "xpath targeted for tracing";
@@ -1162,7 +1162,7 @@ module rw-dts-api-log
   notification trace-unknown {
     rwnotify:log-event-id 00030057;
     description "DTS API trace unknown type";
-    uses rwlog:severity-critical;
+    uses rwlog:severity-error;
     leaf xact-id        { type string; }
     leaf log            { type string; }
   }
@@ -1171,7 +1171,7 @@ module rw-dts-api-log
   notification trace-req {
     rwnotify:log-event-id 00030058;
     description "DTS API trace REQ type";
-    uses rwlog:severity-critical;
+    uses rwlog:severity-error;
     leaf xact-id      { type string; }
     leaf event        { type string; }
     leaf srcpath      { type string; }
@@ -1186,7 +1186,7 @@ module rw-dts-api-log
   notification trace-member-match {
     rwnotify:log-event-id 00030059;
     description "DTS API trace member match";
-    uses rwlog:severity-critical;
+    uses rwlog:severity-error;
     leaf xact-id          { type string; }
     leaf destination_path { type string; }
     leaf query            { type uint32; }
@@ -1198,7 +1198,7 @@ module rw-dts-api-log
   notification trace-add-block {
     rwnotify:log-event-id 00030060;
     description "DTS API trace add block";
-    uses rwlog:severity-critical;
+    uses rwlog:severity-error;
     leaf xact-id          { type string; }
     leaf blockidx         { type uint32; }
     leaf destpath         { type string; }
@@ -1208,7 +1208,7 @@ module rw-dts-api-log
   notification trace-abort {
     rwnotify:log-event-id 00030061;
     description "DTS API trace abort ";
-    uses rwlog:severity-critical;
+    uses rwlog:severity-notice;
     leaf xact-id          { type string; }
     leaf srcpath          { type string; }
     leaf dstpath          { type string; }
@@ -1218,7 +1218,7 @@ module rw-dts-api-log
   notification trace-route {
     rwnotify:log-event-id 00030062;
     description "DTS API trace route ";
-    uses rwlog:severity-critical;
+    uses rwlog:severity-error;
     leaf xact-id          { type string; }
     leaf queryid          { type uint64; }
     leaf matchpath        { type string; }
@@ -1973,6 +1973,18 @@ module rw-dts-api-log
     uses rwlog:severity-info-critinfo;
     leaf waiting-on {
       description "Still waiting on these tasks";
+      type string;
+    }
+  }
+
+  notification audit-config-no-result {
+    rwnotify:log-event-id 00030113;
+    description "Config returned no result.. Probably waiting commit";
+    uses rwlog:severity-debug;
+    uses dts-reg-attr;
+
+    leaf config-keyspec {
+      description "Config keyspec without results";
       type string;
     }
   }

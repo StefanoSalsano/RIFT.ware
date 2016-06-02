@@ -5,6 +5,5 @@
 
   <modifications>
      <addPrintHook path="rw-debug heap" hook="rwcli_plugin:print_tasklet_heap"/>
-     <addPrintHook path="rw-debug" hook="rwcli_plugin:default_print"/>
   </modifications>
 </cli>

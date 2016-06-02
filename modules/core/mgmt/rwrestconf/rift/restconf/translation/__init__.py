@@ -7,7 +7,6 @@
 
 
 from .result import (
-    convert_netconf_response_to_json,
     convert_rpc_to_json_output,
     convert_rpc_to_xml_output,
     convert_xml_to_collection,
@@ -17,6 +16,7 @@ from .result import (
 from .query import (
     ConfdRestTranslator,
     JsonToXmlTranslator,
+    convert_get_request_to_xml,
 )
 
 from .subscription import (

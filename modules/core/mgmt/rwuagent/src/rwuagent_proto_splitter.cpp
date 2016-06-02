@@ -21,7 +21,7 @@ using namespace rw_yang;
 ProtoSplitter::ProtoSplitter(
     rwdts_xact_t* xact,
     YangModel *model,
-    RWDtsFlag flag,
+    RWDtsXactFlag flag,
     XMLNode* root_node )
 : xact_(xact),
   dts_flags_(flag),
@@ -76,7 +76,7 @@ rw_xml_next_action_t ProtoSplitter::visit(
 
   rw_status_t rs = rwdts_xact_block_add_query_ks(blk, keyspec, 
                                                  RWDTS_QUERY_UPDATE, 
-                                                 RWDTS_FLAG_ADVISE | dts_flags_, 
+                                                 RWDTS_XACT_FLAG_ADVISE | dts_flags_, 
                                                  0, message);
   if (rs != RW_STATUS_SUCCESS) {
     rw_keyspec_path_free(keyspec, NULL );

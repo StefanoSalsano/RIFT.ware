@@ -17,9 +17,9 @@
 #include <iostream>
 #include <string>
 
-#include "RwyangutilArgumentParser.hpp"
-#include "RwyangutilFileProtoOps.hpp"
 #include "rwyangutil.h"
+#include "rwyangutil_argument_parser.hpp"
+#include "rwyangutil_file_proto_ops.hpp"
 
 
 int main(int argc, char* argv[])
@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
     return EXIT_SUCCESS;
   }
 
-  rwyangutil::FileProtoOps::init_command_map();
+
   rwyangutil::FileProtoOps fops;
 
   bool created_lock = false;

@@ -41,13 +41,11 @@ set(CF_VERSION 744.12)
 # Include the subdirs
 ##
 set(subdirs 
-  rwcmdargs
   rwtypes
   rwlib
   rwtrace
   rwmemlog
   rwut
-  rwutcli
   yangtools
 )
 rift_add_subdirs(SUBDIR_LIST ${subdirs})

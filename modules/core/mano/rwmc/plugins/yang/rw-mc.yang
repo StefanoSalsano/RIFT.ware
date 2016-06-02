@@ -29,24 +29,12 @@ module rw-mc
     prefix "rwcli";
   }
 
-  import rw-yang-types {
-    prefix "rwt";
-  }
-
   import rwcal {
     prefix "rwcal";
   }
 
   import rwsdn {
     prefix "rwsdn";
-  }
-
-  import rw-notify-ext {
-    prefix "rwnotify";
-  }
-
-  import rw-log {
-    prefix "rwlog";
   }
 
   revision 2014-07-30 {
@@ -438,82 +426,5 @@ module rw-mc
     }
   }
 
-
-  /*
-   * Generic Logger Log Events - ID space 120000 - 120099
-   */
-  notification debug {
-    rwpb:msg-new Debug;
-    rwnotify:log-event-id 120000;
-      description
-         "Generic Debug Log";
-      uses rwlog:severity-debug;
-      leaf category {
-        type string;
-      }
-      leaf log  {
-        type string;
-      }
-  }
-
-  notification info {
-    rwpb:msg-new Info;
-    rwnotify:log-event-id 120001;
-      description
-         "Generic Info Log";
-      uses rwlog:severity-info;
-      leaf category {
-        type string;
-      }
-      leaf log  {
-        type string;
-      }
-  }
-
-  notification warn {
-    rwpb:msg-new Warn;
-    rwnotify:log-event-id 120002;
-      description
-         "Generic Warning Log";
-      uses rwlog:severity-warning;
-      leaf category {
-        type string;
-      }
-      leaf log  {
-        type string;
-      }
-  }
-
-  notification error {
-    rwpb:msg-new Error;
-    rwnotify:log-event-id 120003;
-      description
-         "Generic Warning Log";
-      uses rwlog:severity-error;
-      leaf category {
-        type string;
-      }
-      leaf log  {
-        type string;
-      }
-  }
-
-  notification critical {
-    rwpb:msg-new Critical;
-    rwnotify:log-event-id 120004;
-      description
-         "Generic Critical Log";
-      uses rwlog:severity-critical;
-      leaf category {
-        type string;
-      }
-      leaf log  {
-        type string;
-      }
-  }
-
-  /*
-   * END - generic log events
-   */
 
 }

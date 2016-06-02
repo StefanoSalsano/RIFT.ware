@@ -47,6 +47,31 @@ module rwsdn
         "RIFT RWSDN cloud data";
   }
 
+  typedef sdn-connection-status-enum {
+    description "Connection status for the sdn account";
+    type enumeration {
+      enum unknown;
+      enum validating;
+      enum success;
+      enum failure;
+    }
+  }
+
+  grouping connection-status {
+    container connection-status {
+      config false;
+      rwpb:msg-new SdnConnectionStatus;
+      leaf status {
+        type sdn-connection-status-enum;
+      }
+      leaf details {
+        type string;
+      }
+    }
+  }
+
+  uses connection-status;
+
   typedef sdn-account-type {
     description "SDN account type";
     type enumeration {
@@ -99,6 +124,9 @@ module rwsdn
         leaf username {
           type string;
         }
+        leaf topology-source {
+          type string;
+        }
         leaf plugin-name {
           type string;
           default "rwsdn_sim";
@@ -117,6 +145,7 @@ module rwsdn
       }
 
       uses sdn-provider-auth;
+      uses connection-status;
     }
   }
 
@@ -180,7 +209,48 @@ module rwsdn
               type inet:port-number;
             }
           }
+          leaf sff-name {
+            description "SFF name useful for non OVS based SFF";
+            type string;
+          } 
         }
+      }
+      list sff {
+        rwpb:msg-new VNFFGSff;
+        key "name"; 
+        leaf name {
+          type string;
+        }
+        leaf function-type {
+          type string;
+        }
+        leaf mgmt-address {
+          type inet:ip-address;
+        }
+        leaf mgmt-port {
+          type inet:port-number;
+        }
+        list dp-endpoints {
+          key "name";
+          leaf name {
+           type string;
+          } 
+          leaf address {
+            type inet:ip-address;
+          }
+          leaf port {
+            type inet:port-number;
+          }
+        }
+        list vnfr-list {
+          key "vnfr-name";
+          leaf vnfr-name {
+            type string;
+          }
+        }
+      }
+      leaf classifier-name {
+        type string;
       }
     }
   }
@@ -254,6 +324,23 @@ module rwsdn
         rwpb:field-inline "true";
         rwpb:field-string-max 64;
         type string;
+      }
+      leaf sff-name {
+        type string;
+      }
+      container vnffg-metadata {
+        leaf ctx1 {
+          type string;
+        }
+        leaf ctx2 {
+          type string;
+        }
+        leaf ctx3 {
+          type string;
+        }
+        leaf ctx4 {
+          type string;
+        }
       }
       list match-attributes {
         description

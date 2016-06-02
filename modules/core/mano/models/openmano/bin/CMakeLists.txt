@@ -9,7 +9,6 @@ install(
   PROGRAMS
     openmano
     openmano_cleanup.sh
-    add_corporation.py
   DESTINATION usr/bin
   COMPONENT ${PKG_LONG_NAME}
 )

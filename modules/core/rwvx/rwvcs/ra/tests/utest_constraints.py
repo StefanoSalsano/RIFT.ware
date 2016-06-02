@@ -65,41 +65,6 @@ class TestSystemConstraints(unittest.TestCase):
         with self.assertRaises(rift.vcs.compiler.exc.ConstraintError):
             constraint(sysinfo)
 
-    def test_no_more_than_one_confd(self):
-        sysinfo = rift.vcs.SystemInfo(
-                colonies=[
-                    rift.vcs.Collection(
-                        name='test.collection',
-                        subcomponents=[
-                            rift.vcs.VirtualMachine(
-                                name='test.vm',
-                                procs=[
-                                    rift.vcs.Confd(),
-                                    rift.vcs.Confd(),
-                                    ]
-                                )
-                            ]
-                        )
-                    ]
-                )
-
-        constraint = rift.vcs.compiler.constraints.NoMoreThanOneConfd()
-
-        # With 2 instances of the confd process in the system, the constraint
-        # will fail.
-        with self.assertRaises(rift.vcs.compiler.exc.ConstraintError):
-            constraint(sysinfo)
-
-        # Removing 1 of the confd processes from the system, will satisfy the
-        # constraint.
-        sysinfo.remove(sysinfo.find_by_class(rift.vcs.Confd))
-        constraint(sysinfo)
-
-        # Removing the final confd process from the system will also satisy the
-        # constraint.
-        sysinfo.remove(sysinfo.find_by_class(rift.vcs.Confd))
-        constraint(sysinfo)
-
     def test_adjacent_agent_and_restconf(self):
         # A virtual machine must contain both a uAgent tasklet and a restconf
         # tasklet or neither.

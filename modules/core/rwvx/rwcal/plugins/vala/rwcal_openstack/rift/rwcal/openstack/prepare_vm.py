@@ -8,9 +8,15 @@ import rift.rwcal.openstack as openstack_drv
 import logging
 import argparse
 import sys, os, time
+import rwlogger
 
 logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger('rift.cal.openstack.prepare_vm')
+logger = logging.getLogger()
+
+rwlog_handler = rwlogger.RwLogger(category="rw-cal-log",
+                                  subcategory="openstack",)
+logger.addHandler(rwlog_handler)
+#logger.setLevel(logging.DEBUG)
 
 
 def assign_floating_ip_address(drv, argument):
@@ -79,7 +85,7 @@ def prepare_vm_after_boot(drv,argument):
 
     ### Wait for 2 minute for server to come up -- Needs fine tuning
     wait_time = 120 
-    sleep_time = 0.2
+    sleep_time = 1
     for i in range(int(wait_time/sleep_time)):
         server = drv.nova_server_get(argument.server_id)
         if server['status'] == 'ACTIVE':

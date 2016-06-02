@@ -3,11 +3,18 @@
 #
 
 import asyncio
+import concurrent.futures
+import json
 
 from gi.repository import (
     RwDts as rwdts,
+    RwTypes,
+    RwVnfdYang,
+    RwYang
     )
 import rift.tasklets
+
+import requests
 
 
 class NsrOpDataDtsHandler(object):
@@ -47,7 +54,7 @@ class NsrOpDataDtsHandler(object):
         self._log.debug("Created NSR xact = %s, %s:%s", xact, path, msg)
 
     @asyncio.coroutine
-    def update(self, xact, path, msg, flags=rwdts.Flag.REPLACE):
+    def update(self, xact, path, msg, flags=rwdts.XactFlag.REPLACE):
         """
         Update an NS record in DTS with the path and message
         """
@@ -212,3 +219,59 @@ class VlrPublisherDtsHandler(object):
         self._log.debug("Deleting VLR xact = %s, %s", xact, path)
         self.regh.delete_element(path)
         self._log.debug("Deleted VLR xact = %s, %s", xact, path)
+
+
+class VnfdPublisher(object):
+    AUTH = ('admin', 'admin')
+    HEADERS = {"content-type": "application/vnd.yang.data+json"}
+
+
+    def __init__(self, use_ssl, ssl_cert, ssl_key, loop):
+        self.use_ssl = use_ssl
+        self.ssl_cert = ssl_cert
+        self.ssl_key = ssl_key
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.loop = loop
+
+    @asyncio.coroutine
+    def update(self, vnfd):
+        def update(vnfd):
+            """
+            Update VNFD record using rest API, as the config data is handled
+            by uAgent and stored in CDB
+            """
+
+            scheme = "https" if self.use_ssl else "http"
+
+            url = "{}://127.0.0.1:8008/api/config/vnfd-catalog/vnfd/{}"
+
+            model = RwYang.Model.create_libncx()
+            model.load_module("rw-vnfd")
+            model.load_module("vnfd")
+
+            data = vnfd.to_json(model)
+
+            key = "vnfd:vnfd-catalog"
+            newdict = json.loads(data)
+            if key in newdict:
+                data = json.dumps(newdict[key])
+
+            options = {"data": data,
+                       "headers": VnfdPublisher.HEADERS,
+                       "auth": VnfdPublisher.AUTH}
+
+            if self.use_ssl:
+                options["verify"] = False
+                options["cert"] = (self.ssl_cert, self.ssl_key)
+
+            response = requests.put(
+                url.format(scheme, vnfd.id),
+                **options
+            )
+
+        status = yield from self.loop.run_in_executor(
+            None,
+            update,
+            vnfd
+            )
+

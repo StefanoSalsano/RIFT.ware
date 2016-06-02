@@ -3257,7 +3257,7 @@ static rwdts_member_rsp_code_t memberapi_test_prepare(const rwdts_xact_info_t* x
     }
 
     flags = rwdts_member_get_query_flags(xact_info->queryh);
-    EXPECT_TRUE(flags|RWDTS_FLAG_ADVISE);
+    EXPECT_TRUE(flags|RWDTS_XACT_FLAG_ADVISE);
 //  rwdts_xact_info_respond_xpath(xact_info,dts_rsp_code,xpath,array[0]);
 
     rwdts_member_send_response(xact, xact_info->queryh, &rsp);
@@ -3465,7 +3465,7 @@ static rwdts_member_rsp_code_t memberapi_test_anycast_prepare(const rwdts_xact_i
                             "ERRORERRORERRORERRORERRORERRORERRORERRORERROR ");
 
     flags = rwdts_member_get_query_flags(xact_info->queryh);
-    EXPECT_TRUE(flags|RWDTS_FLAG_ADVISE);
+    EXPECT_TRUE(flags|RWDTS_XACT_FLAG_ADVISE);
 
     rwdts_member_send_response(xact, xact_info->queryh, &rsp);
 
@@ -3877,7 +3877,7 @@ static void rwdts_clnt_try_append_callback(rwdts_xact_t *xact, rwdts_xact_status
 
         RW_ASSERT(ti->async_rsp_state.xact_info);
         flags = rwdts_member_get_query_flags(ti->async_rsp_state.xact_info->queryh);
-        EXPECT_TRUE(flags|RWDTS_FLAG_ADVISE);
+        EXPECT_TRUE(flags|RWDTS_XACT_FLAG_ADVISE);
 
         if (!s->multi_router)
         rwdts_member_send_response(xact, ti->async_rsp_state.xact_info->queryh, &rsp);
@@ -3955,8 +3955,7 @@ static rwdts_member_rsp_code_t memberapi_test_append_prepare(const rwdts_xact_in
 #endif
 
   RW_ASSERT(s);
-  //wtf  flags |= RWDTS_FLAG_WAIT_RESPONSE;
-  flags |= RWDTS_FLAG_STREAM;	/* Individual responses! */
+  flags |= RWDTS_XACT_FLAG_STREAM;	/* Individual responses! */
   s->prepare_cb_called++;
 
   if (!in_subquery) {
@@ -4118,7 +4117,7 @@ static void rwdts_mem_clnt_transreg_callback(rwdts_xact_t *xact, rwdts_xact_stat
 
   if (xact_status->status == RWDTS_XACT_COMMITTED) {
     if (!s->exitnow) {
-      dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 3/10);
+      dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 3/2);
       rwsched_dispatch_after_f(s->tenv->t[TASKLET_MEMBER_0].tasklet, when,
                                s->member[0].rwq, &s->exitnow, set_exitnow);
     }
@@ -4246,7 +4245,7 @@ static rwdts_member_rsp_code_t memberapi_test_transreg_prepare(const rwdts_xact_
     rsp.evtrsp  = RWDTS_EVTRSP_ACK;
 
     flags = rwdts_member_get_query_flags(xact_info->queryh);
-    EXPECT_TRUE(flags|RWDTS_FLAG_ADVISE);
+    EXPECT_TRUE(flags|RWDTS_XACT_FLAG_ADVISE);
 
     rwdts_member_send_response(xact, xact_info->queryh, &rsp);
     RW_FREE(phone->number);
@@ -4309,7 +4308,7 @@ fprintf(stderr, "SHARED prepare in member %d\n", ti->member_idx);
     rsp.evtrsp  = RWDTS_EVTRSP_ACK;
 
     flags = rwdts_member_get_query_flags(xact_info->queryh);
-    EXPECT_TRUE(flags|RWDTS_FLAG_ADVISE);
+    EXPECT_TRUE(flags|RWDTS_XACT_FLAG_ADVISE);
 
     rwdts_member_send_response(xact, xact_info->queryh, &rsp);
 
@@ -4512,7 +4511,7 @@ memberapi_test_advice_prepare(const rwdts_xact_info_t* xact_info,
 
     rwdts_member_send_response(xact, xact_info->queryh, &rsp);
     flags = rwdts_member_get_query_flags(xact_info->queryh);
-    EXPECT_TRUE(flags|RWDTS_FLAG_ADVISE);
+    EXPECT_TRUE(flags|RWDTS_XACT_FLAG_ADVISE);
     s->num_responses++;
 
     return RWDTS_ACTION_OK;
@@ -5145,7 +5144,7 @@ static void rwdts_clnt_query_callback(rwdts_xact_t *xact, rwdts_xact_status_t* x
     case XACT_RESULT_ABORT:
       ASSERT_EQ(xact_status->status, RWDTS_XACT_ABORTED);
       /* We don't much care about results from abort although there may be some */
-      rwdts_clnt_query_error(xact, true);
+      rwdts_clnt_query_error(xact, false);
       break;
     case XACT_RESULT_ERROR:
       ASSERT_EQ(xact_status->status, RWDTS_XACT_FAILURE);
@@ -5397,7 +5396,7 @@ static void rwdts_clnt_query_append_callback(rwdts_xact_t *xact, rwdts_xact_stat
     else {
       ASSERT_EQ(s->prepare_cb_called,3);
     }
-    dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 3/10);
+    dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 1);
     rwsched_dispatch_after_f(s->tenv->t[TASKLET_MEMBER_0].tasklet, when,
 			     s->member[0].rwq, &s->exitnow, set_exitnow);
   }
@@ -5571,10 +5570,9 @@ static void memberapi_ident_client_start_f(void *ctx)
   if (!s->client.transactional) {
     flags |= RWDTS_XACT_FLAG_NOTRAN ;
   }
-  flags |= RWDTS_FLAG_ADVISE;
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
-  if (getenv("RWDTS_FLAG_TRACE")) {
-    flags |= RWDTS_FLAG_TRACE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
+  if (getenv("RWDTS_XACT_FLAG_TRACE")) {
+    flags |= RWDTS_XACT_FLAG_TRACE;
   }
   flags |= RWDTS_XACT_FLAG_END;
 
@@ -5642,11 +5640,10 @@ static void memberapi_client_start_f(void *ctx)
   if (!s->client.transactional) {
     flags |= RWDTS_XACT_FLAG_NOTRAN ;
   }
-  flags |= RWDTS_FLAG_ADVISE;
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
 
-  if (getenv("RWDTS_FLAG_TRACE")) {
-    flags |= RWDTS_FLAG_TRACE;
+  if (getenv("RWDTS_XACT_FLAG_TRACE")) {
+    flags |= RWDTS_XACT_FLAG_TRACE;
   }
 
   rw_status_t rs = RW_STATUS_FAILURE;
@@ -5705,7 +5702,7 @@ static void memberapi_client_start_f(void *ctx)
       RW_ASSERT(!s->client.perfdata);
     }
     flags |= RWDTS_XACT_FLAG_END;// xact_parent = NULL
-    flags |= RWDTS_FLAG_ADVISE;
+    flags |= RWDTS_XACT_FLAG_ADVISE;
 
     xact = rwdts_api_xact_create(clnt_apih, flags,
                                 clnt_cb.cb, clnt_cb.ud);
@@ -5822,8 +5819,7 @@ static void memberapi_client_anycast_start_f(void *ctx)
   RWPB_F_MSG_INIT(TestdtsRwBase_VcsResource_Vm_Cpu, cpu);
 
   uint32_t flags = 0;
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
-  flags |= RWDTS_FLAG_TRACE;
+  flags |= RWDTS_XACT_FLAG_TRACE;
 
   fprintf(stderr, "[ Expect trace output here: ]\n");
   xact = rwdts_api_query_ks(clnt_apih,
@@ -5864,10 +5860,9 @@ static void memberapi_client_merge_start_f(void *ctx)
 
   uint32_t flags = 0;
   if (s->stream_results) {
-    flags |= RWDTS_FLAG_STREAM;
+    flags |= RWDTS_XACT_FLAG_STREAM;
   } else {
-    flags |= RWDTS_FLAG_WAIT_RESPONSE;
-    flags |= RWDTS_FLAG_BLOCK_MERGE;
+    flags |= RWDTS_XACT_FLAG_BLOCK_MERGE;
   }
 
   xact = rwdts_api_query_ks(clnt_apih,
@@ -5985,9 +5980,8 @@ static void memberapi_client_empty_start_f(void *ctx)
 
   uint32_t flags = 0;
   if (s->stream_results == TRUE) {
-    flags |= RWDTS_FLAG_BLOCK_MERGE;
-    flags |= RWDTS_FLAG_WAIT_RESPONSE;
-    flags |= RWDTS_FLAG_STREAM;
+    flags |= RWDTS_XACT_FLAG_BLOCK_MERGE;
+    flags |= RWDTS_XACT_FLAG_STREAM;
   }
 
   xact = rwdts_api_query_ks(clnt_apih,
@@ -6086,10 +6080,10 @@ memberapi_client_refcnt_regready_f(rwdts_member_reg_handle_t regh,
   rw_keyspec_path_set_category(keyspec, NULL, RW_SCHEMA_CATEGORY_DATA);
 
   uint32_t flags = 0;
-  if (getenv("RWDTS_FLAG_TRACE")) {
-    flags |= RWDTS_FLAG_TRACE;
+  if (getenv("RWDTS_XACT_FLAG_TRACE")) {
+    flags |= RWDTS_XACT_FLAG_TRACE;
   }
-  flags |= RWDTS_FLAG_ADVISE ;
+  flags |= RWDTS_XACT_FLAG_ADVISE ;
 
   xact = rwdts_api_xact_create(clnt_apih,
              flags,
@@ -6121,14 +6115,14 @@ memberapi_client_refcnt_regready_f(rwdts_member_reg_handle_t regh,
     rs = rwdts_xact_block_add_query_ks(blk,
                                 keyspec,
                                 j?RWDTS_QUERY_UPDATE:RWDTS_QUERY_CREATE,
-                                RWDTS_FLAG_ADVISE,
+                                RWDTS_XACT_FLAG_ADVISE,
                                 1000+j,
                                 &nc->base);
    ASSERT_EQ(rs, RW_STATUS_SUCCESS);
    } 
 
   rs =rwdts_xact_block_execute(blk, 
-                RWDTS_XACT_FLAG_END|RWDTS_FLAG_ADVISE,NULL, NULL, NULL);
+                RWDTS_XACT_FLAG_END|RWDTS_XACT_FLAG_ADVISE,NULL, NULL, NULL);
   ASSERT_EQ(rs, RW_STATUS_SUCCESS);
   rs = rwdts_xact_commit(xact);
   ASSERT_EQ(rs, RW_STATUS_SUCCESS);
@@ -6253,10 +6247,9 @@ static void memberapi_client_publish_start_f(void *ctx)
 
   uint32_t flags = 0;
   if (s->stream_results == TRUE) {
-    flags |= RWDTS_FLAG_STREAM;
+    flags |= RWDTS_XACT_FLAG_STREAM;
   } else {
-    flags |= RWDTS_FLAG_BLOCK_MERGE;
-    flags |= RWDTS_FLAG_WAIT_RESPONSE;
+    flags |= RWDTS_XACT_FLAG_BLOCK_MERGE;
   }
   xact = rwdts_api_query_ks(clnt_apih,
                             keyspec,
@@ -6546,7 +6539,7 @@ static void memberapi_client_append_start_f(void *ctx)
 
   RW_ASSERT(venv_g.checked);
   if (venv_g.val) {
-    flags |= RWDTS_FLAG_TRACE;
+    flags |= RWDTS_XACT_FLAG_TRACE;
   }
 
 
@@ -6710,7 +6703,6 @@ static void memberapi_member_shared_reg_ready(rwdts_member_reg_handle_t regh,
   RWPB_F_MSG_INIT(TestdtsRwBase_TestdtsRwBase_data_Logging_Filter_Category, filter);
 
   uint32_t flags = 0;
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
 
   xact = rwdts_api_query_ks(clnt_apih,keyspec,RWDTS_QUERY_READ,flags,
                 rwdts_clnt_query_shared_callback,ctx,&filter->base);
@@ -6761,7 +6753,7 @@ static void memberapi_client_start_reroot_f(void *ctx)
   if (!s->client.transactional) {
     flags |= RWDTS_XACT_FLAG_NOTRAN ;
   }
-  flags |= RWDTS_FLAG_ADVISE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
 
   rw_status_t rs = RW_STATUS_FAILURE;
 
@@ -6857,7 +6849,7 @@ static void memberapi_client_start_expand_f(void *ctx)
   if (!s->client.transactional) {
     flags |= RWDTS_XACT_FLAG_NOTRAN ;
   }
-  flags |= RWDTS_FLAG_ADVISE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
 
   rw_status_t rs = RW_STATUS_FAILURE;
 
@@ -7313,7 +7305,7 @@ static void memberapi_update_merge_client_start_f(void *ctx)
   rs = rwdts_member_reg_handle_update_element(list_reg,
                                              (rw_keyspec_entry_t*)&kpe,
                                              &fpath.base,
-                                             RWDTS_FLAG_REPLACE,
+                                             RWDTS_XACT_FLAG_REPLACE,
                                              NULL);
   EXPECT_EQ(RW_STATUS_SUCCESS, rs);
 
@@ -8310,7 +8302,7 @@ static void member_gi_api_client_start_f(void *ctx)
   if (!s->client.transactional) {
     flags |= RWDTS_XACT_FLAG_NOTRAN ;
   }
-  flags |= RWDTS_FLAG_ADVISE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
 
   RWPB_T_MSG(DtsTest_Person) person;
   
@@ -9997,7 +9989,7 @@ static void memberapi_obj_client_start_f(void *ctx)
 
   rwdts_xact_t* xact = NULL;
 
-  uint32_t flags = RWDTS_FLAG_DEPTH_OBJECT;
+  uint32_t flags = RWDTS_XACT_FLAG_DEPTH_OBJECT;
 
   xact = rwdts_api_query_ks(clnt_apih,
                           keyspec,
@@ -10133,7 +10125,7 @@ static void memberapi_subobj_client_start_f(void *ctx)
   xact = rwdts_api_query_ks(clnt_apih,
                           keyspec,
                           RWDTS_QUERY_CREATE,
-                          RWDTS_FLAG_ADVISE,
+                          RWDTS_XACT_FLAG_ADVISE,
                           rwdts_clnt_query_subobj_callback,
                           ctx,
                           &nc->base);
@@ -10259,7 +10251,7 @@ static void memberapi_nosubobj_client_start_f(void *ctx)
   xact = rwdts_api_query_ks(clnt_apih,
                           keyspec,
                           RWDTS_QUERY_CREATE,
-                          RWDTS_FLAG_ADVISE,
+                          RWDTS_XACT_FLAG_ADVISE,
                           rwdts_clnt_query_nosubobj_callback,
                           ctx,
                           &nc->base);
@@ -10423,7 +10415,7 @@ member_advise_solicit_client_prepare(const rwdts_xact_info_t* xact_info,
   RWDtsQuery *query = match->query;
   RW_ASSERT(query);
 
-  TSTPRN(" Xact trigger is %d\n", query->flags&RWDTS_FLAG_SOLICIT_RSP);
+  TSTPRN(" Xact trigger is %d\n", query->flags&RWDTS_XACT_FLAG_SOLICIT_RSP);
   char xact_id_str[128];
   ++s->prepare_cb_called;
   TSTPRN("member_advise_solicit_client_prepare(xact = %p , xact_id = %s) %u\n",
@@ -10479,7 +10471,7 @@ member_advise_solicit_client_reg_ready(rwdts_member_reg_handle_t  regh,
   xact = rwdts_api_query_ks(apih,
                             (rw_keyspec_path_t*)&solicit_advise_ks,
                             RWDTS_QUERY_RPC,
-                            RWDTS_FLAG_BLOCK_MERGE|RWDTS_XACT_FLAG_END,
+                            RWDTS_XACT_FLAG_BLOCK_MERGE|RWDTS_XACT_FLAG_END,
                             member_advise_solicit_rpc_cb,
                             user_data,
                             &solicit_advise_msg.base);
@@ -10728,7 +10720,191 @@ static void memberapi_member_anycast_start_f(void *ctx)
   rwdts_member_deregister_all(apih);
   /* Establish a registration */
   rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwBase_VcsResource_Vm_Cpu),
-                        RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
+                        RWDTS_FLAG_PUBLISHER|RWDTS_XACT_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
+
+  TSTPRN("Member start_f ending, startct=%u\n", s->member_startct);
+}
+
+static rwdts_member_rsp_code_t
+memberapi_test_promote_sub_prepare(const rwdts_xact_info_t* xact_info,
+                                   RWDtsQueryAction         action,
+                                   const rw_keyspec_path_t*      key,
+                                   const ProtobufCMessage*  msg,
+                                   uint32_t credits,
+                                   void *getnext_ptr)
+{
+  RW_ASSERT(xact_info);
+  rwdts_xact_t *xact = xact_info->xact;
+  RW_ASSERT_TYPE(xact, rwdts_xact_t);
+
+  struct tenv1::tenv_info *ti = (struct tenv1::tenv_info *)xact_info->ud;
+  struct queryapi_state *s = (struct queryapi_state *)ti->ctx;
+  RW_ASSERT(s->testno == s->tenv->testno);
+  RW_ASSERT(s->magic == QAPI_STATE_MAGIC);
+  rwdts_api_t *apih = xact->apih;
+
+  RW_ASSERT(apih);
+
+  RWPB_T_MSG(TestdtsRwBase_VcsResource_Vm_Cpu) *cpu;
+  static RWPB_T_MSG(TestdtsRwBase_VcsResource_Vm_Cpu) cpu_instance = {};
+  rwdts_member_query_rsp_t rsp;
+
+  cpu = &cpu_instance;
+  testdts_rw_base__yang_data__testdts_rw_base__vcs__resources__vm__cpu__init(cpu);
+
+  RW_ASSERT(s);
+
+  s->prepare_cb_called++;
+
+  TSTPRN("Calling DTS Member prepare ...\n");
+
+  RW_ZERO_VARIABLE(&rsp);
+
+  rsp.ks = (rw_keyspec_path_t*)key;
+
+  rsp.n_msgs = 1;
+  rsp.msgs = (ProtobufCMessage**)&cpu;
+  rsp.evtrsp  = RWDTS_EVTRSP_ACK;
+  rwdts_member_send_response(xact,
+                             xact_info->queryh, &rsp);
+
+
+  return RWDTS_ACTION_OK;
+}
+
+static void rwdts_clnt_query_promote_sub_callback(rwdts_xact_t *xact, rwdts_xact_status_t* xact_status, void *ud)
+{
+  struct tenv1::tenv_info *ti = (struct tenv1::tenv_info *)ud;
+  struct queryapi_state *s = (struct queryapi_state *)ti->ctx;
+  RW_ASSERT(s->magic == QAPI_STATE_MAGIC);
+  RW_ASSERT(s->testno == s->tenv->testno);
+
+  RW_ASSERT(s);
+
+  TSTPRN("Calling rwdts_clnt_query_anycast_callback with status = %d\n", xact_status->status);
+
+  /* It's actually rather awkward to get hold of the actual execution status of the xact? */
+  {
+    ASSERT_EQ(s->prepare_cb_called, 3);
+  }
+
+  // Call the transaction end
+  s->exitnow = 1;
+
+  return;
+}
+
+static void memberapi_client_promote_sub_start_f(void *ctx)
+{
+
+  struct tenv1::tenv_info *ti = (struct tenv1::tenv_info *)ctx;
+  struct queryapi_state *s = (struct queryapi_state *)ti->ctx;
+  RW_ASSERT(s->magic == QAPI_STATE_MAGIC);
+  TSTPRN("MemberAPI test client promote sub start...\n");
+
+  rw_keyspec_path_t *keyspec;
+  keyspec = (rw_keyspec_path_t *)(RWPB_G_PATHSPEC_VALUE(TestdtsRwBase_VcsResource_Vm_Cpu));
+
+  RWPB_T_PATHSPEC(TestdtsRwBase_VcsResource_Vm_Cpu) keyspec_entry  = (*RWPB_G_PATHSPEC_VALUE(TestdtsRwBase_VcsResource_Vm_Cpu));
+
+  keyspec = (rw_keyspec_path_t*)&keyspec_entry;
+
+  keyspec_entry.dompath.path002.has_key00 = 1;
+  keyspec_entry.dompath.path002.key00.id = 4567;
+
+  rwdts_xact_t* xact = NULL;
+
+  rwdts_api_t *clnt_apih = s->tenv->t[TASKLET_CLIENT].apih;
+
+  ASSERT_TRUE(clnt_apih);
+
+  RWPB_T_MSG(TestdtsRwBase_VcsResource_Vm_Cpu) *cpu;
+  cpu = (RWPB_T_MSG(TestdtsRwBase_VcsResource_Vm_Cpu)*)RW_MALLOC0(sizeof(RWPB_T_MSG(TestdtsRwBase_VcsResource_Vm_Cpu)));
+  RWPB_F_MSG_INIT(TestdtsRwBase_VcsResource_Vm_Cpu, cpu);
+
+  uint32_t flags = 0;
+  flags |= RWDTS_XACT_FLAG_TRACE;
+
+  fprintf(stderr, "[ Expect trace output here: ]\n");
+  xact = rwdts_api_query_ks(clnt_apih,
+                            keyspec,
+                            RWDTS_QUERY_READ,
+                            flags,
+                            rwdts_clnt_query_promote_sub_callback,
+                            ctx,
+                            &cpu->base);
+  ASSERT_TRUE(xact);
+  ASSERT_TRUE(xact->trace);
+
+  RW_FREE(cpu);
+  return;
+}
+
+static void
+memberapi_test_promote_sub_regready(rwdts_member_reg_handle_t regh,
+                                    rw_status_t               rs,
+                                    void*                     ctx)
+{
+  ASSERT_TRUE(ctx);
+
+  struct tenv1::tenv_info *ti = (struct tenv1::tenv_info *)ctx;
+  struct queryapi_state *s = (struct queryapi_state *)ti->ctx;
+  RW_ASSERT(s->magic == QAPI_STATE_MAGIC);
+  rwdts_member_registration_t *reg = (rwdts_member_registration_t *)regh;
+
+  ck_pr_inc_32(&s->member_startct);
+
+  rwdts_member_shard_promote_to_publisher(reg->shard, reg->apih->client_path);
+  rwdts_send_sub_promotion_to_router((void *)regh);
+  if (s->member_startct == TASKLET_MEMBER_CT) {
+    /* Start client after all members are going */
+    TSTPRN("Member start_f invoking client start_f\n");
+    dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 3);
+    rwsched_dispatch_after_f(s->tenv->t[TASKLET_CLIENT].tasklet,
+                             when,
+                             s->client.rwq,
+                             &s->tenv->t[TASKLET_CLIENT],
+                             memberapi_client_promote_sub_start_f);
+  }
+
+  return;
+}
+
+static void memberapi_promote_sub_test_execute_f(void *ctx)
+{
+
+  struct tenv1::tenv_info *ti = (struct tenv1::tenv_info *)ctx;
+  struct queryapi_state *s = (struct queryapi_state *)ti->ctx;
+  RW_ASSERT(s->magic == QAPI_STATE_MAGIC);
+  RW_ASSERT(s->testno == s->tenv->testno);
+
+  rw_keyspec_path_t *keyspec;
+  rwdts_member_event_cb_t reg_cb;
+
+  ASSERT_TRUE(TASKLET_IS_MEMBER(ti->tasklet_idx));
+  TSTPRN("Member %d API start ...\n", ti->member_idx);
+
+  RW_ZERO_VARIABLE(&reg_cb);
+  reg_cb.ud = ctx;
+  reg_cb.cb.prepare = memberapi_test_promote_sub_prepare;
+  reg_cb.cb.reg_ready = memberapi_test_promote_sub_regready;
+
+  keyspec = (rw_keyspec_path_t*)(RWPB_G_PATHSPEC_VALUE(TestdtsRwBase_VcsResource_Vm_Cpu));
+
+  RWPB_T_PATHSPEC(TestdtsRwBase_VcsResource_Vm_Cpu) keyspec_entry  = (*RWPB_G_PATHSPEC_VALUE(TestdtsRwBase_VcsResource_Vm_Cpu));
+
+  keyspec = (rw_keyspec_path_t*)&keyspec_entry;
+  keyspec_entry.dompath.path002.key00.id = 4567;
+  keyspec_entry.dompath.path002.has_key00 = 1;
+
+  rwdts_api_t *apih = ti->apih;
+  ASSERT_NE(apih, (void*)NULL);
+  rw_keyspec_path_set_category(keyspec, NULL, RW_SCHEMA_CATEGORY_DATA);
+
+  rwdts_member_deregister_all(apih);
+  /* Establish a registration */
+  rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwBase_VcsResource_Vm_Cpu),
+                        RWDTS_FLAG_SUBSCRIBER, NULL);
 
   TSTPRN("Member start_f ending, startct=%u\n", s->member_startct);
 }
@@ -11991,11 +12167,10 @@ memberapi_pub_app_del_cb(rwdts_xact_t* xact,
   advice_cb.cb = memberapi_pub_app_del_fin_cb;
   advice_cb.ud = s;
 
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
   flags |= RWDTS_XACT_FLAG_END; //xact_parent = NULL
 
-  if (getenv("RWDTS_FLAG_TRACE")) {
-    flags |= RWDTS_FLAG_TRACE;
+  if (getenv("RWDTS_XACT_FLAG_TRACE")) {
+    flags |= RWDTS_XACT_FLAG_TRACE;
   }
 
   if (1) {
@@ -12095,7 +12270,6 @@ memberapi_pub_app_regready(rwdts_member_reg_handle_t regh,
        }
      }
  
-     flags |= RWDTS_FLAG_WAIT_RESPONSE;
      flags |= RWDTS_XACT_FLAG_END; //xact_parent = NULL
  
     rwdts_advise_query_proto_int(apih,
@@ -12193,7 +12367,6 @@ memberapi_pub_app_advise_regready(rwdts_member_reg_handle_t regh,
        }
      }
  
-     flags |= RWDTS_FLAG_WAIT_RESPONSE;
      flags |= RWDTS_XACT_FLAG_END; //xact_parent = NULL
  
      rwdts_advise_query_proto_int(apih,
@@ -12805,7 +12978,7 @@ static void memberapi_pub_sub_client_start_f(void *ctx)
     rs = rwdts_member_reg_handle_update_element(regh,
                                                 gkpe,
                                                 &phone->base,
-                                                RWDTS_FLAG_REPLACE,
+                                                RWDTS_XACT_FLAG_REPLACE,
                                                 NULL);
     EXPECT_EQ(RW_STATUS_SUCCESS, rs);
 
@@ -12893,7 +13066,7 @@ static void memberapi_pub_sub_client_start_f(void *ctx)
     rs = rwdts_member_reg_handle_update_element(regh,
                                                gkpe,
                                                &phone->base,
-                                               RWDTS_FLAG_REPLACE,
+                                               RWDTS_XACT_FLAG_REPLACE,
                                                NULL);
     EXPECT_EQ(RW_STATUS_SUCCESS, rs);
 
@@ -13212,7 +13385,7 @@ static void memberapi_pub_sub_minikey_client_start_f(void *ctx)
                                                   regh,
                                                   (rw_schema_minikey_opaque_t *)&mk,
                                                   &phone->base,
-                                                  RWDTS_FLAG_REPLACE);
+                                                  RWDTS_XACT_FLAG_REPLACE);
     EXPECT_EQ(RW_STATUS_SUCCESS, rs);
 
     //
@@ -13288,7 +13461,7 @@ static void memberapi_pub_sub_minikey_client_start_f(void *ctx)
                                                   regh,
                                                   (rw_schema_minikey_opaque_t *)mk,
                                                   &phone->base,
-                                                  RWDTS_FLAG_REPLACE);
+                                                  RWDTS_XACT_FLAG_REPLACE);
     EXPECT_EQ(RW_STATUS_SUCCESS, rs);
 
 
@@ -13793,7 +13966,7 @@ static void memberapi_pub_sub_cache_xact_client_start_f(void *ctx)
   if (!s->client.transactional) {
     flags |= RWDTS_XACT_FLAG_NOTRAN ;
   }
-  flags |= RWDTS_FLAG_ADVISE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
 
   if (!s->client.usebuilderapi) {
     flags |= RWDTS_XACT_FLAG_END;// xact_parent = NULL
@@ -14241,7 +14414,7 @@ memberapi_test_create1_client_cb(rwdts_xact_t* xact,
   strncpy(inter->name, "interface2", sizeof(inter->name)-1);
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_CREATE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_create2_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_create2_client_cb,
                                               ud, &inter->base);
   ASSERT_TRUE(new_xact);
 
@@ -14286,7 +14459,7 @@ memberapi_test_create_regready(rwdts_member_reg_handle_t regh,
   strncpy(inter->name, "interface1", sizeof(inter->name)-1);
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_CREATE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_create1_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_create1_client_cb,
                                               ctx, &inter->base);
   ASSERT_TRUE(new_xact);
 
@@ -14341,7 +14514,7 @@ static void memberapi_member_multiple_create_start_f(void *ctx)
     rw_keyspec_path_set_category(keyspec1, NULL, RW_SCHEMA_CATEGORY_DATA);
     /* Establish a registration */
     regh = rwdts_member_register(NULL, apih, keyspec1, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext_Interface),
-                                 RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
+                                 RWDTS_FLAG_PUBLISHER|RWDTS_XACT_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
   } else {
     reg_cb.cb.reg_ready_old = NULL;
     regh = rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext),
@@ -14413,7 +14586,7 @@ memberapi_test_del_client_cb(rwdts_xact_t* xact,
   strncpy(keyspec_entry.dompath.path001.key00.name, "nwcon-del", sizeof(keyspec_entry.dompath.path001.key00.name) - 1);
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_DELETE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_del_again_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_del_again_client_cb,
                                               ud, NULL);
   ASSERT_TRUE(new_xact);
 
@@ -14474,7 +14647,7 @@ memberapi_test_del_regready(rwdts_member_reg_handle_t regh,
   nc->interface[1]->interface_type.has_loopback = 1;
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_CREATE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_del_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_del_client_cb,
                                               ctx, &nc->base);
   ASSERT_TRUE(new_xact);
 
@@ -14528,7 +14701,7 @@ static void memberapi_member_del_start_f(void *ctx)
     rw_keyspec_path_set_category(ks1, NULL, RW_SCHEMA_CATEGORY_DATA);
     /* Establish a registration */
     regh = rwdts_member_register(NULL, apih, ks1, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext),
-                                 RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
+                                 RWDTS_FLAG_PUBLISHER|RWDTS_XACT_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
   } else {
     reg_cb.cb.reg_ready_old = NULL;
     regh = rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext_Interface),
@@ -14621,7 +14794,7 @@ memberapi_test_deeper_del_client_cb(rwdts_xact_t* xact,
 
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_DELETE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_del_deep_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_del_deep_client_cb,
                                               ud, NULL);
   ASSERT_TRUE(new_xact);
 
@@ -14668,7 +14841,7 @@ memberapi_test_del_deep_regready(rwdts_member_reg_handle_t regh,
   inter->interface_type.has_loopback = 1;
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_CREATE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_deeper_del_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_deeper_del_client_cb,
                                               ctx, &inter->base);
   ASSERT_TRUE(new_xact);
 
@@ -14713,7 +14886,7 @@ static void memberapi_member_del_deep_start_f(void *ctx)
   if (ti->member_idx == 2) {
     /* Establish a registration */
     regh = rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext_Interface),
-                                 RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
+                                 RWDTS_FLAG_PUBLISHER|RWDTS_XACT_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
   } else {
     reg_cb.cb.reg_ready_old = NULL;
     rw_keyspec_path_t* ks1 = (rw_keyspec_path_t*)(RWPB_G_PATHSPEC_VALUE(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext));
@@ -14782,7 +14955,7 @@ memberapi_test_del_wc_client_cb(rwdts_xact_t* xact,
   }
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_DELETE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_del_again_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_del_again_client_cb,
                                               ud, NULL);
   ASSERT_TRUE(new_xact);
 
@@ -14824,7 +14997,7 @@ memberapi_test_del_wc1_regready(rwdts_member_reg_handle_t regh,
   strncpy(nc->name, "nwcon-wc1-del", sizeof(nc->name)-1);
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_CREATE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_del_wc_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_del_wc_client_cb,
                                               ctx, &nc->base);
   ASSERT_TRUE(new_xact);
 
@@ -14867,7 +15040,7 @@ static void memberapi_member_del_wc1_start_f(void *ctx)
   if (ti->member_idx == 2) {
     /* Establish a registration */
     regh = rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext),
-                                 RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
+                                 RWDTS_FLAG_PUBLISHER|RWDTS_XACT_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
   } else {
     reg_cb.cb.reg_ready_old = NULL;
     regh = rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext),
@@ -14917,7 +15090,7 @@ memberapi_test_del_wc2_regready(rwdts_member_reg_handle_t regh,
   strncpy(nc->name, "nwcon-wc2-del", sizeof(nc->name)-1);
 
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec, RWDTS_QUERY_CREATE,
-                                              RWDTS_FLAG_ADVISE, memberapi_test_del_wc_client_cb,
+                                              RWDTS_XACT_FLAG_ADVISE, memberapi_test_del_wc_client_cb,
                                               ctx, &nc->base);
   ASSERT_TRUE(new_xact);
 
@@ -14962,7 +15135,7 @@ static void memberapi_member_del_wc2_start_f(void *ctx)
   if (ti->member_idx == 2) {
     /* Establish a registration */
     regh = rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext),
-                                 RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
+                                 RWDTS_FLAG_PUBLISHER|RWDTS_XACT_FLAG_ANYCAST|RWDTS_FLAG_SHARED, NULL);
   } else {
     reg_cb.cb.reg_ready_old = NULL;
     regh = rwdts_member_register(NULL, apih, keyspec, &reg_cb, RWPB_G_MSG_PBCMD(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext),
@@ -15076,7 +15249,7 @@ static void memberapi_pruning_client_start_f(void *ctx)
   keyspec_entry.dompath.path000.has_key00 = 1;
   strncpy(keyspec_entry.dompath.path000.key00.name, "colony999", sizeof(keyspec_entry.dompath.path000.key00.name) - 1);
 
-  flags |= RWDTS_FLAG_DEPTH_ONE;
+  flags |= RWDTS_XACT_FLAG_DEPTH_ONE;
   xact = rwdts_api_xact_create(clnt_apih, flags,rwdts_clnt_p_query_callback, ctx);
   ASSERT_TRUE(xact);
   rwdts_xact_block_t *blk = rwdts_xact_block_create(xact);
@@ -15087,7 +15260,7 @@ static void memberapi_pruning_client_start_f(void *ctx)
 
 
   flags = 0;
-  flags |= RWDTS_FLAG_DEPTH_LISTS;
+  flags |= RWDTS_XACT_FLAG_DEPTH_LISTS;
 
   rs = rwdts_xact_block_add_query_ks(blk, keyspec, RWDTS_QUERY_READ, flags, 9997, NULL);
   ASSERT_EQ(rs, RW_STATUS_SUCCESS);
@@ -15095,7 +15268,7 @@ static void memberapi_pruning_client_start_f(void *ctx)
 
 
   flags = 0;
-  flags |= RWDTS_FLAG_DEPTH_ONE;
+  flags |= RWDTS_XACT_FLAG_DEPTH_ONE;
 
   RWPB_T_PATHSPEC(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext) keyspec_entry1;
   keyspec_entry1  = (*RWPB_G_PATHSPEC_VALUE(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext));
@@ -15111,7 +15284,7 @@ static void memberapi_pruning_client_start_f(void *ctx)
   ASSERT_EQ(rwdts_xact_get_block_count(xact), 1);
 
   flags = 0;
-  flags |= RWDTS_FLAG_DEPTH_LISTS;
+  flags |= RWDTS_XACT_FLAG_DEPTH_LISTS;
 
   rs = rwdts_xact_block_add_query_ks(blk, keyspec, RWDTS_QUERY_READ, flags, 9995, NULL);
   ASSERT_EQ(rs, RW_STATUS_SUCCESS);
@@ -15125,7 +15298,7 @@ static void memberapi_pruning_client_start_f(void *ctx)
   rwdts_xact_t* lxact = NULL;
 
   flags = 0;
-  flags |= RWDTS_FLAG_DEPTH_ONE;
+  flags |= RWDTS_XACT_FLAG_DEPTH_ONE;
 
   RWPB_T_PATHSPEC(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext_Interface) keyspec_entry2;
   keyspec_entry2 = (*RWPB_G_PATHSPEC_VALUE(TestdtsRwFpath_TestdtsRwBase_data_Colony_NetworkContext_Interface));
@@ -15147,7 +15320,7 @@ static void memberapi_pruning_client_start_f(void *ctx)
   ASSERT_TRUE(rs == RW_STATUS_SUCCESS);
 
   flags = 0;
-  flags |= RWDTS_FLAG_DEPTH_LISTS;
+  flags |= RWDTS_XACT_FLAG_DEPTH_LISTS;
   flags |= RWDTS_XACT_FLAG_END;;
 
   rs = rwdts_xact_block_add_query_ks(blk, keyspec, RWDTS_QUERY_READ, flags, 9993, NULL);
@@ -16405,6 +16578,23 @@ static void memberapi_async_test_execute(struct queryapi_state *s)
   ASSERT_TRUE(s->exitnow);
 }
 
+static void memberapi_promote_sub_test_execute(struct queryapi_state *s)
+{
+  RW_ASSERT(s->magic == QAPI_STATE_MAGIC);
+  RW_ASSERT(s->testno == s->tenv->testno);
+  s->tenv->t[TASKLET_CLIENT].ctx = s;
+  ASSERT_NE(s->tenv->t[TASKLET_CLIENT].apih, (void*)NULL);
+  s->client.rwq = rwsched_dispatch_get_main_queue(s->tenv->rwsched);
+  for (int i=0; i < TASKLET_MEMBER_CT; i++) {
+    s->member[i].rwq = rwsched_dispatch_get_main_queue(s->tenv->rwsched);
+    s->tenv->t[TASKLET_MEMBER_0+i].ctx = s;
+    rwsched_dispatch_async_f(s->tenv->t[TASKLET_MEMBER_0 + i].tasklet, s->member[i].rwq, &s->tenv->t[TASKLET_MEMBER_0 + i], memberapi_promote_sub_test_execute_f);
+  }
+  double seconds = (RUNNING_ON_VALGRIND)?45:150;
+  rwsched_dispatch_main_until(s->tenv->t[0].tasklet, seconds, &s->exitnow);
+  ASSERT_TRUE(s->exitnow);
+}
+
 static void memberapi_publish_test_execute(struct queryapi_state *s)
 {
   RW_ASSERT(s->magic == QAPI_STATE_MAGIC);
@@ -17255,7 +17445,7 @@ memberapi_test_data_member_cursor_query_cb(rwdts_xact_t* xact,
   s->query_cb_rcvd++;
   RW_ASSERT(s->query_cb_rcvd  == 1);
   rwdts_xact_t *new_xact = rwdts_api_query_ks(apih,keyspec,
-                RWDTS_QUERY_CREATE,RWDTS_FLAG_ADVISE,
+                RWDTS_QUERY_CREATE,RWDTS_XACT_FLAG_ADVISE,
                 memberapi_test_data_member_cursor_query_second_cb,
                 ud,&phone->base);
   ASSERT_TRUE(new_xact);
@@ -17392,7 +17582,7 @@ memberapi_test_data_member_cursor_client_start_f(void *ctx)
   phone->has_type = TRUE;
   phone->type = DTS_TEST_PHONE_TYPE_MOBILE;
 
-  flags |= RWDTS_FLAG_ADVISE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
 
   xact = rwdts_api_xact_create(clnt_apih, flags, memberapi_test_data_member_cursor_query_cb, ctx);
   ASSERT_TRUE(xact);
@@ -17612,7 +17802,7 @@ memberapi_reroot_list_client_start_f(void *ctx)
   person->n_phone = 3; 
   person->phone = phones;
   xact = rwdts_api_query_ks(clnt_apih,keyspec,
-                RWDTS_QUERY_CREATE,flags|RWDTS_FLAG_ADVISE,
+                RWDTS_QUERY_CREATE,flags|RWDTS_XACT_FLAG_ADVISE,
                 memberapi_test_reroot_list_query_cb,
                 ctx,&person->base);
   ASSERT_TRUE(xact);
@@ -18365,6 +18555,14 @@ TEST_F(RWDtsEnsemble, MemberAPIOrderAsyncResp_LONG)
   memberapi_async_test_execute(s);
   memset(s, 0xaa, sizeof(*s));
   free(s);
+}
+
+TEST_F(RWDtsEnsemble, MemberAPIPromoteSub_LONG)
+{
+  struct queryapi_state s = {};
+  init_query_api_state(&s, RWDTS_QUERY_UPDATE, FALSE, FALSE);
+  memberapi_promote_sub_test_execute(&s);
+  memset(&s, 0xaa, sizeof(s));
 }
 
 TEST_F(RWDtsEnsemble, MemberSubAppConfCommit_LONG)
@@ -20473,13 +20671,12 @@ static void memberapi_redn_client_start_f(void *ctx)
   clnt_cb.cb = rwdts_clnt_redn_query_callback;
   clnt_cb.ud = ctx;
   uint32_t flags = 0;
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
 
   ASSERT_EQ(rwdts_api_get_ypbc_schema(clnt_apih), (rw_yang_pb_schema_t*)RWPB_G_SCHEMA_YPBCSD(DtsTest));
 
   ASSERT_TRUE(s->client.xpath);
   xact = rwdts_api_query(clnt_apih, s->client.xpath, RWDTS_QUERY_READ,
-                         flags|RWDTS_FLAG_TRACE, clnt_cb.cb, clnt_cb.ud, NULL);
+                         flags|RWDTS_XACT_FLAG_TRACE, clnt_cb.cb, clnt_cb.ud, NULL);
 
   if (s->client.noreqs) {
     ASSERT_FALSE(xact);
@@ -20645,7 +20842,6 @@ memberapi_redn_member_prepare(const rwdts_xact_info_t* xact_info,
       // EXPECT_EQ(action, s->client.action);
     }
     flags = rwdts_member_get_query_flags(xact_info->queryh);
-    // EXPECT_TRUE(flags|RWDTS_FLAG_ADVISE);
     //  rwdts_xact_info_respond_xpath(xact_info,dts_rsp_code,xpath,array[0]);
 
     s->num_responses++;
@@ -21135,7 +21331,7 @@ rwdts_gtest_journal_create_query(rwdts_member_registration_t *reg,
   RWDtsQuery* query = rwdts_xact_test_init_empty_query(reg);
   query->key = rwdts_init_key_from_keyspec_int(reg->keyspec);
   query->action = RWDTS_QUERY_CREATE;
-  query->flags = RWDTS_FLAG_DEPTH_ONE;
+  query->flags = RWDTS_XACT_FLAG_DEPTH_ONE;
   query->has_queryidx = 1;
   query->queryidx = queryidx;
   query->serial->has_id = 1;

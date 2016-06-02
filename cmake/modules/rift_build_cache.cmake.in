@@ -21,7 +21,7 @@ include(rift_build_utils)
 # the artifacts at the location specified. This is usually done for
 # debugging.
 ##
-set(IS_BUILDCACHE_DIR_PROVIDED 0)
+set(IS_BUILD_CACHE_DIR_PROVIDED 0)
 set(BUILDCACHE_DIR $ENV{BUILDCACHE_DIR})
 if(NOT BUILDCACHE_DIR)
   set(BUILDCACHE_DIR @RIFT_CACHE_BASE_DIR@)

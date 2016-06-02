@@ -239,7 +239,7 @@ class RWSOTestCase(unittest.TestCase):
             msg = self.get_cloud_account_msg()
             self.log.info("Configuring cloud-account: %s",msg)
             yield from dts.query_create(account_xpath,
-                                        rwdts.Flag.ADVISE,
+                                        rwdts.XactFlag.ADVISE,
                                         msg)
             yield from asyncio.sleep(3, loop=self.loop)
             
@@ -248,7 +248,7 @@ class RWSOTestCase(unittest.TestCase):
             msg = self.get_compute_pool_msg("virtual-compute", "dynamic")
             self.log.info("Configuring compute-resource-pool: %s",msg)
             yield from dts.query_create(pool_xpath,
-                                        rwdts.Flag.ADVISE,
+                                        rwdts.XactFlag.ADVISE,
                                         msg)
             yield from asyncio.sleep(3, loop=self.loop)
             
@@ -258,7 +258,7 @@ class RWSOTestCase(unittest.TestCase):
             msg = self.get_network_pool_msg("virtual-network", "dynamic")
             self.log.info("Configuring network-resource-pool: %s",msg)
             yield from dts.query_create(pool_xpath,
-                                        rwdts.Flag.ADVISE,
+                                        rwdts.XactFlag.ADVISE,
                                         msg)
             yield from asyncio.sleep(3, loop=self.loop)
             
@@ -285,17 +285,17 @@ class RWSOTestCase(unittest.TestCase):
         def reserve_network_resources():
             msg,xpath = self.get_network_reserve_msg(network_xpath)
             self.log.debug("Sending create event to network-event xpath %s with msg: %s" % (xpath, msg))
-            yield from dts.query_create(xpath, rwdts.Flag.TRACE, msg)
+            yield from dts.query_create(xpath, rwdts.XactFlag.TRACE, msg)
             yield from asyncio.sleep(3, loop=self.loop)
-            yield from dts.query_delete(xpath, rwdts.Flag.TRACE)
+            yield from dts.query_delete(xpath, rwdts.XactFlag.TRACE)
             
         @asyncio.coroutine
         def reserve_compute_resources():
             msg,xpath = self.get_compute_reserve_msg(compute_xpath)
             self.log.debug("Sending create event to compute-event xpath %s with msg: %s" % (xpath, msg))
-            yield from dts.query_create(xpath, rwdts.Flag.TRACE, msg)
+            yield from dts.query_create(xpath, rwdts.XactFlag.TRACE, msg)
             yield from asyncio.sleep(3, loop=self.loop)
-            yield from dts.query_delete(xpath, rwdts.Flag.TRACE)
+            yield from dts.query_delete(xpath, rwdts.XactFlag.TRACE)
         
         @asyncio.coroutine
         def run_test():

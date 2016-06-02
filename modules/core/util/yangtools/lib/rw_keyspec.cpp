@@ -432,17 +432,15 @@ rw_status_t rw_keyspec_path_find_spec_ks(
     const rw_yang_pb_schema_t* schema,
     rw_keyspec_path_t** spec_ks)
 {
-  rw_keyspec_path_t *unused = 0;
-
   instance = ks_instance_get(instance);
   RW_ASSERT(instance);
 
   KEYSPEC_INC_FCALL_STATS(instance, path, find_spec_ks);
 
-  const rw_yang_pb_msgdesc_t* curr_ypbc_msgdesc;
+  const rw_yang_pb_msgdesc_t* curr_ypbc_msgdesc = nullptr;
 
   rw_status_t rs = rw_keyspec_path_find_msg_desc_schema (
-      ks, instance, schema, &curr_ypbc_msgdesc, &unused);
+      ks, instance, schema, &curr_ypbc_msgdesc, nullptr);
 
   if (RW_STATUS_SUCCESS != rs) {
     return rs;
@@ -450,9 +448,6 @@ rw_status_t rw_keyspec_path_find_spec_ks(
 
   RW_ASSERT(curr_ypbc_msgdesc);
   RW_ASSERT(curr_ypbc_msgdesc->pbc_mdesc);
-  if (nullptr != unused) {
-    rw_keyspec_path_free (unused, instance);
-  }
 
   *spec_ks = rw_keyspec_path_create_dup_of_type(
       ks, instance, curr_ypbc_msgdesc->pbc_mdesc);
@@ -1966,6 +1961,14 @@ rw_status_t rw_keyspec_path_trunc_suffix_n(
             instance->pbc_instance, dom_path, RW_SCHEMA_TAG_PATH_ENTRY_START+i)) {
       return status;
     }
+  }
+
+  /* Delete any path entries in the unknown buffer */
+  for (unsigned i = RW_SCHEMA_TAG_PATH_ENTRY_START+depth; 
+       (i <= RW_SCHEMA_TAG_PATH_ENTRY_END && (nullptr != dom_path->unknown_buffer)); 
+       ++i) {
+
+    protobuf_c_message_delete_field(instance->pbc_instance, dom_path, i);
   }
 
   return RW_STATUS_SUCCESS;
@@ -6230,7 +6233,8 @@ get_key_from_leaf_list_path_entry(
 bool rw_keyspec_path_matches_message (
     const rw_keyspec_path_t *k,
     rw_keyspec_instance_t* instance,
-    const ProtobufCMessage *msg)
+    const ProtobufCMessage *msg,
+    bool match_c_struct)
 {
   RW_ASSERT(k);
   RW_ASSERT(msg);
@@ -6250,9 +6254,19 @@ bool rw_keyspec_path_matches_message (
       rw_yang_pb_msgdesc_get_msg_msgdesc (path->descriptor->ypbc_mdesc);
 
   if ((nullptr == msg->descriptor) ||
-      (nullptr == msg->descriptor->ypbc_mdesc) ||
-      (ypbc != msg->descriptor->ypbc_mdesc)) {
+      (nullptr == msg->descriptor->ypbc_mdesc)) {
     return false;
+  }
+   
+  if ( match_c_struct && (ypbc != msg->descriptor->ypbc_mdesc)) {
+    return false;
+  }
+
+  if (ypbc != msg->descriptor->ypbc_mdesc) {
+    if ( (ypbc->pb_element_tag != msg->descriptor->ypbc_mdesc->pb_element_tag) ||
+         (strcmp(ypbc->module->ns, msg->descriptor->ypbc_mdesc->module->ns)) ) {
+      return false;
+    }
   }
 
   // Match the values at the tip of the keyspec, removing the extraneous

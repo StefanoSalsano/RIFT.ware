@@ -32,7 +32,6 @@ add_library(rwlogd_syslog_sink SHARED
 target_link_libraries(rwlogd_syslog_sink
   rwdts_api
   rwschema_yang_gen
-  rwcmdargs
   rwlib
   rwmsg
   rwpython_util-1.0

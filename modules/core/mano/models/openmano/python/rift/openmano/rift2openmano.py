@@ -19,7 +19,6 @@ from gi.repository import (
     RwNsdYang,
     )
 
-logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("rift2openmano.py")
 
 
@@ -498,4 +497,5 @@ def main(argv=sys.argv[1:]):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.WARNING)
     main()

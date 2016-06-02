@@ -4,6 +4,9 @@
 #
 
 import logging
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import (
     GObject,
     RwCal,
@@ -47,7 +50,8 @@ class RwcalVspherePlugin(GObject.Object, RwCal.Cloud):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
             logger.addHandler(
                 rwlogger.RwLogger(
-                    category="rwcal.vsphere",
+                    category="rw-cal-log",
+                    subcategory="vsphere",
                     log_hdl=rwlog_ctx,
                 )
             )

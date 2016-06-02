@@ -42,6 +42,18 @@ module rw-sdn
     }
 
     uses rwsdn:sdn-provider-auth;
+    uses rwsdn:connection-status;
+  }
+
+  rpc update-sdn-status {
+    description "Begin sdn accunt connection status";
+    input {
+      leaf sdn-account {
+        mandatory true;
+        description
+          "The sdn account name to update connection status for";
+        type string;
+      }
+    }
   }
 }
-

@@ -124,7 +124,7 @@ Subscriptions.prototype.createWebSocketServer = function() {
     }
     var port = self.freePorts.shift();
     var socketPath = '/ws/' + self.ID;
-    
+
     var http = require('http');
     var https = require('https');
     var express = require('express');
@@ -209,7 +209,12 @@ Subscriptions.prototype.socketInstance = function(req, wss, httpServer, Type) {
         }
 
         function send(payload) {
-          var is401 = JSON.parse(payload).statusCode == 401;
+          try {
+            var is401 = JSON.parse(payload).statusCode == 401;
+          } catch(e) {
+            payload = {}
+          }
+
           for (i = Connections.length - 1; i >=0; i -= 1) {
               Connections[i].send(payload, function wsError(error) {
                 if (error) {

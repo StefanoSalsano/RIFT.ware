@@ -25,6 +25,7 @@ class Webserver(core.NativeProcess):
             uagent_port=None,
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a Webserver object.
 
@@ -37,7 +38,7 @@ class Webserver(core.NativeProcess):
             uagent_port - the port that the uAgent is communicating on
             config_ready - config readiness check enable
             recovery_action - recovery action mode
-
+            start        - Flag denotes whether to initially start this component
         """
         self.ui_dir = ui_dir
         self.confd_host = confd_host
@@ -50,6 +51,7 @@ class Webserver(core.NativeProcess):
                 exe="./usr/local/bin/rwmgmt-api-standalone",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
     @property
@@ -73,6 +75,7 @@ class RedisCluster(core.NativeProcess):
             init_port=3152,
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a RedisCluster object.
 
@@ -84,7 +87,7 @@ class RedisCluster(core.NativeProcess):
                         starting at the value given by 'init_port'.
             config_ready - config readiness check enable
             recovery_action - recovery action mode
-
+            start        - Flag denotes whether to initially start this component
         """
         args = './usr/bin/redis_cluster.py -c -n {} -p {}'
         super(RedisCluster, self).__init__(
@@ -94,6 +97,7 @@ class RedisCluster(core.NativeProcess):
                 args=args.format(num_nodes, init_port),
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 
@@ -102,8 +106,8 @@ class RedisServer(core.NativeProcess):
     This class represents a redis server process.
     """
 
-    def __init__(self, uid=None, name="RW.RedisServer", port=None, config_ready=True, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+    def __init__(self, uid=None, name="RW.RedisServer", port=None, config_ready=True,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value, start=True
                 ):
         """Creates a RedisServer object.
 
@@ -113,6 +117,7 @@ class RedisServer(core.NativeProcess):
             port - the port to use for the server
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         # If the port is not specified, use the default for redis (NB: the
@@ -128,6 +133,7 @@ class RedisServer(core.NativeProcess):
                 args= './usr/bin/redis_cluster.py -c -n 1 -p {}'.format(port),
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 
@@ -136,8 +142,9 @@ class UIServerLauncher(core.NativeProcess):
     This class represents a UI Server Launcher.
     """
 
-    def __init__(self, uid=None, name="RW.MC.UI", config_ready=True, 
+    def __init__(self, uid=None, name="RW.MC.UI", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a UI Server Launcher
 
@@ -146,51 +153,19 @@ class UIServerLauncher(core.NativeProcess):
             name - the name of the process
             config_ready - config readiness check enable
             recovery_action - recovery action mode
-
+            start        - Flag denotes whether to initially start this component
         """
         super(UIServerLauncher, self).__init__(
                 uid=uid,
                 name=name,
-                exe="./usr/share/rw.ui/webapp/scripts/launch_ui.sh",
+                exe="./usr/share/rw.ui/skyquake/scripts/launch_ui.sh",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
     @property
     def args(self):
         return ' '
-
-class Confd(core.NativeProcess):
-    """
-    This class represents a confd process.
-    """
-
-    def __init__(self, uid=None, name="RW.Confd", config_ready=True, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                ):
-        """Creates a Confd object.
-
-        Arguments:
-            uid  - a unique identifier
-            name - the name of the process
-            config_ready - config readiness check enable
-            recovery_action - recovery action mode
-
-        RIFT-8268 deprecates the direct use
-        of Confd object.
-        Use manifest.py to provide unique
-        workspace to confd via uAgent command args
-        """
-
-        import socket
-        hostname = socket.getfqdn()
-        super(Confd, self).__init__(
-                uid=uid,
-                name=name,
-                exe="./usr/bin/rw_confd",
-                args="--unique confd_persist_{}".format(hostname),
-                config_ready=config_ready,
-                recovery_action=recovery_action,
-                )
 
 class RiftCli(core.NativeProcess):
     """
@@ -200,13 +175,14 @@ class RiftCli(core.NativeProcess):
     def __init__(self,
               uid=None,
               name="RW.CLI",
-              schema_listing="rwbase_schema_listing.txt",
+              schema_listing=["rwbase_schema_listing.txt"],
               netconf_host="127.0.0.1",
               netconf_port="2022",
               config_ready=True,
               recovery_action=core.RecoveryType.FAILCRITICAL.value,
               netconf_username="admin",
-              netconf_password="admin",                 
+              netconf_password="admin",
+              start=True
               ):
         """Creates a RiftCli object.
 
@@ -220,6 +196,7 @@ class RiftCli(core.NativeProcess):
             recovery_action - recovery action mode
             netconf_username - the netconf username
             netconf_password - the netconf password
+            start        - Flag denotes whether to initially start this component
 
         """
         super(RiftCli, self).__init__(
@@ -229,57 +206,41 @@ class RiftCli(core.NativeProcess):
                 interactive=True,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
         self.netconf_host = netconf_host
         self.netconf_port = netconf_port
         self.schema_listing = schema_listing
         self.netconf_username = netconf_username
         self.netconf_password = netconf_password
+        self.use_netconf = True
 
     @property
     def args(self):
-        username_and_password_args = ""
+        schema_files = ' '.join(self.schema_listing)
+
+        args = '--schema_listing {}'.format(schema_files)
         if self.netconf_username is not None:
-            username_and_password_args += " --username %s " % self.netconf_username
+            args += " --username %s " % self.netconf_username
         if self.netconf_password is not None:
-            username_and_password_args += " --passwd %s " % self.netconf_password
+            args += " --passwd %s " % self.netconf_password
 
-        return ' '.join([
-            '--netconf_host {}'.format(self.netconf_host),
-            '--netconf_port {}'.format(self.netconf_port),
-            '--schema_listing {}'.format(self.schema_listing),
-            username_and_password_args,
-            ])
+        if self.use_netconf:
+            args += " --netconf_host %s" % self.netconf_host
+            args += " --netconf_port %s" % self.netconf_port
+        else:
+            args += " --rwmsg"
 
-class Watchdog(core.NativeProcess):
-    """
-    This class represents a Rift CLI process.
-    """
-
-    def __init__(self,
-                 uid=None,
-                 name="RW.Watchdog",
-                 config_ready=False,
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
-              ):
-        """Creates a Watchdog object.
-
-        """
-        super(Watchdog, self).__init__(
-                uid=uid,
-                name=name,
-                exe="./usr/bin/rwwatchdog",
-                config_ready=config_ready,
-                recovery_action=recovery_action,
-                )
+        return args 
 
 class CrossbarServer(core.NativeProcess):
     """
     This class represents a Crossbar process used for DTS mock.
     """
 
-    def __init__(self, uid=None, name="RW.Crossbar", config_ready=True, 
+    def __init__(self, uid=None, name="RW.Crossbar", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a CrossbarServer object.
 
@@ -288,6 +249,7 @@ class CrossbarServer(core.NativeProcess):
             name - the name of the process
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(CrossbarServer, self).__init__(
@@ -296,6 +258,7 @@ class CrossbarServer(core.NativeProcess):
                 exe="/usr/bin/crossbar",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
     @property

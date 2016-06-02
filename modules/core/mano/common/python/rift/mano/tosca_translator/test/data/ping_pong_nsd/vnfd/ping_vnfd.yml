@@ -1,0 +1,86 @@
+vnfd:vnfd-catalog:
+    vnfd:vnfd:
+    -   vnfd:connection-point:
+        -   vnfd:name: ping_vnfd/cp0
+            vnfd:type: VPORT
+        vnfd:description: This is an example RIFT.ware VNF
+        vnfd:http-endpoint:
+        -   vnfd:path: api/v1/ping/stats
+            vnfd:polling_interval_secs: '2'
+            vnfd:port: '18888'
+        vnfd:id: f3a9cbba-2303-11e6-bfa6-ecb1d7844460
+        vnfd:mgmt-interface:
+            vnfd:dashboard-params:
+                vnfd:path: api/v1/ping/stats
+                vnfd:port: '18888'
+            vnfd:port: '18888'
+            vnfd:vdu-id: iovdu_0
+            vnfd:vnf-configuration:
+                vnfd:config-attributes:
+                    vnfd:config-delay: '0'
+                    vnfd:config-priority: '2'
+                vnfd:config-template: "\n#!/usr/bin/bash\n\n# Rest API config\nping_mgmt_ip='<rw_mgmt_ip>'\n\
+                    ping_mgmt_port=18888\n\n# VNF specific configuration\npong_server_ip='<rw_connection_point_name\
+                    \ pong_vnfd/cp0>'\nping_rate=5\nserver_port=5555\n\n# Make rest\
+                    \ API calls to configure VNF\ncurl -D /dev/stdout \\\n    -H \"\
+                    Accept: application/vnd.yang.data+xml\" \\\n    -H \"Content-Type:\
+                    \ application/vnd.yang.data+json\" \\\n    -X POST \\\n    -d\
+                    \ \"{\\\"ip\\\":\\\"$pong_server_ip\\\", \\\"port\\\":$server_port}\"\
+                    \ \\\n    http://${ping_mgmt_ip}:${ping_mgmt_port}/api/v1/ping/server\n\
+                    rc=$?\nif [ $rc -ne 0 ]\nthen\n    echo \"Failed to set server\
+                    \ info for ping!\"\n    exit $rc\nfi\n\ncurl -D /dev/stdout \\\
+                    \n    -H \"Accept: application/vnd.yang.data+xml\" \\\n    -H\
+                    \ \"Content-Type: application/vnd.yang.data+json\" \\\n    -X\
+                    \ POST \\\n    -d \"{\\\"rate\\\":$ping_rate}\" \\\n    http://${ping_mgmt_ip}:${ping_mgmt_port}/api/v1/ping/rate\n\
+                    rc=$?\nif [ $rc -ne 0 ]\nthen\n    echo \"Failed to set ping rate!\"\
+                    \n    exit $rc\nfi\n\noutput=$(curl -D /dev/stdout \\\n    -H\
+                    \ \"Accept: application/vnd.yang.data+xml\" \\\n    -H \"Content-Type:\
+                    \ application/vnd.yang.data+json\" \\\n    -X POST \\\n    -d\
+                    \ \"{\\\"enable\\\":true}\" \\\n    http://${ping_mgmt_ip}:${ping_mgmt_port}/api/v1/ping/adminstatus/state)\n\
+                    if [[ $output == *\"Internal Server Error\"* ]]\nthen\n    echo\
+                    \ $output\n    exit 3\nelse\n    echo $output\nfi\n\n\nexit 0\n\
+                    \        "
+                vnfd:script:
+                    vnfd:script-type: bash
+        vnfd:monitoring-param:
+        -   vnfd:description: no of ping requests
+            vnfd:group-tag: Group1
+            vnfd:http-endpoint-ref: api/v1/ping/stats
+            vnfd:id: '1'
+            vnfd:json-query-method: NAMEKEY
+            vnfd:name: ping-request-tx-count
+            vnfd:units: packets
+            vnfd:value-type: INT
+            vnfd:widget-type: COUNTER
+        -   vnfd:description: no of ping responses
+            vnfd:group-tag: Group1
+            vnfd:http-endpoint-ref: api/v1/ping/stats
+            vnfd:id: '2'
+            vnfd:json-query-method: NAMEKEY
+            vnfd:name: ping-response-rx-count
+            vnfd:units: packets
+            vnfd:value-type: INT
+            vnfd:widget-type: COUNTER
+        vnfd:name: ping_vnfd
+        vnfd:short-name: ping_vnfd
+        vnfd:vdu:
+        -   vnfd:cloud-init: "#cloud-config\npassword: fedora\nchpasswd: { expire:\
+                \ False }\nssh_pwauth: True\nruncmd:\n  - [ systemctl, daemon-reload\
+                \ ]\n  - [ systemctl, enable, ping.service ]\n  - [ systemctl, start,\
+                \ --no-block, ping.service ]\n  - [ ifup, eth1 ]\n"
+            vnfd:count: '1'
+            vnfd:external-interface:
+            -   vnfd:name: eth0
+                vnfd:virtual-interface:
+                    vnfd:type: VIRTIO
+                vnfd:vnfd-connection-point-ref: ping_vnfd/cp0
+            vnfd:id: iovdu_0
+            vnfd:image: Fedora-x86_64-20-20131211.1-sda-ping.qcow2
+            vnfd:image-checksum: a6ffaa77f949a9e4ebb082c6147187cf
+            vnfd:name: iovdu_0
+            vnfd:vm-flavor:
+                vnfd:memory-mb: '512'
+                vnfd:storage-gb: '4'
+                vnfd:vcpu-count: '1'
+        vnfd:vendor: RIFT.io
+        vnfd:version: '1.0'

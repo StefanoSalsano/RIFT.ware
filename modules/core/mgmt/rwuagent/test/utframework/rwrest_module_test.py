@@ -22,9 +22,11 @@ import tornado.httpclient
 import tornado.web
 import xmlrunner
 
+from rift.rwlib.util import certs
+
 logger = logging.getLogger(__name__)
 
-WAIT_TIME = 45 #seconds
+WAIT_TIME = 90 #seconds
 
 def _collapse_string(string):
     return ''.join([line.strip() for line in string.splitlines()])
@@ -47,28 +49,65 @@ class TestRiftRest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-       # Start the mgmt-agent system test in background
-       cls.log_file = open("logfile", "w")
-
-       install_dir = os.environ.get("RIFT_INSTALL")
-       demo_dir = os.path.join(install_dir, 'demos')
-       testbed = os.path.join(demo_dir, 'mgmt_tbed.py')
-
-       try:
-         cls.sys_proc=Popen([testbed], stdin=DEVNULL, stdout=cls.log_file, stderr=cls.log_file,
-                             preexec_fn=os.setsid)
-       except Exception as e:
-         print("Failed to start system test.. error: {0}".format(e))
-         raise
-
-       print("Started the Mgmt Agent Mini System Test..sleeping for {} secs".format(WAIT_TIME))
-       time.sleep(WAIT_TIME)
-
-       cls.http_client = tornado.httpclient.HTTPClient()
-       cls.http_headers = {
-            "Accept" : "application/vnd.yang.data+json",
+    # setup http headers
+        cls.http_client = tornado.httpclient.HTTPClient()
+        cls.http_headers = {
+            "Accept" : "application/vnd.yang.data+xml",
             "Content-Type" : "application/vnd.yang.data+json",
-       }
+        }
+
+        cls.rest_host = '127.0.0.1'
+        cls.rest_port = '8008'
+
+        use_ssl, cert, key = certs.get_bootstrap_cert_and_key()
+        if use_ssl:
+            cls.prefix = "https"
+            cls.ssl_settings = {
+                "validate_cert" : False,
+                "client_key" : key,
+                "client_cert" : cert,
+            }
+        else:
+            cls.prefix = "http"
+            cls.ssl_settings = {}
+            
+        # Start the mgmt-agent system test in background
+        cls.log_file = open("logfile", "w")
+       
+        install_dir = os.environ.get("RIFT_INSTALL")
+        demo_dir = os.path.join(install_dir, 'demos')
+        testbed = os.path.join(demo_dir, 'mgmt_tbed.py')
+        try:
+            cls.sys_proc=Popen([testbed], stdin=DEVNULL, stdout=cls.log_file, stderr=cls.log_file,
+                               preexec_fn=os.setsid)
+        except Exception as e:
+            print("Failed to start system test.. error: {0}".format(e))
+            raise
+
+        print("Started the Mgmt Agent Mini System Test..sleeping for {} secs".format(WAIT_TIME))
+        time.sleep(WAIT_TIME)
+
+
+
+    def test_get_vcs(self):
+        logger.info("starting test_get_vcs_and_logout")
+
+        url = "%s://%s:%s/api/operational/vcs" % (self.prefix, self.rest_host, self.rest_port)
+
+        request = tornado.httpclient.HTTPRequest(
+            url,
+            headers=self.http_headers,
+            method="GET",
+            auth_username="admin",
+            auth_password="admin",
+            **self.ssl_settings
+        )
+
+        result = self.http_client.fetch(request)
+        http_code= result.code
+
+        self.assertEqual(http_code, 200, "GET request failed.")
+
 
     @classmethod
     def tearDownClass(cls):
@@ -76,127 +115,6 @@ class TestRiftRest(unittest.TestCase):
         cls.sys_proc.terminate()
         cls.log_file.close()
 
-    def test_misc(self):
-        self.maxDiff = None
-
-        url = "http://localhost:8888/api/running/misc?deep"
-        json_body = _collapse_string('''
-{
-    "bool-leaf":"True",
-    "empty-leaf":[null],
-    "enum-leaf":"a",
-    "int-leaf":42,
-    "list-a":[
-        {
-            "id":0,
-            "foo":"asdf"
-        }
-    ],
-    "list-b":[
-        {
-            "id":0
-        }
-    ],
-    "numbers":[
-        {
-            "int8-leaf":0,
-            "int16-leaf":0,
-            "int32-leaf":0,
-            "int64-leaf":0,
-            "uint8-leaf":0,
-            "uint16-leaf":0,
-            "uint32-leaf":0,
-            "uint64-leaf":0,
-            "decimal-leaf":0.0
-        },
-        {
-            "int8-leaf":"1",
-            "int16-leaf":"0",
-            "int32-leaf":"0",
-            "int64-leaf":"0",
-            "uint8-leaf":"0",
-            "uint16-leaf":"0",
-            "uint32-leaf":"0",
-            "uint64-leaf":"0",
-            "decimal-leaf":"0.0"
-        }
-    ]
-}
-        ''')
-
-        expected_json = _collapse_string('''
-{
-  "example:misc":{
-    "bool-leaf":"true",
-    "empty-leaf":[null],
-    "enum-leaf":"a",
-    "int-leaf":42,
-    "list-a":[
-        {
-            "id":0,
-            "foo":"asdf"
-        }
-    ],
-    "list-b":[
-        {
-            "id":0
-        }
-    ],
-    "numbers":[
-        {
-            "int8-leaf":0,
-            "int16-leaf":0,
-            "int32-leaf":0,
-            "int64-leaf":0,
-            "uint8-leaf":0,
-            "uint16-leaf":0,
-            "uint32-leaf":0,
-            "uint64-leaf":0,
-            "decimal-leaf":0.0
-        },
-        {
-            "int8-leaf":"1",
-            "int16-leaf":"0",
-            "int32-leaf":"0",
-            "int64-leaf":"0",
-            "uint8-leaf":"0",
-            "uint16-leaf":"0",
-            "uint32-leaf":"0",
-            "uint64-leaf":"0",
-            "decimal-leaf":"0.0"
-        }
-    ]
-  }
-}
-        ''')
-
-        put_request = tornado.httpclient.HTTPRequest(
-            url,
-            headers=self.http_headers,
-            method="PUT",
-            body=json_body,
-            auth_username="admin",
-            auth_password="admin",
-        )
-
-        put_result = self.http_client.fetch(put_request)
-        put_status= put_result.code
-
-        get_request = tornado.httpclient.HTTPRequest(
-            url,
-            headers=self.http_headers,
-            method="GET",
-            auth_username="admin",
-            auth_password="admin",
-        )
-
-        get_result = self.http_client.fetch(get_request)
-        get_status= put_result.code
-
-        expected = _ordered(json.loads(expected_json))
-        actual = _ordered(json.loads(get_result.body.decode("utf-8")))
-
-        self.assertEquals(actual, expected)
 
 
 def main(argv=sys.argv[1:]):

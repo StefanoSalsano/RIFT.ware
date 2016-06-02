@@ -45,6 +45,13 @@ class SdnAccountMgr(object):
 
         self._regh = None
 
+        self._status = RwsdnYang.SDNAccount_ConnectionStatus(
+                status='unknown',
+                details="Connection status lookup not started"
+                )
+
+        self._validate_task = None
+
     def set_sdn_account(self,account):
         if (account.name in self._account):
             self._log.error("SDN Account is already set")
@@ -54,6 +61,7 @@ class SdnAccountMgr(object):
             sdn_account.name = account.name
             self._account[account.name] = sdn_account
             self._log.debug("Account set is %s , %s",type(self._account), self._account)
+            self.start_validate_credentials(self._loop, account.name)
 
     def del_sdn_account(self, name):
         self._log.debug("Account deleted is %s , %s", type(self._account), name)
@@ -68,6 +76,21 @@ class SdnAccountMgr(object):
         else:
             self._log.error("ERROR : SDN account is not configured") 
 
+    def get_saved_sdn_accounts(self, name):
+        ''' Get SDN Account corresponding to passed name, or all saved accounts if name is None'''
+        saved_sdn_accounts = []
+
+        if name is None or name == "":
+            sdn_accounts = list(self._account.values())
+            saved_sdn_accounts.extend(sdn_accounts)
+        elif name in self._account:
+            account = self._account[name]
+            saved_sdn_accounts.append(account)
+        else:
+            errstr = "SDN account {} does not exist".format(name)
+            raise KeyError(errstr)
+
+        return saved_sdn_accounts
 
     def get_sdn_plugin(self,name):
         """
@@ -90,6 +113,48 @@ class SdnAccountMgr(object):
         else:
             self._log.info("SDN plugin successfully instantiated")
         return self._sdn[name]
+
+    @asyncio.coroutine
+    def validate_sdn_account_credentials(self, loop, name):
+        self._log.debug("Validating SDN Account credentials %s", name)
+        self._status = RwsdnYang.SDNAccount_ConnectionStatus(
+                status="validating",
+                details="SDN account connection validation in progress"
+                )
+
+        _sdnacct = self.get_sdn_account(name)
+        if (_sdnacct is None):
+            raise SdnGetPluginError
+        _sdnplugin = self.get_sdn_plugin(name)
+        if (_sdnplugin is None):
+            raise SdnGetInterfaceError
+
+        rwstatus, status = yield from loop.run_in_executor(
+                None,
+                _sdnplugin.validate_sdn_creds,
+                _sdnacct,
+                )
+
+        if rwstatus == RwTypes.RwStatus.SUCCESS:
+            self._status = RwsdnYang.SDNAccount_ConnectionStatus.from_dict(status.as_dict())
+        else:
+            self._status = RwsdnYang.SDNAccount_ConnectionStatus(
+                    status="failure",
+                    details="Error when calling CAL validate sdn creds"
+                    )
+
+        self._log.info("Got sdn account validation response: %s", self._status)
+        _sdnacct.connection_status = self._status
+
+    def start_validate_credentials(self, loop, name):
+        if self._validate_task is not None:
+            self._validate_task.cancel()
+            self._validate_task = None
+
+        self._validate_task = asyncio.ensure_future(
+                self.validate_sdn_account_credentials(loop, name),
+                loop=loop
+                )
 
 
 class NwtopDiscoveryDtsHandler(object):
@@ -150,17 +215,16 @@ class NwtopDiscoveryDtsHandler(object):
                     for nw in nwtop.network:
                         # Add SDN account name
                         nw.rw_network_attributes.sdn_account_name = name
+                        nw.server_provided = False
                         nw.network_id = name + ':' + nw.network_id
                         self._log.debug("...Network id %s", nw.network_id)
                         nw_xpath = ("D,/nd:network[network-id=\'{}\']").format(nw.network_id)
                         xact_info.respond_xpath(rwdts.XactRspCode.MORE,
                                         nw_xpath, nw)
-                xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
-                return
-            else:
-                err = "%s action on discovered Topology not supported" % action
-                raise NotImplementedError(err)
+                xact_info.respond_xpath(rwdts.XactRspCode.ACK)
+                #err = "%s action on discovered Topology not supported" % action
+                #raise NotImplementedError(err)
 
         self._log.debug("Registering for discovered topology using xpath %s", NwtopDiscoveryDtsHandler.DISC_XPATH)
 

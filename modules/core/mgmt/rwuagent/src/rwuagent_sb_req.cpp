@@ -13,6 +13,7 @@
  */
 
 #include "rwuagent.hpp"
+#include "rwuagent_request_mode.hpp"
 
 using namespace rw_uagent;
 using namespace rw_yang;
@@ -22,8 +23,9 @@ SbReq::SbReq(
   Instance* instance,
   NbReq* nbreq,
   RwMgmtagt_SbReqType sbreq_type,
+  RequestMode request_mode,
   const char* trace_name,
-  const char* req )
+  const char* req)
 : sbreq_type_(sbreq_type),
   instance_(instance),
   memlog_buf_(
@@ -32,12 +34,19 @@ SbReq::SbReq(
     reinterpret_cast<intptr_t>(this)),
   nbreq_(nbreq),
   dts_(instance_->dts()),
-  dts_flags_( dts_ ? dts_->get_flags() : RWDTS_FLAG_NONE ),
-  req_(req)
+  dts_flags_( dts_ ? dts_->get_flags() : RWDTS_XACT_FLAG_NONE ),
+  req_(req),
+  trace_name_(trace_name),
+  request_mode_(request_mode)
 {
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "southbound request created",
     RWMEMLOG_ARG_PRINTF_INTPTR("sbreq=0x%" PRIX64,(intptr_t)this),
     RWMEMLOG_ARG_PRINTF_INTPTR("nbreq=0x%" PRIX64,(intptr_t)nbreq_) );
+
+  if (req_ != ""
+      && instance_->mgmt_handler()->is_ready_for_nb_clients()) {
+    instance_->log_file_manager()->log_string(this, trace_name_, req_);
+  }
 
   gettimeofday (&last_stat_time_, nullptr);
   RWPB_F_MSG_INIT(RwMgmtagt_SpecificStatistics_ProcessingTimes, &statistics_);
@@ -208,6 +217,10 @@ StartStatus SbReq::done_with_error(
   // ATTN: convert reasons to string?
   // ATTN: Log the reason
 
+  std::string error_xml;
+  nc_errors->to_xml(instance_->xml_mgr(),error_xml);
+  instance_->log_file_manager()->log_failure(this, trace_name_, error_xml);
+
   RWMEMLOG_TIME_CODE(
     ( nbreq_->respond( this, nc_errors ); ),
     memlog_buf_, RWMEMLOG_MEM2, "respond with error list",
@@ -268,4 +281,3 @@ void SbReq::update_stats (dom_stats_state_t state)
 void SbReq::rwdts_xact_end_wrapper (void *xact)
 {
 }
-

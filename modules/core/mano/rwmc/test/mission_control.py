@@ -31,7 +31,7 @@ class MissionControlUI(rift.vcs.NativeProcess):
     def __init__(self, name="RW.MC.UI"):
         super(MissionControlUI, self).__init__(
                 name=name,
-                exe="./usr/share/rw.ui/webapp/scripts/launch_ui.sh",
+                exe="./usr/share/rw.ui/skyquake/scripts/launch_ui.sh",
                 )
 
     @property
@@ -47,7 +47,6 @@ class Demo(rift.vcs.demo.Demo):
             rift.vcs.DtsRouterTasklet(),
             rift.vcs.MsgBrokerTasklet(),
             rift.vcs.RestconfTasklet(),
-            rift.vcs.Watchdog(),
             rift.vcs.RestPortForwardTasklet(),
             rift.vcs.CalProxy(),
             ]
@@ -263,7 +262,8 @@ def main(argv=sys.argv[1:]):
 
     # Create the prepared system from the demo
     system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args, 
-                  northbound_listing="cli_rwmc_schema_listing.txt")
+                  northbound_listing="cli_rwmc_schema_listing.txt",
+                  netconf_trace_override=True)
 
     confd_ip = socket.gethostbyname(socket.gethostname())
     rift.vcs.logger.configure_sink(config_file=None, confd_ip=confd_ip)

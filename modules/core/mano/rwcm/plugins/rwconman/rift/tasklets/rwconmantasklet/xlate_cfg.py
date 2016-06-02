@@ -41,6 +41,46 @@ def xlate_cp_list(line, cp_list):
                 line = line[:match.start()] + resolved_ip + line[match.end():]
     return line
 
+def xlate_multi_colon_list(line, multi_colon_list):
+    for ucp_string in multi_colon_list:
+        #print("Searching :", ucp_string)
+        match = re.search(ucp_string, line)
+        if match is not None:
+            #print("match :", match.group())
+            # resolve IP address using Connection Point dictionary for specified member (unique) index
+            ucp_str_list = match.group(1).split(':')
+            print("matched = {}, split list = {}".format(match.group(1), ucp_str_list))
+            if len(ucp_str_list) != 3:
+                print("Invalid TAG in the configuration: ", match.group(1))
+                exit(2)
+
+            # Traslate given CP address & mask into netaddr
+            if ucp_string.startswith('<rw_unique_index:rw_connection_point:masklen'):
+                member_vnf_index = int(ucp_str_list[0])
+                resolved_ip = xlate_dict[ucp_str_list[1]]
+                masklen = ucp_str_list[2]
+                if resolved_ip is None:
+                    print("No matching CP found: ", ucp_str_list[1])
+                    exit(2)
+                if int(masklen) <= 0:
+                    print("Invalid mask length: ", masklen)
+                    exit(2)
+                else:
+                    # Generate netaddr
+                    ip_str = resolved_ip + '/' + masklen
+                    #print("ip_str:", ip_str)
+                    ip = netaddr.IPNetwork(ip_str)
+                    if ucp_string.startswith('<rw_unique_index:rw_connection_point:masklen_broadcast'):
+                        # Traslate given CP address & mask into broadcast address
+                        addr = ip.broadcast
+                    if ucp_string.startswith('<rw_unique_index:rw_connection_point:masklen_network'):
+                        # Traslate given CP address & mask into network address
+                        addr = ip.network
+                    line = line[:match.start()] + str(addr) + line[match.end():]
+    return line
+
+
+
 def xlate_colon_list(line, colon_list):
     for ucp_string in colon_list:
         #print("Searching :", ucp_string)
@@ -135,9 +175,10 @@ def main(argv=sys.argv[1:]):
     with open(tags_input_file, "r") as ti:
         xlate_tags = yaml.load(ti.read())
 
+    # Need to work on the solution for multiple pattern of same type in single line.
     try:
-        xlate_dict = ast.literal_eval(xlate_arg)
-        print("xlate script: -i {} -o {} -x {} -t {}".format(cfg_template, cfg_file, repr(xlate_dict), xlate_tags))
+        with open(xlate_arg, "r") as ti:
+            xlate_dict = yaml.load(ti.read())
         try:
             with open(cfg_template, 'r') as r:
                 try:
@@ -154,6 +195,10 @@ def main(argv=sys.argv[1:]):
                                 line = xlate_cp_list(line, xlate_tags['xlate_cp_list'])
                                 #print("2.Line : ", line)
                                 
+                                # For each colon(:) separated tag, i.e. 3 inputs in a tag.
+                                line = xlate_multi_colon_list(line, xlate_tags['xlate_multi_colon_list'])
+                                #print("2a.Line : ", line)
+
                                 # For each colon(:) separated tag, i.e. 2 inputs in a tag.
                                 line = xlate_colon_list(line, xlate_tags['xlate_colon_list'])
                                 #print("3.Line : ", line)

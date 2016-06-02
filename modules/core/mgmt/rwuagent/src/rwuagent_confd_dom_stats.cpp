@@ -13,6 +13,7 @@
  */
 
 #include "rwuagent.hpp"
+#include "rw-mgmtagt-confd.pb-c.h"
 
 using namespace rw_uagent;
 using namespace rw_yang;
@@ -25,7 +26,7 @@ ConfdDomStats::ConfdDomStats(
   RW_ASSERT(hkeypath);
   RW_ASSERT(dts_key);
 
-  RWPB_F_MSG_INIT (RwMgmtagt_CachedDom, &dom_params_);
+  RWPB_F_MSG_INIT (RwMgmtagtConfd_CachedDom, &dom_params_);
 
   dom_params_.path = strdup (hkeypath);
   dom_params_.dts_keyspec = strdup (dts_key);
@@ -46,7 +47,7 @@ ConfdDomStats::~ConfdDomStats()
   }
 }
 
-RWPB_T_MSG(RwMgmtagt_CachedDom)* ConfdDomStats::get_pbcm()
+RWPB_T_MSG(RwMgmtagtConfd_CachedDom)* ConfdDomStats::get_pbcm()
 {
 
   if (dom_params_.n_callbacks) {
@@ -58,8 +59,8 @@ RWPB_T_MSG(RwMgmtagt_CachedDom)* ConfdDomStats::get_pbcm()
 
   dom_params_.n_callbacks = callbacks_.size();
   if (dom_params_.n_callbacks) {
-    dom_params_.callbacks =  (RWPB_T_MSG(RwMgmtagt_Callbacks) **)
-        RW_MALLOC (sizeof (RWPB_T_MSG(RwMgmtagt_Callbacks) **) * dom_params_.n_callbacks);
+    dom_params_.callbacks =  (RWPB_T_MSG(RwMgmtagtConfd_Callbacks) **)
+        RW_MALLOC (sizeof (RWPB_T_MSG(RwMgmtagtConfd_Callbacks) **) * dom_params_.n_callbacks);
   }
 
   size_t i = 0;
@@ -76,7 +77,7 @@ RWPB_T_MSG(RwMgmtagt_CachedDom)* ConfdDomStats::get_pbcm()
   return &dom_params_;
 }
 
-void ConfdDomStats::log_state (RwMgmtagt_ConfdCallbackType type)
+void ConfdDomStats::log_state (RwMgmtagt_Confd_CallbackType type)
 {
   gettimeofday (&last_access_time_, nullptr);
 
@@ -95,8 +96,8 @@ void ConfdDomStats::log_state (RwMgmtagt_ConfdCallbackType type)
   if (callbacks_.end() != cb) {
     cb->second->count ++;
   } else {
-    RWPB_T_MSG (RwMgmtagt_Callbacks) *callback = (RWPB_T_MSG (RwMgmtagt_Callbacks) *)
-        protobuf_c_message_create(nullptr, RWPB_G_MSG_PBCMD(RwMgmtagt_Callbacks));
+    RWPB_T_MSG (RwMgmtagtConfd_Callbacks) *callback = (RWPB_T_MSG (RwMgmtagtConfd_Callbacks) *)
+        protobuf_c_message_create(nullptr, RWPB_G_MSG_PBCMD(RwMgmtagtConfd_Callbacks));
 
     callback->type = type;
     callback->has_count = 1;

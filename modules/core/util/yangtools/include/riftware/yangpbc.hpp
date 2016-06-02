@@ -1677,9 +1677,6 @@ private:
   /// The local alias rwpb path name, for messages that are not local defining.
   std::string rwpb_alias_path_;
 
-  /// The UT CLI argv-style callback function.
-  std::string utcli_callback_argv_;
-
   /// The example XPath without keys.
   std::string xpath_path_;
 
@@ -1824,7 +1821,6 @@ public:
   YangExtension* get_yext_msg_tag_base() const;
   YangExtension* get_yext_field_tag() const;
   YangExtension* get_yext_field_c_type() const;
-  YangExtension* get_yext_utcli_callback_argv() const;
   YangExtension* get_yext_notif_log_common() const;
   YangExtension* get_yext_notif_log_event_id() const;
   YangExtension* get_yext_field_merge_behavior() const;
@@ -2284,9 +2280,6 @@ private:
 
   /// Yang rwpb:fld-c-type extension, if any.
   YangExtension* yext_field_c_type_ = nullptr;
-
-  /// Yang rwpb:utcli-callback-argv extension, if any.
-  YangExtension* yext_utcli_callback_argv_ = nullptr;
 
   /// Yang rw-notify-ext:log-common extension, if any.
   YangExtension* yext_notif_log_common_ = nullptr;

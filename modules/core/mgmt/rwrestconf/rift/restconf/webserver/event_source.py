@@ -48,11 +48,10 @@ from lxml import etree
 import logging
 import sys
 
-from ..translation import convert_netconf_response_to_json
-
 from ..util import (
     split_stream_url,
     get_username_and_password_from_auth_header,
+    naive_xml_to_json,
 )
 
 
@@ -155,7 +154,7 @@ class NetconfStreamHandler(object):
             resp_str = self._xml_to_json_translator.convert_notification(xml_str)
             if resp_str is None:
                 # Use a schema-less conversion
-                resp_str = convert_netconf_response_to_json(xml_str)
+                resp_str = naive_xml_to_json(xml_str)
         else:
             resp_str = repr(notification)
         self._logger.debug("Translated Notification: %s", resp_str)

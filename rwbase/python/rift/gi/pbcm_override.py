@@ -8,6 +8,7 @@ import collections
 import functools
 import inspect
 import json
+import yaml
 import os
 import sys
 import warnings
@@ -118,6 +119,9 @@ def wrap_module():
     - Add __iter__ to each type to return list of present fields
     - Add __contains__ to each type to check if field is present
     - Add to_json to dump the type to it's corresponding JSON
+    - Add from_json to deserialize JSON into the PB type
+    - Add to_yaml to dump the type to it's corresponding YAML
+    - Add from_yaml to deserialize YAML into the PB type
     - Add from_dict() classmethod to populate message from dictionary
     - Add as_dict() method to dump a pbcm as a dictionary
     - Only allow setattr to operate on pb fields
@@ -201,34 +205,135 @@ def wrap_module():
             super(type(self), self).__setattr__(name, value)
         box.__setattr__ = __setattr__
 
-        if sys.version_info >= (3, 0):
+        def add_xml_support():
+            if hasattr(box, "to_xml_v2"):
+                orig_to_xml_v2 = box.to_xml_v2
+                orig_from_xml_v2 = box.from_xml_v2
+
+            def to_xml_v2(self, model, pretty_print=False):
+                """ Serialize Protobuf Message into XML
+
+                :param self: GI class or instance
+                :param model: Model returned by create_libncx()
+                """
+                xml_string = orig_to_xml_v2(self, model, pretty_print=pretty_print)
+
+                return xml_string
+
+            @combomethod
+            def from_xml_v2(receiver, model, xml_str):
+                """ Deserialize XML message into Protobuf Message
+
+                :param receiver: GI class or instance
+                :param model: Model returned by create_libncx()
+                :param xml_str: Serialized XML message for current Protobuf Type
+                """
+                def _from_xml(self):
+                    orig_from_xml_v2(self, model, xml_str)
+
+                if inspect.isclass(receiver):
+                    self = receiver()
+                    _from_xml(self)
+                    return self
+
+                else:
+                    self = receiver
+                    _from_xml(self)
+
+            if hasattr(box, "to_xml_v2"):
+                box.to_xml_v2 = to_xml_v2
+                box.from_xml_v2 = from_xml_v2
+
+        def add_json_support():
             def to_json(self, model):
+                """ Serialize Protobuf Message into JSON
+
+                :param self: GI class or instance
+                :param model: Model returned by create_libncx()
+                """
                 schema = model.get_root_node()
-
                 xml_string = self.to_xml_v2(model)
-
                 json_string = xml_to_json(schema, xml_string)
 
                 return json_string
 
+            @combomethod
+            def from_json(receiver, model, json_str):
+                """ Deserialize JSON message into Protobuf Message
+
+                :param receiver: GI class or instance
+                :param model: Model returned by create_libncx()
+                :param json_str: Serialized JSON message for current Protobuf Type
+                """
+                def _from_json(self):
+                    schema = model.get_root_node()
+                    xml = json_to_xml(schema, json_str)
+                    self.from_xml_v2(model, xml)
+
+                if inspect.isclass(receiver):
+                    self = receiver()
+                    _from_json(self)
+                    return self
+
+                else:
+                    self = receiver
+                    _from_json(self)
+
+
             box.to_json = to_json
-
-        def deep_copy(self):
-            dup = self.__class__()
-            dup.copy_from(self)
-            return dup
-
-        box.deep_copy = deep_copy
-
-        if sys.version_info >= (3, 0):
-            def from_json(self, model, json):
-                schema = model.get_root_node()
-
-                xml = json_to_xml(schema, json)
-
-                self.from_xml_v2(model, xml)
-
             box.from_json = from_json
+
+
+        def add_yaml_support():
+            def to_yaml(self, model):
+                """ Serialize Protobuf Message into YAML string
+
+                :param self: GI class or instance
+                :param model: Model returned by create_libncx()
+                """
+
+                json_string = self.to_json(model)
+                msg_dict = json.loads(json_string)
+                yaml_string = yaml.safe_dump(msg_dict, indent=4,
+                                             default_flow_style=False)
+
+                return yaml_string
+
+            @combomethod
+            def from_yaml(receiver, model, yaml_str):
+                """ Deserialize YAML message into Protobuf Message
+
+                :param receiver: GI class or instance
+                :param model: Model returned by create_libncx()
+                :param yaml_str: Serialized JSON message for current Protobuf Type
+                """
+
+                def _from_yaml(self):
+                    schema = model.get_root_node()
+                    msg_dict = yaml.safe_load(yaml_str)
+                    json_str = json.dumps(msg_dict)
+                    self.from_json(model, json_str)
+
+                if inspect.isclass(receiver):
+                    self = receiver()
+                    _from_yaml(self)
+                    return self
+
+                else:
+                    self = receiver
+                    _from_yaml(self)
+
+
+            box.from_yaml = from_yaml
+            box.to_yaml = to_yaml
+
+        def add_deep_copy_support():
+            def deep_copy(self):
+                dup = self.__class__()
+                dup.copy_from(self)
+                return dup
+
+            box.deep_copy = deep_copy
 
         def add_kwargs_support():
             box.__old_new__ = box.__new__
@@ -278,7 +383,7 @@ def wrap_module():
                         raise ValueError("%s protobuf message does not have a `%s` field" % (msg.__class__.__name__, dict_key))
 
                     msg_field_value = getattr(msg, dict_key)
-                    if isinstance(msg_field_value, rift.gi_utils.GIPBCMList): 
+                    if isinstance(msg_field_value, rift.gi_utils.GIPBCMList):
                         if not isinstance(dict_val, collections.Sequence):
                             raise ValueError("%s list value must be iterable: %s" % dict_key)
 
@@ -314,8 +419,12 @@ def wrap_module():
             box.from_dict = from_dict
 
         add_from_dict_support()
+        add_deep_copy_support()
+        add_xml_support()
         if sys.version_info >= (3, 0):
             add_kwargs_support()
+            add_json_support()
+            add_yaml_support()
 
 
     # Sanitize the enum names coming from Yang.  Workaround until

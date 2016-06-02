@@ -32,7 +32,9 @@
 #include <unordered_map>
 #include <algorithm>
 #include <stack>
+#include <memory>
 #endif
+
 
 // Need this because doxygen parser thinks this is a C file and misses the C++ definitions
 #ifdef RW_DOXYGEN_PARSING
@@ -874,12 +876,40 @@ class XMLNode
   /**
    * Retrieve an attribute by name (and namespace).
    *
+   * ATTN: ATTN: This shouldn't be returning a unique pointer. Results in
+   * premature obj_release as the attribute will be owned by its Element and
+   * Element will still exist.
+   *
    * @return
    * - A valid pointer if the attribute exists.
    * - nullptr if the node does not have the attribute, or if the node
    *   does not support attributes.
    */
   virtual XMLAttribute::uptr_t get_attribute(
+    /**
+     * [in] The attribute name, in UTF-8.  Must not include namespace
+     * prefix.
+     */
+    const char* attr_name,
+
+    /**
+     * [in] The namespace, in UTF-8.  If nullptr, then the attribute must
+     * not be associated with any namespace.  May also pass
+     * rw_xml_namespace_none to indicate that the attribute must not be
+     * associated with any namespace.
+     */
+    const char* ns = nullptr
+  ) = 0;
+
+  /**
+   * Retrieve an attribute by name (and namespace).
+   *
+   * @return
+   * - A valid string if the attribute exists.
+   * - empty string if the node does not have the attribute, or if the node
+   *   does not support attributes.
+   */
+  virtual std::string get_attribute_value(
     /**
      * [in] The attribute name, in UTF-8.  Must not include namespace
      * prefix.
@@ -948,8 +978,6 @@ class XMLNode
     const char* prefix = nullptr
   ) = 0;
 
-
-
  public:
   // Comparison APIs
 
@@ -1014,6 +1042,52 @@ class XMLNode
      */
     const char* ns = nullptr
   ) = 0;
+
+  /**
+   * Return the count of children matching the given name and namespace.
+   *
+   * @return the count of the matches
+   */
+  virtual size_t count(
+
+    /**
+     * [in] The element name, in UTF-8.  Must not include namespace
+     * prefix.
+     */
+    const char* local_name,
+
+    /**
+     * [in] The namespace, in UTF-8.  If nullptr, then any name matches,
+     * regardless of namespace, will be accepted.  May also pass
+     * rw_xml_namespace_any to match any namespace, or
+     * rw_xml_namespace_node to match only the namespace of this node.
+     */
+    const char* ns = nullptr
+  ) = 0;
+
+  /**
+   * Return the collection of children matching the given name and namespace,
+   * or return nullptr
+   *
+   * @return the list of nodes, or nullptr if no match
+   */
+  virtual std::unique_ptr<std::list<XMLNode*>> find_all(
+
+    /**
+     * [in] The element name, in UTF-8.  Must not include namespace
+     * prefix.
+     */
+    const char* local_name,
+
+    /**
+     * [in] The namespace, in UTF-8.  If nullptr, then any name matches,
+     * regardless of namespace, will be accepted.  May also pass
+     * rw_xml_namespace_any to match any namespace, or
+     * rw_xml_namespace_node to match only the namespace of this node.
+     */
+    const char* ns = nullptr
+  ) = 0;
+
 
   /**
    * Find a list of nodes at the path specified by a key spec. The nodes will be
@@ -1174,6 +1248,18 @@ class XMLNode
    */
 
   virtual XMLNode* find_first_deepest_node();
+
+  /**
+   * Find the first deepest node in the XML tree. This might
+   * ***** NOT BE THE LONGEST ****** path in the tree. At each node, the first
+   * non-leaf child node is chosen. The node returned does NOT have any non-leaf
+   * children
+   *
+   * @return The node found. This function never fails - the node itself is
+   * a valid return, if the node does not have any non-leaf children
+   */
+
+  virtual XMLNode* find_first_deepest_node_in_xml_tree();
 
  public:
   // Tree modification
@@ -1562,6 +1648,34 @@ class XMLNode
     YangNode *ynode
   );
 
+  /**
+   * Fill the node with default values. If the node has non-presence containers,
+   * it goes deep into them and if any default descendants are found, fills them
+   * too.
+   */
+  void fill_defaults();
+
+  /**
+   * Fill the RPC XMLNode's inputs with defaults.
+   */
+  void fill_rpc_input_with_defaults();
+
+  /**
+   * Fill the RPC XMLNode's output with defaults.
+   */
+  void fill_rpc_output_with_defaults();
+
+  /**
+   * Fills defaults for the children as provided in the ynode. Useful for
+   * filling RPC inputs and outputs. 
+   */
+  void fill_defaults(YangNode* ynode);
+
+  /**
+   * For given the list Yang node, fill all the list nodes that match with
+   * default values.
+   */
+  void fill_defaults_list(YangNode* ylist);
 
 
  public:
@@ -1843,7 +1957,6 @@ class XMLDocument
    */
   virtual void obj_release() noexcept = 0;
 
-
  protected:
   /// Trivial protected destructor - see XMLDocument::obj_release().
   virtual ~XMLDocument()
@@ -2090,6 +2203,54 @@ class XMLDocument
     return &memlog_buf_;
   }
 
+  virtual rw_status_t evaluate_xpath(XMLNode * xml_node,      
+                                     std::string const xpath) = 0;
+
+
+  /*!
+   * API for doing subtree filtering as per RFC-6241
+   * The filtering is done on the current DOM thereby modifying its
+   * content.
+   * @filter_dom : XML DOM of the filter which needs to be applied
+   * on this DOM.
+   */
+  virtual rw_status_t subtree_filter(rw_yang::XMLDocument* filter_dom);
+
+private:
+  /*!
+   * Filtering for the containment node.
+   * Containment node usually hold the other types of node
+   * which are: 1) Selection node 2) Content match node
+   *
+   * Based on the child filter under the containment node it recurses.
+   */
+  virtual rw_status_t filter_containment_node(XMLNode* filter_node,
+                                              XMLNode* data_node);
+
+  /*!
+   * Filtering for selection node. <node/>
+   */
+  virtual rw_status_t filter_selection_node(XMLNode* filter_node, XMLNode* data_node);
+
+  /*!
+   * This function iterates through the child nodes of the containment
+   * filter node.
+   * If the child node is leaf AND has value it will be pushed to content_match_nodes.
+   * For any other node, it will be pushed to sibling_nodes.
+   * This is later used to perform filtering as per 
+   * https://tools.ietf.org/html/rfc6241#section-6.4.6
+   */
+  virtual void find_content_match_nodes(XMLNode* filter_node,
+                                        std::list<XMLNode*>& content_match_nodes,
+                                        std::list<XMLNode*>& sibling_nodes);
+
+  /*!
+   * Filtering for content match nodes.
+   */
+  virtual rw_status_t filter_content_match_nodes(std::list<XMLNode*>& content_match_nodes,
+                                                 XMLNode* data_node);
+
+
 protected:
 
   /*!
@@ -2179,6 +2340,23 @@ class XMLManager
    */
   virtual XMLDocument::uptr_t create_document(
     YangNode* yang_node /// [in] The  YangNode based on which this document needs to be created
+  ) = 0;
+
+  /**
+   * Create a new document from a file.
+   *
+   * ATTN: How to pass errors back?
+   * ATTN: Validation should be pluggable - might want yang-dom
+   *   validation even if xsd is possible
+   *
+   * @return The new document.  nullptr on error.  Caller owns the
+   *   document.
+   */
+  virtual XMLDocument::uptr_t create_document_from_file(
+    const char* file_name, ///< The file name. Cannot be nullptr.
+    std::string& error_out, ///< The error_out string to capture errors.
+    /// ATTN: error_out should be a pointer, nullable, and default to nullptr
+    bool validate = true ///< If true, validate during parsing
   ) = 0;
 
   /**
@@ -3025,10 +3203,6 @@ public:
   bool                           list_delete_ = false;
   // In case of delete, merge operation is not performed
   bool                           merge_op_ = true;
-  // If setting a non-key attribute, the flag is set to true
-  // in which case the merge operation would be done
-  // irrespective of flag merge_op_.
-  bool                           is_non_key_set_ = false;
 };
 
 /**

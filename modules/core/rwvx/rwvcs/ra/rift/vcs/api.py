@@ -53,13 +53,14 @@ class RaVcsApi(object):
             xml_data = dom.toprettyxml(indent="  ")
         return xml_data
 
-    def exec_rwmain(self, xml_file, use_gdb=False):
+    def exec_rwmain(self, xml_file, use_gdb=False, track_memory=False):
         """
         Execute rwmain to load the provided xml_file.
 
         Arguments:
             xml_file - The manifest xml_file file on disk to load
             use_gdb - Flag indicating whether to launch rwmain under gdb
+            track_memory - Flag indicating whether to launch rwmain with memory-tracking enabled
         """
         logger.debug("Loading manifest file into VCS: %s" % xml_file)
         if not os.path.exists(xml_file):
@@ -67,6 +68,13 @@ class RaVcsApi(object):
 
         # The system only runs from within the .install directory.
         os.chdir(os.environ['RIFT_INSTALL'])
+
+        print("track_memory=", track_memory)
+        if track_memory:
+            if os.environ.get('LD_PRELOAD') is not None:
+                os.environ['LD_PRELOAD'] = str(os.path.join(os.environ['RIFT_INSTALL'], "usr/lib/librwmalloc.so")) + ':' + str(os.environ['LD_PRELOAD'])
+            else:
+                os.environ['LD_PRELOAD'] = os.path.join(os.environ['RIFT_INSTALL'], "usr/lib/librwmalloc.so")
 
         rwmain_exe = os.path.join(os.environ['RIFT_INSTALL'], "usr/bin/rwmain")
         if not os.path.isfile(rwmain_exe):

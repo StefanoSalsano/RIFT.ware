@@ -11,6 +11,9 @@ import uuid
 
 import ipaddress
 
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import (
     GObject,
     RwCal,
@@ -425,7 +428,8 @@ class CloudSimPlugin(GObject.Object, RwCal.Cloud):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
             logger.addHandler(
                 rwlogger.RwLogger(
-                    category="cloudsim",
+                    category="rw-cal-log",
+                    subcategory="cloudsim",
                     log_hdl=rwlog_ctx,
                 )
             )

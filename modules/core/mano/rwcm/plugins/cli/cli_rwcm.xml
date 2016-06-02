@@ -2,6 +2,7 @@
   <yang-modules>
     <module name="rw-base"/>
     <module name="rw-mgmtagt"/>
+    <module name="rw-mgmtagt-confd"/>
     <module name="rw-manifest"/>
     <module name="rw-vcs"/>
     <module name="rwlog-mgmt"/>

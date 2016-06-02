@@ -4,11 +4,6 @@
     <nsd:name>IMS-corpA</nsd:name>
     <nsd:short-name>IMS-corpA</nsd:short-name>
     <nsd:description>All in one Clearwater IMS for corporation A in MWC16</nsd:description>
-    <nsd:input-parameter-xpath>
-      <nsd:xpath>/nsd:nsd-catalog/nsd:nsd[nsd:id=965dc8ea-c475-11e5-8040-fa163eb18cb8]/nsd:vld[nsd:id=9670b946-c475-11e5-8040-fa163eb18cb8]/nsd:provider-network/manotypes:segmentation_id</nsd:xpath>
-      <nsd:label>VLAN_CORPA_PE3</nsd:label>
-      <nsd:default-value>108</nsd:default-value>
-    </nsd:input-parameter-xpath>
     <nsd:vld>
       <nsd:id>9670b946-c475-11e5-8040-fa163eb18cb8</nsd:id>
       <nsd:name>data</nsd:name>
@@ -43,59 +38,6 @@
     <nsd:constituent-vnfd>
       <nsd:member-vnf-index>1</nsd:member-vnf-index>
       <nsd:vnfd-id-ref>47914a30-c474-11e5-990a-fa163eb18cb8</nsd:vnfd-id-ref>
-      <nsd:vnf-configuration>
-        <nsd:config-type>juju</nsd:config-type>
-        <nsd:juju>
-          <nsd:charm>clearwater-aio-proxy</nsd:charm>
-        </nsd:juju>
-        <nsd:input-params>
-          <nsd:config-priority>1</nsd:config-priority>
-          <nsd:config-delay>0</nsd:config-delay>
-        </nsd:input-params>
-        <nsd:config-primitive>
-          <nsd:name>config</nsd:name>
-          <nsd:parameter>
-            <nsd:name>home_domain</nsd:name>
-            <nsd:data-type>string</nsd:data-type>
-            <nsd:mandatory>true</nsd:mandatory>
-          </nsd:parameter>
-          <nsd:parameter>
-            <nsd:name>password</nsd:name>
-            <nsd:data-type>string</nsd:data-type>
-            <nsd:default-value>cw-aio</nsd:default-value>
-            <nsd:mandatory>true</nsd:mandatory>
-          </nsd:parameter>
-        </nsd:config-primitive>
-        <nsd:config-primitive>
-          <nsd:name>create-update-user</nsd:name>
-          <nsd:parameter>
-            <nsd:name>number</nsd:name>
-            <nsd:data-type>string</nsd:data-type>
-            <nsd:mandatory>true</nsd:mandatory>
-          </nsd:parameter>
-          <nsd:parameter>
-            <nsd:name>password</nsd:name>
-            <nsd:data-type>string</nsd:data-type>
-            <nsd:mandatory>true</nsd:mandatory>
-          </nsd:parameter>
-        </nsd:config-primitive>
-        <nsd:config-primitive>
-          <nsd:name>delete-user</nsd:name>
-          <nsd:parameter>
-            <nsd:name>number</nsd:name>
-            <nsd:data-type>string</nsd:data-type>
-            <nsd:mandatory>true</nsd:mandatory>
-          </nsd:parameter>
-        </nsd:config-primitive>
-        <nsd:initial-config-primitive>
-          <nsd:seq>1</nsd:seq>
-          <nsd:name>config</nsd:name>
-          <nsd:parameter>
-            <nsd:name>proxied_ip</nsd:name>
-            <nsd:value>&lt;rw_mgmt_ip&gt;</nsd:value>
-          </nsd:parameter>
-        </nsd:initial-config-primitive>
-      </nsd:vnf-configuration>
     </nsd:constituent-vnfd>
     <nsd:config-primitive>
       <nsd:name>Update Domain</nsd:name>

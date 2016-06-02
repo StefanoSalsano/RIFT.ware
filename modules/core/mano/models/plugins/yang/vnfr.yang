@@ -47,6 +47,20 @@ module vnfr
       "Derived from earlier versions of base YANG files";
   }
 
+  grouping placement-group-info {
+    list placement-groups-info {
+      description
+          "
+          Placement groups to which this VDU belongs and its
+          cloud construct
+          ";
+      key "name";
+      uses manotypes:placement-group-info;
+      uses manotypes:placement-group-input;
+    }  
+  }
+  
+  
   grouping virtual-interface {
     container virtual-interface {
       description
@@ -120,6 +134,13 @@ module vnfr
         type yang:uuid;
       }
 
+      leaf nsr-id-ref {
+        description
+            "NS instance identifier.
+             This is a leafref /nsr:ns-instance-config/nsr:nsr/nsr:id";
+        type yang:uuid;
+      }
+
       leaf member-vnf-index-ref {
         description "Reference to member VNF index in Network service.";
         type leafref {
@@ -174,7 +195,7 @@ module vnfr
       }
 
       // Use parameters provided here to configure this VNF
-      uses nsd:vnf-configuration;
+      uses manotypes:vnf-configuration;
 
       // Mainly used by Mon-params & dashboard url
       container mgmt-interface {
@@ -216,20 +237,7 @@ module vnfr
              different VNFs. The NFVO will use VLDs and VNFFGs at
              the network service level to construct network services.";
 
-        leaf name {
-          description "Name of the connection point";
-          type string;
-        }
-
-        leaf short-name {
-          description "Short name of the connection point";
-          type string;
-        }
-
-        leaf type {
-          description "Type of the connection point.";
-          type manotypes:connection-point-type;
-        }
+        uses vnfd:common-connection-point;
 
         leaf vlr-ref {
           description 
@@ -305,6 +313,14 @@ module vnfr
         uses manotypes:hypervisor-epa;
         uses manotypes:host-epa;
 
+        list alarms {
+          description
+              "A list of the alarms that have been created for this VDU";
+
+          key "alarm-id";
+          uses manotypes:alarm;
+        }
+
         list internal-connection-point {
           key "id";
           description
@@ -315,15 +331,7 @@ module vnfr
                has only one VNFC, it may not have any internal
                connection points.";
 
-          leaf id {
-            description "Identifier for the internal connection points";
-            type yang:uuid;
-          }
-
-          leaf type {
-            description "Type of the connection point.";
-            type manotypes:connection-point-type;
-          }
+          uses vnfd:common-connection-point;
 
           leaf ip-address {
             description 
@@ -400,6 +408,7 @@ module vnfr
             enum failed;
           }
         }
+        uses placement-group-info;
       }
 
       uses manotypes:monitoring-param;
@@ -452,6 +461,47 @@ module vnfr
             value 4;
           }
         }
+      }
+      uses placement-group-info;
+    }
+  }
+
+  rpc create-alarm {
+    description "Create an alert for a running VDU";
+    input {
+      leaf cloud-account {
+        mandatory true;
+        type string;
+      }
+
+      leaf vdu-id {
+        mandatory true;
+        type string;
+      }
+
+      container alarm {
+        uses manotypes:alarm;
+      }
+    }
+
+    output {
+      leaf alarm-id {
+        type string;
+      }
+    }
+  }
+
+  rpc destroy-alarm {
+    description "Destroy an alert that is associated with a running VDU";
+    input {
+      leaf cloud-account {
+        mandatory true;
+        type string;
+      }
+
+      leaf alarm-id {
+        mandatory true;
+        type string;
       }
     }
   }

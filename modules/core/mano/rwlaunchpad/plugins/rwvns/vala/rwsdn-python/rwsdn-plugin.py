@@ -42,7 +42,7 @@ class TopologyPlugin(GObject.Object, RwSdn.Topology):
 
         logger.addHandler(
             rwlogger.RwLogger(
-                category="rwsdn",
+                subcategory="rwsdn",
                 log_hdl=rwlog_ctx,
             )
         )

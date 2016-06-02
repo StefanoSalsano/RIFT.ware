@@ -57,6 +57,7 @@ def show_cloud_account(logger, cloud_account):
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 class TestVmPoolNegativeSetup:
     '''Performs module level setup'''
 
@@ -77,7 +78,7 @@ class TestVmPoolNegativeSetup:
         proxy.create_config('/cloud-account/account', cloud_account)
         #show_cloud_account(logger, cloud_account)
 
-    def test_create_vm_pool(self, proxy, cloud_account_name, vm_pool_name):
+    def test_create_vm_pool(self, proxy, cloud_account, vm_pool_name):
         '''Configure vm pool
 
         Arguments:
@@ -90,13 +91,13 @@ class TestVmPoolNegativeSetup:
             Newly configured vm pool has no resources assigned to it
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         cloud_account = proxy.get(xpath)
         assert cloud_account is not None
 
         pool_config = RwMcYang.VmPool(
                 name=vm_pool_name,
-                cloud_account=cloud_account_name,
+                cloud_account=cloud_account.name,
                 dynamic_scaling=True,
         )
         proxy.create_config('/vm-pool/pool', pool_config)
@@ -121,6 +122,7 @@ class TestVmPoolNegativeSetup:
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 class TestVmPoolNegative:
     '''This class is a container for testing VM pool negative cases.
 
@@ -199,7 +201,7 @@ class TestVmPoolNegative:
         #proxy.create_config('/vm-pool/pool', pool_config)
 
     def test_create_vm_pool_with_duplicate_name(self, proxy, vm_pool_name,
-            cloud_account_name):
+            cloud_account):
         '''Tests that a vm pool cannot be created with a name that already exists
 
         Arguments:
@@ -212,7 +214,7 @@ class TestVmPoolNegative:
             rift.auto.proxy.ProxyRequestError is raised
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         cloud_account = proxy.get(xpath)
         assert cloud_account.name is not None
 
@@ -332,7 +334,7 @@ class TestVmPoolNegative:
     # Test VM pool assignments
     #
 
-    def test_assign_vm_resource_to_vm_pool(self, proxy, cloud_account_name,
+    def test_assign_vm_resource_to_vm_pool(self, proxy, cloud_account,
             vm_pool_name):
         '''Configure a vm resource by adding it to a vm pool
 
@@ -349,7 +351,7 @@ class TestVmPoolNegative:
             post assignment
 
         '''
-        account = proxy.get("/cloud-account/account[name='%s']" % cloud_account_name)
+        account = proxy.get("/cloud-account/account[name='%s']" % cloud_account.name)
         cloud_vm_ids = [vm.id for vm in account.resources.vm]
         assert len(cloud_vm_ids) >= 1
 
@@ -361,7 +363,7 @@ class TestVmPoolNegative:
 
         pool_config = RwMcYang.VmPool.from_dict({
             'name':vm_pool_name,
-            'cloud_account':cloud_account_name,
+            'cloud_account':cloud_account.name,
             'assigned':[{'id':available_ids[0]}]}
         )
         proxy.replace_config("/vm-pool/pool[name='%s']" % vm_pool_name, pool_config)
@@ -369,7 +371,7 @@ class TestVmPoolNegative:
         assigned_ids = [vm.id for vm in pool.assigned]
         assert available_ids[0] in assigned_ids # Configured resource shows as assigned
 
-    def test_create_vm_pool_2(self, proxy, cloud_account_name, secondary_vm_pool_name):
+    def test_create_vm_pool_2(self, proxy, cloud_account, secondary_vm_pool_name):
         '''Configure vm pool
         Arguments:
             proxy                  - a pytest fixture proxy to RwMcYang
@@ -381,13 +383,13 @@ class TestVmPoolNegative:
             Newly configured vm pool has no resources assigned to it
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         cloud_account = proxy.get(xpath)
         assert cloud_account is not None
 
         pool_config = RwMcYang.VmPool(
             name=secondary_vm_pool_name,
-            cloud_account=cloud_account_name,
+            cloud_account=cloud_account.name,
             dynamic_scaling=True,
         )
         proxy.create_config('/vm-pool/pool', pool_config)
@@ -397,7 +399,7 @@ class TestVmPoolNegative:
 
     @pytest.mark.skipif(True, reason="Assigned VMS are able to be shared between VM pools")
     @pytest.mark.xfail(raises=ProxyRequestError)
-    def test_assign_allocated_vm_to_vm_pool_2(self, proxy, cloud_account_name,
+    def test_assign_allocated_vm_to_vm_pool_2(self, proxy, cloud_account,
             vm_pool_name, secondary_vm_pool_name):
         '''This test tries to assign a vm from one vm pool to another vm pool
 
@@ -427,6 +429,7 @@ class TestVmPoolNegative:
 
 
 @pytest.mark.incremental
+@pytest.mark.usefixtures('cloud_account')
 class TestVmPoolNegativeTeardown:
     '''This class serves to do cleanup for the VM pool negative tests'''
 
@@ -468,7 +471,7 @@ class TestVmPoolNegativeTeardown:
         xpath = "/vm-pool/pool[name='%s']" % vm_pool_name
         proxy.delete_config(xpath)
 
-    def test_delete_cloud_account_expect_fail(self, proxy, cloud_account_name):
+    def test_delete_cloud_account_expect_fail(self, proxy, cloud_account):
         '''Unconfigure cloud_account
 
         This should fail because we have not deleted vm pool 2
@@ -481,7 +484,7 @@ class TestVmPoolNegativeTeardown:
             rift.auto.proxy.ProxyRequestError is raised
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         with pytest.raises(ProxyRequestError):
             proxy.delete_config(xpath)
 
@@ -499,7 +502,7 @@ class TestVmPoolNegativeTeardown:
         xpath = "/vm-pool/pool[name='%s']" % secondary_vm_pool_name
         proxy.delete_config(xpath)
 
-    def test_delete_cloud_account(self, proxy, cloud_account_name):
+    def test_delete_cloud_account(self, proxy, cloud_account):
         '''Unconfigure cloud_account
 
         Arguments:
@@ -510,6 +513,6 @@ class TestVmPoolNegativeTeardown:
             None
 
         '''
-        xpath = "/cloud-account/account[name='%s']" % cloud_account_name
+        xpath = "/cloud-account/account[name='%s']" % cloud_account.name
         proxy.delete_config(xpath)
 

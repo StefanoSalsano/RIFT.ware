@@ -13,6 +13,9 @@
  */
 
 #include "rwuagent.hpp"
+#include "rwuagent_confd.hpp"
+#include "rwuagent_log_file_manager.hpp"
+#include "rw-mgmtagt-confd.pb-c.h"
 
 using namespace rw_uagent;
 using namespace rw_yang;
@@ -106,20 +109,28 @@ static int init_confd_action(struct confd_user_info *ctxt)
   return daemon->init_confd_rpc(ctxt);
 }
 
+static void
+rw_uagent_confd_connection_retry_callback(void *user_context)
+{
+  auto* self = static_cast <ConfdDaemon*> (user_context);
+  self->try_confd_connection();
+  return;
+}
 
-ConfdDaemon::ConfdDaemon(
-  Instance *instance )
-: instance_ (instance),
-  control_fd_ (RWUAGENT_INVALID_SOCK_ID),
-  daemon_ctxt_ (nullptr),
-  last_alloced_index_(0),
-  confd_log_(new ConfdLog(instance_)),
-  memlog_buf_(
-    instance->get_memlog_inst(),
-    "ConfdDaemon",
-    reinterpret_cast<intptr_t>(this))
+
+ConfdDaemon::ConfdDaemon(Instance* instance)
+  : instance_ (instance)
+  , confd_log_(instance_->log_file_manager())
+  , confd_config_(new NbReqConfdConfig(instance_))
+  , memlog_buf_(
+      instance->get_memlog_inst(),
+      "ConfdDaemon",
+      reinterpret_cast<intptr_t>(this))
 {
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "created");
+
+  confd_log_->add_confd_log_files();
+
   size_t cores = RWUAGENT_DAEMON_DEFAULT_POOL_SIZE;
   dp_q_pool_.reserve(cores);
 
@@ -132,6 +143,11 @@ ConfdDaemon::ConfdDaemon(
                      RWSCHED_DISPATCH_QUEUE_SERIAL)
         );
   }
+
+  upgrade_ctxt_.serial_upgrade_q_ = rwsched_dispatch_queue_create(
+      instance_->rwsched_tasklet(),
+      "upgrade-queue",
+      RWSCHED_DISPATCH_QUEUE_SERIAL);
 }
 
 ConfdDaemon::~ConfdDaemon()
@@ -147,12 +163,76 @@ ConfdDaemon::~ConfdDaemon()
   }
 }
 
+
+void ConfdDaemon::try_confd_connection()
+{
+  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "try confd connection",
+           RWMEMLOG_ARG_PRINTF_INTPTR("try=%" PRIdPTR, (intptr_t)confd_connection_attempts_));
+  std::string log_str;
+
+  if (setup_confd_connection() == RW_STATUS_SUCCESS) {
+    RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "setup conn failed");
+    log_str = "RW.uagent - Connection succeded at try ";
+    log_str += std::to_string(confd_connection_attempts_);
+    RW_MA_INST_LOG(instance_, InstanceCritInfo, log_str.c_str());
+    return;
+  }
+
+  confd_connection_attempts_++;
+
+  log_str = "RW.uagent - Connection attempt at try ";
+  log_str += std::to_string(confd_connection_attempts_);
+  RW_MA_INST_LOG (instance_, InstanceNotice, log_str.c_str());
+
+  rwsched_dispatch_after_f(
+      instance_->rwsched_tasklet(),
+      dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * RWUAGENT_RETRY_CONFD_CONNECTION_TIMEOUT_SEC),
+      rwsched_dispatch_get_main_queue(instance_->rwsched()),
+      this,
+      rw_uagent_confd_connection_retry_callback);
+}
+
+rw_status_t ConfdDaemon::setup_confd_connection()
+{
+  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "setup confd connection");
+
+  if (!instance_->mgmt_handler()->is_instance_ready()) {
+    RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "instance not ready");
+    return RW_STATUS_FAILURE;
+  }
+
+  if (instance_->mgmt_handler()->system_init() != RW_STATUS_SUCCESS) {
+    RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "connection failed");
+    RW_MA_INST_LOG(instance_, InstanceNotice,
+        "RW.uAgent - startup_handler - maapi connection failed");
+    return RW_STATUS_FAILURE;
+  }
+
+  rw_status_t ret = setup();
+
+  if (ret != RW_STATUS_SUCCESS) {
+    RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "daemon setup failed");
+    RW_MA_INST_LOG(instance_, InstanceNotice, "RW.uAgent - confd_daemon_- setup failed");
+    return RW_STATUS_FAILURE;
+  }
+
+  RW_MA_INST_LOG(instance_, InstanceNotice, "RW.uAgent - Moving on to subscription phase");
+  instance_->mgmt_handler()->proceed_to_next_state();
+
+  return RW_STATUS_SUCCESS;
+}
+
 rw_status_t ConfdDaemon::setup()
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "setup");
 
   rwsched_instance_ptr_t sched = instance_->rwsched();
   rwsched_tasklet_ptr_t tasklet = instance_->rwsched_tasklet();
+
+  uint32_t res = rw_yang::ConfdUpgradeMgr().get_max_version_linked();
+  upgrade_ctxt_.schema_version_ = res;
+
+  RW_MA_INST_LOG(instance_, InstanceInfo, "RW.uAgent - Schema version updated");
 
   // release any previous deamons
   if (nullptr != daemon_ctxt_){
@@ -298,8 +378,8 @@ rw_status_t ConfdDaemon::setup()
   return RW_STATUS_SUCCESS;
 }
 
-rwdts_member_rsp_code_t 
-ConfdDaemon::send_notification(
+rwdts_member_rsp_code_t
+ConfdDaemon::handle_notification(
     const ProtobufCMessage * msg)
 {
   RW_ASSERT(msg);
@@ -317,7 +397,7 @@ ConfdDaemon::send_notification(
     return RWDTS_ACTION_NOT_OK;
   }
   std::string lstr;
-  RW_MA_INST_LOG(instance_, InstanceDebug, 
+  RW_MA_INST_LOG(instance_, InstanceDebug,
       (lstr="Notification : " + node->to_string()).c_str());
 
   status = find_confd_hash_values(node->get_yang_node(), &tag);
@@ -384,6 +464,100 @@ ConfdDaemon::send_notification_to_confd(ConfdTLVBuilder& builder, struct xml_tag
   return RWDTS_ACTION_OK;
 }
 
+rw_yang_netconf_op_status_t ConfdDaemon::get_confd_daemon(XMLNode* node)
+{
+  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "get agent confd stats" );
+  RW_ASSERT(node);
+
+  RWPB_M_MSG_DECL_INIT(RwMgmtagtConfd_Confd, confd);
+  RWPB_T_MSG(RwMgmtagtConfd_Client) *client = (RWPB_T_MSG(RwMgmtagtConfd_Client) *)
+      protobuf_c_message_create(nullptr, RWPB_G_MSG_PBCMD(RwMgmtagtConfd_Client));
+
+  confd.n_client = 1;
+  confd.client = &client;
+
+  client->n_cached_dom = dom_stats_.size();
+  RWPB_T_MSG(RwMgmtagtConfd_CachedDom) **doms = (RWPB_T_MSG(RwMgmtagtConfd_CachedDom) **)
+      //ATTN this has to be based on some alloc on the protobuf allocator
+      RW_MALLOC(sizeof(RWPB_T_MSG(RwMgmtagtConfd_CachedDom) *)  * client->n_cached_dom);
+
+  client->cached_dom = doms;
+  client->identifier = 0;
+
+  int i = 0; // fake index
+  for (auto& dom : dom_stats_) {
+    doms[i] = dom->get_pbcm();
+    doms[i]->index = i;
+    i++;
+  }
+
+  rw_yang_netconf_op_status_t ncrs =
+      node->merge ((ProtobufCMessage *)&confd);
+
+  if (ncrs != RW_YANG_NETCONF_OP_STATUS_OK) {
+    RW_MA_INST_LOG (instance_, InstanceError, "Failed in merge op");
+    return RW_YANG_NETCONF_OP_STATUS_OPERATION_FAILED;
+  }
+
+  RW_FREE ( doms);
+  client->n_cached_dom = 0;
+  client->cached_dom = nullptr;
+
+  for (auto dp : dp_clients_) {
+    client->identifier = (uint64_t) dp;
+    client->n_cached_dom = dp->dom_stats_.size();
+    doms = (RWPB_T_MSG(RwMgmtagtConfd_CachedDom) **)
+        //ATTN this has to be based on some alloc on the protobuf allocator
+        RW_MALLOC (sizeof(RWPB_T_MSG(RwMgmtagtConfd_CachedDom)*)  * client->n_cached_dom);
+
+    client->cached_dom = doms;
+    int i = 0; // fake index
+
+    for (auto& dom : dp->dom_stats_) {
+      doms[i] = dom->get_pbcm();
+      doms[i]->index = i;
+      i++;
+    }
+
+    rw_yang_netconf_op_status_t ncrs =
+        node->merge ((ProtobufCMessage *)&confd);
+
+    if (ncrs != RW_YANG_NETCONF_OP_STATUS_OK) {
+      RW_MA_INST_LOG (instance_, InstanceError, "Failed in merge op");
+      return RW_YANG_NETCONF_OP_STATUS_OPERATION_FAILED;
+    }
+
+    RW_FREE ( doms);
+    client->n_cached_dom = 0;
+    client->cached_dom = nullptr;
+  }
+
+  protobuf_c_message_free_unpacked (nullptr, (ProtobufCMessage*)client);
+  return RW_YANG_NETCONF_OP_STATUS_OK;
+}
+
+
+rw_yang_netconf_op_status_t ConfdDaemon::get_dom_refresh_period(XMLNode* node)
+{
+  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "get agent refresh" );
+  RW_ASSERT(node);
+
+  RWPB_M_MSG_DECL_INIT(RwMgmtagtConfd_Confd, confd);
+  RWPB_M_MSG_DECL_INIT(RwMgmtagtConfd_Confd_DomRefreshPeriod, refresh_period);
+
+  // ATTN: confd.has_total_dom_lifetime = true;
+  confd.dom_refresh_period = &refresh_period;
+
+  refresh_period.has_cli_dom_refresh_period = true;
+  refresh_period.cli_dom_refresh_period = instance_->cli_dom_refresh_period_msec_;
+
+  refresh_period.has_nc_rest_dom_refresh_period = true;
+  refresh_period.nc_rest_dom_refresh_period = instance_->nc_rest_refresh_period_msec_;
+
+  rw_yang_netconf_op_status_t ncs = node->merge( &confd.base );
+  return ncs;
+}
+
 
 rw_status_t ConfdDaemon::setup_confd_worker_pool()
 {
@@ -433,7 +607,6 @@ rw_status_t ConfdDaemon::setup_confd_worker_pool()
   return RW_STATUS_SUCCESS;
 }
 
-
 inline void
 ConfdDaemon::async_execute_on_main_thread(dispatch_function_t task,
                                           void* ud)
@@ -441,10 +614,10 @@ ConfdDaemon::async_execute_on_main_thread(dispatch_function_t task,
   const auto& tasklet = instance_->rwsched_tasklet();
   const auto& sched = instance_->rwsched();
 
-  ::async_execute(tasklet,
-                  rwsched_dispatch_get_main_queue(sched),
-                  ud,
-                  task);
+  rwsched_dispatch_async_f(tasklet,
+                           rwsched_dispatch_get_main_queue(sched),
+                           ud,
+                           task);
   return;
 }
 
@@ -474,7 +647,7 @@ int ConfdDaemon::init_confd_trans(struct confd_trans_ctx *ctxt)
 
   if (!strcmp(ctxt->uinfo->context, "system")) {
     async_execute_on_main_thread(
-             [](void* ctxt)-> void 
+             [](void* ctxt)-> void
              {
               auto* dp = static_cast<NbReqConfdDataProvider*>(ctxt);
               auto* daemon = dp->daemon_;
@@ -509,7 +682,7 @@ int ConfdDaemon::finish_confd_trans(struct confd_trans_ctx *ctxt)
       daemon->dom_stats_.splice(daemon->dom_stats_.begin(), dp->dom_stats_);
 
       if (daemon->dom_stats_.size() > RWUAGENT_MAX_CONFD_STATS_DAEMON) {
-        auto remove_begin = std::next(daemon->dom_stats_.begin(), 
+        auto remove_begin = std::next(daemon->dom_stats_.begin(),
                                       RWUAGENT_MAX_CONFD_STATS_DAEMON - 1);
         auto remove_end = daemon->dom_stats_.end();
         daemon->dom_stats_.erase(remove_begin, --remove_end);
@@ -573,7 +746,7 @@ void ConfdDaemon::process_confd_data_req(DispatchSrcContext *sctxt)
 
   if (sctxt->confd_fd_ == control_fd_) {
     async_execute_on_main_thread(
-        [](void* ctxt) -> void 
+        [](void* ctxt) -> void
         {
           auto* dp_ctx = static_cast<DispatchSrcContext*>(ctxt);
           close (dp_ctx->confd_->control_fd_);
@@ -591,7 +764,7 @@ void ConfdDaemon::process_confd_data_req(DispatchSrcContext *sctxt)
           // remove this fd from the worker pool
           // ATTN: there should be a way to avoid erase on vector
           auto it = std::find(self->worker_fd_vec_.begin(),
-                              self->worker_fd_vec_.end(), del_sock); 
+                              self->worker_fd_vec_.end(), del_sock);
           if (it != self->worker_fd_vec_.end()) {
             self->worker_fd_vec_.erase(it);
           }

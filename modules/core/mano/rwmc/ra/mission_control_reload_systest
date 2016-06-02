@@ -8,10 +8,10 @@
 # Helper script for invoking the mission control system test using the systest_wrapper
 source $RIFT_INSTALL/usr/rift/systemtest/util/mano/mano_common.sh
 
-SCRIPT_TEST="py.test -v -p no:cacheprovider -k 'not Teardown' \
+SCRIPT_TEST="py.test -x -v -p no:cacheprovider -k 'not Teardown' \
             ${PYTEST_DIR}/mission_control/test_mission_control.py"
 
-REBOOT_SCRIPT_TEST="py.test -v -p no:cacheprovider -k 'test_wait_for_launchpad_started or Teardown' \
+REBOOT_SCRIPT_TEST="py.test -x -v -p no:cacheprovider -k 'test_wait_for_launchpad_started or Teardown' \
                     ${PYTEST_DIR}/mission_control/test_mission_control.py"
 
 test_prefix="mission_control_reload_systest"

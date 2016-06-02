@@ -11,13 +11,13 @@ import tornado.escape
 from ..schema import collect_children
 
 def json_to_xml(schema_node, json_string):
-    '''Used to convert rooted JSON into equivalent XML 
-    
+    '''Used to convert rooted JSON into equivalent XML
+
     The json library's representation of JSON can be thought of as a tree of
     dicts, lists, and leaves. This function walks that tree shape and emits the
     equivalent XML.
     '''
-    def _handle_dict(json_node, schema_node, key=None): 
+    def _handle_dict(json_node, schema_node, key=None):
         '''Translate a dict representaion of JSON into XML
 
         In the json library dict's hold all the data. They either contain more
@@ -32,7 +32,17 @@ def json_to_xml(schema_node, json_string):
         '''
         xml = list()
 
-        schema_children = collect_children(schema_node)
+        if schema_node.is_rpc():
+            # the "input" and "output" elements don't appear in the xml so combine all their child nodes
+            input_node = schema_node.get_first_child()
+            input_children = collect_children(input_node)
+            
+            output_node = input_node.get_next_sibling()
+            output_children = collect_children(output_node)
+
+            schema_children = input_children + output_children
+        else:
+            schema_children = collect_children(schema_node)
 
         for child_schema_node in schema_children:
 
@@ -60,7 +70,7 @@ def json_to_xml(schema_node, json_string):
                 xml.append('<%s xmlns="%s">' % (schema_node_name, schema_namespace))
                 xml.append(handler[type(values)](values, child_schema_node, key))
                 xml.append("</%s>" % (schema_node_name))
-                
+
         return ''.join(xml)
 
     def _handle_list(json_node, schema_node, key=None):
@@ -79,17 +89,22 @@ def json_to_xml(schema_node, json_string):
 
     def _handle_str(json_node, schema_node, key=None):
         return tornado.escape.xhtml_escape(json_node)
-            
-    handler = {dict : _handle_dict, 
-               int : _handle_int, 
+
+    def _handle_none(json_node, schema_node, key=None):
+        return ""
+
+    handler = {dict : _handle_dict,
+               int : _handle_int,
                bool : _handle_int,
-               str : _handle_str}        
+               str : _handle_str,
+               type(None): _handle_none,
+               }
 
 
 
 
     parsed_json= json.loads(json_string)
 
-    xml_str = "<root>" + handler[type(parsed_json)](parsed_json, schema_node) + "</root>"
+    xml_str = "<data>" + handler[type(parsed_json)](parsed_json, schema_node) + "</data>"
 
     return xml_str

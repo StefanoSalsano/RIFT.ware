@@ -18,7 +18,7 @@ RIFT_BUILD = $(TOP_SRC_PATH)/.build
 RIFT_ARTIFACTS = $(TOP_SRC_PATH)/.artifacts
 RIFT_MODULE_TEST = $(TOP_SRC_PATH)/.artifacts/moduletest
 RIFT_INSTALL = $(TOP_SRC_PATH)/.install
-RIFT_SHELL_EXE = $(TOP_SRC_PATH)/rift-shell -e --
+RIFT_SHELL_EXE = $(TOP_SRC_PATH)/rift-shell -e --include-build-dirs --
 # Force rift-shell to reload env
 RIFT_SHELL =
 
@@ -72,13 +72,13 @@ else
 endif
 
 ##
-# Function to get whether to used Confd basic version
-# or Confd licensed version
+# Function to get the rift agent build type.
+# Allowed values are CONFD_BASIC, CONFD_FULL, XML_ONLY
 ##
-ifeq ($(CONFD),)
-	get_confd_flavour=FULL
+ifeq ($(RIFT_AGENT_BUILD),)
+  get_rift_agent_build=CONFD_FULL
 else
-	get_confd_flavour=$(CONFD)
+  get_rift_agent_build=$(RIFT_AGENT_BUILD)
 endif
 
 
@@ -154,8 +154,9 @@ rw.list:
 	@echo '                              			  (results in ${top}/.artifacts/systemtest)'
 	@echo '    make rw.rift             			- Checkout & build rift (no ext)'
 	@echo '    make rw.world             			- Checkout & build'
-	@echo '    make CONFD=BASIC               - Checkout & build using Confd BASIC version'
-	@echo '    make CONFD=FULL                - Checkout & build using Confd FULL version. This is the default option.' 
+	@echo '    make RIFT_AGENT_BUILD=CONFD_BASIC            - Checkout & build using Confd BASIC version'
+	@echo '    make RIFT_AGENT_BUILD=CONFD_FULL             - Checkout & build using Confd FULL version. This is the default option.' 
+	@echo '    make RIFT_AGENT_BUILD=XML_ONLY               - Checkout & build without confd support.'
 	@echo
 	@echo 'Examples w/misc. options:'
 	@echo '    make rw VERBOSE=1 CMAKE_BUILD_TYPE=Release'
@@ -254,13 +255,18 @@ clean.fast:
 cmake:: BUILD_TYPE=$(call get_build_type)
 cmake:: COVERAGE_TYPE=$(call is_coverage)
 cmake:: NOT_DEVELOPER_TYPE=$(call is_not_developer)
-cmake:: CONFD_FLAVOUR=$(call get_confd_flavour)
+cmake:: RIFT_AGENT_BUILD=$(call get_rift_agent_build)
 cmake::
+	@if [ "$(RIFT_AGENT_BUILD)" != "XML_ONLY" ] && [ "$(RIFT_AGENT_BUILD)" != "CONFD_FULL" ] && [ "$(RIFT_AGENT_BUILD)" != "CONFD_BASIC" ]; then \
+		echo; \
+		echo "ERROR: Invalid value set for RIFT_AGENT_BUILD"; \
+		exit 1; \
+	fi
 	mkdir -p $(RIFT_BUILD)
 	mkdir -p $(RIFT_ARTIFACTS)
 	mkdir -p $(RIFT_MODULE_TEST)
 	mkdir -p $(RIFT_INSTALL)
-	cd $(RIFT_BUILD) && $(RIFT_SHELL_EXE) cmake ../ -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DNOT_DEVELOPER_BUILD=$(NOT_DEVELOPER_TYPE) -DCOVERAGE_BUILD=$(COVERAGE_TYPE) -DCONFD_FLAVOUR=$(CONFD_FLAVOUR)
+	cd $(RIFT_BUILD) && $(RIFT_SHELL_EXE) cmake ../ -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DNOT_DEVELOPER_BUILD=$(NOT_DEVELOPER_TYPE) -DCOVERAGE_BUILD=$(COVERAGE_TYPE) -DRIFT_AGENT_BUILD=$(RIFT_AGENT_BUILD)
 
 ##
 # Rule to checkout non-external components

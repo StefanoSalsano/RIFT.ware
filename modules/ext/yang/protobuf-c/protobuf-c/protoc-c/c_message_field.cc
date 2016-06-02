@@ -515,20 +515,21 @@ void MessageFieldGenerator::GenerateGiCSetterMethod(io::Printer* printer) const
                          "  $gi_tname$** tmp = $boxed_field$;\n"
                          "  $boxed_field$ = NULL;\n"
                          "  for (i = 0; i < n_listy_children; i++) {\n"
-                         "    if (tmp[i] != NULL) {\n");
+                         "    if (tmp[i] != NULL) {\n"
+                         "      ProtobufCMessage* freemsg = tmp[i]->box.message;\n"
+                         "      $invalidate_fn$(tmp[i]);\n");
 
     if (riftopts.flatinline) {
-      printer->Print(vars, "      protobuf_c_message_free_unpacked_usebody(NULL, tmp[i]->box.message);\n"
+      printer->Print(vars, "      protobuf_c_message_free_unpacked_usebody(NULL, freemsg);\n"
                            "      protobuf_c_message_init_inner(\n"
                            "          boxed->box.message,\n"
-                           "          tmp[i]->box.message,\n"
+                           "          freemsg,\n"
                            "          boxed->s.message->base_concrete.descriptor->fields.$fname$);\n");
     } else {
-      printer->Print(vars, "      protobuf_c_message_free_unpacked(NULL, tmp[i]->box.message);\n");
+      printer->Print(vars, "      protobuf_c_message_free_unpacked(NULL, freemsg);\n");
     }
 
-    printer->Print(vars, "      $invalidate_fn$(tmp[i]);\n"
-                         "    }\n"
+    printer->Print(vars, "    }\n"
                          "  }\n"
                          "  protobuf_c_gi_boxed_free(tmp);\n"
                          "}\n"

@@ -1,6 +1,6 @@
 {
   "test_name":"TC_MISSION_CONTROL_OPENSTACK",
-  "commandline":"./mission_control_systest --cloud-type 'openstack' --cloud-host '10.66.4.115' --sysinfo",
+  "commandline":"./mission_control_systest --cloud-type 'openstack' --cloud-host={cloud_host} --user={user} {tenants} --sysinfo --lp-standalone",
   "test_description":"System test for mission control(Openstack)",
   "run_as_root": false,
   "status":"broken",
@@ -9,9 +9,9 @@
   "networks":[],
   "vms":[
     {
-      "name": "VM",
+      "name": "rift_auto_launchpad",
       "memory": 8192,
-      "cpus": 4
+      "cpus": 2
     }
   ]
 }

@@ -4,13 +4,18 @@
   "target_vm":"VM",
   "test_description":"System test for mission control",
   "run_as_root": true,
-  "status":"working",
+  "status":"broken",
   "keywords":["nightly","smoke","MANO","cloudsim"],
   "timelimit": 1400,
   "networks":[],
   "vms":[
     {
-      "name": "VM",
+      "name": "rift_auto_mission_control",
+      "memory": 8192,
+      "cpus": 4
+    },
+    {
+      "name": "rift_auto_launchpad",
       "memory": 8192,
       "cpus": 4
     }

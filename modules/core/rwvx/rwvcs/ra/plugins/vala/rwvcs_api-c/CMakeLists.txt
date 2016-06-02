@@ -21,7 +21,6 @@ set(PLUGIN_NAME rwvcs_api-c)
 ##
 set(C_SOURCES rwvcs_api-c.c)
 
-add_definitions(-DCLI_CONFIG_XSD_PATH="${CMAKE_INSTALL_PREFIX}/usr/data/xsd/")
 include_directories(BEFORE
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwvcs/rwmain)
 

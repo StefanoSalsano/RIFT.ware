@@ -2806,9 +2806,9 @@ static rw_status_t launch_process(
 
     rwmain_trace_error(
         rwmain,
-        "execv failed: cwd = %s, exe = %s",
+        "execv failed: cwd = %s, exe = %s, error = %s",
         get_current_dir_name(),
-        path);
+        path, strerror(errno));
 
     close(pipe_fds[1]);
     exit(1);

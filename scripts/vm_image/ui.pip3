@@ -27,6 +27,8 @@ requests==2.8.1
 six==1.10.0
 statistics
 tornado==4.1
+tosca-parser==0.4.1.dev40
 websockets
 xmltodict
 zake==0.2.1
+beautifulsoup4

@@ -306,8 +306,9 @@ void kni_net_process_rx_packet(struct sk_buff *skb,
           
           kni->v4_policy_fwd++;
           memcpy(&daddr, RW_KNI_VF_GET_MDATA_NH_POLICY(meta_data), 4);
-          route_lookup = ip_route_input_noref(skb, ntohl(daddr),
-                                              ntohl(daddr), 0, dev);
+          daddr = htonl(daddr);
+          route_lookup = ip_route_input_noref(skb, daddr,
+                                              daddr, 0, dev);
           if (route_lookup){
             kni->rx_drop_noroute++;
           }else{

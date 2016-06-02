@@ -218,7 +218,7 @@ static void rwmsg_start_broker_audit_f(void *ud) {
   xact = rwdts_api_query_ks(instance->dts_h,     /* api_handle */
 			    messaging_info_keyspec,
 			    RWDTS_QUERY_READ,
-			    RWDTS_FLAG_WAIT_RESPONSE,   // return one result, not many
+			    0,   // return one result, not many
 			    rwmsg_audit_response_cb,
 			    instance,
 			    NULL);

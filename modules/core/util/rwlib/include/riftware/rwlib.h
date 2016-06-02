@@ -198,16 +198,12 @@ rw_status_t rw_init_assert_ignore_location_info(void);
 
 typedef uint64_t rw_magic_pad_t;
 
-#define RW_RESOURCE_TRACK_MAX_CALLERS 100
+#define RW_RESOURCE_TRACK_MAX_CALLERS 50
 
 struct rw_mem_res_track_s {
   void *addr;
   void *parent;
   unsigned int size;
-  union {
-    const char *location;
-    void *callers[RW_RESOURCE_TRACK_MAX_CALLERS];
-  };
   rw_object_type_t obj_type;
 };
 typedef struct rw_mem_res_track_s rw_mem_res_track_t;

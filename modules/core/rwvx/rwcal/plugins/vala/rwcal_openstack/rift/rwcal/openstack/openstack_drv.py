@@ -77,17 +77,24 @@ class KeystoneDriver(object):
         """
         import time
         import datetime
-        now = datetime.datetime.timetuple(datetime.datetime.utcnow())
-        expires_at = time.strptime(token_expiry, time_fmt)
-        t_now = time.mktime(now)
-        t_expiry = time.mktime(expires_at)
+        import dateutil.parser
+        try:
+            now = datetime.datetime.timetuple(datetime.datetime.utcnow())
+            expires_at = dateutil.parser.parse(token_expiry)
+            t_now = time.mktime(now)
+            t_expiry = time.mktime(expires_at.timetuple())
 
-        if (t_expiry <= t_now) or ((t_expiry - t_now) < 300 ):
-            ### Token has expired or about to expire (5 minute)
-            delattr(self, '_keystone_connection')
+            if (t_expiry <= t_now) or ((t_expiry - t_now) < 300 ):
+                ### Token has expired or about to expire (5 minute)
+                delattr(self, '_keystone_connection')
+                return False
+            else:
+                return True
+        except Exception as e:
+            logger.error("Received except %s during auth_token validity check" %str(e))
+            logger.info("Can not validate the auth_token. Assuming invalid")
             return False
-        else:
-            return True
+        
 
     def get_service_endpoint(self, service_type, endpoint_type):
         """
@@ -138,6 +145,20 @@ class KeystoneDriver(object):
         ksconn = self._get_keystone_connection()
         return ksconn.tenant_id
 
+    def get_security_mode(self):
+        """
+        Returns certificate_validation policy in case of SSL/TLS connection.
+        This policy is provided during class instantiation
+
+        Returns (boolean):
+        The boolean returned are designed to match the python-client class instantiation ("insecure") value.
+        for nova/neutron/glance/keystone clients
+
+        True: No certificate validation required -- Insecure mode
+        False: Certificate validation required -- Secure mode
+        """
+        return self._insecure
+    
     def tenant_list(self):
         """
         Returns list of tenants
@@ -169,7 +190,7 @@ class KeystoneDriverV2(KeystoneDriver):
     """
     Driver class for keystoneclient V2 APIs
     """
-    def __init__(self, username, password, auth_url,tenant_name):
+    def __init__(self, username, password, auth_url,tenant_name, insecure):
         """
         Constructor for KeystoneDriverV3 class
         Arguments:
@@ -180,10 +201,11 @@ class KeystoneDriverV2(KeystoneDriver):
 
         Returns: None
         """
-        self._username = username
-        self._password = password
-        self._auth_url = auth_url
+        self._username    = username
+        self._password    = password
+        self._auth_url    = auth_url
         self._tenant_name = tenant_name
+        self._insecure    = insecure
         super(KeystoneDriverV2, self).__init__(ksclientv2.Client)
 
     def _get_keystone_credentials(self):
@@ -196,6 +218,7 @@ class KeystoneDriverV2(KeystoneDriver):
         creds['password']     = self._password
         creds['auth_url']     = self._auth_url
         creds['tenant_name']  = self._tenant_name
+        creds['insecure']     = self.get_security_mode()
         return creds
 
     def get_auth_token(self):
@@ -225,7 +248,7 @@ class KeystoneDriverV3(KeystoneDriver):
     """
     Driver class for keystoneclient V3 APIs
     """
-    def __init__(self, username, password, auth_url,tenant_name):
+    def __init__(self, username, password, auth_url,tenant_name, insecure):
         """
         Constructor for KeystoneDriverV3 class
         Arguments:
@@ -236,22 +259,24 @@ class KeystoneDriverV3(KeystoneDriver):
 
         Returns: None
         """
-        self._username = username
-        self._password = password
-        self._auth_url = auth_url
+        self._username    = username
+        self._password    = password
+        self._auth_url    = auth_url
         self._tenant_name = tenant_name
+        self._insecure    = insecure
         super(KeystoneDriverV3, self).__init__(ksclientv3.Client)
 
     def _get_keystone_credentials(self):
         """
         Returns the dictionary of kwargs required to instantiate python-keystoneclient class
         """
-        creds = {}
-        #creds['user_domain']      = self._domain_name
-        creds['username']         = self._username
-        creds['password']         = self._password
-        creds['auth_url']         = self._auth_url
-        creds['project_name']     = self._tenant_name
+        creds                 = {}
+        #creds['user_domain'] = self._domain_name
+        creds['username']     = self._username
+        creds['password']     = self._password
+        creds['auth_url']     = self._auth_url
+        creds['project_name'] = self._tenant_name
+        creds['insecure']     = self._insecure
         return creds
 
     def get_auth_token(self):
@@ -293,12 +318,13 @@ class NovaDriver(object):
         """
         Returns a dictionary of kwargs required to instantiate python-novaclient class
         """
-        creds = {}
-        creds['version']     = self._version
-        creds['bypass_url']  = self.ks_drv.get_service_endpoint(self._service_name, "publicURL")
-        creds['username']    = self.ks_drv.get_username()
-        creds['project_id']  = self.ks_drv.get_tenant_name()
-        creds['auth_token']  = self.ks_drv.get_auth_token()
+        creds               = {}
+        creds['version']    = self._version
+        creds['bypass_url'] = self.ks_drv.get_service_endpoint(self._service_name, "publicURL")
+        creds['username']   = self.ks_drv.get_username()
+        creds['project_id'] = self.ks_drv.get_tenant_name()
+        creds['auth_token'] = self.ks_drv.get_auth_token()
+        creds['insecure']   = self.ks_drv.get_security_mode()
         return creds
 
     def _get_nova_connection(self):
@@ -486,13 +512,15 @@ class NovaDriver(object):
         Arguments:
           A dictionary of following key-value pairs
          {
-           server_name(string)     : Name of the VM/Server
-           flavor_id  (string)     : UUID of the flavor to be used for VM
-           image_id   (string)     : UUID of the image to be used VM/Server instance
-           network_list(List)      : A List of network_ids. A port will be created in these networks
-           port_list (List)        : A List of port-ids. These ports will be added to VM.
-           metadata   (dict)       : A dictionary of arbitrary key-value pairs associated with VM/server
-           userdata   (string)     : A script which shall be executed during first boot of the VM
+           server_name(string)        : Name of the VM/Server
+           flavor_id  (string)        : UUID of the flavor to be used for VM
+           image_id   (string)        : UUID of the image to be used VM/Server instance
+           network_list(List)         : A List of network_ids. A port will be created in these networks
+           port_list (List)           : A List of port-ids. These ports will be added to VM.
+           metadata   (dict)          : A dictionary of arbitrary key-value pairs associated with VM/server
+           userdata   (string)        : A script which shall be executed during first boot of the VM
+           availability_zone (string) : A name of the availability zone where instance should be launched
+           scheduler_hints (string)   : Openstack scheduler_hints to be passed to nova scheduler 
          }
         Returns:
           server_id (string): UUID of the VM/server created
@@ -520,10 +548,10 @@ class NovaDriver(object):
                                            max_count            = None,
                                            userdata             = kwargs['userdata'],
                                            security_groups      = kwargs['security_groups'],
-                                           availability_zone    = None,
+                                           availability_zone    = kwargs['availability_zone'],
                                            block_device_mapping = None,
                                            nics                 = nics,
-                                           scheduler_hints      = None,
+                                           scheduler_hints      = kwargs['scheduler_hints'],
                                            config_drive         = None)
         except Exception as e:
             logger.info("OpenstackDriver: Create Server operation failed. Exception: %s" %(str(e)))
@@ -706,7 +734,13 @@ class NovaDriver(object):
             List of objects of floating IP nova class (novaclient.v2.floating_ips.FloatingIP)
         """
         nvconn =  self._get_nova_connection()
-        return nvconn.floating_ips.list()
+        try:
+            ip_list = nvconn.floating_ips.list()
+        except Exception as e:
+            logger.error("OpenstackDriver: Floating IP List operation failed. Exception: %s" %str(e))
+            raise
+        
+        return ip_list
 
     def floating_ip_create(self, pool):
         """
@@ -729,7 +763,7 @@ class NovaDriver(object):
         Arguments:
            floating_ip: An object of floating IP nova class (novaclient.v2.floating_ips.FloatingIP)
         Returns:
-           An object of floating IP nova objects (novaclient.v2.floating_ips.FloatingIP)
+           None
         """
         nvconn =  self._get_nova_connection()
         try:
@@ -769,6 +803,24 @@ class NovaDriver(object):
             logger.error("OpenstackDriver: Release Floating IP operation failed. Exception: %s"  %str(e))
             raise
 
+    def group_list(self):
+        """
+        List of Server Affinity and Anti-Affinity Groups
+        
+        Arguments:
+            None
+        Returns:
+           List of dictionary objects where dictionary is representation of class (novaclient.v2.server_groups.ServerGroup)
+        """
+        nvconn =  self._get_nova_connection()
+        try:
+            group_list = nvconn.server_groups.list()
+        except Exception as e:
+            logger.error("OpenstackDriver: Server Group List operation failed. Exception: %s"  %str(e))
+            raise
+
+        group_info = [ group.to_dict() for group in group_list ]
+        return group_info
 
 
 
@@ -816,10 +868,11 @@ class GlanceDriver(object):
         Returns:
            A dictionary object of arguments
         """
-        creds  =  {}
+        creds             = {}
         creds['version']  = self._version
         creds['endpoint'] = self.ks_drv.get_service_endpoint(self._service_name, 'publicURL')
         creds['token']    = self.ks_drv.get_auth_token()
+        creds['insecure'] = self.ks_drv.get_security_mode()
         return creds
 
     def _get_glance_connection(self):
@@ -992,11 +1045,12 @@ class NeutronDriver(object):
         Returns:
           Dictionary of kwargs
         """
-        creds = {}
+        creds                 = {}
         creds['api_version']  = self._version
         creds['endpoint_url'] = self.ks_drv.get_service_endpoint(self._service_name, 'publicURL')
         creds['token']        = self.ks_drv.get_auth_token()
         creds['tenant_name']  = self.ks_drv.get_tenant_name()
+        creds['insecure']     = self.ks_drv.get_security_mode()
         return creds
 
     def _get_neutron_connection(self):
@@ -1321,10 +1375,13 @@ class NeutronDriverV2(NeutronDriver):
         """
         super(NeutronDriverV2, self).__init__(ks_drv, 'network', '2.0')
 
+
+
 class CeilometerDriver(object):
     """
-    Driver for openstack ceilometer_client
+    Driver for openstack ceilometer client
     """
+
     def __init__(self, ks_drv, service_name, version):
         """
         Constructor for CeilometerDriver
@@ -1333,81 +1390,93 @@ class CeilometerDriver(object):
         self.ks_drv = ks_drv
         self._service_name = service_name
         self._version = version
+        self._client = None
 
-    def _get_ceilometer_credentials(self):
-        """
-        Returns a dictionary of kwargs required to instantiate python-ceilometerclient class
-        """
-        creds = {}
-        creds['version']     = self._version
-        creds['endpoint']    = self.ks_drv.get_service_endpoint(self._service_name, "publicURL")
-        creds['token']  = self.ks_drv.get_auth_token()
-        return creds
+    @property
+    def version(self):
+        """The version of the ceilometer client used by the driver"""
+        return self._version
 
-    def _get_ceilometer_connection(self):
-        """
-        Returns an object of class python-ceilometerclient
-        """
-        if not hasattr(self, '_ceilometer_connection'):
-            self._ceilometer_connection = ceilo_client.Client(**self._get_ceilometer_credentials())
-        else:
-            # Reinitialize if auth_token is no longer valid
-            if not self.ks_drv.is_auth_token_valid():
-                self._ceilometer_connection = ceilo_client.Client(**self._get_ceilometer_credentials())
-        return self._ceilometer_connection
+    @property
+    def client(self):
+        """The instance of ceilometer client used by the driver"""
+        if self._client is None or not self.ks_drv.is_auth_token_valid():
+            self._client = ceilo_client.Client(**self.credentials)
 
-    def get_ceilo_endpoint(self):
-        """
-        Returns the service endpoint for a ceilometer connection
-        """
+        return self._client
+
+    @property
+    def auth_token(self):
+        """The authorization token for the ceilometer client"""
         try:
-            ceilocreds = self._get_ceilometer_credentials()
+            return self.ks_drv.get_auth_token()
         except KeystoneExceptions.EndpointNotFound as e:
-            return None
+            logger.error("OpenstackDriver: unable to get authorization token for ceilometer. Exception: %s" %(str(e)))
+            raise
 
-        return ceilocreds['endpoint']
+    @property
+    def security_mode(self):
+        """The security mode for the ceilometer client"""
+        try:
+            return self.ks_drv.get_security_mode()
+        except KeystoneExceptions.EndpointNotFound as e:
+            logger.error("OpenstackDriver: unable to get security mode for ceilometer. Exception: %s" %(str(e)))
+            raise
 
-    def meter_list(self):
-        """
-        Returns a list of meters.
+    @property
+    def endpoint(self):
+        """The service endpoint for the ceilometer client"""
+        try:
+            return self.ks_drv.get_service_endpoint(self._service_name, "publicURL")
+        except KeystoneExceptions.EndpointNotFound as e:
+            logger.error("OpenstackDriver: unable to get endpoint for ceilometer. Exception: %s" %(str(e)))
+            raise
+
+    @property
+    def credentials(self):
+        """A dictionary of credentials for the ceilometer client"""
+        return dict(
+                version=self.version,
+                endpoint=self.endpoint,
+                token=self.auth_token,
+                insecure=self.security_mode,
+                )
+
+    @property
+    def meters(self):
+        """A list of the available meters"""
+        try:
+            return self.client.meters.list()
+        except Exception as e:
+            logger.error("OpenstackDriver: List meters operation failed. Exception: %s" %(str(e)))
+            raise
+
+    @property
+    def alarms(self):
+        """The ceilometer client alarms manager"""
+        return self.client.alarms
+
+    def query_samples(self, vim_instance_id, counter_name, limit=1):
+        """Returns a list of samples
+
+        Arguments:
+            vim_instance_id - the ID of the VIM that the samples are from
+            counter_name    - the counter that the samples will come from
+            limit           - a limit on the number of samples to return
+                              (default: 1)
 
         Returns:
-           A list of meters
+            A list of samples
+
         """
-        ceiloconn = self._get_ceilometer_connection()
-
         try:
-            meters  = ceiloconn.meters.list()
-        except Exception as e:
-            logger.info("OpenstackDriver: List meters operation failed. Exception: %s" %(str(e)))
-            raise
-        return meters
-
-    def get_usage(self, vm_instance_id, meter_name, period):
-        ceiloconn = self._get_ceilometer_connection()
-        try:
-            query = [dict(field='resource_id', op='eq', value=vm_instance_id)]
-            stats = ceiloconn.statistics.list(meter_name, q=query, period=period)
-            usage = 0
-            if stats:
-                stat = stats[-1]
-                usage = stat.avg
-        except Exception as e:
-            logger.info("OpenstackDriver: Get %s[%s] operation failed. Exception: %s" %(meter_name, vm_instance_id, str(e)))
-            raise
-
-        return usage
-
-    def get_samples(self, vim_instance_id, counter_name, limit=1):
-        try:
-            ceiloconn = self._get_ceilometer_connection()
             filter = json.dumps({
                 "and": [
                     {"=": {"resource": vim_instance_id}},
                     {"=": {"counter_name": counter_name}}
                     ]
                 })
-            result = ceiloconn.query_samples.query(filter=filter, limit=limit)
+            result = self.client.query_samples.query(filter=filter, limit=limit)
             return result[-limit:]
 
         except Exception as e:
@@ -1429,23 +1498,36 @@ class CeilometerDriverV2(CeilometerDriver):
 
 class OpenstackDriver(object):
     """
-    Driver for openstack nova and neutron services
+    Driver for openstack nova, neutron, glance, keystone, swift, cinder services
     """
-    def __init__(self,username, password, auth_url, tenant_name, mgmt_network = None):
+    def __init__(self, username, password, auth_url, tenant_name, mgmt_network = None, cert_validate = False):
+        """
+        OpenstackDriver Driver constructor
+        Arguments:
+          username (string)                   : Username for project/tenant.
+          password (string)                   : Password
+          auth_url (string)                   : Keystone Authentication URL.
+          tenant_name (string)                : Openstack project name
+          mgmt_network(string, optional)      : Management network name. Each VM created with this cloud-account will
+                                                have a default interface into management network. 
+          cert_validate (boolean, optional)   : In case of SSL/TLS connection if certificate validation is required or not.
 
+        """
+        insecure = not cert_validate
         if auth_url.find('/v3') != -1:
-            self.ks_drv        = KeystoneDriverV3(username, password, auth_url, tenant_name)
+            self.ks_drv        = KeystoneDriverV3(username, password, auth_url, tenant_name, insecure)
             self.glance_drv    = GlanceDriverV2(self.ks_drv)
             self.nova_drv      = NovaDriverV21(self.ks_drv)
             self.neutron_drv   = NeutronDriverV2(self.ks_drv)
             self.ceilo_drv     = CeilometerDriverV2(self.ks_drv)
         elif auth_url.find('/v2') != -1:
-            self.ks_drv        = KeystoneDriverV2(username, password, auth_url, tenant_name)
+            self.ks_drv        = KeystoneDriverV2(username, password, auth_url, tenant_name, insecure)
             self.glance_drv    = GlanceDriverV2(self.ks_drv)
             self.nova_drv      = NovaDriverV2(self.ks_drv)
             self.neutron_drv   = NeutronDriverV2(self.ks_drv)
             self.ceilo_drv     = CeilometerDriverV2(self.ks_drv)
         else:
+            logger.error("Could not identity the version information for openstack service endpoints. Auth_URL should contain \"/v2\" or \"/v3\" string in it")
             raise NotImplementedError("Auth URL is wrong or invalid. Only Keystone v2 & v3 supported")
 
         if mgmt_network != None:
@@ -1527,6 +1609,7 @@ class OpenstackDriver(object):
         image = self.glance_drv.image_get(kwargs['image_id'])
         if image['status'] != 'active':
             raise GlanceException.NotFound("Image with image_id: %s not found in active state. Current State: %s" %(image['id'], image['status']))
+        
         # if 'network_list' in kwargs:
         #     kwargs['network_list'].append(self._mgmt_network_id)
         # else:
@@ -1585,6 +1668,9 @@ class OpenstackDriver(object):
     def nova_server_get(self, server_id):
         return self.nova_drv.server_get(server_id)
 
+    def nova_server_group_list(self):
+        return self.nova_drv.group_list()
+    
     def neutron_network_list(self):
         return self.neutron_drv.network_list()
 
@@ -1631,56 +1717,142 @@ class OpenstackDriver(object):
         self.neutron_drv.port_delete(port_id)
 
     def ceilo_meter_endpoint(self):
-        return self.ceilo_drv.get_ceilo_endpoint()
+        return self.ceilo_drv.endpoint
 
     def ceilo_meter_list(self):
-        return self.ceilo_drv.meter_list()
+        return self.ceilo_drv.meters
 
-    def ceilo_nfvi_metrics(self, vmid):
-        metrics = dict()
+    def ceilo_nfvi_metrics(self, vim_id):
+        """Returns a dict of NFVI metrics for a given VM
 
-        # The connection is created once and reused for each of the samples
-        # acquired.
-        conn = self.ceilo_drv._get_ceilometer_connection()
+        Arguments:
+            vim_id - the VIM ID of the VM to retrieve the metrics for
 
-        def get_samples(vim_instance_id, counter_name, limit=1):
+        Returns:
+            A dict of NFVI metrics
+
+        """
+        def query_latest_sample(counter_name):
             try:
                 filter = json.dumps({
                     "and": [
-                        {"=": {"resource": vim_instance_id}},
+                        {"=": {"resource": vim_id}},
                         {"=": {"counter_name": counter_name}}
                         ]
                     })
-                result = conn.query_samples.query(filter=filter, limit=limit)
-                return result[-limit:]
+                orderby = json.dumps([{"timestamp": "DESC"}])
+                result = self.ceilo_drv.client.query_samples.query(
+                        filter=filter,
+                        orderby=orderby,
+                        limit=1,
+                        )
+                return result[0]
+
+            except IndexError:
+                pass
 
             except Exception as e:
                 logger.exception(e)
 
-            return []
+            return None
 
-        cpu_util = get_samples(
-                    vim_instance_id=vmid,
-                    counter_name="cpu_util",
-                    )
+        memory_usage = query_latest_sample("memory.usage")
+        disk_usage = query_latest_sample("disk.usage")
+        cpu_util = query_latest_sample("cpu_util")
 
-        memory_usage = get_samples(
-                    vim_instance_id=vmid,
-                    counter_name="memory.usage",
-                    )
+        metrics = dict()
 
-        disk_usage = get_samples(
-                    vim_instance_id=vmid,
-                    counter_name="disk.usage",
-                    )
+        if memory_usage is not None:
+            memory_usage.volume = 1e6 * memory_usage.volume
+            metrics["memory_usage"] = memory_usage.to_dict()
 
-        if cpu_util:
-            metrics["cpu_util"] = cpu_util[-1].volume
+        if disk_usage is not None:
+            metrics["disk_usage"] = disk_usage.to_dict()
 
-        if memory_usage:
-            metrics["memory_usage"] = 1e6 * memory_usage[-1].volume
-
-        if disk_usage:
-            metrics["disk_usage"] = disk_usage[-1].volume
+        if cpu_util is not None:
+            metrics["cpu_util"] = cpu_util.to_dict()
 
         return metrics
+
+    def ceilo_alarm_list(self):
+        """Returns a list of ceilometer alarms"""
+        return self.ceilo_drv.client.alarms.list()
+
+    def ceilo_alarm_create(self,
+                           name, 
+                           meter,
+                           statistic,
+                           operation,
+                           threshold,
+                           period,
+                           evaluations,
+                           severity='low',
+                           repeat=True,
+                           enabled=True,
+                           actions=None,
+                           **kwargs):
+        """Create a new Alarm
+
+        Arguments:
+            name        - the name of the alarm
+            meter       - the name of the meter to measure
+            statistic   - the type of statistic used to trigger the alarm
+                          ('avg', 'min', 'max', 'count', 'sum')
+            operation   - the relational operator that, combined with the
+                          threshold value, determines  when the alarm is
+                          triggered ('lt', 'le', 'eq', 'ge', 'gt')
+            threshold   - the value of the statistic that will trigger the
+                          alarm
+            period      - the duration (seconds) over which to evaluate the
+                          specified statistic
+            evaluations - the number of samples of the meter statistic to
+                          collect when evaluating the threshold
+            severity    - a measure of the urgency or importance of the alarm
+                          ('low', 'moderate', 'critical')
+            repeat      - a flag that indicates whether the alarm should be
+                          triggered once (False) or repeatedly while the alarm
+                          condition is true (True)
+            enabled     - a flag that indicates whether the alarm is enabled
+                          (True) or disabled (False)
+            actions     - a dict specifying the URLs for webhooks. The dict can
+                          have up to 3 keys: 'insufficient_data', 'alarm',
+                          'ok'. Each key is associated with a list of URLs to
+                          webhooks that will be invoked when one of the 3
+                          actions is taken.
+            kwargs      - an arbitrary dict of keyword arguments that are
+                          passed to the ceilometer client
+
+        """
+        ok_actions = actions.get('ok') if actions is not None else None
+        alarm_actions = actions.get('alarm') if actions is not None else None
+        insufficient_data_actions = actions.get('insufficient_data') if actions is not None else None
+
+        return self.ceilo_drv.client.alarms.create(
+                name=name,
+                meter_name=meter,
+                statistic=statistic,
+                comparison_operator=operation,
+                threshold=threshold,
+                period=period,
+                evaluation_periods=evaluations,
+                severity=severity,
+                repeat_actions=repeat,
+                enabled=enabled,
+                ok_actions=ok_actions,
+                alarm_actions=alarm_actions,
+                insufficient_data_actions=insufficient_data_actions,
+                **kwargs
+                )
+
+    def ceilo_alarm_update(self, alarm_id, **kwargs):
+        """Updates an existing alarm
+
+        Arguments:
+            alarm_id - the identifier of the alarm to update
+            kwargs   - a dict of the alarm attributes to update
+
+        """
+        return self.ceilo_drv.client.alarms.update(alarm_id, **kwargs)
+
+    def ceilo_alarm_delete(self, alarm_id):
+        self.ceilo_drv.client.alarms.delete(alarm_id)

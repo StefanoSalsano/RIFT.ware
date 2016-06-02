@@ -15,6 +15,10 @@ module mano-types
     prefix "inet";
   }
 
+  import rw-pb-ext {
+    prefix "rwpb";
+  }
+
   revision 2015-04-23 {
     description
       "Initial revision. This YANG file defines
@@ -23,6 +27,241 @@ module mano-types
     reference
       "Derived from earlier versions of base YANG files";
   }
+
+  typedef parameter-data-type {
+    type enumeration {
+      enum STRING;
+      enum INTEGER;
+      enum BOOLEAN;
+    }
+  }
+
+  grouping primitive-parameter {
+    leaf name {
+      description
+          "Name of the parameter.";
+      type string;
+    }
+
+    leaf data-type {
+      description
+          "Data type associated with the name.";
+      type manotypes:parameter-data-type;
+    }
+
+    leaf mandatory {
+      description "Is this field mandatory";
+      type boolean;
+      default false;
+    }
+
+    leaf default-value {
+      description "The default value for this field";
+      type string;
+    }
+
+    leaf parameter-pool {
+      description "NSD Parameter pool name to use for this paramter";
+      type string;
+    }
+
+    leaf read-only {
+      description
+        "The value should be greyed out by the UI.
+        Only applies to parameters with default values.";
+      type boolean;
+    }
+
+    leaf hidden {
+      description
+        "The value should be hidden by the UI.
+        Only applies to parameters with default values.";
+      type boolean;
+    }
+  }
+  
+
+  grouping vnf-configuration {
+    container vnf-configuration {
+      rwpb:msg-new VnfConfiguration;
+      description
+          "Information regarding the VNF configuration 
+           is captured here. Note that if the NS contains
+           multiple instances of the same VNF, each instance
+           of the VNF may have different configuration";
+
+      choice config-method {
+        description
+            "Defines the configuration method for the VNF.";
+        case netconf {
+          description
+              "Use NETCONF for configuring the VNF.";
+          container netconf {
+            leaf target {
+              description
+                  "Netconf configuration target";
+              type enumeration {
+                enum running;
+                enum candidate;
+              }
+            }
+
+            leaf protocol {
+              description
+                  "Protocol to use for netconf (e.g. ssh)";
+              type enumeration {
+                enum None;
+                enum ssh;
+              }
+            }
+
+            leaf port {
+              description
+                  "Port for the netconf server.";
+              type inet:port-number;
+            }
+          }
+        }
+
+        case rest {
+          description
+              "Use REST for configuring the VNF.";
+          container rest {
+            leaf port {
+              description
+                  "Port for the REST server.";
+              type inet:port-number;
+            }
+          }
+        }
+
+        case script {
+          description
+              "Use custom script for configuring the VNF.
+               This script is executed in the context of 
+               Orchestrator.";
+          container script {
+            leaf script-type {
+              description
+                  "Script type - currently supported : bash, expect";
+              type enumeration {
+                enum bash;
+                enum expect;
+              }
+            }
+          }
+        }
+
+        case juju {
+          description
+            "Configure the VNF through Juju.";
+          container juju {
+            leaf charm {
+              description "Juju charm to use with the VNF.";
+              type string;
+            }
+          }
+        }
+      }
+
+      container config-access {
+        leaf mgmt-ip-address {
+          description
+              "IP address to be used to configure this VNF,
+               optional if it is possible to resolve dynamically.";
+          type inet:ip-address;
+        }
+
+        leaf username {
+          description 
+              "username for configuration.";
+          type string;
+        }
+
+        leaf password {
+          description 
+              "Password for configuration access authentication.";
+          type string;
+        }
+      }
+
+      container config-attributes {
+        description
+            "Miscelaneous input parameters to be considered
+             while processing the NSD to apply configuration";
+
+        leaf config-priority {
+          description
+              "Configuration priority - order of confgiration
+               to be applied to each VNF in this NS,
+               low number gets precedence over high number";
+          type uint64;
+        }
+
+        leaf config-delay {
+          description 
+              "Wait (seconds) before applying the configuration to VNF";
+          type uint64;
+        }
+      }
+
+      list config-primitive {
+        rwpb:msg-new ConfigPrimitive;
+        description
+            "List of configuration primitives supported by the
+            configuration agent for this VNF.";
+        key "name";
+
+        leaf name {
+          description
+              "Name of the configuration primitive.";
+          type string;
+        }
+
+        list parameter {
+          description
+              "List of parameters to the configuration primitive.";
+          key "name";
+          uses primitive-parameter;
+        }
+      }
+
+      list initial-config-primitive {
+        rwpb:msg-new InitialConfigPrimitive;
+        description
+            "Initial set of configuration primitives.";
+        key "seq";
+        leaf seq {
+          description
+              "Sequence number for the configuration primitive.";
+          type uint64;
+        }
+
+        leaf name {
+          description 
+              "Name of the configuration primitive.";
+          type string;
+        }
+
+        list parameter {
+          key "name";
+          leaf name {
+            type string;
+          }
+
+          leaf value {
+            type string;
+          }
+        }
+      }
+
+      leaf config-template {
+        description
+            "Configuration template for each VNF";
+        type string;
+      }
+    }
+  } // END - grouping vnf-configuration
 
   typedef virtual-link-type {
     description
@@ -166,6 +405,144 @@ module mano-types
       enum REQUIRE_CMT;
       enum PREFER_DDIO;
       enum REQUIRE_DDIO;
+      enum REQUIRE_VME;
+      enum PREFER_VME;
+      enum REQUIRE_DE;
+      enum PREFER_DE;
+      enum REQUIRE_PSE;
+      enum PREFER_PSE;
+      enum REQUIRE_TSC;
+      enum PREFER_TSC;
+      enum REQUIRE_MSR;
+      enum PREFER_MSR;
+      enum REQUIRE_PAE;
+      enum PREFER_PAE;
+      enum REQUIRE_MCE;
+      enum PREFER_MCE;
+      enum REQUIRE_CX8;
+      enum PREFER_CX8;
+      enum REQUIRE_APIC;
+      enum PREFER_APIC;
+      enum REQUIRE_SEP;
+      enum PREFER_SEP;
+      enum REQUIRE_MTRR;
+      enum PREFER_MTRR;
+      enum REQUIRE_PGE;
+      enum PREFER_PGE;
+      enum REQUIRE_MCA;
+      enum PREFER_MCA;
+      enum REQUIRE_CMOV;
+      enum PREFER_CMOV;
+      enum REQUIRE_PAT;
+      enum PREFER_PAT;
+      enum REQUIRE_PSE36;
+      enum PREFER_PSE36;
+      enum REQUIRE_CLFLUSH;
+      enum PREFER_CLFLUSH;
+      enum REQUIRE_DTS;
+      enum PREFER_DTS;
+      enum REQUIRE_ACPI;
+      enum PREFER_ACPI;
+      enum REQUIRE_MMX;
+      enum PREFER_MMX;
+      enum REQUIRE_FXSR;
+      enum PREFER_FXSR;
+      enum REQUIRE_SSE;
+      enum PREFER_SSE;
+      enum REQUIRE_SSE2;
+      enum PREFER_SSE2;
+      enum REQUIRE_SS;
+      enum PREFER_SS;
+      enum REQUIRE_HT;
+      enum PREFER_HT;
+      enum REQUIRE_TM;
+      enum PREFER_TM;
+      enum REQUIRE_IA64;
+      enum PREFER_IA64;
+      enum REQUIRE_PBE;
+      enum PREFER_PBE;
+      enum REQUIRE_RDTSCP;
+      enum PREFER_RDTSCP;
+      enum REQUIRE_PNI;
+      enum PREFER_PNI;
+      enum REQUIRE_PCLMULQDQ;
+      enum PREFER_PCLMULQDQ;
+      enum REQUIRE_DTES64;
+      enum PREFER_DTES64;
+      enum REQUIRE_MONITOR;
+      enum PREFER_MONITOR;
+      enum REQUIRE_DS_CPL;
+      enum PREFER_DS_CPL;
+      enum REQUIRE_VMX;
+      enum PREFER_VMX;
+      enum REQUIRE_SMX;
+      enum PREFER_SMX;
+      enum REQUIRE_EST;
+      enum PREFER_EST;
+      enum REQUIRE_TM2;
+      enum PREFER_TM2;
+      enum REQUIRE_SSSE3;
+      enum PREFER_SSSE3;
+      enum REQUIRE_CID;
+      enum PREFER_CID;
+      enum REQUIRE_FMA;
+      enum PREFER_FMA;
+      enum REQUIRE_CX16;
+      enum PREFER_CX16;
+      enum REQUIRE_XTPR;
+      enum PREFER_XTPR;
+      enum REQUIRE_PDCM;
+      enum PREFER_PDCM;
+      enum REQUIRE_PCID;
+      enum PREFER_PCID;
+      enum REQUIRE_DCA;
+      enum PREFER_DCA;
+      enum REQUIRE_SSE4_1;
+      enum PREFER_SSE4_1;
+      enum REQUIRE_SSE4_2;
+      enum PREFER_SSE4_2;
+      enum REQUIRE_X2APIC;
+      enum PREFER_X2APIC;
+      enum REQUIRE_MOVBE;
+      enum PREFER_MOVBE;
+      enum REQUIRE_POPCNT;
+      enum PREFER_POPCNT;
+      enum REQUIRE_TSC_DEADLINE_TIMER;
+      enum PREFER_TSC_DEADLINE_TIMER;
+      enum REQUIRE_XSAVE;
+      enum PREFER_XSAVE;
+      enum REQUIRE_AVX;
+      enum PREFER_AVX;
+      enum REQUIRE_F16C;
+      enum PREFER_F16C;
+      enum REQUIRE_RDRAND;
+      enum PREFER_RDRAND;
+      enum REQUIRE_FSGSBASE;
+      enum PREFER_FSGSBASE;
+      enum REQUIRE_BMI1;
+      enum PREFER_BMI1;
+      enum REQUIRE_HLE;
+      enum PREFER_HLE;
+      enum REQUIRE_AVX2;
+      enum PREFER_AVX2;
+      enum REQUIRE_SMEP;
+      enum PREFER_SMEP;
+      enum REQUIRE_BMI2;
+      enum PREFER_BMI2;
+      enum REQUIRE_ERMS;
+      enum PREFER_ERMS;
+      enum REQUIRE_INVPCID;
+      enum PREFER_INVPCID;
+      enum REQUIRE_RTM;
+      enum PREFER_RTM;
+      enum REQUIRE_MPX;
+      enum PREFER_MPX;
+      enum REQUIRE_RDSEED;
+      enum PREFER_RDSEED;
+      enum REQUIRE_ADX;
+      enum PREFER_ADX;
+      enum REQUIRE_SMAP;
+      enum PREFER_SMAP;
     }
   }
 
@@ -296,12 +673,7 @@ module mano-types
 
       leaf cpu-socket-count {
         description "Number of sockets on the host.";
-        type enumeration {
-          enum PREFER_ONE;
-          enum PREFER_TWO;
-          enum REQUIRE_ONE;
-          enum REQUIRE_TWO;
-        }
+        type uint64;
       }
 
       leaf cpu-core-count {
@@ -309,12 +681,18 @@ module mano-types
         type uint64;
       }
 
+      leaf cpu-core-thread-count {
+        description "Number of threads per cores on the host.";
+        type uint64;
+      }
+      
       leaf-list cpu-feature {
         description
             "List of CPU features.";
         type cpu-feature-type;
       }
 
+      
       leaf om-cpu-model-string {
         description "Openmano CPU model string";
         type string;
@@ -551,6 +929,107 @@ module mano-types
             type uint32;
       }
     }
+  }
+  grouping config-primitive {
+    list config-primitive {
+      description
+          "Network service level configuration primitives.";
+
+      key "name";
+
+      leaf name {
+        description
+            "Name of the configuration primitive.";
+        type string;
+      }
+
+      list parameter {
+        description
+            "List of parameters to the configuration primitive.";
+
+        key "name";
+        uses manotypes:primitive-parameter;
+      }
+
+      list parameter-group {
+        description
+            "Grouping of parameters which are logically grouped in UI";
+        key "name";
+
+        leaf name {
+          description
+              "Name of the parameter group";
+          type string;
+        }
+
+        list parameter {
+          description
+              "List of parameters to the configuration primitive.";
+          key "name";
+          uses manotypes:primitive-parameter;
+        }
+
+        leaf mandatory {
+          description "Is this parameter group mandatory";
+          type boolean;
+          default true;
+        }
+      }
+
+      list vnf-primitive-group {
+        description
+            "List of configuration primitives grouped by VNF.";
+
+        key "member-vnf-index-ref";
+        leaf member-vnf-index-ref {
+          description
+              "Reference to member-vnf within constituent-vnfds";
+          type uint64;
+        }
+
+        leaf vnfd-id-ref {
+          description
+              "A reference to a vnfd. This is a 
+               leafref to path:
+                   ../../../../nsd:constituent-vnfd
+                   + [nsd:id = current()/../nsd:id-ref]
+                   + /nsd:vnfd-id-ref
+               NOTE: An issue with confd is preventing the
+               use of xpath. Seems to be an issue with leafref
+               to leafref, whose target is in a different module.
+               Once that is resovled this will switched to use
+               leafref";
+
+          type string;
+        }
+
+        leaf vnfd-name {
+          description
+              "Name of the VNFD";
+          type string;
+        }
+
+        list primitive {
+          key "index";
+
+          leaf index {
+            description "Index of this primitive";
+            type uint32;
+          }
+
+          leaf name {
+            description "Name of the primitive in the VNF primitive ";
+            type string;
+          }
+        }
+      }
+
+      leaf user-defined-script {
+        description
+            "A user defined script.";
+        type string;
+      }
+      }
   }
 
   grouping monitoring-param {
@@ -1099,6 +1578,278 @@ module mano-types
           }
         }
       }
+    }
+  }
+
+  typedef alarm-severity-type {
+    description "An indication of the importance or ugency of the alarm";
+    type enumeration {
+      enum LOW;
+      enum MODERATE;
+      enum CRITICAL;
+    }
+  }
+
+  typedef alarm-metric-type {
+    description "The type of metrics to register the alarm for";
+    type enumeration {
+      enum CPU_UTILIZATION;
+      enum MEMORY_UTILIZATION;
+      enum STORAGE_UTILIZATION;
+    }
+  }
+
+  typedef alarm-statistic-type {
+    description
+        "The type of statistic to used to measure a metric to determine
+        threshold crossing for an alarm.";
+    type enumeration {
+      enum AVERAGE;
+      enum MINIMUM;
+      enum MAXIMUM;
+      enum COUNT;
+      enum SUM;
+    }
+  }
+
+  typedef alarm-operation-type {
+    description
+        "The relational operator used to define whether an alarm should be
+        triggered when, say, the metric statistic goes above or below a
+        specified value.";
+    type enumeration {
+      enum GE; // greater than or equal
+      enum LE; // less than or equal
+      enum GT; // greater than
+      enum LT; // less than
+      enum EQ; // equal
+    }
+  }
+
+  grouping alarm {
+    leaf alarm-id {
+      description
+          "This field is reserved for the identifier assigned by the cloud
+          provider";
+
+      type string;
+    }
+
+    leaf name {
+      description "A human readable string to identify the alarm";
+      type string;
+    }
+
+    leaf description {
+      description "A string containing a description of this alarm";
+      type string;
+    }
+
+    leaf vdur-id {
+      description
+          "The identifier of the VDUR that the alarm is associated with";
+      type string;
+    }
+
+    container actions {
+      list ok {
+        key "url";
+        leaf url {
+          type string;
+        }
+      }
+
+      list insufficient-data {
+        key "url";
+        leaf url {
+          type string;
+        }
+      }
+
+      list alarm {
+        key "url";
+        leaf url {
+          type string;
+        }
+      }
+    }
+
+    leaf repeat {
+      description
+          "This flag indicates whether the alarm should be repeatedly emitted
+          while the associated threshold has been crossed.";
+
+      type boolean;
+      default true;
+    }
+
+    leaf enabled {
+      description
+          "This flag indicates whether the alarm has been enabled or
+          disabled.";
+
+      type boolean;
+      default true;
+    }
+
+    leaf severity {
+      description "A measure of the important or urgency of the alarm";
+      type alarm-severity-type;
+    }
+
+    leaf metric {
+      description "The metric to be tracked by this alarm.";
+      type alarm-metric-type;
+    }
+
+    leaf statistic {
+      description "The type of metric statistic that is tracked by this alarm";
+      type alarm-statistic-type;
+    }
+
+    leaf operation {
+      description
+          "The relational operator that defines whether the alarm should be
+          triggered when the metric statistic is, say, above or below the
+          specified threshold value.";
+      type alarm-operation-type;
+    }
+
+    leaf value {
+      description
+          "This value defines the threshold that, if crossed, will trigger
+          the alarm.";
+      type decimal64 {
+        fraction-digits 4;
+      }
+    }
+
+    leaf period {
+      description
+          "The period defines the length of time (seconds) that the metric
+          data are collected over in oreder to evaluate the chosen
+          statistic.";
+      type uint32;
+    }
+
+    leaf evaluations {
+      description
+          "This is the number of samples of the metric statistic used to
+          evaluate threshold crossing. Each sample or evaluation is equal to
+          the metric statistic obtained for a given period. This can be used
+          to mitigate spikes in the metric that may skew the statistic of
+          interest.";
+      type uint32;
+    }
+  }
+
+  typedef cloud-account-type {
+    description "cloud account type";
+    type enumeration {
+      enum aws;
+      enum cloudsim;
+      enum cloudsim_proxy;
+      enum mock;
+      enum openmano;
+      enum openstack;
+      enum vsphere;
+    }
+  }
+  
+  grouping host-aggregate {
+    list host-aggregate {
+      description "Name of the Host Aggregate";
+      key "metadata-key";
+      
+      leaf metadata-key {
+        type string;
+      }
+      leaf metadata-value {
+        type string;
+      }
+    }
+  }
+  
+  grouping placement-group-input {
+    leaf cloud-type {
+      type manotypes:cloud-account-type;
+    }
+    choice cloud-provider {
+      case openstack {           
+        container availability-zone {
+          description "Name of the Availability Zone";
+          leaf name {
+            type string;
+          }
+        }
+        container server-group {
+          description "Name of the Affinity/Anti-Affinity Server Group";
+          leaf name {
+            type string;
+          }
+        }
+        uses host-aggregate;
+      }
+      case aws {
+        leaf aws-construct {
+          type empty;
+        }
+      }
+      case openmano {
+        leaf openmano-construct {
+          type empty;
+        }        
+      }
+      case vsphere {
+        leaf vsphere-construct {
+          type empty;
+        }
+      }
+      case mock {
+        leaf mock-construct {
+          type empty;
+        }
+      }
+      case cloudsim {
+        leaf cloudsim-construct {
+          type empty;
+        }
+      }
+    }
+  }
+  
+  grouping placement-group-info {
+    description "";
+
+    leaf name {
+      description
+          "Place group construct to define the compute resource placement strategy
+           in cloud environment";
+      type string;
+    }
+
+    leaf requirement {
+      description "This is free text space used to describe the intent/rationale
+                   behind this placement group. This is for human consumption only";
+      type string;
+    }
+    
+    leaf strategy {
+      description
+          "Strategy associated with this placement group
+             Following values are possible
+               - COLOCATION: Colocation strategy imply intent to share the physical
+                             infrastructure (hypervisor/network) among all members
+                             of this group.
+               - ISOLATION: Isolation strategy imply intent to not share the physical
+                            infrastructure (hypervisor/network) among the members
+                            of this group.
+             ";
+      type enumeration {
+        enum COLOCATION;
+        enum ISOLATION;
+      }
+      default "COLOCATION";
     }
   }
 }

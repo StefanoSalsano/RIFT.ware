@@ -9,11 +9,10 @@ def add_pe_vnf(nsd, vnf_index, intf_ip_pairs):
     const_vnfd.member_vnf_index = vnf_index
 
     vnf_config = const_vnfd.vnf_configuration
-    vnf_config.input_params.config_priority = 0
-    vnf_config.input_params.config_delay = 0
+    vnf_config.config_attributes.config_priority = 0
+    vnf_config.config_attributes.config_delay = 0
 
     # Select "script" configuration
-    vnf_config.config_type = 'juju'
     vnf_config.juju.charm = 'vpe-router'
 
     # Set the initital-config

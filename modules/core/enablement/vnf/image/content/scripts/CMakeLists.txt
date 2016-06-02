@@ -19,5 +19,6 @@ install(
   FILES
     start_multi_vm_vnf.sh
     start_multivmvnf
+    riftcli
   DESTINATION ${VNFCONTENT_INSTALL}
   COMPONENT ${PKG_LONG_NAME})

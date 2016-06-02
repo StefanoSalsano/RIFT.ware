@@ -17,6 +17,8 @@ import os
 import sys
 import unittest
 import gi
+gi.require_version('ExampleGi', '1.0')
+gi.require_version('Peas', '1.0')
 from gi.repository import GObject, Peas, GLib, GIRepository
 from gi.repository import ExampleGi
 import xmlrunner

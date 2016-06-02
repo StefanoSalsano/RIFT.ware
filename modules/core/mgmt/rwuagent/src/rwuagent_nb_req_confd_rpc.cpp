@@ -84,7 +84,7 @@ int NbReqConfdRpcExec::execute (struct xml_tag *name, confd_hkeypath_t *kp,
   std::string capture_temporary;
   RW_MA_NBREQ_LOG (this, ClientDebug, "RPC Operation from confd", (capture_temporary=rpc->to_string()).c_str());
 
-  SbReqRpc *xact = new SbReqRpc(instance_, this, cmd.get());
+  SbReqRpc *xact = new SbReqRpc(instance_, this, RequestMode::CONFD, cmd.get());
   auto ss = xact->start_xact();
   if (StartStatus::Async == ss) {
     return CONFD_DELAYED_RESPONSE;

@@ -68,7 +68,9 @@ ConfdUnittestHarness::ConfdUnittestHarness(
   }
 
   // Create socket path and verify that it is not too long.
-  socket_path_ = test_root_/"s";
+  char user[L_cuserid+1] = "unknown";
+  getlogin_r(user, sizeof(user) );
+  socket_path_ = FS::path("/tmp") / (std::string("confd_ut_")+user) / test_name_ / std::to_string(getpid());
   RW_ASSERT(socket_path_.native().length() < sizeof(sockaddr_un::sun_path));
 
   confd_conf_path_ = test_root_/"etc/confd.conf";
@@ -472,6 +474,11 @@ void ConfdUnittestHarness::start()
    */
   unlink(socket_path_.c_str());
 
+  /* Create the path to the socket */
+  FS::path socket_dir = socket_path_;
+  socket_dir.remove_filename();
+  create_directories(socket_dir);
+
   int fds[2];
   int st = pipe(fds);
   RW_ASSERT(0 == st);
@@ -592,10 +599,6 @@ void ConfdUnittestHarness::start()
     }
     sleep(1);
   }
-  /*
-   * wouldn't this help ?? -- JLM
-  RW_ASSERT(exists(socket_path_));
-   */
 }
 
 void ConfdUnittestHarness::stop()

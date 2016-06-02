@@ -5,6 +5,7 @@ from .config import (
 
 from .operdata import (
     ConfigAgentJobManager,
-    CfgAgentJobDtsHandler
+    CfgAgentJobDtsHandler,
+    CfgAgentDtsOperdataHandler
     )
 

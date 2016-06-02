@@ -26,6 +26,7 @@ do
         esac
 done
 
+START=`date`
 
 if [ `whoami` != "root" ]; then
     echo must be root
@@ -45,7 +46,7 @@ LAB=${site:=eng}
 
 echo "Running $0 for $LAB site"
 
-chattr -i /etc/resolv.conf
+#chattr -i /etc/resolv.conf
 if [ $LAB = blr ]; then
     cat >/etc/resolv.conf <<EOF 
 search blr.riftio.com blrlab.riftio.com eng.riftio.com
@@ -57,7 +58,8 @@ search lab.riftio.com eng.riftio.com riftio.com
 nameserver 10.64.1.3
 EOF
 fi
-chattr +i /etc/resolv.conf
+#chattr +i /etc/resolv.conf
+# chattr shouldn't really be needed if the DNS is setup properly and was messing up building ui-lab on top of ui vm_image RIFT-12184
 
 cat >>/etc/hosts <<EOF
 10.64.10.50 boson boson.eng.riftio.com
@@ -78,10 +80,9 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-$RIFT_ROOT/scripts/setup/scripts/ldap $LAB
+time $RIFT_ROOT/scripts/setup/scripts/ldap $LAB
 
-
-yum -y install autofs net-tools git python-pip
+time yum -y install autofs net-tools git python-pip rpcbind nfs-utils
 echo "setting up autofs...."
 systemctl restart rpcbind
 systemctl enable rpcbind
@@ -89,13 +90,15 @@ systemctl start autofs
 systemctl enable autofs
 echo "...done"
 
+
 echo "setting up /usr/rift...."
 if [ ! -h /usr/rift ]; then
     test -e /usr/rift && mv /usr/rift /usr/rift.local
     if [ $LAB = blr ]; then
         ln -s /net/ganga/usr/rift /usr/rift
     else
-        ln -s /net/charm/usr/rift /usr/rift
+        #ln -s /net/charm/usr/rift /usr/rift
+	echo "No symlink needed now."
     fi
 fi
 cat >/etc/profile.d/rift.sh <<EOF
@@ -107,10 +110,10 @@ EOF
 echo "...done"
 
 
-
-echo "pip install...."
-/usr/rift/bin/pip-install -r /usr/rift/scripts/setup/PIP
-echo "...done"
+# PIPs should now be in the qcow
+#echo "pip install...."
+#/usr/rift/bin/pip-install -r /usr/rift/scripts/setup/PIP
+#echo "...done"
 
 
 # THIS NEEDS TO BE REVERSIBLE or OPTIONAL
@@ -119,13 +122,14 @@ if [ ! -f /etc/yum.tar ]; then
     tar cf /etc/yum.tar -C /etc/yum.repos.d .
 fi
 
-if [[ "`uname -r`" =~ fc20 ]]; then
-    echo "updating YUM...."
-    cp -f /usr/rift/scripts/setup/skel/etc/yum.repos.d/* /etc/yum.repos.d
-    echo "done"
-else
-    echo "NOT updating yum"
-fi
+#if [[ "`uname -r`" =~ fc20 ]]; then
+#    echo "updating YUM...."
+#    # qcow has riftware-release now which has the rift frozen repos installed
+#    #cp -f /usr/rift/scripts/setup/skel/etc/yum.repos.d/* /etc/yum.repos.d
+#    echo "done"
+#else
+#    echo "NOT updating yum"
+#fi
 
 cp /usr/rift/scripts/setup/skel/etc/nfsmount.conf /etc/nfsmount.conf
 
@@ -134,18 +138,19 @@ if [ ! -f /root/.ssh/authorized_keys ]; then
     if [ ! -d /root/.ssh ]; then
         mkdir /root/.ssh
     fi
-    cp $RIFT_ROOT/scripts/setup/skel/root/.ssh/authorized_keys /root/.ssh/
+    #cp $RIFT_ROOT/scripts/setup/skel/root/.ssh/authorized_keys /root/.ssh/
     chmod 700 /root/.ssh
     chmod 600 /root/.ssh/authorized_keys
 fi
 mkdir -p /home/rift/.ssh
 if [ ! -f /home/rift/.ssh/authorized_keys ]; then
-    cp $RIFT_ROOT/scripts/vm/home/rift/.ssh/* /home/rift/.ssh/
+    #cp $RIFT_ROOT/scripts/vm/home/rift/.ssh/* /home/rift/.ssh/
     chmod 700 /home/rift/.ssh
     chmod 600 /home/rift/.ssh/authorized_keys
 fi
-chown rift:rift /home/rift -R 
+chown rift:rift /home/rift -R
 echo "...done"
+
 echo "updating hosts file...."
 $RIFT_ROOT/scripts/cloud/UpdateHostsFile
 echo "...done"
@@ -157,12 +162,15 @@ if [ -n "$USER" -a "$USER" != "root" ]; then
 fi
 EOF
 echo "...done"
-echo "creating user directories under /localdisk..."
-/usr/rift/scripts/setup/scripts/localdisk
-echo "...done"
+
+#echo "creating user directories under /localdisk..."
+#/usr/rift/scripts/setup/scripts/localdisk
+#echo "...done"
 
 echo "setting timezone...."
 rm -f /etc/localtime
 ln -s /usr/share/zoneinfo/US/Eastern /etc/localtime
 echo "...done"
 
+END=`date`
+echo "===== TIMER ===== ${START} -> ${END} ";

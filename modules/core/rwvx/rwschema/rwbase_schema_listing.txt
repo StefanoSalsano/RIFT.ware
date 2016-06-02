@@ -28,3 +28,4 @@ ietf-netconf-notifications
 rwlog-mgmt
 rwmsg-data
 rwshell-mgmt
+rw-logtest-log

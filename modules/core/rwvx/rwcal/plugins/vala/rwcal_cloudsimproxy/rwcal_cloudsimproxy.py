@@ -7,6 +7,9 @@ import logging
 
 import requests
 
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import (
     GObject,
     RwCal,
@@ -106,7 +109,8 @@ class CloudSimProxyPlugin(GObject.Object, RwCal.Cloud):
     def do_init(self, rwlog_ctx):
         logger.addHandler(
             rwlogger.RwLogger(
-                category="cloudsimproxy",
+                category="rw-cal-log",
+                subcategory="cloudsimproxy",
                 log_hdl=rwlog_ctx,
             )
         )

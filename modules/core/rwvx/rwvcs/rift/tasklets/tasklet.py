@@ -71,7 +71,8 @@ class StackedEventLoop(asyncio.SelectorEventLoop):
         self._cfsocket = None
         self._cfsocket_src = None
         self._cftimer = None
-        self._scheduler_tick_hooks = []
+        self._scheduler_tick_enter_hooks = []
+        self._scheduler_tick_exit_hooks = []
 
         monkey.patch()
 
@@ -83,29 +84,56 @@ class StackedEventLoop(asyncio.SelectorEventLoop):
             """
             asyncio.set_event_loop(self)
 
-        self.register_tick_hook(set_event_loop)
+        def unset_event_loop():
+            """ Unset the current loop as the current context's event loop
+
+            This prevents any other tasklets/library from inadvertantly using
+            this tasklets event loop.
+            """
+            asyncio.set_event_loop(None)
+
+        self.register_tick_enter_hook(set_event_loop)
+        self.register_tick_exit_hook(unset_event_loop)
 
     def debug(self, msg, *args, **kwargs):
         if self._debug:
             self._log.debug(msg, *args, **kwargs)
 
-    def register_tick_hook(self, hook):
-        """ Register a function to be called everytime the scheduler is invoked
+    def register_tick_enter_hook(self, hook):
+        """ Register a function to be called on each scheduler_tick() invocation
 
         Arguments:
             hook - A function to call on scheduler tick
         """
-        if hook not in self._scheduler_tick_hooks:
-            self._scheduler_tick_hooks.append(hook)
+        if hook not in self._scheduler_tick_enter_hooks:
+            self._scheduler_tick_enter_hooks.append(hook)
 
-    def unregister_tick_hook(self, hook):
-        """ Unregister a previously register scheduler tick hook
+    def unregister_tick_enter_hook(self, hook):
+        """ Unregister a previously register enter scheduler tick hook
 
         Arguments:
             hook - A previously registered hook
         """
-        if hook in self._scheduler_tick_hooks:
-            self._scheduler_tick_hooks.remove(hook)
+        if hook in self._scheduler_tick_enter_hooks:
+            self._scheduler_tick_enter_hooks.remove(hook)
+
+    def register_tick_exit_hook(self, hook):
+        """ Register a function to be called on scheduler_tick() exit
+
+        Arguments:
+            hook - A function to call on scheduler tick
+        """
+        if hook not in self._scheduler_tick_exit_hooks:
+            self._scheduler_tick_exit_hooks.append(hook)
+
+    def unregister_tick_exit_hook(self, hook):
+        """ Unregister a previously registered scheduler exit tick hook
+
+        Arguments:
+            hook - A previously registered hook
+        """
+        if hook in self._scheduler_tick_exit_hooks:
+            self._scheduler_tick_exit_hooks.remove(hook)
 
     def scheduler_tick(self, *args):
         """
@@ -120,9 +148,9 @@ class StackedEventLoop(asyncio.SelectorEventLoop):
                 len(self._ready),
                 len(self._scheduled))
 
-        # Call all registered tick hooks
-        for hook in self._scheduler_tick_hooks:
-            hook()
+        # Call all registered enter tick hooks
+        for enter_hook in self._scheduler_tick_enter_hooks:
+            enter_hook()
 
         self.call_soon(self.stop)
         self.run_forever()
@@ -141,6 +169,10 @@ class StackedEventLoop(asyncio.SelectorEventLoop):
             self._sched_tasklet.CFRunLoopTimerSetNextFireDate(
                     self._cftimer,
                     cf.CFAbsoluteTimeGetCurrent() + timeout)
+
+        # Call all registered exit tick hooks
+        for exit_hook in self._scheduler_tick_exit_hooks:
+            exit_hook()
 
     def _on_signal(self, tasklet, signal):
         self.debug("Got signal handler callback for signal: %s", signal)
@@ -401,20 +433,61 @@ class Tasklet(object):
         self._tasklet_info = tasklet_info
 
         self._log = logger_from_tasklet_info(tasklet_info)
-        self._log_hdl = tasklet_info.get_rwlog_ctx()
-
-        self._rwlog = rwlogger.RwLogger(
-                        category="tasklet",
-                        log_hdl=self._log_hdl)
-
-        self._log.addHandler(self._rwlog)
-
         self._log.setLevel(logging.DEBUG)
+
+        self._log_hdl = tasklet_info.get_rwlog_ctx()
+        self._rwlog_handler = rwlogger.RwLogger(
+                        log_hdl=self._log_hdl
+                        )
+        self._log.addHandler(self._rwlog_handler)
+
+        # We want set up the root logger to log to this tasklets rwlog handler
+        # in order to catch any logs emitted via third party libraries.
+        # Because of this, we want to ensure that any logs sent to this logger do
+        # not propogate to the root logger which would cause the messages to get
+        # logged twice.
+        self._log.propagate = False
 
         self._loop = StackedEventLoop(
                 self._tasklet_info.rwsched_instance,
                 self._tasklet_info.rwsched_tasklet,
                 self._log)
+
+        self._add_root_logger_handling()
+
+    def _add_root_logger_handling(self):
+        """
+        Create a scheduler hook to set the root logger for this
+        tasklet on entry.  This enables us to capture the logs
+        used by libraries without having to manually find
+        the library's logger and set the handler.
+        """
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
+        root_rwlog_handler = rwlogger.RwLogger(
+                        log_hdl=self._log_hdl,
+                        )
+
+        # We need to filter this handler by the core CFRunLoop thread id
+        # so only messages being logged specifically during this tasklets
+        # scheduler invocation are logged using it's handler.
+        root_rwlog_handler.addFilter(rwlogger.ThreadFilter.from_current())
+
+        def add_root_logger_handler():
+            """ Set the root logger's handler to this tasklets rwlog handler """
+
+            # Clone the current category/subcategory assignment for the tasklet
+            root_rwlog_handler.set_category(self._rwlog_handler.category)
+            root_rwlog_handler.set_subcategory(self._rwlog_handler.subcategory)
+
+            root_logger.addHandler(root_rwlog_handler)
+
+        def remove_root_logger_handler():
+            """ Remove the root logger's handler to this tasklets rwlog handler """
+            root_logger.removeHandler(root_rwlog_handler)
+
+        self._loop.register_tick_enter_hook(add_root_logger_handler)
+        self._loop.register_tick_exit_hook(remove_root_logger_handler)
 
     @property
     def tasklet_info(self):
@@ -429,7 +502,7 @@ class Tasklet(object):
     @property
     def rwlog(self):
         """The rwlogger instance used by this tasklet"""
-        return self._rwlog
+        return self._rwlog_handler
 
     @property
     def log_hdl(self):
@@ -455,6 +528,9 @@ class Tasklet(object):
     def add_log_stderr_handler(self):
         """
         Add a stderr handler to the Tasklet's log instance.
+
+        This shouldn't be necessary if rwlog is working correctly, but can
+        be useful for development in certain situations.
         """
         stderr_handler = logging.StreamHandler(stream=sys.stderr)
         fmt = logging.Formatter(
@@ -490,6 +566,8 @@ def logger_from_tasklet_info(tasklet_info):
     """
     log_name = tasklet_info.instance_name.replace('.', '_')
     log = logging.getLogger('rw.tasklet.%s' % (log_name,))
+
+
     return log
 
 

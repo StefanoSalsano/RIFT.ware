@@ -572,7 +572,6 @@ void PbModel::output_h_structs(
   os << pad2 << "const uint32_t pb_element_tag;" << std::endl;
   os << pad2 << "const size_t num_fields; " << std::endl;
   os << pad2 << "const rw_yang_pb_flddesc_t* ypbc_flddescs;" << std::endl;
-  os << pad2 << "const void* utcli_callback_argv;" << std::endl;
   os << pad2 << "const rw_yang_pb_msgdesc_t* parent;" << std::endl;
   os << pad2 << "const ProtobufCMessageDescriptor* pbc_mdesc;" << std::endl;
   switch (output_style) {
@@ -737,11 +736,10 @@ void PbModel::output_cpp_descs(
     pad3 = pad2;
   }
   os << pad3 << "nullptr," << std::endl; /* Module, null for schema descs */
-  os << pad3 << "\"root\"," << std::endl;
+  os << pad3 << "\"data\"," << std::endl;
   os << pad3 << "0," << std::endl; /* Element tag */
   os << pad3 << "0," << std::endl; /* num of fields */
   os << pad3 << "nullptr," << std::endl; /* Field Descs */
-  os << pad3 << "nullptr," << std::endl; /* callback argv */
   os << pad3 << "nullptr," << std::endl; /* parent */
   os << pad3 << "&" << get_pbc_message_global("descriptor", output_style) << "," << std::endl; /* pbc_desc */
 

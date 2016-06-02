@@ -17,6 +17,10 @@ import os
 import sys
 import time
 import unittest
+from gi import require_version
+require_version('Peas', '1.0')
+require_version('BasicFunctor', '1.0')
+
 from gi.repository import GObject, Peas, GLib, GIRepository
 from gi.repository import BasicFunctor
 

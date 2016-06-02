@@ -151,8 +151,21 @@ module rw-debug
         leaf depth {
           description "Depth of the call stack to be captured";
           type uint32 {
-            range "1..100";
+            range "1..50";
           }
+          default 10;
+        }
+        leaf track-nth {
+          description "Track the nth heap allocation";
+          type uint32 {
+            range "1..100000";
+          }
+          default 1000;
+        }
+        leaf track-bigger-than {
+          description "Track the heap allocation bigger than this size";
+          type uint32;
+          default 999;
         }
       }
       container scheduler {

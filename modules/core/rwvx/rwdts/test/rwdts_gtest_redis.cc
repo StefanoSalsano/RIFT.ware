@@ -789,7 +789,7 @@ memberapi_test_prepare(const rwdts_xact_info_t* xact_info,
       //EXPECT_EQ(action, s->client.action);
     }
     flags = rwdts_member_get_query_flags(xact_info->queryh);
-    EXPECT_TRUE(flags|RWDTS_FLAG_ADVISE);
+    EXPECT_TRUE(flags|RWDTS_XACT_FLAG_ADVISE);
 
     rwdts_member_send_response(xact, xact_info->queryh, &rsp);
 
@@ -1057,8 +1057,7 @@ static void memberapi_client_start_f(void *ctx) {
   if (!s->client.transactional) {
     flags |= RWDTS_XACT_FLAG_NOTRAN ;
   }
-  flags |= RWDTS_FLAG_ADVISE;
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
 
   rw_status_t rs = RW_STATUS_FAILURE;
 
@@ -1246,7 +1245,7 @@ static void memberapi_pub_sub_db_client_start_f(void *ctx) {
     rs = rwdts_member_reg_handle_update_element(regh,
                                                gkpe,
                                                &phone->base,
-                                               RWDTS_FLAG_REPLACE,
+                                               RWDTS_XACT_FLAG_REPLACE,
                                                NULL);
     EXPECT_EQ(RW_STATUS_SUCCESS, rs);
 
@@ -1322,7 +1321,7 @@ static void memberapi_pub_sub_db_client_start_f(void *ctx) {
     rs = rwdts_member_reg_handle_update_element(regh,
                                                gkpe,
                                                &phone->base,
-                                               RWDTS_FLAG_REPLACE,
+                                               RWDTS_XACT_FLAG_REPLACE,
                                                NULL);
     EXPECT_EQ(RW_STATUS_SUCCESS, rs);
 

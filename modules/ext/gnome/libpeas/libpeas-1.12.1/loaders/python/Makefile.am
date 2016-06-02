@@ -1,6 +1,6 @@
 # Python plugin loader
 
-loaderdir = $(libdir)/libpeas-1.0/loaders
+loaderdir = $(libdir)/libpeas-1.0/loaders/python
 
 AM_CPPFLAGS = \
 	-I$(top_srcdir)			\

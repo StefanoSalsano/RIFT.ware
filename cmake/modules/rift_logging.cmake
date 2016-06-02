@@ -143,3 +143,53 @@ function(rift_process_event_log_target TARGET)
 
 
 endfunction(rift_process_event_log_target)
+
+
+##
+# This function adds target for generating a rwlog yang file
+# with a new category name which can be used by rwlog handle
+# in python (via rwlog.set_category()).
+#
+# Update rw-log.yang whenever this function is used to keep it
+# up to date.
+#
+# rift_generate_python_log_yang(LOG_CATEGORY_NAME
+#                               START_EVENT_ID
+#                               OUT_YANG_FILE_VAR)
+##
+function(rift_generate_python_log_yang)
+  set(parse_options "")
+  set(parse_onevalargs TARGET LOG_CATEGORY_NAME START_EVENT_ID OUT_YANG_FILE_VAR)
+  set(parse_multivalueargs)
+  cmake_parse_arguments(ARGS "${parse_options}" "${parse_onevalargs}" "${parse_multivalueargs}" ${ARGN})
+
+  if(NOT ARGS_LOG_CATEGORY_NAME)
+      message(FATAL "Must specify LOG_CATEGORY_NAME")
+  endif()
+
+  if(NOT ARGS_START_EVENT_ID)
+      message(FATAL "Must specify START_EVENT_ID")
+  endif()
+
+  set(out_yang_file ${CMAKE_CURRENT_BINARY_DIR}/${ARGS_LOG_CATEGORY_NAME}.yang)
+
+  ##
+  # Because add_yang_target expects the files to exist during dependency
+  # generation time, we have no choice but to regenerate the yang file on
+  # every run.  However this is not frequently called and is relatively inexpensive.
+  ##
+  execute_process(
+    COMMAND python3 ${PROJECT_TOP_DIR}/cmake/modules/generate_python_log_yang.py
+        --output-file ${out_yang_file}
+        --category-name ${ARGS_LOG_CATEGORY_NAME}
+        --start-event-id ${ARGS_START_EVENT_ID}
+      RESULT_VARIABLE result
+  )
+
+  if(result)
+    message(FATAL_ERROR "Error: failed to generate log yang file")
+  endif()
+
+  set(${ARGS_OUT_YANG_FILE_VAR} ${out_yang_file} PARENT_SCOPE)
+
+endfunction(rift_generate_python_log_yang)

@@ -1,0 +1,7 @@
+# RIFT_IO_STANDARD_CMAKE_COPYRIGHT_HEADER(BEGIN)
+# Author(s): Philip Joseph
+# Creation Date: 2016-May-26
+# RIFT_IO_STANDARD_CMAKE_COPYRIGHT_HEADER(END)
+
+cmake_minimum_required(VERSION 2.8)
+

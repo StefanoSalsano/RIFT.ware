@@ -1163,7 +1163,7 @@ PbSchemaMerger::create_and_init_root_msg(const rw_yang_pb_msgdesc_t* in_root,
       instance_, sizeof(rw_yang_pb_msgdesc_t));
 
   out_root->module          = out_mod;
-  out_root->yang_node_name  = mem_strdup(instance_, "root");
+  out_root->yang_node_name  = mem_strdup(instance_, "data");
   out_root->msg_type        = RW_YANGPBC_MSG_TYPE_MODULE_ROOT;
   out_root->pb_element_tag  = in_root->pb_element_tag;
   out_root->num_fields      = in_root->num_fields;
@@ -1186,7 +1186,7 @@ PbSchemaMerger::create_and_init_schema_root_msg(const rw_yang_pb_msgdesc_t* cdat
   rw_yang_pb_msgdesc_t* data_root = (rw_yang_pb_msgdesc_t *)mem_zalloc(
       instance_, sizeof(rw_yang_pb_msgdesc_t));
 
-  data_root->yang_node_name  = mem_strdup(instance_, "root");
+  data_root->yang_node_name  = mem_strdup(instance_, "data");
   data_root->msg_type        = RW_YANGPBC_MSG_TYPE_ROOT;
   data_root->pb_element_tag  = 0;
   data_root->num_fields      = 0;
@@ -2016,12 +2016,6 @@ rw_schema_print_ypbc_mdesc(std::ostringstream& oss,
   oss << pad << ".ypbc_flddescs = ";
   if (mdesc->ypbc_flddescs) {
     oss << mdesc->ypbc_flddescs << "," << std::endl;
-  } else {
-    oss << "nullptr," << std::endl;
-  }
-  oss << pad << ".utcli_callback_argv = ";
-  if (mdesc->utcli_callback_argv) {
-    oss << mdesc->utcli_callback_argv << "," << std::endl;
   } else {
     oss << "nullptr," << std::endl;
   }

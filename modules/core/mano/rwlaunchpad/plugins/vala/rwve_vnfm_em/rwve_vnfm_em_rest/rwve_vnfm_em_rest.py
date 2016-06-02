@@ -34,7 +34,7 @@ class RwVeVnfmEmRestPlugin(GObject.Object, RwVeVnfmEm.ElementManager):
     @rwstatus
     def do_init(self, rwlog_ctx):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
-            logger.addHandler(rwlogger.RwLogger(category="rwcal-aws",
+            logger.addHandler(rwlogger.RwLogger(subcategory="rwcal-aws",
                                                 log_hdl=rwlog_ctx,))
     @rwstatus
     def do_vnf_lifecycle_event(self):

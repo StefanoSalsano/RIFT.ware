@@ -7,6 +7,20 @@
 
 cmake_minimum_required(VERSION 2.8)
 
+rift_generate_python_log_yang(
+  LOG_CATEGORY_NAME rw-logtest-log
+  START_EVENT_ID 51000
+  OUT_YANG_FILE_VAR rw_logtest_log_file
+  )
+
+rift_add_yang_target(
+  TARGET rw_logtest_yang
+  YANG_FILES ${rw_logtest_log_file}
+  COMPONENT ${PKG_LONG_NAME}
+  LIBRARIES
+    rwschema_yang_gen
+)
+
 # RIFT-5016
 rift_gtest(rwlog_gtest
   TEST_SRCS rwlog_gtest.cc
@@ -28,4 +42,9 @@ rift_pytest(rwlog_pytest
   TEST_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS rwlog rwgeneric_yang
 )
+
+#rift_py3test(log_tasklet_test
+#  TEST_ARGS ${CMAKE_CURRENT_SOURCE_DIR}/log_tasklet_test.py
+#  DEPENDS rwlog rwgeneric_yang rw_logtest_yang
+#)
 

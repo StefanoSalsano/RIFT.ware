@@ -11,14 +11,15 @@ import rift.rwcal.aws as aws_drv
 import rw_status
 import rwlogger
 import rift.rwcal.aws.exceptions as exceptions
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import (
     GObject,
     RwCal,
     RwTypes,
     RwcalYang)
 
-logger = logging.getLogger('rwcal.aws')
-logger.setLevel(logging.DEBUG)
 
 PREPARE_VM_CMD = "prepare_vm.py --aws_key {key} --aws_secret {secret} --aws_region {region} --server_id {server_id}"
 DELETE_VM_CMD =  "delete_vm.py --aws_key {key} --aws_secret {secret} --aws_region {region} --server_id {server_id}"
@@ -34,13 +35,17 @@ rwstatus = rw_status.rwstatus_from_exc_map({ IndexError: RwTypes.RwStatus.NOTFOU
 
 class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
     """This class implements the CAL VALA methods for AWS."""
-     
+
     flavor_id = 1;
+    instance_num = 1
     def __init__(self):
         GObject.Object.__init__(self)
         self._driver_class = aws_drv.AWSDriver
         self._flavor_list = []
+        self.log = logging.getLogger('rwcal.aws.%s' % RwcalAWSPlugin.instance_num)
+        self.log.setLevel(logging.DEBUG)
 
+        RwcalAWSPlugin.instance_num += 1
 
     def _get_driver(self, account):
         return self._driver_class(key     = account.aws.key,
@@ -53,9 +58,14 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
 
     @rwstatus
     def do_init(self, rwlog_ctx):
-        if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
-            logger.addHandler(rwlogger.RwLogger(category="rwcal-aws",
-                                                log_hdl=rwlog_ctx,))
+        self.log.addHandler(
+                rwlogger.RwLogger(
+                    category="rw-cal-log",
+                    subcategory="aws",
+                    log_hdl=rwlog_ctx,
+                    )
+                )
+
     @rwstatus(ret_on_failure=[None])
     def do_validate_cloud_creds(self, account):
         """
@@ -74,8 +84,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
                 )
 
         return status
- 
-        
+
     @rwstatus(ret_on_failure=[""])
     def do_get_management_network(self, account):
         """
@@ -83,7 +92,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         Arguments:
             account - a cloud account
 
-        Returns: 
+        Returns:
             The management network
         """
         raise NotImplementedError
@@ -100,7 +109,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             The tenant id
         """
         raise NotImplementedError
-    
+
     @rwstatus
     def do_delete_tenant(self, account, tenant_id):
         """delete a tenant.
@@ -180,7 +189,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             image_id - id of the image to delete
         """
         raise NotImplementedError
-    
+
     @staticmethod
     def _fill_image_info(img_info):
         """Create a GI object from image info dictionary
@@ -242,7 +251,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         """
         image = self._get_driver(account).get_image(image_id)
         return RwcalAWSPlugin._fill_image_info(image)
-    
+
     @rwstatus(ret_on_failure=[""])
     def do_create_vm(self, account, vminfo):
         """Create a new virtual machine.
@@ -265,7 +274,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             vm_id - an id of the VM
         """
         raise NotImplementedError
-        
+
     @rwstatus
     def do_stop_vm(self, account, vm_id):
         """Stop a running virtual machine.
@@ -373,7 +382,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
     def do_create_flavor(self, account, flavor):
         """Create new flavor.
            AWS has fixed set of AWS types and so we map flavor to existing instance type
-           and create local flavor for the same.  
+           and create local flavor for the same.
 
         Arguments:
             account - a cloud account
@@ -387,16 +396,16 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
 			         ram       = flavor.vm_flavor.memory_mb,
 			         vcpus     = flavor.vm_flavor.vcpu_count,
 			         disk      = flavor.vm_flavor.storage_gb)
-        
+
         new_flavor = RwcalYang.FlavorInfoItem()
         new_flavor.name = flavor.name
-        new_flavor.vm_flavor.memory_mb = flavor.vm_flavor.memory_mb 
-        new_flavor.vm_flavor.vcpu_count = flavor.vm_flavor.vcpu_count 
-        new_flavor.vm_flavor.storage_gb = flavor.vm_flavor.storage_gb 
+        new_flavor.vm_flavor.memory_mb = flavor.vm_flavor.memory_mb
+        new_flavor.vm_flavor.vcpu_count = flavor.vm_flavor.vcpu_count
+        new_flavor.vm_flavor.storage_gb = flavor.vm_flavor.storage_gb
         new_flavor.id = inst_type + '-' + str(RwcalAWSPlugin.flavor_id)
         RwcalAWSPlugin.flavor_id = RwcalAWSPlugin.flavor_id+1
         self._flavor_list.append(new_flavor)
-        return new_flavor.id 
+        return new_flavor.id
 
     @rwstatus
     def do_delete_flavor(self, account, flavor_id):
@@ -426,11 +435,11 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         flavor = RwcalYang.FlavorInfoItem()
         flavor.name                       = flavor_info.name
         flavor.id                         = flavor_info.id
-        flavor.vm_flavor.memory_mb = flavor_info.vm_flavor.memory_mb 
-        flavor.vm_flavor.vcpu_count = flavor_info.vm_flavor.vcpu_count 
-        flavor.vm_flavor.storage_gb = flavor_info.vm_flavor.storage_gb 
+        flavor.vm_flavor.memory_mb = flavor_info.vm_flavor.memory_mb
+        flavor.vm_flavor.vcpu_count = flavor_info.vm_flavor.vcpu_count
+        flavor.vm_flavor.storage_gb = flavor_info.vm_flavor.storage_gb
         return flavor
-    
+
     @rwstatus(ret_on_failure=[[]])
     def do_get_flavor_list(self, account):
         """Return flavor information.
@@ -445,7 +454,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         for flv in self._flavor_list:
             response.flavorinfo_list.append(RwcalAWSPlugin._fill_flavor_info(flv))
         return response
-    
+
 
     @rwstatus(ret_on_failure=[None])
     def do_get_flavor(self, account, id):
@@ -482,14 +491,14 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
                 if tag['Key'] == 'Name':
                     network.network_name   = tag['Value']
         return network
- 
+
     @rwstatus(ret_on_failure=[[]])
     def do_get_network_list(self, account):
         """Return a list of networks
 
         Arguments:
             account - a cloud account
-        
+
         Returns:
             List of networks
         """
@@ -525,7 +534,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             Network id
         """
         raise NotImplementedError
-    
+
     @rwstatus
     def do_delete_network(self, account, network_id):
         """Delete a network
@@ -535,7 +544,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             network_id - an id for the network
         """
         raise NotImplementedError
-    
+
     @staticmethod
     def _fill_port_info(port_info):
         """Create a GI object from port info dictionary
@@ -553,7 +562,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
 
         port.port_id    = port_info.id
         port.network_id = port_info.subnet_id
-        if port_info.attachment and 'InstanceId' in port_info.attachment: 
+        if port_info.attachment and 'InstanceId' in port_info.attachment:
             port.vm_id = port_info.attachment['InstanceId']
         port.ip_address = port_info.private_ip_address
         if port_info.status == 'in-use':
@@ -582,7 +591,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         """
         port = self._get_driver(account).get_network_interface(port_id)
         return RwcalAWSPlugin._fill_port_info(port)
-    
+
     @rwstatus(ret_on_failure=[[]])
     def do_get_port_list(self, account):
         """Return a list of ports
@@ -598,7 +607,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         for port in ports:
             response.portinfo_list.append(RwcalAWSPlugin._fill_port_info(port))
         return response
-    
+
     @rwstatus(ret_on_failure=[""])
     def do_create_port(self, account, port):
         """Create a new port
@@ -611,7 +620,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             Port id
         """
         raise NotImplementedError
-    
+
     @rwstatus
     def do_delete_port(self, account, port_id):
         """Delete a port
@@ -621,7 +630,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             port_id - an id for port
         """
         raise NotImplementedError
-        
+
     @rwstatus(ret_on_failure=[""])
     def do_add_host(self, account, host):
         """Add a new host
@@ -683,7 +692,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         """
         drv = self._get_driver(account)
         kwargs = {}
-        kwargs['CidrBlock'] = link_params.subnet 
+        kwargs['CidrBlock'] = link_params.subnet
 
         subnet =  drv.create_subnet(**kwargs)
         if link_params.name:
@@ -718,13 +727,13 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
                     port = drv.get_network_interface(NetworkInterfaceId=port.id)
             drv.delete_network_interface(NetworkInterfaceId=port.id)
         drv.delete_subnet(link_id)
-        
+
     @staticmethod
     def _fill_connection_point_info(c_point, port_info):
         """Create a GI object for RwcalYang.VDUInfoParams_ConnectionPoints()
 
-        Converts EC2.NetworkInterface object returned by AWS driver into 
-        Protobuf Gi Object  
+        Converts EC2.NetworkInterface object returned by AWS driver into
+        Protobuf Gi Object
 
         Arguments:
             port_info - Network Interface information from AWS
@@ -754,7 +763,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         """Create a GI object for VirtualLinkInfoParams
 
         Converts Subnet and NetworkInterface object
-        returned by AWS driver into Protobuf Gi Object  
+        returned by AWS driver into Protobuf Gi Object
 
         Arguments:
             network_info - Subnet information from AWS
@@ -799,7 +808,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         vdu.management_ip = mgmt_port[0].private_ip_address
         if mgmt_port[0].association and 'PublicIp' in mgmt_port[0].association:
             vdu.public_ip = mgmt_port[0].association['PublicIp']
-            #For now set managemnet ip also to public ip 
+            #For now set managemnet ip also to public ip
             #vdu.management_ip = vdu.public_ip
         if vm_info.tags:
             for tag in vm_info.tags:
@@ -817,7 +826,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         #    vdu.availability_zone = vm_info.placement['AvailabilityZone']
         # Fill the port information
         cp_port_list = [port for port in port_list if port.attachment and port.attachment['DeviceIndex'] != 0]
-        
+
         for port in cp_port_list:
             c_point = vdu.connection_points.add()
             RwcalAWSPlugin._fill_connection_point_info(c_point, port)
@@ -830,7 +839,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
 
         Arguments:
             account  - a cloud account
-            link_id  - id for the virtual-link 
+            link_id  - id for the virtual-link
 
         Returns:
             Object of type RwcalYang.VirtualLinkInfoParams
@@ -840,7 +849,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         port_list = drv.get_network_interface_list(SubnetId=link_id)
         virtual_link = RwcalAWSPlugin._fill_virtual_link_info(network, port_list)
         return virtual_link
-    
+
     @rwstatus(ret_on_failure=[[]])
     def do_get_virtual_link_list(self, account):
         """Get information about all the virtual links
@@ -874,7 +883,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         if c_point.associate_public_ip:
                 drv.associate_public_ip_to_network_interface(NetworkInterfaceId = port.id)
         return port
-    
+
     def prepare_vdu_on_boot(self, account, server_id,vdu_init_params,vdu_port_list = None):
         cmd = PREPARE_VM_CMD.format(key     = account.aws.key,
                                   secret  = account.aws.secret,
@@ -886,13 +895,13 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
             cmd += (" --vdu_node_id "+ vdu_init_params.node_id)
         if vdu_port_list is not None:
             for port_id in vdu_port_list:
-                cmd += (" --vdu_port_list "+ port_id)  
+                cmd += (" --vdu_port_list "+ port_id)
 
         exec_path = 'python3 ' + os.path.dirname(aws_drv.__file__)
         exec_cmd = exec_path+'/'+cmd
-        logger.info("Running command: %s" %(exec_cmd))
+        self.log.info("Running command: %s" %(exec_cmd))
         subprocess.call(exec_cmd, shell=True)
-        
+
     @rwstatus(ret_on_failure=[""])
     def do_create_vdu(self, account, vdu_init):
         """Create a new virtual deployment unit
@@ -913,33 +922,33 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         kwargs = {}
         kwargs['ImageId'] = vdu_init.image_id
         # Get instance type from flavor id which is of form c3.xlarge-1
-        inst_type =  vdu_init.flavor_id.split('-')[0] 
+        inst_type =  vdu_init.flavor_id.split('-')[0]
         kwargs['InstanceType'] = inst_type
         if vdu_init.vdu_init and vdu_init.vdu_init.userdata:
             kwargs['UserData'] = vdu_init.vdu_init.userdata
 
         #If we need to allocate public IP address create network interface and associate elastic
-        #ip  to interface  
+        #ip  to interface
         if vdu_init.allocate_public_address:
            port_id     = drv.create_network_interface(SubnetId=drv.default_subnet_id)
            drv.associate_public_ip_to_network_interface(NetworkInterfaceId = port_id.id)
            network_interface  = {'NetworkInterfaceId':port_id.id,'DeviceIndex':0}
            kwargs['NetworkInterfaces'] = [network_interface]
-        
-        #AWS Driver will use default subnet id to create first network interface 
-        # if network interface is not specified and will also have associate public ip 
-        # if enabled for the subnet    
+
+        #AWS Driver will use default subnet id to create first network interface
+        # if network interface is not specified and will also have associate public ip
+        # if enabled for the subnet
         vm_inst = drv.create_instance(**kwargs)
 
         # Wait for instance to get to running state before attaching network interface
-        # to instance 
+        # to instance
         #vm_inst[0].wait_until_running()
 
         #if vdu_init.name:
             #vm_inst[0].create_tags(Tags=[{'Key': 'Name','Value':vdu_init.name}])
         #if vdu_init.node_id is not None:
-            #vm_inst[0].create_tags(Tags=[{'Key':'node_id','Value':vdu_init.node_id}])    
-             
+            #vm_inst[0].create_tags(Tags=[{'Key':'node_id','Value':vdu_init.node_id}])
+
         # Create the connection points
         port_list = []
         for index,c_point in enumerate(vdu_init.connection_points):
@@ -968,17 +977,17 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         vm_inst = drv.get_instance(vdu_modify.vdu_id)
 
         if vm_inst.state['Name'] != 'running':
-            logger.error("RWCAL-AWS: VM with id %s is not in running state during modify VDU",vdu_modify.vdu_id)
+            self.log.error("RWCAL-AWS: VM with id %s is not in running state during modify VDU",vdu_modify.vdu_id)
             raise InvalidStateError("RWCAL-AWS: VM with id %s is not in running state during modify VDU",vdu_modify.vdu_id)
 
         port_list = drv.get_network_interface_list(InstanceId = vdu_modify.vdu_id)
         used_device_indexs = [port.attachment['DeviceIndex'] for port in port_list if port.attachment]
 
-        device_index = 1 
+        device_index = 1
         for c_point in vdu_modify.connection_points_add:
             #Get unused device index
             while device_index in used_device_indexs:
-                device_index = device_index+1     
+                device_index = device_index+1
             port_id = self._create_connection_point(account, c_point)
             drv.attach_network_interface(NetworkInterfaceId = port_id.id,InstanceId = vdu_modify.vdu_id,DeviceIndex =device_index)
 
@@ -990,22 +999,22 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
                 drv.disassociate_public_ip_from_network_interface(NetworkInterfaceId=port.id)
             if port and port.attachment and port.attachment['DeviceIndex'] != 0:
                 drv.detach_network_interface(AttachmentId = port.attachment['AttachmentId'],Force=True) #force detach as otherwise delete fails
-            else: 
-                logger.error("RWCAL-AWS: Cannot modify connection port at index 0")
+            else:
+                self.log.error("RWCAL-AWS: Cannot modify connection port at index 0")
 
         # Delete the connection points. Interfaces take time to get detached from instance and so
-        # we check status before doing delete network interface 
+        # we check status before doing delete network interface
         for c_point in vdu_modify.connection_points_remove:
             port = drv.get_network_interface(NetworkInterfaceId=c_point.connection_point_id)
             retries = 0
             if port and port.attachment and port.attachment['DeviceIndex'] == 0:
-                logger.error("RWCAL-AWS: Cannot modify connection port at index 0")
+                self.log.error("RWCAL-AWS: Cannot modify connection port at index 0")
                 continue
             while port.status == 'in-use' and retries < 10:
                 time.sleep(5)
                 port = drv.get_network_interface(NetworkInterfaceId=c_point.connection_point_id)
             drv.delete_network_interface(port.id)
-              
+
     def cleanup_vdu_on_term(self, account, server_id,vdu_port_list = None):
         cmd = DELETE_VM_CMD.format(key    = account.aws.key,
                                   secret  = account.aws.secret,
@@ -1013,13 +1022,13 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
                                   server_id = server_id)
         if vdu_port_list is not None:
             for port_id in vdu_port_list:
-                cmd += (" --vdu_port_list "+ port_id)  
+                cmd += (" --vdu_port_list "+ port_id)
 
         exec_path = 'python3 ' + os.path.dirname(aws_drv.__file__)
         exec_cmd = exec_path+'/'+cmd
-        logger.info("Running command: %s" %(exec_cmd))
+        self.log.info("Running command: %s" %(exec_cmd))
         subprocess.call(exec_cmd, shell=True)
-        
+
     @rwstatus
     def do_delete_vdu(self, account, vdu_id):
         """Delete a virtual deployment unit
@@ -1034,14 +1043,14 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         drv = self._get_driver(account)
         ### Get list of port on VM and delete them.
         vm_inst = drv.get_instance(vdu_id)
-       
+
         port_list = drv.get_network_interface_list(InstanceId = vdu_id)
         delete_port_list = [port.id for port in port_list if port.attachment and port.attachment['DeleteOnTermination'] is False]
         drv.terminate_instance(vdu_id)
 
         self.cleanup_vdu_on_term(account,vdu_id,delete_port_list)
-        
-    
+
+
     @rwstatus(ret_on_failure=[None])
     def do_get_vdu(self, account, vdu_id):
         """Get information about a virtual deployment unit.
@@ -1059,7 +1068,7 @@ class RwcalAWSPlugin(GObject.Object, RwCal.Cloud):
         vm = drv.get_instance(vdu_id)
         port_list = drv.get_network_interface_list(InstanceId = vdu_id)
         return RwcalAWSPlugin._fill_vdu_info(vm,port_list)
-        
+
 
     @rwstatus(ret_on_failure=[[]])
     def do_get_vdu_list(self, account):

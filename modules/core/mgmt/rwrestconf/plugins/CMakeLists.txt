@@ -15,6 +15,12 @@ rift_install_python_plugin(
     restconf.py
   )
 
+rift_generate_python_log_yang(
+    LOG_CATEGORY_NAME rw-restconf-log
+    START_EVENT_ID 68000
+    OUT_YANG_FILE_VAR rw_restconf_log_file
+    )
+
 rift_add_yang_target(
   TARGET
     ietf_restconf_monitoring
@@ -32,9 +38,11 @@ rift_add_yang_target(
     rwrestconf_yang
   YANG_FILES
     rw-restconf.yang
+    ${rw_restconf_log_file}
   COMPONENT
     rwrestconf
   LIBRARIES
+    rwuagent_yang_gen
     rwmanifest_yang_gen
     rw_vcs_yang_gen
     ietf_restconf_monitoring_gen

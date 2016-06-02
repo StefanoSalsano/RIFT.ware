@@ -17,8 +17,6 @@ set(PKG_LONG_NAME ${PKG_NAME}-${PKG_VERSION})
 # current directory and below
 ##
 add_definitions(-DINSTALLDIR="${CMAKE_INSTALL_PREFIX}")
-add_definitions(-DCLI_CONFIG_XSD_PATH="${CMAKE_INSTALL_PREFIX}/usr/data/xsd/")
-add_definitions(-DCLI_CONFIG_XML_PATH="${CMAKE_INSTALL_PREFIX}/usr/data/manifest/")
 
 ##
 # Add the given directories to those searched by the compiler for include files

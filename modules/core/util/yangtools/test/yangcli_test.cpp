@@ -57,6 +57,8 @@ class TestBaseCli
   void mode_enter(ParseLineResult* r);
   void mode_enter(ParseNode::ptr_t&& result_tree, ParseNode* result_node);
 
+  bool config_exit();
+
  public:
   // testing convienence functions
   bool enter_config_mode();
@@ -302,6 +304,11 @@ void TestBaseCli::mode_enter(ParseLineResult* r)
     // Reset flags if only mode paths were allowed
     current_mode_->top_parse_node_->flags_.clear_inherit(ParseFlags::MODE_PATH);
     current_mode_->top_parse_node_->flags_.set_inherit(ParseFlags::CONFIG_ONLY);
+    
+    // All show commands in config mode must print in config cli format
+    // Emulates the RwCli behavior
+    show_node_->set_cli_print_hook("test:config_print_hook");
+    show_node_->flags_.set(ParseFlags::PRINT_HOOK_STICKY);
 
     return;
   }
@@ -326,6 +333,15 @@ void TestBaseCli::mode_enter(ParseNode::ptr_t&& result_tree,
   ModeState::ptr_t new_mode(new ModeState (std::move(result_tree), result_node, mode_xml_head));
   mode_enter_impl(std::move(new_mode));
 
+}
+
+bool TestBaseCli::config_exit()
+{
+  // Reset the show node print hook attributes
+  // Emulate RwCli behavior
+  show_node_->set_cli_print_hook(nullptr);
+  show_node_->flags_.clear(ParseFlags::PRINT_HOOK_STICKY);  
+  return true;
 }
 
 
@@ -1350,7 +1366,7 @@ TEST (YangCLICase, Basic)
   EXPECT_TRUE (f.success_);
 // The parse node will be reset to the root, since all the elements in test-choice
 // are exhausted
-  EXPECT_STREQ("root", f.parse_node_->token_text_get());
+  EXPECT_STREQ("data", f.parse_node_->token_text_get());
 
 // Nodes from conflicting cases - should fail
 ParseLineResult g(tbcli, "test-choice case-top-1-2 something case-top-2-1 something",
@@ -1417,7 +1433,7 @@ TEST (YangCLIFucntional, Basic)
 
 }
 
-TEST(YangCLIFucntional, CliPrintHook) {
+TEST(YangCLIFunctional, CliPrintHookBasic) {
   TEST_DESCRIPTION("Test completions scenarios for config behavioral node");
   YangModelNcx* model = YangModelNcx::create_model();
   YangModel::ptr_t p(model);
@@ -1442,6 +1458,69 @@ TEST(YangCLIFucntional, CliPrintHook) {
   ASSERT_TRUE (!show_config_node->is_cli_print_hook());
   ASSERT_EQ (nullptr, show_config_node->get_cli_print_hook_string());
 
+}
+
+TEST(YangCLIFunctional, CliPrintHookConfigShow) {
+  TEST_DESCRIPTION("Test PrintHooks for show behavioral within config mode");
+  YangModelNcx* model = YangModelNcx::create_model();
+  YangModel::ptr_t p(model);
+
+  model->load_module("rift-cli-test");
+
+  TestBaseCli tbcli(*model,0);
+  tbcli.set_rwcli_like_params();
+
+  ASSERT_TRUE(tbcli.enter_config_mode());
+
+  const char* cmd1 = "show config";
+  ParseLineResult p1(tbcli, cmd1, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p1.success_);
+  EXPECT_STREQ(p1.cli_print_hook_string_, "test:config_print_hook");
+
+  const char* cmd2 = "show config general-container";
+  ParseLineResult p2(tbcli, cmd2, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p2.success_);
+  EXPECT_STREQ(p2.cli_print_hook_string_, "test:config_print_hook");
+
+  const char* cmd3 = "show general-container";
+  ParseLineResult p3(tbcli, cmd3, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p3.success_);
+  EXPECT_STREQ(p3.cli_print_hook_string_, "test:config_print_hook");
+
+  ASSERT_TRUE(tbcli.exit_config_mode());
+
+  const char* cmd4 = "show general-show";
+  ParseLineResult p4(tbcli, cmd4, ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p4.success_);
+  EXPECT_EQ(p4.cli_print_hook_string_, nullptr);
+}
+
+TEST(YangCLIFunctional, CliPrintHookConfig) {
+  TEST_DESCRIPTION("Test PrintHooks for config commands");
+  YangModelNcx* model = YangModelNcx::create_model();
+  YangModel::ptr_t p(model);
+
+  model->load_module("rift-cli-test");
+
+  TestBaseCli tbcli(*model,0);
+  tbcli.set_rwcli_like_params();
+  tbcli.root_parse_node_->set_cli_print_hook("test:default_print");
+
+  ASSERT_TRUE(tbcli.enter_config_mode());
+
+  ParseLineResult r(tbcli, "general-container", ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(r.success_);
+  EXPECT_STREQ(r.cli_print_hook_string_, "test:default_print");
+
+  tbcli.mode_enter(&r);
+
+  ParseLineResult r1(tbcli, "g-container gc-name test", ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(r1.success_);
+  EXPECT_STREQ(r1.cli_print_hook_string_, "test:default_print");
+
+  tbcli.mode_exit();
+
+  ASSERT_TRUE(tbcli.exit_config_mode());
 }
 
 TEST (YangCLICompletion, LeafListInteger)
@@ -2580,7 +2659,7 @@ TEST(YangCLIRpc, CheckOrder)
   ASSERT_TRUE(a.parse_tree_->is_sentence());
   {
     const char* expected_xml = 
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:avengers xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\">\n"
 "    <cli:shield>\n"
 "      <cli:director>nick-fury</cli:director>\n"
@@ -2593,7 +2672,7 @@ TEST(YangCLIRpc, CheckOrder)
 "      <cli:agents>16</cli:agents>\n"
 "    </cli:shield>\n"
 "  </cli:avengers>\n\n"
-"</root>";
+"</data>";
 
     XMLDocument::uptr_t dom(tbcli.get_command_dom(a.result_tree_->children_.begin()->get()));
     XMLNode* root = dom->get_root_node();
@@ -2624,13 +2703,13 @@ TEST(YangCLIIdentity, IdRefXml)
   ASSERT_TRUE(a.parse_tree_->is_sentence());
 
   const char* expected_xml = 
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:network xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\">\n"
 "    <cli:network-id>123</cli:network-id>\n"
 "    <cli:net-type>cli:ethernet</cli:net-type>\n"
 "    <cli:company xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">t:riftio</cli:company>\n"
 "  </cli:network>\n\n"
-"</root>";
+"</data>";
   XMLDocument::uptr_t dom(tbcli.get_command_dom(a.result_tree_->children_.begin()->get()));
   XMLNode* root = dom->get_root_node();
   EXPECT_EQ(root->to_string_pretty(), expected_xml);
@@ -2666,13 +2745,13 @@ TEST(YangCLIXML, MergeXML)
   ASSERT_TRUE(result_xml);
 
   const char* expected1 = 
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:key-test xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\">\n"
 "    <cli:key1>first</cli:key1>\n"
 "    <cli:key2>second</cli:key2>\n"
 "    <cli:key3>3</cli:key3>\n"
 "  </cli:key-test>\n\n"
-"</root>";
+"</data>";
   EXPECT_EQ(parent_xml->to_string_pretty(), expected1);
 
   tbcli.mode_enter(&a);
@@ -2688,7 +2767,7 @@ TEST(YangCLIXML, MergeXML)
   }
 
   const char* expected2 = 
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:key-test xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\">\n"
 "    <cli:key1>first</cli:key1>\n"
 "    <cli:key2>second</cli:key2>\n"
@@ -2696,7 +2775,7 @@ TEST(YangCLIXML, MergeXML)
 "    <cli:non-key1>val1</cli:non-key1>\n"
 "    <cli:non-key2>10</cli:non-key2>\n"
 "  </cli:key-test>\n\n"
-"</root>";
+"</data>";
   EXPECT_EQ(parent_xml->to_string_pretty(), expected2);
   
   tbcli.mode_exit();
@@ -2727,11 +2806,11 @@ TEST(YangCLIXML, No_ListWithKey)
   XMLNode* root = cmd_dom->get_root_node();
 
   const char* expected_xml =
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:network xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\" xmlns:xc=\"urn:ietf:params:xml:ns:netconf:base:1.0\" xc:operation=\"delete\">\n"
 "    <cli:network-id>31415</cli:network-id>\n"
 "  </cli:network>\n\n"
-"</root>";
+"</data>";
 
   EXPECT_EQ(root->to_string_pretty(), expected_xml);
 
@@ -2745,13 +2824,13 @@ TEST(YangCLIXML, No_ListWithKey)
   XMLNode* mkey_root = mkey_cmd_dom->get_root_node();
 
   const char* expected_mkey_xml =
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:key-test xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\" xmlns:xc=\"urn:ietf:params:xml:ns:netconf:base:1.0\" xc:operation=\"delete\">\n"
 "    <cli:key1>key1val</cli:key1>\n"
 "    <cli:key2>key2val</cli:key2>\n"
 "    <cli:key3>3</cli:key3>\n"
 "  </cli:key-test>\n\n"
-"</root>";
+"</data>";
 
   EXPECT_EQ(mkey_root->to_string_pretty(), expected_mkey_xml);
 
@@ -2775,14 +2854,14 @@ TEST(YangCLIXML, No_Leaf)
   ASSERT_TRUE(tbcli.enter_config_mode());
 
   const char* expected_xml =
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:key-test xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\">\n"
 "    <cli:key1>key1val</cli:key1>\n"
 "    <cli:key2>key2val</cli:key2>\n"
 "    <cli:key3>3</cli:key3>\n"
 "    <cli:non-key1 xmlns:xc=\"urn:ietf:params:xml:ns:netconf:base:1.0\" xc:operation=\"delete\"/>\n"
 "  </cli:key-test>\n\n"
-"</root>";
+"</data>";
 
   // ==== Leaf node deletion within a list ====
   const char *l_cmd = "no key-test key1val key2val 3 non-key1";
@@ -2838,9 +2917,9 @@ TEST(YangCLIXML, No_Container)
   XMLNode* root = cmd_dom->get_root_node();
 
   const char* expected_xml =
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:ip-addrs xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\" xmlns:xc=\"urn:ietf:params:xml:ns:netconf:base:1.0\" xc:operation=\"delete\"/>\n\n"
-"</root>";
+"</data>";
   EXPECT_EQ(root->to_string_pretty(), expected_xml);
 
   // ==== Container within a container ====
@@ -2853,11 +2932,11 @@ TEST(YangCLIXML, No_Container)
   XMLNode* cc_root = cc_cmd_dom->get_root_node();
 
   const char* cc_expected_xml =
-"\n<root xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
+"\n<data xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">\n\n"
 "  <cli:general-container xmlns:cli=\"http://riftio.com/ns/yangtools/rift-cli-test\">\n"
 "    <cli:g-container xmlns:xc=\"urn:ietf:params:xml:ns:netconf:base:1.0\" xc:operation=\"delete\"/>\n"
 "  </cli:general-container>\n\n"
-"</root>";
+"</data>";
   EXPECT_EQ(cc_root->to_string_pretty(), cc_expected_xml);
 
   // ==== Delete container within a mode ====

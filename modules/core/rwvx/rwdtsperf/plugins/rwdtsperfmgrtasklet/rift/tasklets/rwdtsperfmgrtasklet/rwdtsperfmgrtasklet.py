@@ -449,7 +449,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
             # No configuration - Grab the component list and find all VMs
             iter_resp = yield from self._dts.query_read(
                     xpath="D,/rw-base:vcs/rw-base:info",
-                    flags=rwdts.Flag.MERGE)
+                    flags=rwdts.XactFlag.MERGE)
             for fut_resp in iter_resp:
                 r = yield from fut_resp
                 resp = r.result
@@ -495,7 +495,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
 
             iter_resp = yield from self._dts.query_read(
                     xpath=xpath,
-                    flags=rwdts.Flag.MERGE)
+                    flags=rwdts.XactFlag.MERGE)
 
             for fut_resp in iter_resp:
                 r = yield from fut_resp
@@ -642,12 +642,12 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
 
                 yield from self._dts.query_update(
                         "C,/rwdtsperf:perfdts-config",
-                        rwdts.Flag.ADVISE,
+                        rwdts.XactFlag.ADVISE,
                         subscriber_config)
 
                 yield from self._dts.query_update(
                         "C,/rwdtsperf:perfdts-config",
-                        rwdts.Flag.ADVISE,
+                        rwdts.XactFlag.ADVISE,
                         xact_config)
 
             proc = self._resolve_tasklet_name(test.tasklet_type) + "-proc"
@@ -694,7 +694,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
 
                 yield from self._dts.query_update(
                         "C,/rwdtsperf:perfdts-config",
-                        rwdts.Flag.ADVISE,
+                        rwdts.XactFlag.ADVISE,
                         subscriber_config)
 
             proc = self._resolve_tasklet_name(test.tasklet_type) + "-proc"
@@ -777,7 +777,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
             tasklet_id = tasklet.instance_name.rsplit('-', 1)[1]
             query_iter = yield from self._dts.query_read(
                     xpath="/perf-statistics[instance-id='{}']".format(tasklet_id),
-                    flags=rwdts.Flag.MERGE)
+                    flags=rwdts.XactFlag.MERGE)
 
             # Derive performance metrics
             average_rtt = 0
@@ -886,7 +886,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
 
             iter_resp = yield from self._dts.query_read(
                     xpath=xpath,
-                    flags=rwdts.Flag.MERGE)
+                    flags=rwdts.XactFlag.MERGE)
 
             for fut_resp in iter_resp:
                 r = yield from fut_resp
@@ -1012,7 +1012,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
 
                 yield from self._dts.query_update(
                         "C,/rwdtsperf:perfdts-config",
-                        rwdts.Flag.ADVISE,
+                        rwdts.XactFlag.ADVISE,
                         subscriber_config)
 
 
@@ -1077,7 +1077,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
 
                 yield from self._dts.query_update(
                         "C,/rwdtsperf:perfdts-config",
-                        rwdts.Flag.ADVISE,
+                        rwdts.XactFlag.ADVISE,
                         xact_config)
 
             process_name = yield from start_component("rwdtsperf-c-proc", parent)
@@ -1126,7 +1126,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
             tasklet_id = tasklet.instance_name.rsplit('-', 1)[1]
             query_iter = yield from self._dts.query_read(
                     xpath="/perf-statistics[instance-id='{}']".format(tasklet_id),
-                    flags=rwdts.Flag.MERGE)
+                    flags=rwdts.XactFlag.MERGE)
 
             # Derive performance metrics
             for fut_resp in query_iter:

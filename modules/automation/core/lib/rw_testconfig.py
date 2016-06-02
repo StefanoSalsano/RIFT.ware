@@ -18,6 +18,7 @@ import json
 from jsonschema import validate
 from jsonschema import ValidationError
 import os
+import re
 import string
 import sys
 import logging
@@ -71,6 +72,7 @@ class TestConfiguration(object):
             self.load_sut_file()
 
         self.post_reset_vms = bool(self._config['vms'])
+        self.required_tenants = int(self._config.get('required_tenants', 1))
     
     
     def validate_suts(self):
@@ -109,6 +111,16 @@ class TestConfiguration(object):
         if not logical_vm in self.suts['vms']:
             raise ValueError("VM %s not found in SUTs" % logical_vm)
         return self.suts['vms'][logical_vm]
+
+    def get_assigned_vm_addr(self, logical_vm):
+        if self.suts is None:
+            raise ValueError("suts not loaded")
+        qualified_vm_addr = "%s.%s" % (self._config['test_name'], logical_vm)
+        if 'vm_addrs' not in self.suts:
+            return None
+        if not qualified_vm_addr in self.suts['vm_addrs']:
+            return None
+        return self.suts['vm_addrs'][qualified_vm_addr]
     
     def get_actual_network(self, logical_net):
         ''' map a logical network name to an actual net
@@ -193,6 +205,9 @@ class TestConfiguration(object):
             return self.get_ip_address(vm_name, testbed)
     
     def get_ip_address(self, logical_vm_name, testbed):
+        vm_addr = self.get_assigned_vm_addr(logical_vm_name)
+        if vm_addr:
+            return vm_addr
         actual_vm_name = self.get_actual_vm(logical_vm_name)
         host = testbed.find_host(actual_vm_name)
         if host.ipaddress is None:
@@ -265,11 +280,11 @@ class TestConfiguration(object):
                         print(self._errmsg)
                         return False
                     net_counts[keyname] = net_counts[keyname] + 1
-        for netname in self.networks:
-            if net_counts[netname] < 2 and netname != "internet":
-                self._errmsg = "network %s is not referenced by at least 2 VMs" % netname
-                print(self._errmsg)
-                return False
+   #     for netname in self.networks:
+   #         if net_counts[netname] < 2 and netname != "internet":
+   #             self._errmsg = "network %s is not referenced by at least 2 VMs" % netname
+   #             print(self._errmsg)
+   #             return False
         return True
     
     
@@ -332,7 +347,11 @@ class TestConfiguration(object):
                 ips.remove(target_ip)
                 ips.insert(0,target_ip)
                 args_dict['target_vm'] = target_ip
-            args_dict['iplist'] = ",".join(ips) 
+            args_dict['iplist'] = ",".join(ips)
+
+        if 'tenants' in args_dict:
+            args_dict['tenants'] = ' '.join(["--tenant %s" % (tenant) for tenant in args_dict['tenants']])
+
         for k,v in args_dict.items():
             logger.debug("keyword \"%s\" => \"%s\"" % ( k, v))
         cmdline = " ".join(splitted_cmdln)

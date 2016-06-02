@@ -34,4 +34,8 @@ module rw-vcs-annotation
   tailf:annotate "/vcs:vcrash" {
     tailf:actionpoint rw_action;
   }
+
+  tailf:annotate "/vcs:vsnap" {
+    tailf:actionpoint rw_action;
+  }
 }

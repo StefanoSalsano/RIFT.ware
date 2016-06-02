@@ -28,9 +28,11 @@ import os
 import re
 import time
 import functools
+import gi
 
 import lxml.etree as etree
 import ncclient.manager
+gi.require_version('RwYang', '1.0')
 from gi.repository import RwYang
 
 logger = logging.getLogger(__name__)
@@ -512,7 +514,7 @@ class NetconfProxy(Proxy):
 
         response_xml = response.xml
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request EDIT CONFIG %s %s - Response contains errors\n%s' % (
                     operation,
                     target,
@@ -522,7 +524,7 @@ class NetconfProxy(Proxy):
         if target == 'candidate':
             commit_response = self.ncclient_manager.commit()
 
-            if '<rpc-error>' in commit_response.xml:
+            if 'rpc-error>' in commit_response.xml:
                 msg = 'Request COMMIT EDIT CONFIG %s %s - Response contains error\n%s' % (
                         operation,
                         target,

@@ -259,6 +259,7 @@ YangNodeNcx::YangNodeNcx(
         break;
     }
   }
+
 }
 
 YangNodeNcx::~YangNodeNcx()
@@ -365,7 +366,7 @@ uint32_t YangNodeNcx::get_max_elements()
   return UINT32_MAX;
 }
 
-rw_yang_stmt_type_t YangNodeNcx::get_stmt_type()
+rw_yang_stmt_type_t YangNodeNcx::get_stmt_type() 
 {
   return stmt_type_;
 }
@@ -388,6 +389,36 @@ bool YangNodeNcx::is_presence()
 bool YangNodeNcx::is_mandatory()
 {
   return is_mandatory_;
+}
+
+bool YangNodeNcx::has_default()
+{
+  if (get_stmt_type() != RW_YANG_STMT_TYPE_CONTAINER) {
+    return (get_default_value() != nullptr);
+  }
+
+  bool has_default = false;
+  // Check the child cached status
+  if (has_default_.is_cached_and_get(cache_state_, &has_default)) {
+    return has_default;
+  }
+
+  GlobalMutex::guard_t guard(GlobalMutex::g_mutex);
+
+  // Has Default not cached. Go deep through the descendants, 
+  // to find any default leaf. Cache the finding.
+  for (YangNodeIter it = child_begin();
+       it != child_end(); ++it) {
+    YangNode* ychild = &(*it);
+    if (ychild->has_default()) {
+      has_default = true;
+      break;
+    }
+  }
+
+  has_default_.locked_cache_set(&cache_state_, has_default);
+
+  return has_default;
 }
 
 YangNode* YangNodeNcx::get_parent()
@@ -562,6 +593,20 @@ YangNodeNcx* YangNodeNcx::get_choice()
   return nullptr;
 }
 
+YangNodeNcx* YangNodeNcx::get_default_case()
+{
+  if (stmt_type_ != RW_YANG_STMT_TYPE_CHOICE) {
+    return nullptr;
+  }
+
+  GlobalMutex::guard_t guard(GlobalMutex::g_mutex);
+  obj_template_t* case_obj = obj_get_default_case(ncxmodel_.ncx_instance_, obj_);
+  if (!case_obj) {
+    return nullptr;
+  }
+  return ncxmodel_.locked_search_case(case_obj);
+}
+
 bool YangNodeNcx::is_conflicting_node(YangNode *other)
 {
   RW_ASSERT(other);
@@ -685,13 +730,13 @@ bool YangNodeNcx::is_notification()
   return is_notification_;
 }
 
-std::string YangNodeNcx::get_enum_string(int32_t value)
+std::string YangNodeNcx::get_enum_string(uint32_t value)
 {
   RW_ASSERT (is_leafy());
   RW_ASSERT (type_->get_leaf_type() == RW_YANG_LEAF_TYPE_ENUM);
 
   for (YangValueIter yvi = value_begin(); yvi != value_end(); ++yvi) {
-    if (yvi->get_integer_value() == value) {
+    if (yvi->get_position() == value) {
       return std::string(yvi->get_name());
     }
   }
@@ -2280,7 +2325,7 @@ YangValueNcxEnum::YangValueNcxEnum(
 /*!
  * Get the numerical value for an enumeration
  */
-int32_t YangValueNcxEnum::get_integer_value()
+uint32_t YangValueNcxEnum::get_position()
 {
   RW_ASSERT (typ_enum_);
   return typ_enum_->val;
@@ -2364,7 +2409,7 @@ YangValueNcxBits::YangValueNcxBits(
   // ATTN: What about ns?
 }
 
-int32_t YangValueNcxBits::get_integer_value()
+uint32_t YangValueNcxBits::get_position()
 {
   return position_;
 }

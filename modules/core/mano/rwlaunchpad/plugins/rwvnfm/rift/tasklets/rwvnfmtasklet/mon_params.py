@@ -4,7 +4,9 @@
 #
 
 import asyncio
+import logging
 import collections
+import concurrent
 import types
 
 import requests
@@ -20,6 +22,7 @@ from gi.repository import (
     RwDts as rwdts,
     VnfrYang
     )
+import rwlogger
 
 class MonitoringParamError(Exception):
     """Monitoring Parameter error"""
@@ -301,9 +304,9 @@ class HTTPEndpoint(object):
         return url
 
     def _poll(self):
-        try: 
+        try:
             resp = self._session.request(
-                    self.method, self.url, timeout=10, auth=self.auth, 
+                    self.method, self.url, timeout=10, auth=self.auth,
                     headers=self.headers, verify=False
                     )
             resp.raise_for_status()
@@ -321,12 +324,13 @@ class HTTPEndpoint(object):
     @asyncio.coroutine
     def poll(self):
         try:
-            resp = yield from self._loop.run_in_executor(
-                    None,
-                    self._poll,
-                    )
+            with concurrent.futures.ThreadPoolExecutor(1) as executor:
+                resp = yield from self._loop.run_in_executor(
+                        executor,
+                        self._poll,
+                        )
 
-        except Exception as e:
+        except MonitoringParamError as e:
             msg = "Caught exception when polling http endpoint: %s" % str(e)
             self._log.warning(msg)
             raise MonitoringParamError(msg)
@@ -454,6 +458,8 @@ class EndpointMonParamsPoller(object):
             try:
                 response = yield from self._endpoint.poll()
                 self._apply_response_to_mon_params(response)
+            except concurrent.futures.CancelledError as e:
+                return
 
             except Exception as e:
                 msg = "Caught exception when polling http endpoint: %s", str(e)
@@ -578,7 +584,22 @@ class VnfMonitorDtsHandler(object):
 
     def __init__(self, dts, log, loop, vnfr):
         self._dts = dts
-        self._log = log
+
+        # Even though mon_params is part of vnfm tasklets, it will be soon
+        # moved into its own tasklet.  Until then, we want the logs to be
+        # separated from vnfm since they can be verbose and repetitive.
+        self._log = logging.getLogger('rw.tasklet.mon_params')
+        self._log.propagate = False
+
+        for handler in log.handlers:
+            if isinstance(handler, rwlogger.RwLogger):
+                self._log.addHandler(
+                    rwlogger.RwLogger(
+                            category="rw-mon-params-log",
+                            log_hdl=handler.log_hdl
+                            )
+                    )
+
         self._loop = loop
         self._vnfr = vnfr
         self._group = None
@@ -627,6 +648,9 @@ class VnfMonitorDtsHandler(object):
         """ The message with the monitoing params """
         return self._mon_param_controller.msgs
 
+    def __del__(self):
+        self.stop()
+
     def register(self):
         """ Register with dts """
 
@@ -660,7 +684,6 @@ class VnfMonitorDtsHandler(object):
                             VnfMonitorDtsHandler.XPATH,
                             self._regh)
             self._regh.deregister()
-            self._regh=None
+            self._regh = None
             self._vnfr = None
-
 

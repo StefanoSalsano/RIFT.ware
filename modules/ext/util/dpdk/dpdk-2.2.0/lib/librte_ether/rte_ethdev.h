@@ -3890,7 +3890,8 @@ rte_eth_dma_zone_reserve(const struct rte_eth_dev *eth_dev, const char *name,
 			 uint16_t queue_id, size_t size,
 			 unsigned align, int socket_id);
 #ifdef RTE_LIBRW_PIOT
-  
+  void
+  rte_eth_hw_link_get(uint8_t port_id, struct rte_eth_link *eth_link, int wait);
 struct rte_eth_dev * rte_eth_dev_find_dev_by_pci(struct rte_pci_device *pci_dev);
 struct rte_eth_dev * rte_eth_dev_get_last_eth_dev(void);
 #endif

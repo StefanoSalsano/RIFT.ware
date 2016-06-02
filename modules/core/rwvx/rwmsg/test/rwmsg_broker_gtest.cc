@@ -5881,30 +5881,30 @@ TEST(RWMsgBroker, LottaRawRWMeasureRTT) {
 
   lottaraw(false, true, false, 2, FALSE, FALSE, &opts, &vals); /* No Broker tests MainQ*/
   PRINT_REPORT("RWMsgBroker.MeasureRTT.NoBroker.MainQ");
-  ASSERT_LT(vals.max_rtt, 50*1000);
+  ASSERT_LT(vals.max_rtt, 300*1000);
 
   lottaraw(false, false, false, 2, FALSE, FALSE, &opts, &vals); /* No Broker tests */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.NoBroker");
-  ASSERT_LT(vals.max_rtt, 50*1000);
+  ASSERT_LT(vals.max_rtt, 300*1000);
   fprintf(stderr, "\n");
 
   lottaraw(false, true, false, 2, TRUE, FALSE, &opts, &vals); /* With Broker tests MainQ */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.WithBroker.MainQ");
-  ASSERT_LT(vals.max_rtt, 100*1000);
+  ASSERT_LT(vals.max_rtt, 500*1000);
 
   lottaraw(false, false, false, 2, TRUE, FALSE, &opts, &vals); /* With Broker tests */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.WithBroker.ConcurQ");
-  ASSERT_LT(vals.max_rtt, 400*1000);
+  ASSERT_LT(vals.max_rtt, 500*1000);
   fprintf(stderr, "\n");
 
   lottaraw2bros(false, true, false, 2, FALSE, &opts, &vals); /* For *MainQ* tests */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.With2Brokers.MainQ");
-  ASSERT_LT(vals.max_rtt, 100*1000);
+  ASSERT_LT(vals.max_rtt, 500*1000);
   fprintf(stderr, "\n");
 
   lottaraw2bros(false, false, false, 2, FALSE, &opts, &vals); /* For *ConcurQ* tests */
   PRINT_REPORT("RWMsgBroker.MeasureRTT.With2Brokers.ConcurQ");
-  ASSERT_LT(vals.max_rtt, 400*1000);
+  ASSERT_LT(vals.max_rtt, 500*1000);
   fprintf(stderr, "\n");
 
   nnchk();

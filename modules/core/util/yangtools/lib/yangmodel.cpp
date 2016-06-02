@@ -66,11 +66,6 @@ const char* RW_YANG_CLI_EXT_CLI_PRINT_HOOK = "cli-print-hook";
 const char* RW_YANG_CLI_EXT_SHOW_KEY_KW = "show-key-keyword";
 
 
-// RW.UTCLI extensions
-const char* RW_YANG_UTCLI_MODULE = "http://riftio.com/ns/riftware-1.0/rw-utcli-ext";
-
-const char* RW_YANG_UTCLI_EXT_CALLBACK_ARGV = "callback-argv";
-
 const char *RW_ANNOTATIONS_NAMESPACE = "Riftio_base";
 
 const char* RW_YANG_NOTIFY_MODULE = "http://riftio.com/ns/riftware-1.0/rw-notify-ext";
@@ -1124,6 +1119,12 @@ bool YangNode::is_mandatory()
   return false;
 }
 
+bool YangNode::has_default()
+{
+  // Assume no default descendant
+  return false;
+}
+
 YangNode* YangNode::get_parent()
 {
   // Assume there is no parent.
@@ -1228,27 +1229,6 @@ YangNode* YangNode::search_child(uint32_t system_ns_id, uint32_t element_tag)
 
   // ATTN: use the ns_id either as a parameter to the next call, or to find the ns string
   return search_child_by_mangled_name(fld->name);
-}
-
-YangNode* YangNode::search_child_confd_tags(uint32_t ns, uint32_t tag)
-{
-  YangModel *model = get_model();
-  bool status = false;
-
-  for (YangNodeIter yni = child_begin(); yni != child_end(); ++yni) {
-    intptr_t tmp = (intptr_t)0;
-    status = yni->app_data_check_and_get (&model->adt_confd_ns_, &tmp);
-    if ((!status) || (ns != tmp)) {
-      continue;
-    }
-
-    status = yni->app_data_check_and_get (&model->adt_confd_name_, &tmp);
-    if ((status) && (tag == tmp)) {
-      return &*yni;
-    }
-  }
-
-  return nullptr;
 }
 
 YangNode* YangNode::search_child_by_mangled_name(const char* name, const char *ns)
@@ -1430,57 +1410,6 @@ rw_status_t YangNode::parse_value(const char* value, YangValue** matched)
   return retval;
 }
 
-rw_status_t YangNode::annotate_nodes (YangModel *model,
-                                      namespace_map_t& map,
-                                      ymodel_map_func_ptr_t func,
-                                      const char *ns_ext,
-                                      const char *name_ext)
-{
-  AppDataToken<intptr_t,rw_yang::AppDataTokenDeleterNull>
-      ns (RW_ANNOTATIONS_NAMESPACE, ns_ext);
-  AppDataToken<intptr_t,rw_yang::AppDataTokenDeleterNull>
-      name (RW_ANNOTATIONS_NAMESPACE, name_ext);
-  uint32_t ns_hash = 0, name_hash = 0;
-  rw_yang_stmt_type_t stmt_type = get_stmt_type();
-
-  switch (stmt_type) {
-    case RW_YANG_STMT_TYPE_ROOT:
-      break;
-    case RW_YANG_STMT_TYPE_RPC:
-    case RW_YANG_STMT_TYPE_RPCIO:
-      break;
-    default:
-      {
-        namespace_map_t::const_iterator iter = map.find (get_ns());
-        if (map.end() == iter) {
-          // ATTN: RIFT-9411: RW_CRASH();
-          //   return RW_STATUS_FAILURE;
-          return RW_STATUS_SUCCESS;
-        }
-        ns_hash = iter->second;
-
-        name_hash = func (get_name());
-        if (!name_hash) {
-          // returning failure causes siblings to not get annotated
-          // THIS should be logged appropriately. Will not appear in confd CLI.
-          // so no processign errors will present at run time
-          return RW_STATUS_SUCCESS;
-        }
-        // set the app data
-        app_data_set_and_give_ownership(&model->adt_confd_ns_, intptr_t(ns_hash));
-        app_data_set_and_give_ownership(&model->adt_confd_name_, intptr_t(name_hash));
-      }
-  }
-  // recurse through children
-  for (YangNode *ynode = get_first_child(); NULL != ynode; ynode = ynode->get_next_sibling() ) {
-    if (RW_STATUS_SUCCESS != ynode->annotate_nodes (model, map, func, ns_ext, name_ext)) {
-      return RW_STATUS_FAILURE;
-    }
-  }
-
-  return RW_STATUS_SUCCESS;
-}
-
 const char* YangNode::get_pbc_field_name()
 {
   // Assume no field name.
@@ -1530,7 +1459,7 @@ bool YangNode::is_root()
   return false;
 }
 
-std::string YangNode::get_enum_string(int32_t value)
+std::string YangNode::get_enum_string(uint32_t value)
 {
   // Wrong logic in code. Shouldnt be called?
   return std::string("");
@@ -1618,6 +1547,11 @@ YangNode* YangNode::get_case()
 }
 
 YangNode* YangNode::get_choice()
+{
+  return nullptr;
+}
+
+YangNode* YangNode::get_default_case()
 {
   return nullptr;
 }
@@ -1729,6 +1663,12 @@ rw_yang_stmt_type_t rw_yang_node_get_stmt_type(rw_yang_node_t* ynode)
 {
   return (static_cast<YangNode*>(ynode)->get_stmt_type());
 }
+
+rw_yang_node_t * rw_yang_node_get_leafref_ref(rw_yang_node_t* ynode)
+{
+  return (static_cast<YangNode*>(ynode)->get_leafref_ref());
+}
+
 
 bool_t rw_yang_node_is_config(rw_yang_node_t* ynode)
 {
@@ -2798,8 +2738,6 @@ YangValueIter YangTypedEnum::enum_value_end()
 
 const char* rw_yang::YANGMODEL_ANNOTATION_KEY = "YANGMODEL";
 const char* rw_yang::YANGMODEL_ANNOTATION_PBNODE = "pb_node";
-const char* rw_yang::YANGMODEL_ANNOTATION_CONFD_NS = "confd_ns_annotation";
-const char* rw_yang::YANGMODEL_ANNOTATION_CONFD_NAME = "confd_name_annotation";
 const char* rw_yang::YANGMODEL_ANNOTATION_SCHEMA_NODE = "protobuf_schema_node";
 const char* rw_yang::YANGMODEL_ANNOTATION_SCHEMA_MODULE = "protobuf_schema_module";
 
@@ -3421,21 +3359,6 @@ YangModuleIter YangModel::module_begin()
 YangModuleIter YangModel::module_end()
 {
   return YangModuleIter();
-}
-
-rw_status_t YangModel::annotate_nodes(namespace_map_t& map,
-                                      ymodel_map_func_ptr_t func,
-                                      const char *ns_ext,
-                                      const char *name_ext)
-{
-  YangNode *root = get_root_node();
-
-  if (nullptr == root) {
-    RW_CRASH();
-    return RW_STATUS_FAILURE;
-  }
-
-  return root->annotate_nodes(this, map, func, ns_ext, name_ext);
 }
 
 YangNode* YangModel::search_node (const uint32_t system_ns_id,

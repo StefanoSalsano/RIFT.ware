@@ -138,7 +138,7 @@ TEST_F(YangModelPluginTest, BasicModel)
 
   rw_yang_node_t* root = (rw_yang_node_t*)MODELI->get_root_node(MODELC, (guint64)model);
   ASSERT_TRUE(root);
-  EXPECT_STREQ("root", NODEI->name(NODEC, (guint64)root));
+  EXPECT_STREQ("data", NODEI->name(NODEC, (guint64)root));
   EXPECT_FALSE(NODEI->is_leafy(NODEC, (guint64)root));
   EXPECT_FALSE(NODEI->type(NODEC, (guint64)root));
 
@@ -270,7 +270,7 @@ TEST_F(YangModelPluginTest, YangNcxExt)
 
   rw_yang_node_t* root = (rw_yang_node_t*)MODELI->get_root_node(MODELC, (guint64)model);
   ASSERT_TRUE(root);
-  EXPECT_STREQ("root", NODEI->name(NODEC, (guint64)root));
+  EXPECT_STREQ("data", NODEI->name(NODEC, (guint64)root));
   EXPECT_FALSE(NODEI->is_leafy(NODEC, (guint64)root));
   EXPECT_FALSE(NODEI->type(NODEC, (guint64)root));
 
@@ -325,7 +325,7 @@ TEST_F(YangModelPluginTest, YangNcxModule)
 
   rw_yang_node_t* root = (rw_yang_node_t*)MODELI->get_root_node(MODELC, (guint64)model);
   ASSERT_TRUE(root);
-  EXPECT_STREQ("root", NODEI->name(NODEC, (guint64)root));
+  EXPECT_STREQ("data", NODEI->name(NODEC, (guint64)root));
   EXPECT_FALSE(NODEI->is_leafy(NODEC, (guint64)root));
   EXPECT_FALSE(NODEI->type(NODEC, (guint64)root));
 
@@ -466,5 +466,5 @@ TEST_F(YangModelPluginTest, DumpTree)
   rw_yang_node_t* root = (rw_yang_node_t*)MODELI->get_root_node(MODELC, (guint64)model);
   ASSERT_TRUE(root);
 
-  EXPECT_STREQ("root", NODEI->name(NODEC, (guint64)root));
+  EXPECT_STREQ("data", NODEI->name(NODEC, (guint64)root));
 }

@@ -5,6 +5,5 @@
 
   <modifications>
      <addPrintHook path="rw-memlog-state" hook="rwcli_plugin:print_rwmemlog_state"/>
-     <addPrintHook path="rw-memlog" hook="rwcli_plugin:default_print"/>
   </modifications>
 </cli>

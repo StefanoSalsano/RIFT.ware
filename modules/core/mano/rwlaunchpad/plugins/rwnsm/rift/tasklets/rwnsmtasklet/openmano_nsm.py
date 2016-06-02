@@ -314,7 +314,7 @@ class OpenmanoNsr(object):
                 # to come up with openmano constituent VNF name.  Use this
                 # knowledge to map the vnfr back.
                 openmano_vnfr_suffix = "__{}".format(
-                        vnfr.vnfr.vnfr.member_vnf_index_ref
+                        vnfr.vnfr.vnfr_msg.member_vnf_index_ref
                         )
 
                 for vnf in instance_resp_json["vnfs"]:
@@ -330,7 +330,7 @@ class OpenmanoNsr(object):
                     # Skipping, so we don't re-publish the same VNF message.
                     continue
 
-                vnfr_msg = vnfr.vnfr.vnfr.deep_copy()
+                vnfr_msg = vnfr.vnfr.vnfr_msg.deep_copy()
                 vnfr_msg.operational_status = "init"
 
                 try:
@@ -505,7 +505,7 @@ class OpenmanoNsPlugin(rwnsmplugin.NsmPluginBase):
         yield from nsr.instantiate(xact)
 
     @asyncio.coroutine
-    def instantiate_vnf(self, nsr, vnfr, xact):
+    def instantiate_vnf(self, nsr, vnfr):
         """
         Instantiate NSR with the passed nsr id
         """
@@ -514,21 +514,22 @@ class OpenmanoNsPlugin(rwnsmplugin.NsmPluginBase):
 
         # Mark the VNFR as running
         # TODO: Create a task to monitor nsr/vnfr status
-        vnfr_msg = vnfr.vnfr.deep_copy()
+        vnfr_msg = vnfr.vnfr_msg.deep_copy()
         vnfr_msg.operational_status = "init"
 
         self._log.debug("Attempting to publish openmano vnf: %s", vnfr_msg)
-        yield from self._publisher.publish_vnfr(xact, vnfr_msg)
+        with self._dts.transaction() as xact:
+            yield from self._publisher.publish_vnfr(xact, vnfr_msg)
 
     @asyncio.coroutine
-    def instantiate_vl(self, nsr, vlr, xact):
+    def instantiate_vl(self, nsr, vlr):
         """
         Instantiate NSR with the passed nsr id
         """
         pass
 
     @asyncio.coroutine
-    def terminate_ns(self, nsr, xact):
+    def terminate_ns(self, nsr):
         """
         Terminate the network service
         """
@@ -537,21 +538,22 @@ class OpenmanoNsPlugin(rwnsmplugin.NsmPluginBase):
         yield from openmano_nsr.terminate()
         yield from openmano_nsr.delete()
 
-        for vnfr in openmano_nsr.vnfrs:
-            self._log.debug("Unpublishing VNFR: %s", vnfr.vnfr)
-            yield from self._publisher.unpublish_vnfr(xact, vnfr.vnfr)
+        with self._dts.transaction() as xact:
+            for vnfr in openmano_nsr.vnfrs:
+                self._log.debug("Unpublishing VNFR: %s", vnfr.vnfr.vnfr_msg)
+                yield from self._publisher.unpublish_vnfr(xact, vnfr.vnfr.vnfr_msg)
 
         del self._openmano_nsrs[nsr_id]
 
     @asyncio.coroutine
-    def terminate_vnf(self, vnfr, xact):
+    def terminate_vnf(self, vnfr):
         """
         Terminate the network service
         """
         pass
 
     @asyncio.coroutine
-    def terminate_vl(self, vlr, xact):
+    def terminate_vl(self, vlr):
         """
         Terminate the virtual link
         """

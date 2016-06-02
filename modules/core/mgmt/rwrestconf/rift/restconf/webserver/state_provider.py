@@ -62,7 +62,14 @@ class StateProvider(object):
     top of it, the access methods and the location is added.
     """
     URL_TEMPLATE = "{scheme}://{host}/{proto_prefix}streams/{stream}{en_suffix}"
-    def __init__(self, logger, loop, netconf_host, netconf_port, webhost):
+    def __init__(
+            self,
+            logger,
+            loop,
+            netconf_host,
+            netconf_port,
+            webhost,
+            use_https):
         """Construct the RESTCONF state provider.
 
         Arguments:
@@ -70,6 +77,7 @@ class StateProvider(object):
             loop         - asyncio event loop (Restconf Tasklet loop)
             netconf_host - Netconf server host-name/IP-address
             webhost      - Host:Port on which the RESTCONF webserver is listening
+            use_https    - The web application is using secure transport
         """
         self._logger = logger
         self._loop   = loop
@@ -77,6 +85,8 @@ class StateProvider(object):
         self._netconf_host = netconf_host
         self._netconf_port = netconf_port
         self._webhost = webhost
+        self._ws_scheme = "wss" if use_https else "ws"
+        self._http_scheme = "https" if use_https else "http"
 
     @asyncio.coroutine
     def get_state(self):
@@ -97,7 +107,7 @@ class StateProvider(object):
         netconf_ele = etree.Element("{%s}netconf" % NC_NETMOD_NS)
         etree.SubElement(netconf_ele, "{%s}streams" % NC_NETMOD_NS)
 
-        result, resp = yield from self._netconf.get(netconf_ele)
+        result, resp = yield from self._netconf.get(url=None, xml=netconf_ele)
         if result != Result.OK:
             return restconf_state
 
@@ -121,10 +131,10 @@ class StateProvider(object):
             if st_log_time is not None: 
                 pb_stream.replay_log_creation_time = st_log_time.text
 
-            self.add_access(pb_stream, "ws", "ws_xml")
-            self.add_access(pb_stream, "ws", "ws_json")
-            self.add_access(pb_stream, "http", "xml")
-            self.add_access(pb_stream, "http", "json")
+            self.add_access(pb_stream, self._ws_scheme, "ws_xml")
+            self.add_access(pb_stream, self._ws_scheme, "ws_json")
+            self.add_access(pb_stream, self._http_scheme, "xml")
+            self.add_access(pb_stream, self._http_scheme, "json")
             
             restconf_state.streams.stream.append(pb_stream)
 

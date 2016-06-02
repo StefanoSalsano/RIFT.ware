@@ -18,6 +18,9 @@ import socket
 import sys
 import logging
 
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import GObject, Peas, GLib, GIRepository
 from gi.repository import RwCal, RwTypes
 

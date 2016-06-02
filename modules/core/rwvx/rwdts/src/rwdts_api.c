@@ -903,19 +903,26 @@ static const GEnumValue  _rwdts_flag_values[] =  {
   { RWDTS_FLAG_SUBSCRIBER,    "SUBSCRIBER", "SUBSCRIBER" },
   { RWDTS_FLAG_PUBLISHER,     "PUBLISHER",  "PUBLISHER" },
   { RWDTS_FLAG_DATASTORE,     "DATASTORE",  "DATASTORE" },
-  { RWDTS_FLAG_ANYCAST,       "ANYCAST",    "ANYCAST" },
-  { RWDTS_FLAG_ADVISE,        "ADVISE",     "ADVISE" },
   { RWDTS_FLAG_CACHE,         "CACHE",      "CACHE" },
-  { RWDTS_FLAG_REPLACE,       "REPLACE",    "REPLACE" },
-  { RWDTS_FLAG_BLOCK_MERGE,   "MERGE",      "MERGE" },
   { RWDTS_FLAG_SHARED,        "SHARED",     "SHARED" },
-  { RWDTS_FLAG_WAIT_RESPONSE, "WAIT_RSP",   "WAIT_RSP" },
-  { RWDTS_FLAG_STREAM,        "STREAM",     "STREAM" },
-  { RWDTS_FLAG_TRACE,         "TRACE",      "TRACE" },
   { RWDTS_FLAG_NO_PREP_READ,  "NO_PREP_READ","NO_PREP_READ" },
   { RWDTS_FLAG_SHARDING,      "SHARDING",    "SHARDING" },
   { RWDTS_FLAG_DELTA_READY,   "DELTA_READY", "DELTA_READY" },
   { RWDTS_FLAG_FILE_DATASTORE, "FILE_DATASTORE", "FILE_DATASTORE" },
+  { 0, NULL, NULL}
+};
+
+/*
+ * this defines rwdts_xact_flag_get_type(void);
+ */
+static const GEnumValue  _rwdts_xact_flag_values[] =  {
+  { RWDTS_XACT_FLAG_ADVISE,        "ADVISE",     "ADVISE" },
+  { RWDTS_XACT_FLAG_BLOCK_MERGE,   "MERGE",      "MERGE" },
+  { RWDTS_XACT_FLAG_STREAM,        "STREAM",     "STREAM" },
+  { RWDTS_XACT_FLAG_TRACE,         "TRACE",      "TRACE" },
+  { RWDTS_XACT_FLAG_RETURN_PAYLOAD,"RET_PAYLOAD","RET_PAYLOAD"},
+  { RWDTS_XACT_FLAG_REPLACE,       "REPLACE",    "REPLACE" },
+  { RWDTS_XACT_FLAG_ANYCAST,       "ANYCAST",    "ANYCAST" },
   { 0, NULL, NULL}
 };
 
@@ -929,6 +936,18 @@ GType rwdts_flag_get_type(void)
 
   return type;
 }
+
+GType rwdts_xact_flag_get_type(void)
+{
+  static GType type = 0; /* G_TYPE_INVALID */
+
+  if (!type)
+    type = g_enum_register_static("RWDtsXactFlag",
+                                  _rwdts_xact_flag_values);
+
+  return type;
+}
+
 /*************************************************************
  * rwdts_group_phase_t enum registration                     *
  *************************************************************/
@@ -2043,6 +2062,11 @@ rwdts_member_handle_mgmt_req(const rwdts_xact_info_t* xact_info,
           }
         }
       }
+      if (entry->reg_state == RWDTS_REG_DEL_PENDING) {
+        entry = RW_SKLIST_NEXT(entry, rwdts_member_registration_t, element);
+        continue;
+      }
+
       mbr_state.n_registration++;
       mbr_state.registration = (RWPB_T_MSG(RwDts_data_Dts_Member_State_Registration)**)
           realloc(mbr_state.registration, mbr_state.n_registration * sizeof(RWPB_T_MSG(RwDts_data_Dts_Member_State_Registration)*));
@@ -3407,7 +3431,7 @@ rwdts_xact_t *rwdts_api_xact_create_internal(rwdts_api_t *apih,
 
   if (
 //      TRUE || 
-      (flags&RWDTS_FLAG_TRACE) || apih->trace.on) {
+      (flags&RWDTS_XACT_FLAG_TRACE) || apih->trace.on) {
     rwdts_xact_trace(xact);
   }
 
@@ -4107,7 +4131,13 @@ rwdts_api_query_ks(rwdts_api_t*                 apih,
     return NULL;
   }
   
-
+  if (flags & RWDTS_XACT_FLAG_RETURN_PAYLOAD) {
+    if ((action != RWDTS_QUERY_CREATE) &&
+        (action != RWDTS_QUERY_UPDATE)) {
+      RWLOG_EVENT(apih->rwlog_instance, RwDtsApiLog_notif_DtsapiCritical, "rwdts_api_query_ks:invalid flag");
+      return NULL;
+    }
+  }
   return rwdts_api_query_internal(apih, keyspec, action, flags, &cb, msg);
 }
 
@@ -4203,7 +4233,7 @@ rwdts_api_send_notification(rwdts_api_t*             apih,
     return NULL;
   }
   xact = rwdts_api_query_internal(apih, keyspec, RWDTS_QUERY_UPDATE, 
-                                  RWDTS_FLAG_ADVISE|RWDTS_XACT_FLAG_NOTRAN, &cb, msg);
+                                  RWDTS_XACT_FLAG_ADVISE|RWDTS_XACT_FLAG_NOTRAN, &cb, msg);
 
   return xact;
 }
@@ -4392,7 +4422,7 @@ void rwdts_bcast_state_change(rwdts_api_t *apih)
                            NULL,
                            RWDTS_QUERY_UPDATE,
                            &advice_cb,
-                           RWDTS_FLAG_ADVISE|RWDTS_XACT_FLAG_NOTRAN|RWDTS_XACT_FLAG_END,
+                           RWDTS_XACT_FLAG_ADVISE|RWDTS_XACT_FLAG_NOTRAN|RWDTS_XACT_FLAG_END,
                            NULL, NULL);
   // Free member_p
   protobuf_c_message_free_unpacked_usebody(NULL, &member_p->base);

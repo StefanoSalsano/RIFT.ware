@@ -32,7 +32,14 @@ xlate_colon_list :
   - <rw_connection_point:masklen_network (.*?)>
   # Generate broadcast address from CP address and mask (mask is expected to be a hard coded number in config)
   - <rw_connection_point:masklen_broadcast (.*?)>
-  
+
+# This list contains 3 tags separated by colon (:)  
+xlate_multi_colon_list :
+  # Generate network address from CP of a particular VNF (mask is expected to be a hard coded number in config))
+  - <rw_unique_index:rw_connection_point:masklen_network (.*?)>
+  # Generate broadcast address from CP of a particular VNF (mask is expected to be a hard coded number in config))
+  - <rw_unique_index:rw_connection_point:masklen_broadcast (.*?)>
+
 # This translates connection point name and generates tuple with name:resolved IP
 xlate_cp_to_tuple_list :
   - <rw_connection_point_tuple (.*?)>

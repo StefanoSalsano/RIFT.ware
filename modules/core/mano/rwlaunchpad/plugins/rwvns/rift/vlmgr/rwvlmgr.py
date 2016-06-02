@@ -60,6 +60,7 @@ class VirtualLinkRecord(object):
 
         self._network_id = None
         self._network_pool = None
+        self._assigned_subnet = None
         self._create_time = int(time.time())
         if req_id == None:
             self._request_id = str(uuid.uuid4())
@@ -130,6 +131,9 @@ class VirtualLinkRecord(object):
         if self._network_pool is not None:
             msg.network_pool = self._network_pool
 
+        if self._assigned_subnet is not None:
+            msg.assigned_subnet = self._assigned_subnet
+
         msg.operational_status = self.operational_status
         msg.res_id = self._request_id
 
@@ -185,7 +189,7 @@ class VirtualLinkRecord(object):
         else:
             raise VlRecordError("Invalid action %s received" % action)
 
-        res_iter = yield from block.execute(flags=rwdts.Flag.TRACE, now=True)
+        res_iter = yield from block.execute(now=True)
 
         resp = None
 
@@ -224,6 +228,7 @@ class VirtualLinkRecord(object):
 
             self._network_id = network_resp.resource_info.virtual_link_id
             self._network_pool = network_resp.resource_info.pool_name
+            self._assigned_subnet = network_resp.resource_info.subnet
 
             self._state = VirtualLinkRecordState.READY
 
@@ -306,10 +311,10 @@ class VlrDtsHandler(object):
                 """Re-populate the virtual link information after restart
 
                 Arguments:
-                    vlink 
+                    vlink
 
                 """
-  
+
                 with self._dts.transaction(flags=0) as xact:
                   yield from vlr.instantiate(xact, 1)
 

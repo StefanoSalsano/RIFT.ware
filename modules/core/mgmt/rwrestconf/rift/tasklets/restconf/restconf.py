@@ -7,18 +7,18 @@
 
 import asyncio
 from enum import Enum
-import itertools
 import sys
 import socket
 
-import ncclient.asyncio_manager
 import tornado
 import gi
 
 gi.require_version('RwDynSchema', '1.0')
+gi.require_version('RwDts', '1.0')
 gi.require_version('RwRestconfYang', '1.0')
 gi.require_version('RwYang', '1.0')
 gi.require_version('RwMgmtSchemaYang', '1.0')
+gi.require_version('RwMgmtagtYang', '1.0')
 gi.require_version('IetfRestconfMonitoringYang', '1.0')
 
 from gi.repository import (
@@ -26,6 +26,7 @@ from gi.repository import (
     RwDynSchema,
     RwRestconfYang,
     RwYang,
+    RwMgmtagtYang,
     RwMgmtSchemaYang,
     IetfRestconfMonitoringYang,
 )
@@ -42,12 +43,7 @@ from rift.restconf import (
     load_schema_root,
     StateProvider,
     LogoutHandler,
-    WatchdogStatus,
-    watchdog_mapping,
-)
-
-from rift.watchdog import (
-    WatchdogConnector,
+    ReadOnlyHandler,
 )
 
 import rift.restconf.webserver.event_source as event_source
@@ -67,8 +63,8 @@ def dyn_schema_callback(instance, numel, modules):
     if not instance._initialized:
         instance._initialized = True
         instance._initialize_composite()
-        instance._start_server()
-    
+        instance.loop.create_task(instance.start_server())
+
 def _load_schema(schema_name):
     yang_model = RwYang.Model.create_libncx()
     schema = RwYang.Model.load_and_get_schema(schema_name)
@@ -86,7 +82,9 @@ class RestconfTasklet(rift.tasklets.Tasklet):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.rwlog.set_category("rw-restconf-log")
         self._server = None
+        self._state_provider = None
 
     def start(self):
         """Tasklet entry point"""
@@ -98,7 +96,6 @@ class RestconfTasklet(rift.tasklets.Tasklet):
         self.schema_name = "rw-restconf"#
         self._schema_state = SchemaState.initializing
 
-        self._watchdog_connector = WatchdogConnector(self._log, self._tasklet_name, watchdog_mapping, self.loop)
         self._dynamic_schema_publish="D,/rw-mgmt-schema:rw-mgmt-schema-state/rw-mgmt-schema:listening-apps[name='%s']" % self._tasklet_name
         self._dynamic_schema_response = RwMgmtSchemaYang.YangData_RwMgmtSchema_RwMgmtSchemaState_ListeningApps()
         self._dynamic_schema_response.app_type = "nb_interface"
@@ -120,8 +117,20 @@ class RestconfTasklet(rift.tasklets.Tasklet):
       try:
          self._dts.deinit()
       except Exception:
-         print("Caught Exception in LP stop:", sys.exc_info()[0])
          raise
+
+    @asyncio.coroutine
+    def start_server(self):
+        timeo = float(self._agent_wait_timeout_secs)
+        while timeo > 0:
+            if self._agent_is_ready:
+                self._log.info("Starting restconf server")
+                self._start_server()
+                break
+            else:
+                step = 0.1
+                timeo = timeo - step
+                yield from asyncio.sleep(step, loop = self.loop)
 
     @asyncio.coroutine
     def on_dts_state_change(self, state):
@@ -154,9 +163,12 @@ class RestconfTasklet(rift.tasklets.Tasklet):
     def init(self):
         self._configuration = Configuration()
         self._configuration.use_https = self._manifest.bootstrap_phase.rwsecurity.use_ssl
+        self._configuration.use_netconf = self._manifest.bootstrap_phase.rwmgmt.agent_mode == "CONFD"
 
         self._statistics = Statistics()
         self._messages = {}
+        self._agent_is_ready = False
+        self._agent_wait_timeout_secs = 360
 
         @asyncio.coroutine
         def on_prepare(dts, acg, xact, xact_info, ksp, msg):
@@ -177,12 +189,41 @@ class RestconfTasklet(rift.tasklets.Tasklet):
 
             if toggles.has_field("use_https"):
                 self._configuration.use_https = toggles.use_https
-
+                
             del self._messages[xact.id]
-            
+
             if self._initialized:
                 self._start_server()
 
+        def agent_config_ready_cb(dts, acg, xact, action, scratch):
+            # ATTN: Config ready needs to be handled here
+            if action == RwDts.AppconfAction.INSTALL and xact.id is None:
+                return
+            self._log.info("Agent is ready to receive requests")
+            self._agent_is_ready = True
+
+            if xact.id in self._messages:
+                del self._messages[xact.id]
+
+        def agent_ready_read_cb(xact, xact_status, user_data):
+            self._log.debug("agent_ready_cb")
+            if self._agent_is_ready:
+                return
+
+            if xact is None:
+                self._log.debug("xact is none")
+                return
+
+            query_result = xact.query_result()
+            while query_result is not  None:
+                pbcm = query_result.protobuf
+                data = RwMgmtagtYang.State_ConfigState.from_pbcm(pbcm)
+                if data.ready:
+                    self._agent_is_ready = True
+                else:
+                    self._agent_is_ready = False
+                break
+            
         with self._dts.appconf_group_create(
                 handler=rift.tasklets.AppConfGroup.Handler(
                     on_apply=on_apply)) as acg:
@@ -191,6 +232,22 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                 flags=RwDts.Flag.SUBSCRIBER,
                 on_prepare=on_prepare)
 
+        with self._dts.appconf_group_create(
+                handler=rift.tasklets.AppConfGroup.Handler(
+                  on_apply=agent_config_ready_cb)) as acg:
+            acg.register(
+                xpath="D,/rw-mgmtagt:uagent/rw-mgmtagt:state/rw-mgmtagt:config-state",
+                flags=RwDts.Flag.SUBSCRIBER,
+                on_prepare=on_prepare
+                )
+
+        # Check for agent's state in case of restart
+        xact = self._dts.handle.query(
+                      "D,/rw-mgmtagt:uagent/rw-mgmtagt:state/rw-mgmtagt:config-state",
+                      RwDts.QueryAction.READ,
+                      0,
+                      agent_ready_read_cb,
+                      self)
             
         self._ready_for_schema = False
 
@@ -207,7 +264,6 @@ class RestconfTasklet(rift.tasklets.Tasklet):
 
         @asyncio.coroutine
         def load_modules_prepare(xact_info, action, path, msg):
-
             if msg.state != "loading_nb_interfaces":
                 xact_info.respond_xpath(RwDts.XactRspCode.ACK, path.create_string())
                 return
@@ -232,6 +288,8 @@ class RestconfTasklet(rift.tasklets.Tasklet):
             self._schema_root = new_root
             self._confd_url_converter._schema = new_root
             self._xml_to_json_translator._schema = new_root
+            self._connection_manager._schema_root = new_root
+
             self._schema_state = SchemaState.ready
             xact_info.respond_xpath(RwDts.XactRspCode.ACK, path.create_string())
 
@@ -288,9 +346,16 @@ class RestconfTasklet(rift.tasklets.Tasklet):
             Invoked when UAgent requests DTS to provide the restconf-state.
             """
             xpath = "D,/rcmon:restconf-state"
-            restconf_state = yield from self._state_provider.get_state()
-            xact_info.respond_xpath(RwDts.XactRspCode.ACK, xpath, restconf_state)
-  
+            if self._state_provider is None:
+              xact_info.respond_xpath(RwDts.XactRspCode.NACK, xpath)
+              return
+
+            try:
+                restconf_state = yield from self._state_provider.get_state()
+                xact_info.respond_xpath(RwDts.XactRspCode.ACK, xpath, restconf_state)
+            except:
+                xact_info.respond_xpath(RwDts.XactRspCode.NACK, xpath)
+
         reg = yield from self._dts.register(
                   flags=RwDts.Flag.PUBLISHER|RwDts.Flag.NO_PREP_READ,
                   xpath="D,/rw-restconf:rwrestconf-statistics",
@@ -318,7 +383,6 @@ class RestconfTasklet(rift.tasklets.Tasklet):
     @asyncio.coroutine
     def run(self):
         self._schema_state = SchemaState.ready
-        yield from self._watchdog_connector.connect()
         
     def _initialize_composite(self):
         for module_name, so_filename in self._pending_modules.items():
@@ -333,11 +397,14 @@ class RestconfTasklet(rift.tasklets.Tasklet):
     def _start_server(self):
         if self._server is not None:
             self._server.stop()
-        self._netconf_connection_manager = ConnectionManager(
+        self._connection_manager = ConnectionManager(
+                                              self._configuration,
                                               self._log,
                                               self.loop, 
                                               self.NETCONF_SERVER_IP,
-                                              self.NETCONF_SERVER_PORT)
+                                              self.NETCONF_SERVER_PORT,
+                                              self._dts,
+                                              self._schema_root)
         self._confd_url_converter = ConfdRestTranslator(self._schema_root)
         self._xml_to_json_translator = XmlToJsonTranslator(self._schema_root, self._log)
 
@@ -349,18 +416,18 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                                   self.loop,
                                   self.NETCONF_SERVER_IP, 
                                   self.NETCONF_SERVER_PORT,
-                                  webhost)
+                                  webhost,
+                                  self._configuration.use_https)
 
         http_handler_arguments = {
-            "logger" : self._log,
-            "netconf_connection_manager" : self._netconf_connection_manager,
-            "schema_root" : self._schema_root,
-            "confd_url_converter" : self._confd_url_converter,
-            "xml_to_json_translator" : self._xml_to_json_translator,
             "asyncio_loop" : self.loop,
+            "confd_url_converter" : self._confd_url_converter,
             "configuration" : self._configuration,
+            "connection_manager" : self._connection_manager,
+            "logger" : self._log,
+            "schema_root" : self._schema_root,
             "statistics" : self._statistics,
-            "watchdog_connector" : self._watchdog_connector
+            "xml_to_json_translator" : self._xml_to_json_translator,
         }
         stream_handler_args = {
             "logger" : self._log,
@@ -372,12 +439,38 @@ class RestconfTasklet(rift.tasklets.Tasklet):
         }
         logout_handler_arguments = {
             "logger" : self._log,
-            "netconf_connection_manager" : self._netconf_connection_manager,
+            "connection_manager" : self._connection_manager,
             "asyncio_loop" : self.loop,
         }
 
+
+        # provide a read-only handler that always uses the xml-mode for speed
+        self._read_only_configuration = Configuration()
+        self._read_only_configuration.use_netconf = False
+        self._read_only_connection_manager = ConnectionManager(
+                                              self._configuration,
+                                              self._log,
+                                              self.loop, 
+                                              self.NETCONF_SERVER_IP,
+                                              self.NETCONF_SERVER_PORT,
+                                              self._dts,
+                                              self._schema_root)
+        read_only_handler_arguments = {
+            "logger" : self._log,
+            "connection_manager" : self._read_only_connection_manager,
+            "schema_root" : self._schema_root,
+            "confd_url_converter" : self._confd_url_converter,
+            "xml_to_json_translator" : self._xml_to_json_translator,
+            "asyncio_loop" : self.loop,
+            "configuration" : self._configuration,
+            "statistics" : self._statistics,
+        }
+
         application = tornado.web.Application([
-            (r"/api/config/(.*)", HttpHandler, http_handler_arguments),            
+            (r"/api/readonly/config/(.*)", ReadOnlyHandler, read_only_handler_arguments),
+            (r"/api/readonly/running/(.*)", ReadOnlyHandler, read_only_handler_arguments),            
+            (r"/api/readonly/operational/(.*)", ReadOnlyHandler, read_only_handler_arguments),
+            (r"/api/config/(.*)", HttpHandler, http_handler_arguments),                        
             (r"/api/logout", LogoutHandler, logout_handler_arguments),            
             (r"/api/operational/(.*)", HttpHandler, http_handler_arguments),            
             (r"/api/operations/(.*)", HttpHandler, http_handler_arguments),            

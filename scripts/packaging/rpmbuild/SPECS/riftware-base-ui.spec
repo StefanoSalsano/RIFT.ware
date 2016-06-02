@@ -10,6 +10,7 @@
 %define buildroot         %{_topdir}/%{name}-%{version}-root
 %define DST_RIFT_ROOT     %{_dst_rift_root}
 %define RIFT_ROOT         %{_rift_root}
+%define AGENT_BUILD       %{_agent_build}
 
 %define _binaries_in_noarch_packages_terminate_build   0 	# http://winzter143.blogspot.com/2011/11/linux-arch-dependent-binaries-in-noarch.html
 
@@ -42,7 +43,7 @@ BuildRequires: yum
 # turn this off when we have proper deps
 AutoReqProv: no 
 
-Requires: riftware-base >= %{_version}
+Requires: riftware-base >= %{_version}, gdb
 #Requires(post): info
 #Requires(preun): info
 
@@ -73,14 +74,19 @@ echo "pwd: `pwd`";
 
 # test
 echo "   Name:  %{name}"
-echo "Version:  %{version}.%{_buildnum}
-echo "Release:  %{release}
+echo "Version:  %{version}.%{_buildnum}"
+echo "Release:  %{release}"
+echo "Agent_Build:  %{AGENT_BUILD}"
 
 # copy all copied source files
 cp -Rp %{RIFT_ROOT}/.install/rpmbuild/SOURCES/%{name}-%{version}/* %{buildroot}/
 
 # setup .artifacts for manifest files
 mkdir %{buildroot}/%{DST_RIFT_ROOT}/.artifacts
+
+%if "%{AGENT_BUILD}" != "XML_ONLY"
+
+echo "XML/CONFD: ConfD build"
 
 # confD needs some writeable directories to start up
 mkdir -p %{buildroot}/%{DST_RIFT_ROOT}/.install/usr/local/confd/var/confd/{state,candidate,rollback,log}
@@ -127,6 +133,12 @@ chmod ugo-x %{buildroot}/%{DST_RIFT_ROOT}/.install/usr/local/confd/lib/confd/lib
 chmod ugo-x %{buildroot}/%{DST_RIFT_ROOT}/.install/usr/local/confd/lib/confd/lib/core/xds/priv/otts_nif.so
 chmod ugo-x %{buildroot}/%{DST_RIFT_ROOT}/.install/usr/local/confd/lib/confd/lib/confdc/yanger/priv/yang_parser_nif.so
 
+%else
+
+echo "XML/CONFD: XML build"
+
+%endif
+
 # No execute perms on these ext compiled binaries, to exclude them from the debuginfo/buildid regime.
 chmod ugo-x %{buildroot}/%{DST_RIFT_ROOT}/.install/usr/bin/serf
 
@@ -137,6 +149,8 @@ rm -f \
     %{buildroot}/elfbins.list
 
 %files
+
+%if "%{AGENT_BUILD}" != "XML_ONLY"
 
 # Undo the chmod -x we did above to avoid find-debuginfo erroring out on this tailf-provided binary
 #### attr(555, -, -) /%{DST_RIFT_ROOT}/.install/usr/local/confd/src/confd/ipc_drv/ipc_drv_unix.o
@@ -179,6 +193,8 @@ rm -f \
 %attr(555, -, -) /%{DST_RIFT_ROOT}/.install/usr/local/confd/lib/confd/lib/core/tts/priv/tts_nif.so
 %attr(555, -, -) /%{DST_RIFT_ROOT}/.install/usr/local/confd/lib/confd/lib/core/xds/priv/otts_nif.so
 %attr(555, -, -) /%{DST_RIFT_ROOT}/.install/usr/local/confd/lib/confd/lib/confdc/yanger/priv/yang_parser_nif.so
+
+%endif
 
 # Undo the chmod -x we did above to avoid find-debuginfo erroring out on these RW compiled ext binaries.
 %attr(555, -, -) /%{DST_RIFT_ROOT}/.install/usr/bin/serf

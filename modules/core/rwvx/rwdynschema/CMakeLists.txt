@@ -70,7 +70,6 @@ target_link_libraries(
     protobuf-c
     pthread
     rt
-    rwconfd
     rwdts_api
     rwdynschema_yang_gen
     rwgeneric_yang_gen

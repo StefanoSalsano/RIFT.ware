@@ -33,4 +33,7 @@ rift_unittest(rw_restconf_test-3
   python3 ${CMAKE_CURRENT_SOURCE_DIR}/test_stream.py
   )
 
-
+rift_add_subdirs(
+  SUBDIR_LIST
+    notification
+  )

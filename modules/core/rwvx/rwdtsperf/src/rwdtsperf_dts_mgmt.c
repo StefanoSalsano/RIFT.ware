@@ -178,10 +178,10 @@ rwdtsperf_apply_xact_config(rwdtsperf_instance_ptr_t instance,
                             RWDTS_QUERY_READ);
     xact_detail->corr_id = (unsigned long)(xact_detail);
     if (xact_detail_in->xact_stream_flag) {
-      xact_detail->flags |= RWDTS_FLAG_STREAM;
+      xact_detail->flags |= RWDTS_XACT_FLAG_STREAM;
     }
     if (xact_detail_in->xact_blockmerge_flag) {
-      xact_detail->flags |= RWDTS_FLAG_BLOCK_MERGE;
+      xact_detail->flags |= RWDTS_XACT_FLAG_BLOCK_MERGE;
     }
   }
   return status;

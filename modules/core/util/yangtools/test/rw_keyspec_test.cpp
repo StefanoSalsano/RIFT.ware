@@ -32,7 +32,6 @@
 #include "rw-fpath-d.pb-c.h"
 #include "rwdts-data-d.pb-c.h"
 #include "test-ydom-top.pb-c.h"
-#include "yangtest_common.hpp"
 #include "test-tag-generation-base.pb-c.h"
 #include "test-tag-generation.pb-c.h"
 #include "rw_namespace.h"
@@ -40,6 +39,7 @@
 #include "rw-ncmgr-data-e.pb-c.h"
 #include "rw-keyspec-stats.pb-c.h"
 #include "testy2p-search-node1.pb-c.h"
+#include "rift-cli-test.pb-c.h"
 
 #define TY2PT2_NS(v) (((TY2PT2_NSID & 0xFFF)<<17)+(v))
 #define TY2PT2_NSID rw_namespace_string_to_hash("http://riftio.com/ns/core/util/yangtools/tests/testy2p-top2")
@@ -862,6 +862,7 @@ TEST(RwKeyspec, API4)
 
   EXPECT_EQ(rw_keyspec_path_trunc_suffix_n(reinterpret_cast<rw_keyspec_path_t*> (&key_spec), nullptr , 5), RW_STATUS_SUCCESS);
   EXPECT_EQ(rw_keyspec_path_get_depth(reinterpret_cast<rw_keyspec_path_t*> (&key_spec)), 5);
+
   EXPECT_EQ(rw_keyspec_path_trunc_suffix_n(reinterpret_cast<rw_keyspec_path_t*> (&key_spec), nullptr , 6), RW_STATUS_OUT_OF_BOUNDS);
 
   EXPECT_EQ(rw_keyspec_path_append_replace(reinterpret_cast<rw_keyspec_path_t*> (&key_spec), nullptr ,
@@ -3047,14 +3048,14 @@ TEST(RwKeyspec, MessageAndKey)
              ((rw_keyspec_path_t*) RWPB_G_PATHSPEC_VALUE(RiftCliTest_data_GeneralContainer_GList), nullptr, (rw_keyspec_path_t **)&ks_sp));
 
   rw_keyspec_path_t *ks = (rw_keyspec_path_t *)ks_sp;
-  ASSERT_TRUE (rw_keyspec_path_matches_message (ks, nullptr, (ProtobufCMessage *) &pb_msg));
-  ASSERT_FALSE (rw_keyspec_path_matches_message (ks, nullptr, (ProtobufCMessage *) &gc));
+  ASSERT_TRUE (rw_keyspec_path_matches_message (ks, nullptr, (ProtobufCMessage *) &pb_msg, true));
+  ASSERT_FALSE (rw_keyspec_path_matches_message (ks, nullptr, (ProtobufCMessage *) &gc, true));
   ks_sp->dompath.path001.has_key00 = 1;
   ks_sp->dompath.path001.key00.index = 20;
-  ASSERT_FALSE (rw_keyspec_path_matches_message (ks, nullptr, (ProtobufCMessage *) &pb_msg));
+  ASSERT_FALSE (rw_keyspec_path_matches_message (ks, nullptr, (ProtobufCMessage *) &pb_msg, true));
   pb_msg.index = 20;
   pb_msg.gcl_container = &gc;
-  ASSERT_TRUE (rw_keyspec_path_matches_message (ks, nullptr, (ProtobufCMessage *) &pb_msg));
+  ASSERT_TRUE (rw_keyspec_path_matches_message (ks, nullptr, (ProtobufCMessage *) &pb_msg, true));
   rw_keyspec_path_free(ks, nullptr);
 
   RWPB_M_PATHSPEC_DECL_INIT(RwAppmgrD_data_Ltesim_TestScript, kst);
@@ -3067,12 +3068,12 @@ TEST(RwKeyspec, MessageAndKey)
   kst.dompath.path001.key00.id = strdup("ping_error");
 
   msgt.id = strdup("ping_error");
-  ASSERT_TRUE (rw_keyspec_path_matches_message (&kst.rw_keyspec_path_t, nullptr, &msgt.base));
+  ASSERT_TRUE (rw_keyspec_path_matches_message (&kst.rw_keyspec_path_t, nullptr, &msgt.base, true));
 
   free(kst.dompath.path001.key00.id);
   kst.dompath.path001.key00.id = strdup("icmp_error");
 
-  ASSERT_FALSE(rw_keyspec_path_matches_message (&kst.rw_keyspec_path_t, nullptr, &msgt.base));
+  ASSERT_FALSE(rw_keyspec_path_matches_message (&kst.rw_keyspec_path_t, nullptr, &msgt.base, true));
 
   // Flat message, bumpy ks string
   RWPB_M_PATHSPEC_DECL_INIT(FlatConversion_data_Container1_TwoKeys,ks_tk);
@@ -3086,8 +3087,23 @@ TEST(RwKeyspec, MessageAndKey)
       
   strcpy (tk_msg.sec_string, "foo");
   tk_msg.prim_enum = BASE_CONVERSION_CB_ENUM_FIRST;
-  ASSERT_TRUE (rw_keyspec_path_matches_message (&ks_tk.rw_keyspec_path_t, nullptr, &tk_msg.base));
+  ASSERT_TRUE (rw_keyspec_path_matches_message (&ks_tk.rw_keyspec_path_t, nullptr, &tk_msg.base, true));
 
+  RWPB_M_PATHSPEC_DECL_INIT(RwFpathD_RwBaseD_data_Colony_NetworkContext, ks1);
+  RWPB_M_MSG_DECL_INIT(RwBaseD_data_Colony_NetworkContext, msg1);
+
+  ks1.dompath.path001.has_key00 = 1;
+  strcpy (ks1.dompath.path001.key00.name, "networkctx1");
+  strcpy (msg1.name, "networkctx1");
+
+  ASSERT_FALSE (rw_keyspec_path_matches_message (&ks1.rw_keyspec_path_t, nullptr, &msg1.base, true));
+  ASSERT_TRUE  (rw_keyspec_path_matches_message (&ks1.rw_keyspec_path_t, nullptr, &msg1.base, false));
+
+  strcpy (msg1.name, "networkctx2");
+  ASSERT_FALSE  (rw_keyspec_path_matches_message (&ks1.rw_keyspec_path_t, nullptr, &msg1.base, false));
+
+  ASSERT_FALSE  (rw_keyspec_path_matches_message (&ks1.rw_keyspec_path_t, nullptr, &tk_msg.base, true));
+  ASSERT_FALSE  (rw_keyspec_path_matches_message (&ks1.rw_keyspec_path_t, nullptr, &tk_msg.base, false));
 }
   
 TEST(RwKeyspec, ConstCorrectness)
@@ -3379,4 +3395,33 @@ TEST(RwKeyspec, ModuleRootKS)
   uptr.reset(rootks);
 
   EXPECT_TRUE(rw_keyspec_path_is_root(rootks));
+}
+
+TEST(RwKeyspec, TruncDelUnknown)
+{
+  TEST_DESCRIPTION("Test the removal of unknown path entries by trunc API");
+
+  RWPB_M_PATHSPEC_DECL_INIT(RwFpathD_RwBaseD_data_Colony_NetworkContext_Interface_Bind_BundleEther, ks);
+
+  rw_keyspec_path_t *s_ks = rw_keyspec_path_create_dup_of_type (&ks.rw_keyspec_path_t,  
+                                                                NULL, 
+                                                                RWPB_G_PATHSPEC_PBCMD(RwFpathD_RwBaseD_data_Colony_NetworkContext));
+  ASSERT_TRUE (s_ks);
+  UniquePtrKeySpecPath::uptr_t ks_uptr(s_ks);
+
+  // Bind and BundleEther should be in the unknowns
+  auto dom_fd = protobuf_c_message_descriptor_get_field (s_ks->base.descriptor, RW_SCHEMA_TAG_KEYSPEC_DOMPATH);
+  ASSERT_TRUE (dom_fd);
+
+  ProtobufCFieldInfo fi = {};
+  ASSERT_TRUE (protobuf_c_message_get_field_instance (NULL, &s_ks->base, dom_fd, 0, &fi));
+  ASSERT_TRUE (fi.element);
+
+  EXPECT_EQ (protobuf_c_message_unknown_get_count ((ProtobufCMessage *)fi.element), 2);
+
+  rw_status_t s = rw_keyspec_path_trunc_suffix_n (s_ks, NULL, 2);
+  EXPECT_EQ (s, RW_STATUS_SUCCESS);
+
+  EXPECT_EQ (protobuf_c_message_unknown_get_count ((ProtobufCMessage *)fi.element), 0);
+  EXPECT_EQ (rw_keyspec_path_get_depth (s_ks), 2);
 }

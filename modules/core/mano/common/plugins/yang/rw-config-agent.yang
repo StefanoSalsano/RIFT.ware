@@ -19,6 +19,10 @@ module rw-config-agent
     prefix "inet";
   }
 
+  import rwcal {
+    prefix "rwcal";
+  }
+
   revision 2016-02-04 {
     description
       "Initial revision.";
@@ -28,6 +32,7 @@ module rw-config-agent
     description "config agent account type";
     type enumeration {
       enum juju;
+      enum riftca;
     }
   }
 
@@ -46,7 +51,10 @@ module rw-config-agent
       }
 
       leaf account-type {
+        description
+            "Default account type is Rift Configuration Agent (RiftCA)";
         type config-agent-account-type;
+        default "riftca";
       }
 
       choice config-agent-account-type {
@@ -77,6 +85,19 @@ module rw-config-agent
             }
           }
         }
+      }
+      uses rwcal:connection-status;
+    }
+  }
+
+  rpc update-cfg-agent-status {
+    description "Begin config agent account connection status";
+    input {
+      leaf cfg-agent-account {
+        mandatory true;
+        description
+          "The config agent account name to update connection status for";
+        type string;
       }
     }
   }

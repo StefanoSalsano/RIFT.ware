@@ -13,6 +13,8 @@
  */
 
 #include "rwuagent.hpp"
+#include "rw_xml_dom_merger.hpp"
+#include "rw_xml_validate_dom.hpp"
 
 using namespace rw_uagent;
 using namespace rw_yang;
@@ -20,13 +22,15 @@ using namespace rw_yang;
 SbReqEditConfig::SbReqEditConfig(
     Instance* instance,
     NbReq* nbreq,
-    const char *xml_fragment,
-    NetconfEditConfigOperations ec)
+    RequestMode request_mode,
+    const char *xml_fragment)
 : SbReq(
     instance,
     nbreq,
     RW_MGMTAGT_SB_REQ_TYPE_EDITCONFIG,
-    "SbReqEditConfigString" )
+    request_mode,
+    "SbReqEditConfigString",
+    xml_fragment)
 {
   // Build the DOM from the fragment.
   // Let any execptions propagate upwards - the clients that start a transaction
@@ -37,39 +41,9 @@ SbReqEditConfig::SbReqEditConfig(
   rw_yang::XMLDocument::uptr_t req =
       std::move(instance_->xml_mgr()->create_document_from_string(xml_fragment, error_out, false));
 
-  if (ec_delete != ec) {
-    delta_ = std::move(req);
-  } else {
-    delta_ = std::move(instance_->xml_mgr()->create_document(instance_->yang_model()->get_root_node()));
-
-    XMLNode *node = req->get_root_node()->find_first_deepest_node();
-    RW_ASSERT(node);
-
-    rw_keyspec_path_t* key = nullptr;
-    rw_yang_netconf_op_status_t ncrs = node->to_keyspec(&key);
-
-    RW_ASSERT(ncrs == RW_YANG_NETCONF_OP_STATUS_OK);
-
-    // Check if this config exists - fail if it doesnt
-    std::list<XMLNode *> check;
-    auto root = instance_->dom()->get_root_node();
-    if (root) {
-      ncrs = root->find(key, check);
-      if ((RW_YANG_NETCONF_OP_STATUS_OK == ncrs) && check.size()) {
-
-        rw_keyspec_path_set_category (key, NULL , RW_SCHEMA_CATEGORY_CONFIG);
-        delete_ks_.push_back (rw_yang::XMLBuilder::uptr_ks(key));
-        key = nullptr;
-      }
-      else {
-        RW_MA_SBREQ_LOG (this, __FUNCTION__, "Delete node not found in agent DOM");
-      }
-    }
-    if (nullptr != key) {
-      rw_keyspec_path_free (key, NULL);
-      key = nullptr;
-    }
-  }
+  // For deleting a node from the configuration the xml_fragment is expected to
+  // contain the attribute operation=delete
+  delta_ = std::move(req);
 
   update_stats(RW_UAGENT_NETCONF_PARSE_REQUEST);
 }
@@ -77,32 +51,41 @@ SbReqEditConfig::SbReqEditConfig(
 SbReqEditConfig::SbReqEditConfig(
     Instance* instance,
     NbReq* nbreq,
+    RequestMode request_mode,
     UniquePtrKeySpecPath::uptr_t delete_ks)
   : SbReq(
       instance,
       nbreq,
       RW_MGMTAGT_SB_REQ_TYPE_EDITCONFIG,
+      request_mode,
       "SbReqEditConfigDeleteKS")
 {
   RW_MA_SBREQ_LOG (this, __FUNCTION__, "for direct delete");
 
   delta_ = std::move(instance_->xml_mgr()->create_document(instance_->yang_model()->get_root_node()));
   delete_ks_.push_back(std::move(delete_ks));
+
+  instance_->log_file_manager()->log_string(this, "SbReqEditConfigDeleteKS",delta_->to_string().c_str());
+
   update_stats(RW_UAGENT_NETCONF_PARSE_REQUEST);
 }
 
 SbReqEditConfig::SbReqEditConfig(
     Instance* instance,
     NbReq* nbreq,
+    RequestMode request_mode,
     XMLBuilder *builder)
 : SbReq(
     instance,
     nbreq,
     RW_MGMTAGT_SB_REQ_TYPE_EDITCONFIG,
+    request_mode,
     "SbReqEditConfigDom")
 {
   delta_ = std::move(builder->merge_);
   delete_ks_.splice (delete_ks_.begin(), builder->delete_ks_);
+
+  instance_->log_file_manager()->log_string(this, "SbReqEditConfigDom", delta_->to_string().c_str());
 
   update_stats(RW_UAGENT_NETCONF_PARSE_REQUEST);
 }
@@ -118,31 +101,110 @@ StartStatus SbReqEditConfig::start_xact_int()
 
   xact_ = rwdts_api_xact_create(
     dts_->api(),
-    RWDTS_FLAG_ADVISE|RWDTS_FLAG_SUBSCRIBER|dts_flags_,
+    RWDTS_XACT_FLAG_ADVISE|dts_flags_,
     dts_config_event_cb,
     this);
 
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "xact dts created",
     RWMEMLOG_ARG_PRINTF_INTPTR("dts xact=0x%" PRIXPTR, (intptr_t)xact_) );
 
-  auto *root_node = delta_->get_root_node();
-  ProtoSplitter splitter(xact_, instance_->yang_model(),
-                         dts_flags_, root_node);
+  if (request_mode_ == RequestMode::CONFD) {
+    auto *root_node = delta_->get_root_node();
+    ProtoSplitter splitter(xact_, instance_->yang_model(),
+                           dts_flags_, root_node);
+    XMLWalkerInOrder walker(root_node->get_first_child());
+    walker.walk(&splitter);
+    // The transaction is all set to be shipped now?
+    if (!(splitter.valid_ || delete_ks_.size())) {
+      RW_MA_SBREQ_LOG (this, __FUNCTION__, "Skipping invalid edit config");
+      rwdts_xact_abort(xact_, RW_STATUS_FAILURE, "Unable to convert edit-config to protobuf" );
+      return done_with_error( "Unable to convert edit-config to protobuf" );
+    }
+    
+  } else if (request_mode_ == RequestMode::XML) {
 
-  XMLWalkerInOrder walker(root_node->get_first_child());
-  walker.walk(&splitter);
+    XMLDocMerger merger(instance_->xml_mgr(), instance_->dom());
+    bool no_edits = true;
 
-  // The transaction is all set to be shipped now?
-  if (!(splitter.valid_ || delete_ks_.size())) {
-    RW_MA_SBREQ_LOG (this, __FUNCTION__, "Skipping invalid edit config");
-    return done_with_error( "Unable to convert edit-config to protobuf" );
+    // Callback from copy_and_merge operation. Populate the xact_ with 
+    // config xml changes
+    merger.on_update_ = [&no_edits, this](XMLNode* update_node) {
+      ProtoSplitter splitter(xact_, instance_->yang_model(),
+                             dts_flags_, update_node);
+      XMLWalkerInOrder walker(update_node->get_first_child());
+      walker.walk(&splitter);
+      if (!splitter.valid_) {
+        return RW_STATUS_FAILURE;
+      }
+      no_edits = false;
+      return RW_STATUS_SUCCESS;
+    };
+
+    merger.on_delete_ = [&no_edits, this](UniquePtrKeySpecPath::uptr_t del_ks) {
+      delete_ks_.push_back(std::move(del_ks));
+      no_edits = false;
+      return RW_STATUS_SUCCESS; 
+    };
+
+    NetconfErrorList err_list;
+    merger.on_error_ = [&err_list](rw_yang_netconf_op_status_t nc_status,
+                                   const char* err_msg, const char* err_path) {
+      NetconfError& err = err_list.add_error().set_rw_error_tag(nc_status);
+      if (err_msg) {
+        err.set_error_message(err_msg);
+      }
+      if (err_path) {
+        err.set_error_path(err_path);
+      }
+      return RW_STATUS_SUCCESS; 
+    };
+
+    new_instance_dom_ = std::move(merger.copy_and_merge(delta_.get()));
+
+    if (err_list.length()) {
+      RW_MA_SBREQ_LOG (this, __FUNCTION__, "Edit config merge error");
+      return done_with_error(&err_list);
+    }
+
+    // The transaction is all set to be shipped now?
+    if (!(new_instance_dom_ || delete_ks_.size())) {
+      RW_MA_SBREQ_LOG (this, __FUNCTION__, "Skipping invalid edit config");
+      rwdts_xact_abort(xact_, RW_STATUS_FAILURE, "Unable to convert edit-config to protobuf" );
+      return done_with_error( "Unable to convert edit-config to protobuf" );
+    }
+
+    if (no_edits) {
+      // No Updates or Deletes
+       RW_MA_SBREQ_LOG (this, __FUNCTION__, "Nothing to Update/Delete");
+      return done_with_success();
+    }
+
+    // Validate pending dom
+    ValidationStatus validation_result = validate_dom(new_instance_dom_.get(), instance_);
+    if (validation_result.failed()) {
+      std::string log_str = "Validation failed: " + validation_result.reason();
+      RW_MA_SBREQ_LOG (this, __FUNCTION__, log_str.c_str());
+      rwdts_xact_abort(xact_, RW_STATUS_FAILURE, log_str.c_str());
+      return done_with_error( log_str.c_str());
+    }
+
+    // save the dom
+    rw_status_t rs = instance_->mgmt_handler()->prepare_config(new_instance_dom_.get());
+    if (rs != RW_STATUS_SUCCESS) {
+      RW_MA_SBREQ_LOG (this, __FUNCTION__, "Failed to save config dom");
+    }
+
+  } else {
+    RW_ASSERT_NOT_REACHED();
   }
 
   for (auto &ks : delete_ks_) {
     rwdts_xact_block_t *blk = rwdts_xact_block_create(xact_);
     RW_ASSERT(blk);
 
-    rw_status_t rs = rwdts_xact_block_add_query_ks(blk, ks.get(), RWDTS_QUERY_DELETE, RWDTS_FLAG_ADVISE | dts_flags_, 0, nullptr);
+    rw_status_t rs = rwdts_xact_block_add_query_ks(
+        blk, ks.get(), RWDTS_QUERY_DELETE, RWDTS_XACT_FLAG_ADVISE | dts_flags_,
+        0, nullptr);
     if (rs != RW_STATUS_SUCCESS) {
       RW_MA_SBREQ_LOG (this, __FUNCTION__, "DTS Query add block failed");
       return done_with_error( "DTS operation failed" );
@@ -165,7 +227,9 @@ void SbReqEditConfig::dts_config_event_cb(
   rwdts_xact_status_t* xact_status,
   void *ud)
 {
-  if (xact_status->xact_done) {
+
+  const bool alive = xact_status->xact_done;
+  if (alive) {
     SbReqEditConfig *edit_cfg = static_cast<SbReqEditConfig *> (ud);
     RW_ASSERT (edit_cfg);
     edit_cfg->commit_cb (xact);
@@ -186,30 +250,17 @@ void SbReqEditConfig::commit_cb(rwdts_xact_t *xact)
   switch (status.status) {
     case RWDTS_XACT_COMMITTED: {
       RW_MA_SBREQ_LOG (this, __FUNCTION__, "RWDTS_XACT_COMMITTED");
-      XMLNode *root = instance_->dom()->get_root_node();
-
-      // Delete nodes deleted by this transaction
-      for (auto &ks : delete_ks_) {
-        std::list<XMLNode *>found;
-        rw_yang_netconf_op_status_t ncrs = root->find(ks.get(), found);
-
-        if (ncrs != RW_YANG_NETCONF_OP_STATUS_OK ||
-            !found.size()) {
-          RW_MA_SBREQ_LOG (this, __FUNCTION__, "Error - config entry not found in DOM");
-          break;
-        }
-
-        for (auto node : found) {
-          XMLNode *parent = node->get_parent();
-          RW_ASSERT(parent);
-          parent->remove_child(node);
+      if (request_mode_ == RequestMode::XML) {
+        // Update the instance dom to reflect that changes
+        instance_->reset_dom(std::move(new_instance_dom_));
+      
+        auto ret = instance_->mgmt_handler()->commit_config();
+        if (ret != RW_STATUS_SUCCESS) {
+          RWMEMLOG (memlog_buf_, RWMEMLOG_MEM6, "commit config failed",
+                    RWMEMLOG_ARG_PRINTF_INTPTR("sbreq=0x%" PRIX64,(intptr_t)this),
+                    RWMEMLOG_ARG_PRINTF_INTPTR("dts xact=0x%" PRIXPTR, (intptr_t)xact));
         }
       }
-      // Merge delta with configuration DOM
-      instance_->dom()->merge(delta_.get());
-
-      delta_.release();
-      delete_ks_.clear();
       update_stats( RW_UAGENT_NETCONF_RESPONSE_BUILT );
       done_with_success();
       return;
@@ -250,13 +301,24 @@ void SbReqEditConfig::commit_cb(rwdts_xact_t *xact)
                  .set_error_message( "Distributed transaction aborted or failed" );
       }
 
-      if (instance_->mgmt_handler()->is_under_reload()) {
-        // Merge delta with configuration DOM
-        instance_->dom()->merge(delta_.get());
+      if (instance_->get_request_mode() == RequestMode::XML
+          && instance_->mgmt_handler()->is_under_reload()) {
+        // update config dom
+        instance_->reset_dom(std::move(new_instance_dom_));
       }
 
       done_with_error (&nc_errors);
       return;
     }
   }
+}
+
+rw_yang::XMLDocument::uptr_t SbReqEditConfig::move_delta()
+{
+  return std::move(delta_);
+}
+
+std::list<UniquePtrKeySpecPath::uptr_t> SbReqEditConfig::move_deletes()
+{
+  return std::move(delete_ks_);
 }

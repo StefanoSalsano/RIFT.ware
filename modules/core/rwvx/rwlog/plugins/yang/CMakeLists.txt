@@ -8,11 +8,15 @@
 ##
 # Parse the yang files
 ##
-set(source_yang_files rw-generic.yang)
+rift_generate_python_log_yang(
+  LOG_CATEGORY_NAME rw-generic-log
+  START_EVENT_ID 6000
+  OUT_YANG_FILE_VAR rw_generic_log_file
+  )
 
 rift_add_yang_target(
   TARGET rwgeneric_yang
-  YANG_FILES ${source_yang_files}
+  YANG_FILES ${rw_generic_log_file}
   COMPONENT ${PKG_LONG_NAME}
   LIBRARIES
     rwschema_yang_gen

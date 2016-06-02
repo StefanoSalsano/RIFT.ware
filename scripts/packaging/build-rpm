@@ -190,7 +190,7 @@ function rpm_archive() {
 
 	if [ -f $copytool ]; then
 		echo "Copyright Helper was found."
-		echo "CMD: ${copytool} ${toolargs} "
+		echo "CMD: ${copytool} --source-dir=${rpmbuildroot}/SOURCES/${rpmname}-${version}/ ${toolargs} "
 		${copytool} --source-dir=${rpmbuildroot}/SOURCES/${rpmname}-${version}/ ${toolargs}
 	else
 		echo "Copyright Helper NOT FOUND!"
@@ -268,9 +268,8 @@ function rpm_build {
 	# and refer it within the spec as %{_foobar}
 
 	# binary only
-	#rpmbuild -v -bb SPECS/${rpmname}.spec
-	#rpmbuild -v -bb --define "_rpmname ${rpmname}" --define "_rift_root ${RIFT_ROOT}" --define "_dst_rift_root ${dst_rift_root}" --define "_version ${version}" --define "_buildnum ${RIFT_BUILD_NUMBER}" --define "_filelist ${filelist}" --buildroot ${rpmbuildroot}/BUILD/${rpmname}-${version} ${spec}
-	rpmbuild -bb --define "_rpmname ${rpmname}" --define "_rift_root ${RIFT_ROOT}" --define "_dst_rift_root ${dst_rift_root}" --define "_version ${version}" --define "_buildnum ${RIFT_BUILD_NUMBER}" --define "_filelist ${filelist}" --buildroot ${rpmbuildroot}/BUILD/${rpmname}-${version} ${spec}
+	#rpmbuild -bb --define "_rpmname ${rpmname}" --define "_rift_root ${RIFT_ROOT}" --define "_dst_rift_root ${dst_rift_root}" --define "_version ${version}" --define "_buildnum ${RIFT_BUILD_NUMBER}" --define "_filelist ${filelist}" --buildroot ${rpmbuildroot}/BUILD/${rpmname}-${version} ${spec}
+	rpmbuild -bb --define "_rpmname ${rpmname}" --define "_rift_root ${RIFT_ROOT}" --define "_dst_rift_root ${dst_rift_root}" --define "_version ${version}" --define "_buildnum ${RIFT_BUILD_NUMBER}" --define "_filelist ${filelist}" --define "_agent_build ${AGENT_BUILD}" --buildroot ${rpmbuildroot}/BUILD/${rpmname}-${version} ${spec}
 
 	# binary and sources
 	#rpmbuild -v -ba SPECS/riftio-shutdown-helper.spec

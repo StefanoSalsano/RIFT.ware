@@ -2,7 +2,7 @@
 
 SUBDIRS = resources
 
-loaderdir = $(libdir)/libpeas-1.0/loaders
+loaderdir = $(libdir)/libpeas-1.0/loaders/lua5.1
 
 AM_CPPFLAGS = \
 	-I$(top_srcdir)		\

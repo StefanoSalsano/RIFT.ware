@@ -163,9 +163,9 @@ StartStatus ShowSysInfo::execute()
     rwsched_dispatch_resume( tasklet, child_read_src_ );
   }
 
-  // Create a timer source to poll for SIGCHILD. 
+  // Create a timer source to poll for SIGCHILD.
   // The rwsched support for signal handling cannot be used here,
-  // because we want the callback to be in queue-context. 
+  // because we want the callback to be in queue-context.
   // The libdispatch signal source also doesn't seem to work.
   child_status_poll_timer_  = rwsched_dispatch_source_create(
       tasklet, RWSCHED_DISPATCH_SOURCE_TYPE_TIMER, 0, 0, instance_->serial_q());
@@ -176,7 +176,7 @@ StartStatus ShowSysInfo::execute()
   rwsched_dispatch_set_context(tasklet, child_status_poll_timer_, this);
 
   rwsched_dispatch_source_set_timer(
-      tasklet, child_status_poll_timer_, 
+      tasklet, child_status_poll_timer_,
       dispatch_time(DISPATCH_TIME_NOW, 0*NSEC_PER_SEC), /* Start now */
       CHILD_STATUS_POLL_TIMER*NSEC_PER_SEC, /* Check Every 1 sec */
       0);
@@ -241,8 +241,10 @@ void ShowSysInfo::execute_child_process()
   std::vector<const char*> argv;
   argv.emplace_back( zsh_path );
   argv.emplace_back( "--rwmsg" );
-  argv.emplace_back( "--vm_instance" );
-  argv.emplace_back( std::to_string(instance_id).c_str() );
+  argv.emplace_back( "--username");
+  argv.emplace_back( "admin");
+  argv.emplace_back( "--passwd");
+  argv.emplace_back( "admin");
   argv.emplace_back( ssd_path );
   argv.emplace_back( nullptr );
 
@@ -250,7 +252,8 @@ void ShowSysInfo::execute_child_process()
   ss << "Invoking the zsh CLI cmd = ";
   std::for_each(argv.begin(), argv.end(), [&ss](const char*arg) { ss << " " << arg;} );
 
-  RW_MA_INST_LOG(instance_, InstanceInfo, ss.str().c_str());
+  std::string capture_temporary;
+  RW_MA_INST_LOG(instance_, InstanceInfo, (capture_temporary=ss.str()).c_str());
 
   ioerr = execv( argv[0], (char* const*)argv.data() );
   ASSERT_IOERR( 0, "failed exec" );
@@ -276,7 +279,7 @@ void ShowSysInfo::cleanup_and_send_response()
   RWPB_M_MSG_DECL_INIT(RwMgmtagt_SysInfoOutput, rpco);
 
   if (ssi_as_string_) {
-    if (rsp_bytes_ > 0) { 
+    if (rsp_bytes_ > 0) {
 
       RW_ASSERT(output_buff_);
       RW_ASSERT(rsp_bytes_ < curr_buff_sz_);
@@ -284,10 +287,10 @@ void ShowSysInfo::cleanup_and_send_response()
 
       // Create the output ks and msg.
       // send response to the parent rpc.
-      rpco.result = output_buff_; 
+      rpco.result = output_buff_;
 
       std::string log_string;
-      RW_MA_INST_LOG(instance_, InstanceInfo, 
+      RW_MA_INST_LOG(instance_, InstanceInfo,
                      (log_string = "SSI, Sending total bytes " + std::to_string(rsp_bytes_)).c_str());
 
     } else {
@@ -324,7 +327,7 @@ void ShowSysInfo::cleanup_and_send_response()
   responded_ = true;
   parent_rpc_ = NULL; // Parent rpc might have been destroyed. Invalidate it for safety.
 
-  /* 
+  /*
    * Deletion of this object should happen only after successful reaping of the
    * child process.
    */
@@ -431,7 +434,7 @@ void ShowSysInfo::try_reap_child()
       auto exit_status = WEXITSTATUS(child_status);
 
       std::string log_string;
-      RW_MA_INST_LOG(instance_, InstanceDebug, 
+      RW_MA_INST_LOG(instance_, InstanceDebug,
                      (log_string = "SSI, CLI exited with status = " + std::to_string(exit_status)).c_str());
 
       if (exit_status != 0) {

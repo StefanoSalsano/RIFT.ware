@@ -390,38 +390,27 @@ static void rwdts_router_dump_block_info(rwdts_router_xact_block_t *block, char 
     int i;
     for (i=31; i>=0; i--) {
       static const char *flagdesc[32] = {
-        "XACT_NOTRAN",          /* 0 */
-        "XACT_READONLY",
-        "XACT_BESTEFFORT",
-        "XACT_UPDATE_CREDITS",
-        "XACT_END",
-        "XACT_EXECNOW",                /* 5 */
-        "XACT_WAIT",
-        "XACT_KEEP_ALIVE",
-        "XACT_IMM_BOUNCE",
-        "9",
-        "SUBOBJECT",                /* 10 */
+        "NOTRAN",
+        "TRANS_CRUD",
+        "UPDATE_CREDITS",
+        "END",
+        "EXECNOW",
+        "WAIT",
+        "IMM_BOUNCE",
+        "REG",
+        "PEER_REG",
+        "BLOCK_MERGE",
+        "STREAM",
+        "TRACE",
+        "SOLICIT_RSP",
+        "ADVISE",
         "DEPTH_FULL",
         "DEPTH_OBJECT",
         "DEPTH_LISTS",
         "DEPTH_ONE",
-        "NO_PREP_READ",                /* 15 */
-        "DEFAULT",
-        "SUBSCRIBER",
-        "PUBLISHER",
-        "DATASTORE",
-        "ANYCAST",                /* 20 */
-        "RETPATH",
-        "ADVISE",
-        "CACHE",
+        "RETURN_PAYLOAD",
+        "ANYCAST",
         "REPLACE",
-        "BLOCK_MERGE",                /* 25 */
-        "SHARED",
-        "STREAM",
-        "WAIT_RESPONSE",
-        "TRACE",
-        "SHARDING"
-        "31"
       };
       if (block->xbreq->flags & (1<<i)) {
         RWDTS_PRINTF ("|%s",
@@ -440,8 +429,8 @@ static void rwdts_router_dump_block_info(rwdts_router_xact_block_t *block, char 
               "      RWDtsQuery[%d] %s%s%s keystr='%s'%s\n",
               i,
               action,
-              (query->flags & RWDTS_FLAG_ADVISE) ? "/ADVISE" : "",
-              (query->flags & RWDTS_FLAG_ANYCAST) ? "/ANYCAST" : "",
+              (query->flags & RWDTS_XACT_FLAG_ADVISE) ? "/ADVISE" : "",
+              (query->flags & RWDTS_XACT_FLAG_ADVISE) ? "/ANYCAST" : "",
               kstr,
               query->payload ? " w/payload" : "");
   
@@ -452,8 +441,8 @@ static void rwdts_router_dump_block_info(rwdts_router_xact_block_t *block, char 
               tmp,
               i,
               action,
-              (query->flags & RWDTS_FLAG_ADVISE) ? "/ADVISE" : "",
-              (query->flags & RWDTS_FLAG_ANYCAST) ? "/ANYCAST" : "",
+              (query->flags & RWDTS_XACT_FLAG_ADVISE) ? "/ADVISE" : "",
+              (query->flags & RWDTS_XACT_FLAG_ANYCAST) ? "/ANYCAST" : "",
               kstr,
               query->payload ? " w/payload" : "");
       RW_FREE(tmp);
@@ -637,14 +626,15 @@ static void rwdts_router_xact_timer(void *ctx)
           char flagstr[256];
           flagstr[0] = '\0';
 #define pflag(s) if (f&(RWDTS_FLAG_##s)) { if (flagstr[0]) { strcat(flagstr, "|"); } strcat(flagstr, #s); }
+#define pxflag(s) if (f&(RWDTS_XACT_FLAG_##s)) {if (flagstr[0]) { strcat(flagstr, "|"); } strcat(flagstr, #s); }
           pflag(SUBSCRIBER);
           pflag(PUBLISHER);
           pflag(DATASTORE);
-          pflag(ANYCAST);
-          pflag(ADVISE);
+          pxflag(ANYCAST);
+          pxflag(ADVISE);
           pflag(CACHE);
-          pflag(REPLACE);
-          pflag(STREAM);
+          pxflag(REPLACE);
+          pxflag(STREAM);
           pflag(SHARED);
           pflag(SHARDING);
 #undef pflag
@@ -1162,7 +1152,7 @@ static void rwdts_router_xact_query_rsp(rwdts_router_xact_t *xact,
     if (qresult->n_result) {
 
       if ((xbreq->query[xreq->query_idx]->action == RWDTS_QUERY_READ)
-          && !(xbreq->query[xreq->query_idx]->flags & RWDTS_FLAG_STREAM)
+          && !(xbreq->query[xreq->query_idx]->flags & RWDTS_XACT_FLAG_STREAM)
           && xqres->n_result) {
 
         /* Merge */
@@ -2525,7 +2515,7 @@ void rwdts_router_xact_block_prepreqs_prepare(rwdts_router_xact_t *xact,
         if (query->key
             && query->key->ktype == RWDTS_KEY_RWKEYSPEC
             && query->key->keyspec) {
-          isadvise = (query->flags & RWDTS_FLAG_ADVISE);
+          isadvise = (query->flags & RWDTS_XACT_FLAG_ADVISE);
           xact->isadvise |= isadvise;
           ps = query->key->keyspec;
           if (ps->has_binpath) {
@@ -2764,6 +2754,22 @@ rwdts_router_send_responses(rwdts_router_xact_t *xact,
 
         if (0==memcmp(&block->rwmsg_cliid, &xact->rwmsg_tab[r].rwmsg_cliid, sizeof(block->rwmsg_cliid))) {
           /* Query block */
+
+          if (block->xbreq && block->xbreq->n_query) {
+            int idx;
+            bool cont_loop = false;
+            if (xact->state == RWDTS_ROUTER_XACT_PREPARE) {
+              for(idx = 0; idx < block->xbreq->n_query; idx++) {
+                if (block->xbreq->query[idx]->flags & RWDTS_XACT_FLAG_RETURN_PAYLOAD) {
+                  cont_loop = true;
+                  break;
+                }
+              }
+              if (cont_loop == true) {
+                continue;
+              }
+            }
+          }
 
           /* Send if it has responses or is finished */
           if (block->block_state == RWDTS_ROUTER_BLOCK_STATE_RUNNING
@@ -3536,7 +3542,7 @@ rwdts_router_update_pub_match(rwdts_router_xact_t* xact,
     rwdts_router_xact_sing_req_t* sin_req = NULL;
     rwdts_router_member_node_t *membnode;
 
-    if (flags & RWDTS_FLAG_DEPTH_OBJECT) {
+    if (flags & RWDTS_XACT_FLAG_DEPTH_OBJECT) {
       if (!(rtr_info->flags & RWDTS_FLAG_SUBOBJECT)) {
         continue;
       }
@@ -3563,7 +3569,7 @@ rwdts_router_update_pub_match(rwdts_router_xact_t* xact,
     membnode->member = rtr_info->member;
     sin_req = (rwdts_router_xact_sing_req_t *)RW_MALLOC0(sizeof(rwdts_router_xact_sing_req_t));
     sin_req->membnode = membnode;
-    if (rtr_info->flags & RWDTS_FLAG_ANYCAST) {
+    if (rtr_info->flags & RWDTS_XACT_FLAG_ANYCAST) {
       xact->anycast_cnt++;
       sin_req->any_cast = true;
     }                   
@@ -3580,10 +3586,15 @@ rwdts_router_update_client_for_precommit(rwdts_router_xact_t* xact, uint32_t blk
 {
   rwdts_router_t *dts = xact->dts;
   rwdts_router_member_node_t *membnode=NULL;
-  if (blk == xact->rwmsg_tab_len) {
-    blk = 0;
+  rwdts_router_xact_block_t *block = xact->xact_blocks[blk];
+
+  rwdts_router_xact_rwmsg_ent_t *rwmsg_ent = xact->rwmsg_tab;
+  while (rwmsg_ent
+         && memcmp(&rwmsg_ent->rwmsg_cliid, &block->rwmsg_cliid,  sizeof(rwmsg_ent->rwmsg_cliid))) {
+    rwmsg_ent++;
   }
-  HASH_FIND(hh_xact, xact->xact_union, xact->rwmsg_tab[blk].client_path, strlen(xact->rwmsg_tab[blk].client_path), membnode);
+  RW_ASSERT(rwmsg_ent);
+  HASH_FIND(hh_xact, xact->xact_union, rwmsg_ent->client_path, strlen(rwmsg_ent->client_path), membnode);
   if (!membnode) {
     rwdts_router_member_t *memb = NULL;
     HASH_FIND(hh, dts->members, xact->rwmsg_tab[blk].client_path, strlen(xact->rwmsg_tab[blk].client_path), memb);
@@ -3591,7 +3602,7 @@ rwdts_router_update_client_for_precommit(rwdts_router_xact_t* xact, uint32_t blk
       membnode = RW_MALLOC0(sizeof(rwdts_router_member_node_t));
       memb->dest = rwmsg_destination_create(xact->dts->ep, RWMSG_ADDRTYPE_UNICAST, xact->rwmsg_tab[0].client_path);
       membnode->member = memb;
-      HASH_ADD_KEYPTR(hh_xact, xact->xact_union, xact->rwmsg_tab[blk].client_path, strlen(xact->rwmsg_tab[blk].client_path), membnode);
+      HASH_ADD_KEYPTR(hh_xact, xact->xact_union, rwmsg_ent->client_path, strlen(rwmsg_ent->client_path), membnode);
       RWDTS_ROUTER_LOG_XACT_EVENT(dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
                                   RWLOG_ATTR_SPRINTF("[%s] is being added to xact_union",
                                                      xact->rwmsg_tab[blk].client_path));
@@ -3642,6 +3653,7 @@ rwdts_precommit_to_client(rwdts_router_xact_t* xact, uint32_t* blockid)
          if ((xbreq->query[qrs]->action != RWDTS_QUERY_READ) &&
             (xbreq->query[qrs]->flags & RWDTS_XACT_FLAG_TRANS_CRUD)) {
            *blockid = blks;
+           // Only queries with transactional member data operation considered here
            return true;
          }
        }

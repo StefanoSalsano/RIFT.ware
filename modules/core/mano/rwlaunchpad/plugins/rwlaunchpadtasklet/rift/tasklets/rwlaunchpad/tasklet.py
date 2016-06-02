@@ -22,6 +22,7 @@ import gi
 gi.require_version('RwDts', '1.0')
 gi.require_version('RwcalYang', '1.0')
 gi.require_version('RwTypes', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     RwLaunchpadYang as rwlaunchpad,
@@ -31,6 +32,7 @@ from gi.repository import (
 
 import rift.tasklets
 import rift.mano.cloud
+import rift.mano.config_agent
 
 from . import uploader
 from . import datacenters
@@ -309,6 +311,39 @@ class LaunchpadConfigDtsHandler(object):
                     flags=rwdts.Flag.SUBSCRIBER,
                     )
 
+class CfgAgentAccountHandlers(object):
+    def __init__(self, dts, log, log_hdl, loop):
+        self._dts = dts
+        self._log = log
+        self._log_hdl = log_hdl
+        self._loop = loop
+
+        self._log.debug("creating config agent account config handler")
+        self.cfg_agent_cfg_handler = rift.mano.config_agent.ConfigAgentSubscriber(
+            self._dts, self._log,
+            rift.mano.config_agent.ConfigAgentCallbacks(
+                on_add_apply=self.on_cfg_agent_account_added,
+                on_delete_apply=self.on_cfg_agent_account_deleted,
+            )
+        )
+
+        self._log.debug("creating config agent account opdata handler")
+        self.cfg_agent_operdata_handler = rift.mano.config_agent.CfgAgentDtsOperdataHandler(
+            self._dts, self._log, self._loop,
+        )
+
+    def on_cfg_agent_account_deleted(self, account_name):
+        self._log.debug("config agent account deleted")
+        self.cfg_agent_operdata_handler.delete_cfg_agent_account(account_name)
+
+    def on_cfg_agent_account_added(self, account):
+        self._log.debug("config agent account added")
+        self.cfg_agent_operdata_handler.add_cfg_agent_account(account)
+
+    @asyncio.coroutine
+    def register(self):
+        self.cfg_agent_cfg_handler.register()
+        yield from self.cfg_agent_operdata_handler.register()
 
 class CloudAccountHandlers(object):
     def __init__(self, dts, log, log_hdl, loop, app):
@@ -355,6 +390,9 @@ class LaunchpadTasklet(rift.tasklets.Tasklet):
 
     def __init__(self, *args, **kwargs):
         super(LaunchpadTasklet, self).__init__(*args, **kwargs)
+        self.rwlog.set_category("rw-mano-log")
+        self.rwlog.set_subcategory("launchpad")
+
         self.app = None
         self.server = None
 
@@ -382,7 +420,6 @@ class LaunchpadTasklet(rift.tasklets.Tasklet):
     def start(self):
         super(LaunchpadTasklet, self).start()
         self.log.info("Starting LaunchpadTasklet")
-        self.log.setLevel(logging.DEBUG)
 
         self.log.debug("Registering with dts")
         self.dts = rift.tasklets.DTS(
@@ -453,10 +490,15 @@ class LaunchpadTasklet(rift.tasklets.Tasklet):
         self.datacenter_handler = datacenters.DataCenterPublisher(self)
         yield from self.datacenter_handler.register()
 
+        self.log.debug("creating cloud account handler")
         self.cloud_handler = CloudAccountHandlers(
                 self.dts, self.log, self.log_hdl, self.loop, self.app
                 )
         yield from self.cloud_handler.register()
+
+        self.log.debug("creating config agent handler")
+        self.config_handler = CfgAgentAccountHandlers(self.dts, self.log, self.log_hdl, self.loop)
+        yield from self.config_handler.register()
 
     @asyncio.coroutine
     def run(self):

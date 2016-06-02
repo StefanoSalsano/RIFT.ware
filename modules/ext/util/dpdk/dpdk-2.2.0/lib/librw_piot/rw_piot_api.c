@@ -535,8 +535,9 @@ int rw_piot_is_virtio(rw_piot_api_handle_t api_handle)
  return 0;
 }
 
-void 
-rw_piot_get_link_info(rw_piot_api_handle_t api_handle, rw_piot_link_info_t *eth_link_info)
+void
+rw_piot_get_hw_link_info(rw_piot_api_handle_t api_handle, 
+                         rw_piot_link_info_t *eth_link_info, int wait)
 {
   rw_piot_device_t *rw_piot_dev = RWPIOT_GET_DEVICE(api_handle);
   ASSERT(RWPIOT_VALID_DEVICE(rw_piot_dev));
@@ -544,7 +545,24 @@ rw_piot_get_link_info(rw_piot_api_handle_t api_handle, rw_piot_link_info_t *eth_
     RW_PIOT_LOG(RTE_LOG_ERR, "PIOT Could not find device by handle or invalid input param\n");
     return;
   }
-  rte_eth_link_get_nowait(rw_piot_dev->rte_port_id, eth_link_info);
+  rte_eth_hw_link_get(rw_piot_dev->rte_port_id, eth_link_info, wait);
+}
+
+void 
+rw_piot_get_link_info(rw_piot_api_handle_t api_handle,
+                      rw_piot_link_info_t *eth_link_info, int wait)
+{
+  rw_piot_device_t *rw_piot_dev = RWPIOT_GET_DEVICE(api_handle);
+  ASSERT(RWPIOT_VALID_DEVICE(rw_piot_dev));
+  if (NULL == rw_piot_dev || NULL == eth_link_info) {
+    RW_PIOT_LOG(RTE_LOG_ERR, "PIOT Could not find device by handle or invalid input param\n");
+    return;
+  }
+  if (wait){
+    rte_eth_link_get(rw_piot_dev->rte_port_id, eth_link_info);
+  }else{
+    rte_eth_link_get_nowait(rw_piot_dev->rte_port_id, eth_link_info);
+  }
   return;
 }
 

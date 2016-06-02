@@ -23,36 +23,38 @@
 #include <set>
 #include <string>
 #include <tuple>
-#include <utility>
-#include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include <boost/optional.hpp>
 
-#include "rw_app_data.hpp"
+#include <rw-manifest.pb-c.h>
+#include <rw-mgmt-schema.pb-c.h>
+#include <rw-mgmtagt-dts.pb-c.h>
+#include <rw-mgmtagt-log.pb-c.h>
+#include <rw-mgmtagt.pb-c.h>
+#include <rw_app_data.hpp>
 #include <rw_xml.h>
+#include <rwdts.h>
 #include <rwmemlog.h>
 #include <rwmemlog_mgmt.h>
 #include <rwmemlogdts.h>
-#include <rwdts.h>
 #include <rwmsg.h>
+#include <rwyangutil_argument_parser.hpp>
+#include <yangncx.hpp>
 
-#include <rwuagent.h>
-#include "rw-mgmtagt.pb-c.h"
-#include <rw-mgmtagt-log.pb-c.h>
-#include "rw-mgmt-schema.pb-c.h"
-#include "rwuagent_mgmt_system.hpp"
-
+#include "rwuagent.h"
 #include "rwuagent_dynamic_schema.hpp"
-#include "RwyangutilArgumentParser.hpp"
+#include "rwuagent_request_mode.hpp"
 
-#include "yangncx.hpp"
-#include "confd_xml.h"
 
 namespace rw_uagent {
 
 extern const char *uagent_yang_ns;
+extern const char *uagent_dts_yang_ns;
+extern const char *uagent_confd_yang_ns;
 
 const int RWUAGENT_MAX_CMD_STATS = 10;
 const int RWUAGENT_KS_DEBUG_BUFFER_LENGTH = 1024;
@@ -62,8 +64,12 @@ const int RWUAGENT_NOTIFICATION_TIMEOUT = 10;
 // DOM cleanup timer related constants
 static const int RWUAGENT_DOM_CLI_TIMER_PERIOD_MSEC = 120000;
 static const int RWUAGENT_DOM_NC_REST_TIMER_PERIOD_MSEC = 250;
+static const uint64_t CRITICAL_TASKLETS_WAIT_TIME = NSEC_PER_SEC * 60 * 7; // 7 Mins
 
 constexpr const uint32_t RWUAGENT_SCHEMA_MAX_VAL = std::numeric_limits<uint32_t>::max();
+
+constexpr const int RWUAGENT_MAX_HOSTNAME_SZ = 64;
+
 
 
 class MsgClient;
@@ -75,14 +81,21 @@ class SbReqGet;
 class SbReqRpc;
 class DtsMember;
 class Instance;
-
-
+class BaseMgmtSystem;
+class LogFileManager;
 
 /// YangNode app data
-typedef struct {
+struct northbound_dts_registrations_app_data {
+  std::string module_name;
   rwdts_member_reg_handle_t registration;
-  bool exported = false;
-} northbound_dts_registrations_app_data;
+  bool propagated;
+  northbound_dts_registrations_app_data(std::string name,
+                                        rwdts_member_reg_handle_t reg)
+      : module_name(name),
+        registration(reg),
+        propagated(false)
+  {}
+};
 
 typedef rw_yang::AppDataToken<northbound_dts_registrations_app_data *> adt_northbound_dts_registrations_t;
 
@@ -112,10 +125,11 @@ typedef RWPB_E(IetfNetconf_ErrorSeverityType) IetfNetconf_ErrorSeverityType;
 typedef RWPB_E(RwMgmtagt_SbReqType) RwMgmtagt_SbReqType;
 typedef RWPB_E(RwMgmtagt_NbReqType) RwMgmtagt_NbReqType;
 typedef RWPB_E(RwMgmtSchema_ApplicationState) RwMgmtSchema_ApplicationState;
+typedef RWPB_E(RwManifest_RwmgmtAgentMode) RwmgmtAgentMode;
 
 typedef RWPB_T_MSG(RwMgmtagt_data_Uagent_LastError_RpcError) IetfNetconfErrorReply;
-typedef RWPB_T_MSG(RwMgmtagt_input_MgmtAgent_PbRequest) RwMgmtagt_PbRequest;
-typedef RWPB_T_MSG(RwMgmtagt_output_MgmtAgent_PbRequest) RwMgmtagt_PbResponse;
+typedef RWPB_T_MSG(RwMgmtagtDts_input_MgmtAgentDts_PbRequest) RwMgmtagtDts_PbRequest;
+typedef RWPB_T_MSG(RwMgmtagtDts_output_MgmtAgentDts_PbRequest) RwMgmtagtDts_PbResponse;
 
 typedef UniquePtrProtobufCMessage<>::uptr_t pbcm_uptr_t;
 typedef UniquePtrKeySpecPath::uptr_t ks_uptr_t;
@@ -197,30 +211,6 @@ typedef UniquePtrKeySpecPath::uptr_t ks_uptr_t;
     __VA_ARGS__ )
 
 
-/*
- * A convenience function for dispatching tasks (code block)
- * on dispatch thread/queue. 
- * Callers are responsible for providing correct signature
- * for the std function via lambdas (preferrable way)
- */
-static inline 
-void async_execute(rwsched_tasklet_ptr_t tasklet,
-                   rwsched_dispatch_queue_t launch_q,
-                   void* ud,
-                   dispatch_function_t task)
-{
-  //typedef void (*dispatch_func)(void*);
-
-  rwsched_dispatch_async_f(
-                          tasklet,
-                          launch_q,
-                          ud,
-                          task);
-
-  return;
-}
-
-
 static inline
 std::string get_rift_install()
 {
@@ -246,6 +236,11 @@ bool is_production()
 
   return it != probable_vals.end();
 }
+
+void rw_management_agent_xml_log_cb(void *user_data,
+                                    rw_xml_log_level_e level,
+                                    const char *fn,
+                                    const char *log_msg);
 
 
 /*!
@@ -435,11 +430,10 @@ typedef struct OperationalStats { //  OperationalStats
 // ATTN: This is ugly, unwind the dependencies some more!
 #include "rwuagent_nb_req.hpp"
 #include "rwuagent_sb_req.hpp"
-#include "rwuagent_confd.hpp"
+#include "rwuagent_mgmt_system.hpp"
 
 
 namespace rw_uagent {
-
 
 /*!
  * Dts instance.
@@ -483,7 +477,7 @@ class DtsMember
   /*!
    * Get flags for a transaction.
    */
-  RWDtsFlag get_flags();
+  RWDtsXactFlag get_flags();
 
   /*!
    * Check if DTS is ready for queries.
@@ -505,12 +499,29 @@ class DtsMember
    */
   void load_registrations(rw_yang::YangModel* model);
 
+  /*!
+   * Publish the state of management agent.
+   * By default, sends the status as true indicating
+   * that management agent is ready to accept requests.
+   */
+  void publish_config_state(bool state = true);
+
 private:
+  static void schema_registration_ready_cb(rwdts_member_reg_handle_t  regh,
+                                            rw_status_t                reg_state,
+                                            void*                      user_data);
 
   static void state_change_cb(
     rwdts_api_t* apih,
     rwdts_state_t state,
     void* ud );
+
+  static void config_state_cb(
+    rwdts_xact_t* xact,
+    rwdts_xact_status_t* xact_status,
+    void* ud);
+
+  static void retry_config_state_cb(void* ctx);
 
   void state_change(
     rwdts_state_t state );
@@ -554,6 +565,18 @@ private:
     const rw_keyspec_path_t* ks_in,
     const ProtobufCMessage* msg );
 
+  static rwdts_member_rsp_code_t config_state_prepare_cb(
+    const rwdts_xact_info_t* xact_info,
+    RWDtsQueryAction action,
+    const rw_keyspec_path_t* ks_in,
+    const ProtobufCMessage* msg,
+    uint32_t credits,
+    void* getnext_ptr);
+
+  rwdts_member_rsp_code_t config_state_respond(
+    rwdts_xact_t* xact,
+    rwdts_query_handle_t qhdl,
+    const rw_keyspec_path_t* ks );
 
 private:
 
@@ -570,10 +593,7 @@ private:
   bool ready_ = false;
 
   //! A flag to be set on the next DTS transaction
-  RWDtsFlag flags_ = RWDTS_FLAG_NONE;
-
-  //! RPC registration handle.
-  rwdts_member_reg_handle_t rpc_reg_;
+  RWDtsXactFlag flags_ = RWDTS_XACT_FLAG_NONE;
 
   //! List of DTS registrations (config and notification)
   std::list<rwdts_member_reg_handle_t> all_dts_regs_;
@@ -672,10 +692,7 @@ public:
   /// Return the rwmemlog buffer so callbacks can log with the instance's buffer
   rwmemlog_buffer_t* get_memlog_buf();
   rwmemlog_buffer_t** get_memlog_ptr();
-
-public:
-
-  typedef std::unordered_map<rwsched_CFSocketRef,rwsched_CFRunLoopSourceRef> cf_src_map_t;
+  RequestMode get_request_mode();
 
 public:
   /// Get the tasklet info instance
@@ -735,6 +752,11 @@ public:
     return dom_.get();
   }
 
+  void reset_dom(rw_yang::XMLDocument::uptr_t new_dom)
+  {
+    dom_ = std::move(new_dom);
+  }
+
   //! Determine if the DTS member API is ready for queries.
   bool dts_ready() const noexcept
   {
@@ -775,7 +797,29 @@ public:
 
   static void async_start_dts(void* ctxt);
 
-  static void async_start_confd(void* ctxt);
+  static void async_start_mgmt_system(void* ctxt);
+
+  /*!
+   * Waits for the critical tasklets to come into Running
+   * state before proceeding with the startup state machine.
+   * It waits for CRITICAL_TASKLETS_WAIT_TIME mins(default)
+   * before getting timed out on waiting for critical tasklets.
+   */
+  rw_status_t wait_for_critical_tasklets();
+
+  /*!
+   * These functions are used to enqueue and
+   * dequeue PB requests to serialize their processing.
+   * On calling enqueue, the pb-request will be appended to the 
+   * queue and the request at the start of the queue would be
+   * dispatched for processing.
+   * On calling dequeue, the entry from the front will be removed
+   * and if their are further entries in the queue, they would
+   * be processed in similar manner.
+   */
+  void enqueue_pb_request(NbReqInternal*);
+  void dequeue_pb_request();
+  static void dispatch_next_pb_req(void* ud);
 
   /*!
    * Register the nodes from the new schema
@@ -793,13 +837,23 @@ public:
   /// Reloads the dom with the new module included
   rw_yang::YangModule* load_module(const char *module_name);
 
-  /// Start Confd CDB upgrade
-  void start_upgrade(size_t n_modules, char** module_name);
-
   rw_status_t handle_dynamic_schema_update(const int batch_size,
                                            rwdynschema_module_t * modules);
 
-  rw_status_t perform_dynamic_schema_update();
+  /// Schedule the module loading the appropriate queue
+  void perform_dynamic_schema_update();
+
+  /// Load and merge all the pending schema modules
+  static void perform_dynamic_schema_update_load_modules(void * context);
+
+  /// Schedule the dts registrations on the appropriate queue
+  static void perform_dynamic_schema_update_end(void * context);
+
+  /// Returns true if we've gotten a reg_ready callback for every module we're registered for
+  bool registrations_propagated();
+
+  /// reg_ready dts callback for top-level module registrations
+  void schema_registration_ready(rwdts_member_reg_handle_t regh);
 
   // Update dynamic schema loading state
   void update_dyn_state(RwMgmtSchema_ApplicationState state,
@@ -807,25 +861,6 @@ public:
 
   // Update dynamic schema loading state with err string set to ' ' (space)
   void update_dyn_state(RwMgmtSchema_ApplicationState state);
-
-  /// Connect to a confd server. Does the data provider registrations
-  /// and sets up notification socket
-  rw_status_t setup_confd_connection();
-
-  /// Does the config subscription with confd
-  rw_status_t setup_confd_subscription();
-
-  /// Start the confd configuration reload asynchronously
-  void start_confd_reload();
-
-  /// tries to connect to a confd server using setup_confd_connection
-  void try_confd_connection();
-
-  // Close a CF socket
-  void close_cf_socket(rwsched_CFSocketRef s);
-
-  /// Annotate the YANG model with tailf hash values
-  void annotate_yang_model_confd();
 
   /*!
    * Update uagent statistics
@@ -845,10 +880,37 @@ private:
   rw_status_t fill_in_confd_info();
   bool parse_cmd_args(const rwyangutil::ArgumentParser&);
 
+  /*!
+   * Timer functions for ticking wait for
+   * critical tasklets callback.
+   */
+  static void tasks_ready_timer_expire_cb(void* ctx);
+  void start_tasks_ready_timer();
+  void tasks_ready_timer_expire();
+  void stop_tasks_ready_timer();
+
+  /*!
+   * Called once the criticals tasklets are ready
+   * OR when the timer gets timed out waiting for the
+   * critical tasklets to come up.
+   */
+  virtual void tasks_ready();
+  static void tasks_ready_cb(void* ctx);
+
+  /*!
+     Attempt to start management instance.
+   */
+  virtual void try_start_mgmt_instance();
+  static void try_start_mgmt_instance_cb(void* ctx);
+
+
 private:
   static const size_t MEMORY_LOGGER_INITIAL_POOL_SIZE = 12ul;
   RwMemlogInstance memlog_inst_;
   RwMemlogBuffer memlog_buf_;
+
+  // Critical tasks timer
+  rwsched_dispatch_source_t tasks_ready_timer_ = nullptr;
 
 public: // ATTN: private
 
@@ -874,7 +936,6 @@ public: // ATTN: private
   /// Confd IPC Unix domain socket
   std::string confd_unix_socket_;
 
-  struct sockaddr_un confd_unix_addr_;
   struct sockaddr_in confd_inet_addr_;
 
   struct sockaddr *confd_addr_ = nullptr;
@@ -883,19 +944,6 @@ public: // ATTN: private
   // schema which needs to be loaded
   std::string yang_schema_;
 
-  // ATTN: move to confd daemon
-  /// Confd Configuration handler
-  NbReqConfdConfig *confd_config_ = nullptr;
-
-  /// Confd Deamon that supports data retrieval and actions
-  ConfdDaemon *confd_daemon_ = nullptr;
-
-  // ATTN: move to confd daemon
-  /// The number of attempts to connect to confd
-  uint8_t confd_connection_attempts_ = 0;
-
-  /// A mapping from RW-sched assigned handles to sources
-  cf_src_map_t cf_srcs_;
 
   // Each type has its own stats, and CommandStats
   typedef std::unique_ptr<OperationalStats> op_stats_uptr_t;
@@ -904,10 +952,7 @@ public: // ATTN: private
   /// Stores the last error encountered by uagent and returns it when requested
   std::string last_error_;
 
-  ConfdUpgradeContext upgrade_ctxt_;
-
-  bool unique_ws_ = false;
-  std::string mgmt_workspace_;
+  bool non_persist_ws_ = false;
 
   ///
   uint32_t cli_dom_refresh_period_msec_ = RWUAGENT_DOM_CLI_TIMER_PERIOD_MSEC;
@@ -952,15 +997,40 @@ private:
   /// Serial dispatch queue for other blocking tasks
   rwsched_dispatch_queue_t serial_q_;
 
-  ///
-  std::unique_ptr<BaseMgmtSystem> mgmt_handler_ = nullptr;
+  /// Northbound management system interface.
+  std::unique_ptr<BaseMgmtSystem> mgmt_handler_;
 
   /// A list used to hold temporary model objects
   std::vector<std::unique_ptr<rw_yang::YangModelNcx>> tmp_models_;
 
+ public:
+  /// Callback to execute after finishing perform_dynamic_schema_update_load_modules
+  void(*after_modules_loaded_cb_)(void*) = nullptr;
+
+  /// Flag to say wether all the modules were loaded or not
+  bool loading_modules_success_ = true;
+
+  /// A vector to hold the module app data
+  /// set should only be modified from the main dispatch queue
+  std::vector<northbound_dts_registrations_app_data> exported_modules_app_data_;
+  using exported_modules_app_data_itr_t =  std::vector<northbound_dts_registrations_app_data>::iterator;
+ private:
   /// A set to hold the module names that are exported
+  /// This set should only be modified from the main dispatch queue
   std::set<std::string> exported_modules_;
 
+  /// The uagent mode confd or xml
+  RequestMode request_mode_;
+
+  /// Queue to serialize PB requests
+  std::deque<NbReqInternal*> pb_req_q_;
+
+  /// log file manager
+  LogFileManager * log_file_manager_;
+ public:
+  LogFileManager * log_file_manager() {
+    return log_file_manager_;
+  }
 };
 
 /*!
@@ -990,7 +1060,7 @@ public:
   /// Atleast one message was created
   bool valid_ = false;
   /// A flag to be set on the next DTS transaction
-  RWDtsFlag dts_flags_ = RWDTS_FLAG_NONE;
+  RWDtsXactFlag dts_flags_ = RWDTS_XACT_FLAG_NONE;
 
 public:
 
@@ -999,7 +1069,7 @@ public:
     rwdts_xact_t *xact,
     /** [in] the underlying YANG model for the splitter */
     rw_yang::YangModel *model,
-    RWDtsFlag flag,
+    RWDtsXactFlag flag,
     /** [in] tag of the extension to split at */
     rw_yang::XMLNode* root_node
   );
@@ -1137,7 +1207,12 @@ inline rwmemlog_buffer_t** Instance::get_memlog_ptr()
   return &memlog_buf_;
 }
 
-inline 
+inline RequestMode Instance::get_request_mode()
+{
+  return request_mode_;
+}
+
+inline
 void Instance::update_dyn_state(RwMgmtSchema_ApplicationState state,
                                 const std::string& str)
 {

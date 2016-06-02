@@ -264,47 +264,47 @@ module rw-vnf-base-types
     }
   }  // grouping special-next-hop
   /*
-  grouping next-hop-classifiers {
+    grouping next-hop-classifiers {
     description
-      "This grouping provides two next-hop classifiers.";
+    "This grouping provides two next-hop classifiers.";
     leaf priority {
-      type enumeration {
-        enum "primary" {
-          value 1;
-          description "Primary next-hop.";
-        }
-        enum "backup" {
-          value 2;
-          description "Backup next-hop.";
-        }
-      }
-      description
-        "Simple priority for distinguishing between primary and
-         backup next-hops.
-         Backup next-hops are used if and only if no primary
-         next-hops are reachable.";
+    type enumeration {
+    enum "primary" {
+    value 1;
+    description "Primary next-hop.";
+    }
+    enum "backup" {
+    value 2;
+    description "Backup next-hop.";
+    }
+    }
+    description
+    "Simple priority for distinguishing between primary and
+    backup next-hops.
+    Backup next-hops are used if and only if no primary
+    next-hops are reachable.";
     }
 
     leaf weight {
-      type uint8;
-      must
-        ". = 0 or not(../../next-hop/weight = 0)" {
-        error-message
-          "Illegal combination of zero and non-zero "
-          + "next-hop weights.";
-        description
-          "Next-hop weights must be either all zero (equal
-           load-balancing) or all non-zero.";
-      }
-      description
-        "This parameter specifies the weight of the next-hop for load
-         balancing. The number specifies the relative fraction of the
-         traffic that will use the corresponding next-hop.
+    type uint8;
+    must
+    ". = 0 or not(../../next-hop/weight = 0)" {
+    error-message
+    "Illegal combination of zero and non-zero "
+    + "next-hop weights.";
+    description
+    "Next-hop weights must be either all zero (equal
+    load-balancing) or all non-zero.";
+    }
+    description
+    "This parameter specifies the weight of the next-hop for load
+    balancing. The number specifies the relative fraction of the
+    traffic that will use the corresponding next-hop.
 
-         A value of 0 represents equal load-balancing.
+    A value of 0 represents equal load-balancing.
 
-         If both primary and backup next-hops are present, then the
-         weights for each priority level are used separately.";
+    If both primary and backup next-hops are present, then the
+    weights for each priority level are used separately.";
     }
     }  // grouping next-hop-classifiers
   */
@@ -538,6 +538,7 @@ module rw-vnf-base-types
       enum ipv4_ip_prefix_dport;
       enum ipv4_sign_any;
       enum ipv6_sign_any;
+      enum gen_3tuple_flow;
       // Add any new static flow type above dynamic_flow_start
       enum dynamic_flow_start;
       enum unused6;
@@ -588,6 +589,7 @@ module rw-vnf-base-types
       enum local-source;
       enum destination;
       enum source;
+      enum receive-interface;
       enum any;
     }
   }
@@ -1146,6 +1148,61 @@ module rw-vnf-base-types
       description "Destination IP address";
       type rwt:ip-address;
       rwpb:field-string-max 46;
+    }
+  }
+
+  grouping port-counters{
+    leaf rx-rate-pps {
+      type rwt:gauge32;
+      description "Rx Rate(pps)";
+    }
+    leaf tx-rate-pps {
+      type rwt:gauge32;
+      description "Tx Rate(pps)";
+    }
+    leaf rx-rate-mbps {
+      type rwt:gauge32;
+      description "Rx Rate(Mbps)";
+    }
+    leaf tx-rate-mbps {
+      type rwt:gauge32;
+      description "Tx Rate(Mbps)";
+    }
+    leaf input-errors {
+      type rwt:zero-based-counter32;
+      description "Input Errors";
+    }
+    leaf output-errors {
+      type rwt:zero-based-counter32;
+      description "Output Errors";
+    }
+    leaf input-packets {
+      type rwt:zero-based-counter64;
+      description "Input packets";
+    }
+    leaf output-packets {
+      type rwt:zero-based-counter64;
+      description "Output packets";
+    }
+    leaf input-bytes {
+      type rwt:zero-based-counter64;
+      description "Total In bytes(MB)";
+    }
+    leaf output-bytes {
+      type rwt:zero-based-counter64;
+      description "Total Out Bytes(MB)";
+    }
+    leaf input-missed-pkts {
+      type rwt:zero-based-counter64;
+      description "Total of RX missed packets (e.g full FIFO)";
+    }
+    leaf input-mcast-pkts {
+      type rwt:zero-based-counter64;
+      description "Total of RX multicast packets";
+    }
+    leaf input-nombuf-pkts {
+      type rwt:zero-based-counter64;
+      description "Total number of RX mbuf allocation failures";
     }
   }
 }

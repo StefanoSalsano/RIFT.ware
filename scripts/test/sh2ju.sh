@@ -113,7 +113,6 @@ EOF
   #                 perl -CSDA     -pe'...' file.xml > file_fixed.xml
   #                 perl -CSDA -i~ -pe'...' file.xml     # Inplace with backup
   #                 perl -CSDA -i  -pe'...' file.xml     # Inplace without backup
-
   kill $tailpid
   wait $tailpid 2>/dev/null
   perl -CSDA -i -pe's/[^\x9\xA\xD\x20-\x{D7FF}\x{E000}-\x{FFFD}\x{10000}-\x{10FFFF}]+//g;' $outf

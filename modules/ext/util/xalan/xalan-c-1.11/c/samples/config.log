@@ -1,0 +1,88 @@
+This file contains any messages produced by compilers while
+running configure, to aid debugging if configure makes a mistake.
+
+configure:529: checking for gcc
+configure:642: checking whether the C compiler (gcc  ) works
+configure:658: gcc -o conftest    conftest.c  1>&5
+configure:684: checking whether the C compiler (gcc  ) is a cross-compiler
+configure:689: checking whether we are using GNU C
+configure:698: gcc -E conftest.c
+configure:717: checking whether gcc accepts -g
+configure:753: checking for c++
+configure:785: checking whether the C++ compiler (c++  ) works
+configure:801: c++ -o conftest    conftest.C  1>&5
+configure:827: checking whether the C++ compiler (c++  ) is a cross-compiler
+configure:832: checking whether we are using GNU C++
+configure:841: c++ -E conftest.C
+configure:860: checking whether c++ accepts -g
+configure:909: gcc -c -g -O2  conftest.c 1>&5
+configure:926: gcc -c -g -O2  conftest.c 1>&5
+configure: In function 'main':
+configure:922:1: warning: incompatible implicit declaration of built-in function 'exit' [enabled by default]
+ exit (42);
+ ^
+configure:973: checking for a BSD compatible install
+configure:1028: checking for autoconf
+configure:1057: checking for floor in -lm
+configure:1076: gcc -o conftest -g -O2   conftest.c -lm   1>&5
+configure:1069:6: warning: conflicting types for built-in function 'floor' [enabled by default]
+ char floor();
+      ^
+configure:1108: checking whether -fno-elide-constructors works correctly
+configure:1129: c++ -c -g -O2 -fno-elide-constructors  conftest.C 1>&5
+configure:1151: checking host system type
+configure:1192: checking how to run the C++ preprocessor
+configure:1210: c++ -E  conftest.C >/dev/null 2>conftest.out
+configure:1235: checking for ANSI C header files
+configure:1248: c++ -E  conftest.C >/dev/null 2>conftest.out
+configure:1315: c++ -o conftest -g -O2 -fno-elide-constructors   conftest.C -lm  1>&5
+configure: In function 'int main()':
+configure:1310:73: error: 'exit' was not declared in this scope
+ if (XOR (islower (i), ISLOWER (i)) || toupper (i) != TOUPPER (i)) exit(2);
+                                                                         ^
+configure:1311:8: error: 'exit' was not declared in this scope
+ exit (0); }
+        ^
+configure: failed program was:
+#line 1304 "configure"
+#include "confdefs.h"
+#include <ctype.h>
+#define ISLOWER(c) ('a' <= (c) && (c) <= 'z')
+#define TOUPPER(c) (ISLOWER(c) ? 'A' + ((c) - 'a') : (c))
+#define XOR(e, f) (((e) && !(f)) || (!(e) && (f)))
+int main () { int i; for (i = 0; i < 256; i++)
+if (XOR (islower (i), ISLOWER (i)) || toupper (i) != TOUPPER (i)) exit(2);
+exit (0); }
+
+configure:1341: checking for mbstowcs
+configure:1372: c++ -o conftest -g -O2 -fno-elide-constructors   conftest.C -lm  1>&5
+configure:1400: checking if mbstowcs can count only
+configure:1424: c++ -o conftest -g -O2 -fno-elide-constructors   conftest.C -lm  1>&5
+configure: In function 'int main(int, char**)':
+configure:1416:23: error: 'wcstombs' was not declared in this scope
+  if (wcstombs(0, in, 0) == -1) {
+                       ^
+configure:1417:9: error: 'exit' was not declared in this scope
+   exit(1);
+         ^
+configure:1420:8: error: 'exit' was not declared in this scope
+  exit(0);
+        ^
+configure: failed program was:
+#line 1406 "configure"
+#include "confdefs.h"
+
+#if STDC_HEADERS
+#include <stdlib.h>
+#endif
+
+int main(int argc, char *argv[])
+{
+	wchar_t in[5] = { 0x74, 0x65, 0x73, 0x74, 0x00 };
+
+	if (wcstombs(0, in, 0) == -1) {
+		exit(1);
+	}
+
+	exit(0);
+}

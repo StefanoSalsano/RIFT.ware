@@ -41,7 +41,23 @@ module rwmon
   container nfvi-metrics {
     rwpb:msg-new NfviMetrics;
 
+    leaf timestamp {
+      description
+          "This is the time when the metric was captured. The timestamp is
+          represented as the number of seconds since the beginning of the Unix
+          epoch.";
+      type decimal64 {
+        fraction-digits 3;
+      }
+    }
+
     uses manotypes:nfvi-metrics;
+  }
+
+  container alarm {
+    rwpb:msg-new Alarm;
+
+    uses manotypes:alarm;
   }
 }
 

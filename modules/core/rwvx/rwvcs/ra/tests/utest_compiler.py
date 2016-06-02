@@ -118,8 +118,6 @@ class TestLegacyManifestCompiler(unittest.TestCase):
                                 rift.vcs.RiftCli(),
                                 rift.vcs.Webserver(),
                                 rift.vcs.RedisServer(),
-                                rift.vcs.Watchdog(),
-                                rift.vcs.Confd(),
                                 ],
                             )
                         ])
@@ -143,54 +141,7 @@ class TestLegacyManifestCompiler(unittest.TestCase):
         # The webserver is the one of the 2 native processes on the VM
         colony = manifest.components[0]
         native = rift.vcs.core.list_by_class(colony, rift.vcs.manifest.RaNativeProcess)
-        self.assertEqual(5, len(native))
-
-
-class TestNoMoreThanOneConfdConstraint(unittest.TestCase):
-    def setUp(self):
-        self.sysinfo = rift.vcs.SystemInfo(
-                colonies=[],
-                mode='pci',
-                collapsed=True,
-                zookeeper=None)
-
-        self.virtual_machine = rift.vcs.VirtualMachine(ip='127.0.0.1')
-        self.sysinfo.subcomponents = [
-                rift.vcs.Colony(clusters=[
-                    rift.vcs.Cluster(virtual_machines=[
-                        self.virtual_machine
-                        ])
-                    ])
-                ]
-
-    def test_zero_confd(self):
-        """
-        The constraint is satisfied if there is no confd process.
-
-        """
-        constraint = rift.vcs.compiler.constraints.NoMoreThanOneConfd()
-        constraint(self.sysinfo)
-
-    def test_one_confd(self):
-        """
-        The constraint is satisfied if there is one confd process.
-
-        """
-        self.virtual_machine.add_proc(rift.vcs.Confd())
-        constraint = rift.vcs.compiler.constraints.NoMoreThanOneConfd()
-        constraint(self.sysinfo)
-
-    def test_more_than_one_confd(self):
-        """
-        The constraint raises an exception if there is more than one confd
-        process.
-
-        """
-        self.virtual_machine.add_proc(rift.vcs.Confd())
-        self.virtual_machine.add_proc(rift.vcs.Confd())
-        constraint = rift.vcs.compiler.constraints.NoMoreThanOneConfd()
-        with self.assertRaises(rift.vcs.compiler.exc.ConstraintError):
-            constraint(self.sysinfo)
+        self.assertEqual(3, len(native))
 
 
 class TestUAgentConstraint(unittest.TestCase):

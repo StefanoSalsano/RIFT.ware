@@ -30,6 +30,8 @@ import gi.repository.NsdYang as rwnsd
 import gi.repository.RwManifestYang as rwmanifest
 import gi.repository.RwYang
 import ndl
+from gi.repository.RwManifestYang import NetconfTrace
+from gi.repository.RwManifestYang import RwmgmtAgentMode
 
 import rift.auto.proxy
 import rift.vcs
@@ -38,6 +40,7 @@ import rift.vcs.compiler
 import rift.vcs.core
 import rift.vcs.fastpath
 import rift.vcs.manifest
+import rift.vcs.mgmt
 
 import rift.auto.ip_utils
 import rift.auto.proxy
@@ -157,27 +160,33 @@ class Demo(object):
                        valgrind=None,
                        verbose=False,
                        use_gdb=False,
-                       northbound_listing="rwbase_schema_listing.txt"
+                       track_memory=False,
+                       northbound_listing="rwbase_schema_listing.txt",
+                       netconf_trace=NetconfTrace.AUTO,
+                       agent_mode=RwmgmtAgentMode.AUTOMODE,
                        ):
         """Returns a PreparedSystem object encapsulating the SystemInfo and PortNetwork objects
 
         Arguments:
-            mode         - the mode that the system will be run in
-            collapsed    - a flag indicating whether the system is to be run in
-                           collapsed mode or not.
-            mock_cli    - a flag indicating whether the system is to be run with
-                          a fake cli instead of the real one
-            multi_broker - a flag indicating whether the system is operating in
-                           multi-broker mode or not (single-broker).
+            mode            - the mode that the system will be run in
+            collapsed       - a flag indicating whether the system is to be run in
+                              collapsed mode or not.
+            mock_cli        - a flag indicating whether the system is to be run with
+                              a fake cli instead of the real one
+            multi_broker    - a flag indicating whether the system is operating in
+                              multi-broker mode or not (single-broker).
             multi_dtsrouter - a flag indicating whether the system is operating in
-                           multi-dtsrouter mode or not (single-dtsrouter).
-            dtsperfmgr - a flag indicating whether the system is running the DTS
-                         Performance Manager or not
-            ip_list - a list of ips to provision to VM instances
-            valgrind - a list of component names to execute under valgrind
-            verbose - enable debug logging
-            use_gdb - riftware launched under gdb
+                              multi-dtsrouter mode or not (single-dtsrouter).
+            dtsperfmgr      - a flag indicating whether the system is running the DTS
+                              Performance Manager or not
+            ip_list         - a list of ips to provision to VM instances
+            valgrind        - a list of component names to execute under valgrind
+            verbose         - enable debug logging
+            use_gdb         - riftware launched under gdb
+            track_memory    - riftware launched with LD_PRELOAD based memory-tracking
             northbound_listing - The northbound schema list.
+            netconf_trace   - Knob to control netconf trace generation
+            agent_mode      - Management Agent mode; RwmgmtAgentMode.CONFD or RwmgmtAgentMode.RWXML
 
         Raises:
             An UnsupportedModeError is raised if the specified mode is not in
@@ -187,8 +196,17 @@ class Demo(object):
             a tuple containing a SystemInfo object and a PortNetwork object.
 
         """
+        if agent_mode not in [RwmgmtAgentMode.CONFD, RwmgmtAgentMode.RWXML]:
+            agent_mode = rift.vcs.mgmt.default_agent_mode()
+
         if self._port_names and mode not in self._port_names:
             raise UnsupportedModeError("Mode (%s) not found in port_names." % mode)
+
+        #setting up debug option for G_SLICE for 12578 
+        if collapsed:
+            import os
+            os.environ["G_SLICE"] = "debug-blocks"
+        
 
         # The system info contain in this object is a template. We do not want
         # to change it so create a deep copy.
@@ -197,6 +215,8 @@ class Demo(object):
         sysinfo.mode = mode
         sysinfo.collapsed = collapsed
         sysinfo.northbound_listing = northbound_listing
+        sysinfo.netconf_trace = netconf_trace
+        sysinfo.agent_mode = agent_mode
         sysinfo.multi_broker = multi_broker
         sysinfo.multi_dtsrouter = multi_dtsrouter
         sysinfo.dtsperfmgr = dtsperfmgr
@@ -434,6 +454,7 @@ class PreparedSystem(object):
                  keep_netns=False,
                  skip_prepare_vm=False,
                  use_gdb=False,
+                 track_memory=False,
                  resources_file=None,
 		 bootstrap_log_period = 30,
 		 bootstrap_log_severity = 6,
@@ -451,6 +472,7 @@ class PreparedSystem(object):
             no_huge - Disable huge pages
             keep_netns - Keep existing network namespaces when preparing VM's.
             use_gdb - Run rwmain under GDB
+            track_memory - Run rwmain with memory-tracking enabled using LD_PRELOAD
             bootstrap_log_period - Duration during which logs are collected during system bootstrap
             bootstrap_log_severity - Severity for bootstrap logs written to local syslog file, max 7 (debug)
             console_log_severity - Severity for console logs for all categories
@@ -474,6 +496,7 @@ class PreparedSystem(object):
         self._keep_netns = keep_netns
         self._skip_prepare_vm = skip_prepare_vm
         self._use_gdb = use_gdb
+        self._track_memory = track_memory
 
         self._resources_file = resources_file
 
@@ -809,17 +832,11 @@ class PreparedSystem(object):
 
         self._generate_manifest()
 
-        # If the "config readiness" of the top level component is False then
-        # that of all the sub-components are False as well because
-        # the sub-components can start only if the top-level component is ready
-        # to start (i.e, "config_readiness" is True).
-        # This assumption is, however, not applicable when it is True because
-        # a sub-component under a component with "config_ready" can still not
-        # be ready to start (i.e, "config_readiness" is False)
+        # if the top level component is set not to start then config readiness of all the
+        # sub-components is set to false.
         for component in self.manifest:
-            if isinstance(component, rift.vcs.manifest.RaVm) or isinstance(component, rift.vcs.manifest.RaProc):
-                for descendant in component.descendents():
-                    descendant.config_ready = descendant.config_ready and component.config_ready
+            for descendant in component.descendents():
+                descendant.config_ready = descendant.config_ready and component.start
 
         self.vcs.manifest_generate_xml(self.manifest, xml_output)
 
@@ -854,21 +871,32 @@ class PreparedSystem(object):
         # apply config xml to the system in a child process
         if apply_xml_file is not None:
             if os.fork() == 0:
-                confd_vm = self.sysinfo.find_ancestor_by_class(rift.vcs.Confd)
+                confd_vm = self.sysinfo.find_ancestor_by_class(rift.vcs.uAgentTasklet)
                 if confd_vm is None:
                     raise ConfigurationError("Could not find virtual machine which contains confd")
                 self._apply_config(confd_vm.ip, apply_xml_file)
                 sys.exit(0)
-        self.vcs.exec_rwmain(xml_output, use_gdb=self._use_gdb)
+        self.vcs.exec_rwmain(xml_output, use_gdb=self._use_gdb, track_memory=self._track_memory)
 
 
-def prepared_system_from_demo_and_args(demo, args, northbound_listing="rwbase_schema_listing.txt"):
+def prepared_system_from_demo_and_args(demo, args,
+                                       netconf_trace_override=False,
+                                       northbound_listing="rwbase_schema_listing.txt"):
     """ Creates a PreparedSystem from a Demo instance and DemoArgParser namespace.
 
     Arguments:
         demo - A instance of Demo
         args - A argparse namespace created from DemoArgParser.parse_args()
     """
+    netconf_trace = NetconfTrace.AUTO
+    if netconf_trace_override:
+        netconf_trace = NetconfTrace.ENABLE
+
+    if args.use_xml_mode:
+        agent_mode = rwmanifest.RwmgmtAgentMode.RWXML
+    else:
+        agent_mode = rift.vcs.mgmt.default_agent_mode()
+        
     sysinfo, port_network = demo.prepare_system(
             mode=args.mode,
             collapsed=args.collapsed,
@@ -880,10 +908,15 @@ def prepared_system_from_demo_and_args(demo, args, northbound_listing="rwbase_sc
             valgrind=args.valgrind,
             verbose=args.verbose,
             use_gdb=args.gdb,
-            northbound_listing=northbound_listing)
+            track_memory=args.track_memory,
+            northbound_listing=northbound_listing,
+            netconf_trace=netconf_trace,
+            agent_mode=agent_mode)
 
     prepared_system_params = {"sysinfo": sysinfo,
                               "port_network": port_network}
+
+    print("args=", args)
 
     if args.trace is not None:
         prepared_system_params["trace_level"] = args.trace
@@ -899,6 +932,8 @@ def prepared_system_from_demo_and_args(demo, args, northbound_listing="rwbase_sc
         prepared_system_params["skip_prepare_vm"] = args.skip_prepare_vm
     if args.gdb is not None:
         prepared_system_params["use_gdb"] = args.gdb
+    if args.track_memory is not None:
+        prepared_system_params["track_memory"] = args.track_memory
     if args.resources_file is not None:
         prepared_system_params["resources_file"] = args.resources_file
     if args.bootstrap_log_period is not None:
@@ -944,6 +979,10 @@ class DemoArgParser(argparse.ArgumentParser):
         self.add_argument('--gdb',
                           action='store_true',
                           help="A flag indicating that rwmain should be launched under gdb")
+
+        self.add_argument('--track-memory',
+                          action='store_true',
+                          help="A flag indicating that rwmain should be launched with LD_PRELOAD based memory-tracking")
 
         self.add_argument('--apply-xml',
                         help='Apply a pre-generated XML configuration file to the system',
@@ -1031,6 +1070,11 @@ class DemoArgParser(argparse.ArgumentParser):
         self.add_argument('--valgrind',
                           nargs='+',
                           help="Runs the specified components under valgrind")
+
+        self.add_argument('--use-xml-mode',
+                          action='store_true',
+                          default=False,
+                          help="Use the xml agent.")
 
         self.add_argument('-v', '--verbose',
                           action='store_true',

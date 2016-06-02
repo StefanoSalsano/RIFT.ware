@@ -44,6 +44,6 @@ rm -rf ${BINARY_DIR}/*_vnfd*
 for file in $SOURCE_DIR/templates/* ; do
   file_name=$(basename $file)
   echo $file_name
-  ${SOURCE_DIR}/rw_multivm_vnfd.py --outdir=${BINARY_DIR} --srcdir=$SOURCE_DIR --format=xml --template=$file_name
+  ${SOURCE_DIR}/rw_multivm_vnfd.py --outdir=${BINARY_DIR} --srcdir=$SOURCE_DIR --format=yaml --template=$file_name
   ${PROJECT_TOP_DIR}/bin/generate_descriptor_pkg.sh ${BINARY_DIR} "$file_name"_vnfd
 done

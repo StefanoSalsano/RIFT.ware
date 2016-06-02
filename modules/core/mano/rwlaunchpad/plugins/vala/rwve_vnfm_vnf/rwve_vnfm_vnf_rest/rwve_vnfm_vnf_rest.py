@@ -33,7 +33,7 @@ class RwVeVnfmVnfRestPlugin(GObject.Object, RwVeVnfmVnf.Vnf):
     @rwstatus
     def do_init(self, rwlog_ctx):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
-            logger.addHandler(rwlogger.RwLogger(category="rwve-vnfm-vnf-rest",
+            logger.addHandler(rwlogger.RwLogger(subcategory="rwve-vnfm-vnf-rest",
                                                 log_hdl=rwlog_ctx,))
 
     @rwstatus

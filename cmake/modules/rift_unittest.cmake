@@ -251,37 +251,7 @@ function(rift_pytest target)
   )
 
 endfunction(rift_pytest)
-##
-# This function adds python3 unittests to either the rw.unittest (and optionally
-# the rw.unittest_long) target.
-#
-# rift_pytest3(target
-#             [ EXCLUDE_FROM_UNITTEST_TARGETS ]
-#             [ LONG_UNITTEST_TARGET ]
-#             TEST_ARGS <arguments-to-test-program>
-#             TEST_WORKING_DIRECTORY <working-directory>
-#             ENVSET_ARGS <arguments to pass to envset.sh before test execution>
-#             DEPENDS <target-dependencies>)
-##
-function(rift_pytest3 target)
-  # Parse the function arguments
-  set(parse_options EXCLUDE_FROM_UNITTEST_TARGETS LONG_UNITTEST_TARGET)
-  set(parse_onevalargs TEST_WORKING_DIRECTORY)
-  set(parse_multivalueargs TEST_ARGS DEPENDS ENVSET_ARGS)
-  cmake_parse_arguments(ARGS "${parse_options}" "${parse_onevalargs}" "${parse_multivalueargs}" ${ARGN})
 
-  # Add the target to run the unit test on "make rw.unittest"
-  rift_unittest(${target}
-    TEST_ARGS /usr/bin/python3 ${ARGS_TEST_ARGS}
-    TEST_WORKING_DIRECTORY ${ARGS_TEST_WORKING_DIRECTORY}
-    ENVSET_ARGS ${ARGS_ENVSET_ARGS}
-    DEPENDS ${ARGS_DEPENDS}
-    ADD_TO_COVERAGE_TARGETS
-    ${ARGS_LONG_UNITTEST_TARGET}
-    ${ARGS_EXCLUDE_FROM_UNITTEST_TARGETS}
-  )
-
-endfunction(rift_pytest3)
 ##
 # This function adds python unittests to either the rw.unittest (and optionally
 # the rw.unittest_long) target.
@@ -320,13 +290,6 @@ function(rift_py3test target)
     ADD_TO_COVERAGE_TARGETS
     ${ARGS_LONG_UNITTEST_TARGET}
     ${ARGS_EXCLUDE_FROM_UNITTEST_TARGETS}
-  )
-  # Add a target to run the unit test on "make rw.coverage"
-  rift_code_coverage(${target}_cov
-    TEST_ARGS /usr/bin/python3 ${ARGS_TEST_ARGS}
-    ENVSET_ARGS ${ARGS_ENVSET_ARGS}
-    DEPENDS ${target}
-    ${EXCLUDE_FROM_COVERAGE_TARGETS}
   )
 endfunction(rift_py3test)
 

@@ -3,8 +3,13 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
+import functools
+import hashlib
 import pytest
 import os
+import tempfile
+import shutil
+import subprocess
 
 import gi
 import rift.auto.session
@@ -38,7 +43,7 @@ def mc_only(request, standalone_launchpad):
 
 
 @pytest.fixture(scope='session')
-def launchpad_session(mgmt_session, mgmt_domain_name, session_type, standalone_launchpad, use_https):
+def launchpad_session(mgmt_session, mgmt_domain_name, session_type, standalone_launchpad):
     '''Fixture containing a rift.auto.session connected to the launchpad
 
     Arguments:
@@ -57,9 +62,7 @@ def launchpad_session(mgmt_session, mgmt_domain_name, session_type, standalone_l
     if session_type == 'netconf':
         launchpad_session = rift.auto.session.NetconfSession(host=launchpad_host)
     elif session_type == 'restconf':
-        launchpad_session = rift.auto.session.RestconfSession(
-                host=launchpad_host,
-                use_https=use_https)
+        launchpad_session = rift.auto.session.RestconfSession(host=launchpad_host)
 
     launchpad_session.connect()
     rift.vcs.vcs.wait_until_system_started(launchpad_session)
@@ -127,11 +130,160 @@ def ping_pong_nsd_package_file(ping_pong_install_dir):
 
     return ping_pong_pkg_file
 
+@pytest.fixture(scope='session')
+def image_dirs():
+    ''' Fixture containing a list of directories where images can be found
+    '''
+    rift_build = os.environ['RIFT_BUILD']
+    rift_root = os.environ['RIFT_ROOT']
+    image_dirs = [
+        os.path.join(
+            rift_build,
+            "modules/core/mano/src/core_mano-build/examples/",
+            "ping_pong_ns/ping_vnfd_with_image/images"
+        ),
+        os.path.join(
+            rift_root,
+            "images"
+        )
+    ]
+    return image_dirs
+
+@pytest.fixture(scope='session')
+def image_paths(image_dirs):
+    ''' Fixture containing a mapping of image names to their path images
+
+    Arguments:
+        image_dirs - a list of directories where images are located
+    '''
+    image_paths = {}
+    for image_dir in image_dirs:
+        if os.path.exists(image_dir):
+            names = os.listdir(image_dir)
+            image_paths.update({name:os.path.join(image_dir, name) for name in names})
+    return image_paths
+
+@pytest.fixture(scope='session')
+def path_ping_image(image_paths):
+    ''' Fixture containing the location of the ping image
+
+    Arguments:
+        image_paths - mapping of images to their paths
+    '''
+    return image_paths["Fedora-x86_64-20-20131211.1-sda-ping.qcow2"]
+
+@pytest.fixture(scope='session')
+def path_pong_image(image_paths):
+    ''' Fixture containing the location of the pong image
+
+    Arguments:
+        image_paths - mapping of images to their paths
+    '''
+    return image_paths["Fedora-x86_64-20-20131211.1-sda-pong.qcow2"]
 
 # Setting scope to be module, so that we get a different UUID when called
 # by different files/modules.
-@pytest.fixture(scope='module')
-def ping_pong_records():
+@pytest.fixture(scope='session')
+def ping_pong_records(path_ping_image, path_pong_image, rsyslog_host, rsyslog_port):
     '''Fixture containing a set of generated ping and pong descriptors
     '''
-    return ping_pong.generate_ping_pong_descriptors(pingcount=1)
+    def md5sum(path):
+        with open(path, mode='rb') as fd:
+            md5 = hashlib.md5()
+            for buf in iter(functools.partial(fd.read, 4096), b''):
+                md5.update(buf)
+        return md5.hexdigest()
+
+    ping_md5sum = md5sum(path_ping_image)
+    pong_md5sum = md5sum(path_pong_image)
+
+    ex_userdata = None
+    if rsyslog_host and rsyslog_port:
+        ex_userdata = '''
+rsyslog:
+  - "$ActionForwardDefaultTemplate RSYSLOG_ForwardFormat"
+  - "*.* @{host}:{port}"
+        '''
+
+    descriptors = ping_pong.generate_ping_pong_descriptors(
+            pingcount=1,
+            ping_md5sum=ping_md5sum,
+            pong_md5sum=pong_md5sum,
+            ex_ping_userdata=ex_userdata,
+            ex_pong_userdata=ex_userdata,
+    )
+
+    return descriptors
+
+
+@pytest.fixture(scope='session')
+def descriptors(request, ping_pong_records):
+    def pingpong_descriptors():
+        """Generated the VNFDs & NSD files for pingpong NS.
+
+        Returns:
+            Tuple: file path for ping vnfd, pong vnfd and ping_pong_nsd
+        """
+        ping_vnfd, pong_vnfd, ping_pong_nsd = ping_pong_records
+
+        tmpdir = tempfile.mkdtemp()
+        rift_build = os.environ['RIFT_BUILD']
+        MANO_DIR = os.path.join(
+                rift_build,
+                "modules/core/mano/src/core_mano-build/examples/ping_pong_ns")
+        ping_img = os.path.join(MANO_DIR, "ping_vnfd_with_image/images/Fedora-x86_64-20-20131211.1-sda-ping.qcow2")
+        pong_img = os.path.join(MANO_DIR, "pong_vnfd_with_image/images/Fedora-x86_64-20-20131211.1-sda-pong.qcow2")
+
+        """ grab cached copies of these files if not found. They may not exist 
+            because our git submodule dependency mgmt
+            will not populate these because they live in .build, not .install
+        """
+        if not os.path.exists(ping_img):
+            ping_img = os.path.join(
+                        os.environ['RIFT_ROOT'], 
+                        'images/Fedora-x86_64-20-20131211.1-sda-ping.qcow2')
+            pong_img = os.path.join(
+                        os.environ['RIFT_ROOT'], 
+                        'images/Fedora-x86_64-20-20131211.1-sda-pong.qcow2')
+
+        for descriptor in [ping_vnfd, pong_vnfd, ping_pong_nsd]:
+            descriptor.write_to_file(output_format='xml', outdir=tmpdir)
+
+        ping_img_path = os.path.join(tmpdir, "{}/images/".format(ping_vnfd.name))
+        pong_img_path = os.path.join(tmpdir, "{}/images/".format(pong_vnfd.name))
+        os.makedirs(ping_img_path)
+        os.makedirs(pong_img_path)
+
+        shutil.copy(ping_img, ping_img_path)
+        shutil.copy(pong_img, pong_img_path)
+
+        for dir_name in [ping_vnfd.name, pong_vnfd.name, ping_pong_nsd.name]:
+            subprocess.call([
+                    "sh",
+                    "{}/bin/generate_descriptor_pkg.sh".format(os.environ['RIFT_ROOT']),
+                    tmpdir,
+                    dir_name])
+
+        return (os.path.join(tmpdir, "{}.tar.gz".format(ping_vnfd.name)),
+                os.path.join(tmpdir, "{}.tar.gz".format(pong_vnfd.name)),
+                os.path.join(tmpdir, "{}.tar.gz".format(ping_pong_nsd.name)))
+
+    def haproxy_descriptors():
+        """HAProxy descriptors."""
+        files = [
+            os.path.join(os.getenv('RIFT_BUILD'), "modules/ext/vnfs/src/ext_vnfs-build/http_client/http_client_vnfd.tar.gz"),
+            os.path.join(os.getenv('RIFT_BUILD'), "modules/ext/vnfs/src/ext_vnfs-build/httpd/httpd_vnfd.tar.gz"),
+            os.path.join(os.getenv('RIFT_BUILD'), "modules/ext/vnfs/src/ext_vnfs-build/haproxy/haproxy_vnfd.tar.gz"),
+            os.path.join(os.getenv('RIFT_BUILD'), "modules/ext/vnfs/src/ext_vnfs-build/waf/waf_vnfd.tar.gz"),
+            os.path.join(os.getenv('RIFT_BUILD'), "modules/ext/vnfs/src/ext_vnfs-build/haproxy_waf_httpd_nsd/haproxy_waf_httpd_nsd.tar.gz")
+            ]
+
+        return files
+
+
+    if request.config.option.network_service == "pingpong":
+        return pingpong_descriptors()
+    elif request.config.option.network_service == "haproxy":
+        return haproxy_descriptors()
+
+

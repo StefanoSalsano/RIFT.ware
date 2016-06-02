@@ -18,13 +18,13 @@
 #include "yangncx.hpp"
 #include "rw_pb_schema.h"
 #include "rw_yang_json.h"
-#include "test-yang-json.pb-c.h"
-#include "test-yang-json-aug-base.pb-c.h"
+#include "test-json-schema.pb-c.h"
+#include "test-json-schema-aug-base.pb-c.h"
 
 using namespace rw_yang;
 namespace pt = boost::property_tree;
 
-TEST (YangJsonBasic, BasicTest)
+TEST (JsonSchema, JsonAugmentTest)
 {
   TEST_DESCRIPTION ("Test for simple yang to json conversion");
   YangModelNcx* model = YangModelNcx::create_model();
@@ -33,17 +33,13 @@ TEST (YangJsonBasic, BasicTest)
   YangNode* root = model->get_root_node();
   ASSERT_TRUE(root);
   
-  YangModule* tnaa1 = model->load_module("test-yang-json");
+  YangModule* tnaa1 = model->load_module("test-json-schema");
   ASSERT_TRUE(tnaa1);
   YangAugment* person = tnaa1->get_first_augment();
   ASSERT_TRUE(person);
   YangNode* node = person->get_target_node();
 
-  std::stringstream oss;
-  JsonPrinter printer(oss, node, true);
-  oss << "{";
-  printer.convert_to_json();
-  oss << "}";
+  std::stringstream oss(node->to_json_schema(true));
   std::cout << oss.str() << std::endl;
 
   pt::ptree tree;
@@ -54,7 +50,7 @@ TEST (YangJsonBasic, BasicTest)
   {
     auto name = val.second.get<std::string>("name");
 
-    if (name == "test-yang-json:company-list") {
+    if (name == "test-json-schema:company-list") {
       found_comp_list = true;
       EXPECT_STREQ (val.second.get<std::string>("type").c_str(), "list");
       EXPECT_STREQ (val.second.get<std::string>("cardinality").c_str(), "0..N");
@@ -64,11 +60,11 @@ TEST (YangJsonBasic, BasicTest)
         std::cout << iname << std::endl;
         if (iname == "iref1") {
           const auto& dtype = v.second.get_child("data-type.idref");
-          EXPECT_STREQ (dtype.get<std::string>("base").c_str(), "tyj:riftio");
+          EXPECT_STREQ (dtype.get<std::string>("base").c_str(), "tjs:riftio");
         }
         if (iname == "iref2") {
           const auto& dtype = v.second.get_child("data-type.idref");
-          EXPECT_STREQ (dtype.get<std::string>("base").c_str(), "tyj:cloud-platform");
+          EXPECT_STREQ (dtype.get<std::string>("base").c_str(), "tjs:cloud-platform");
         }
       }
     }

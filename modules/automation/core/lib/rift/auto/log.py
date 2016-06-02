@@ -59,8 +59,6 @@ class LogManager(object):
 class FileSource(object):
     '''Scraper for grabbing data from remote logs via ssh'''
 
-    LIMIT_SIZE_BACKLOG = 1000000
-
     def __init__(self, host, path):
         '''Initializes a FileSource that scrapes the resource located at path
 
@@ -72,6 +70,9 @@ class FileSource(object):
         self.log_size = 0
         self.host = host
         self.path = path
+        self.ssh_cmd = ''
+        if not self.host in ['localhost', '127.0.0.1']:
+            self.ssh_cmd = 'ssh -q -n -o BatchMode=yes -o StrictHostKeyChecking=no -- {host} '.format(host=self.host)
 
     def __str__(self):
         return 'File Source {} {}'.format(self.host, self.path)
@@ -81,6 +82,9 @@ class FileSource(object):
         self.host = host
         self.lines_scraped = 1
         self.log_size = 0
+        self.ssh_cmd = ''
+        if not self.host in ['localhost', '127.0.0.1']:
+            self.ssh_cmd = 'ssh -q -n -o BatchMode=yes -o StrictHostKeyChecking=no -- {host} '.format(host=self.host)
 
     def connected(self):
         '''Return whether or not the scraper has been assigned a host'''
@@ -91,9 +95,8 @@ class FileSource(object):
             return 'Skipped skip - Source not connected'
 
         try:
-            skip_cmd = ('ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -- {host} '
-                        '"grep -n \'{string}\' {path} | tail -n 1 | cut -d : -f 1"').format(
-                            host=self.host,
+            skip_cmd = ('{ssh_cmd} grep -n \'{string}\' {path} | tail -n 1 | cut -d : -f 1').format(
+                            ssh_cmd=self.ssh_cmd,
                             path=self.path,
                             string=string,
                        )
@@ -111,9 +114,8 @@ class FileSource(object):
         if self.host is None:
             return 'Skipped scrape - Source not connected'
 
-        stat_cmd = ('ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -- {host} '
-                    '"stat --format=\"%s\" {path}"').format(
-                        host=self.host,
+        stat_cmd = ('{ssh_cmd} stat --format=\"%s\" {path}').format(
+                        ssh_cmd=self.ssh_cmd,
                         path=self.path
                     )
         try:
@@ -125,30 +127,14 @@ class FileSource(object):
                 logger.info(msg, self.host, self.path, self.log_size, log_size)
                 self.reset()
 
-            if log_size - self.log_size > FileSource.LIMIT_SIZE_BACKLOG:
-                tail_cmd = ('ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -- {host} '
-                            '"tail -n +{lines_scraped} {path} | wc -l"').format(
-                                host=self.host,
-                                lines_scraped=self.lines_scraped,
-                                path=self.path
-                           )
-                new_line_count = subprocess.check_output(tail_cmd, shell=True)
-                new_line_count = int(new_line_count)
-                size_per_line = (log_size - self.log_size) / new_line_count
-                skip_lines = int(new_line_count - (FileSource.LIMIT_SIZE_BACKLOG / size_per_line))
-                self.lines_scraped += skip_lines
-                msg = "FileSource %s:%s has a large backlog, skipped %d lines"
-                logger.info(msg, self.host, self.path, skip_lines)
-
             self.log_size = log_size
 
         except subprocess.CalledProcessError:
             logger.info("Failed to stat FileSource %s:%s", self.host, self.path)
             return ""
 
-        tail_cmd = ('ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -- {host} '
-                    '"tail -n +{lines_scraped} {path}"').format(
-                        host=self.host,
+        tail_cmd = ('{ssh_cmd} tail -n +{lines_scraped} {path}').format(
+                        ssh_cmd=self.ssh_cmd,
                         lines_scraped=self.lines_scraped,
                         path=self.path
                     )
@@ -156,7 +142,10 @@ class FileSource(object):
         try :
             scraped = subprocess.check_output(tail_cmd, shell=True)
             self.lines_scraped += len(scraped.splitlines())
-            return scraped.decode('utf-8')
+            try:
+                return scraped.decode('utf-8')
+            except UnicodeDecodeError:
+                return scraped
         except subprocess.CalledProcessError:
             logger.info("Failed to scrape FileSource %s:%s", self.host, self.path, exc_info=True)
             return ""
@@ -224,5 +213,8 @@ class MemorySink(object):
         self.data.append(data)
 
     def truncate(self, generations):
-        self.data = self.data[-generations:]
+        if generations == 0:
+            self.data = []
+        else:
+            self.data = self.data[-generations:]
 

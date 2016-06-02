@@ -41,17 +41,16 @@
 
 #include <poll.h>
 
-#define RIFT_ARG_VM_INSTANCE    "vm_instance"
 #define RIFT_ARG_TRACE_LEVEL    "trace_level"
 #define RIFT_ARG_NETCONF_HOST   "netconf_host"
 #define RIFT_ARG_NETCONF_PORT   "netconf_port"
-#define RIFT_ARG_NETCONF_USER   "username"
-#define RIFT_ARG_NETCONF_PASSWD "passwd"
+#define RIFT_ARG_USER           "username"
+#define RIFT_ARG_PASSWD         "passwd"
 #define RIFT_ARG_USE_NETCONF    "netconf"
 #define RIFT_ARG_USE_RWMSG      "rwmsg"
 #define RIFT_MAX_USERNAME_PASSWORD_LENGTH (64)
 
-void rift_strip_newline(char * line, size_t * length)
+static void rift_strip_newline(char * line, size_t * length)
 {
   
   if (*length >= 1 && line[*length - 1] == '\n')
@@ -61,7 +60,7 @@ void rift_strip_newline(char * line, size_t * length)
   } 
 }
 
-size_t rift_get_netconf_username(char * username)
+static size_t rift_get_username(char * username)
 {
   size_t length = RIFT_MAX_USERNAME_PASSWORD_LENGTH; // getline doesn't accept const
 
@@ -77,7 +76,7 @@ size_t rift_get_netconf_username(char * username)
   return username_length;
 }
 
-size_t rift_get_netconf_password(char * password)
+static size_t rift_get_password(char * password)
 {
   struct termios old, new;
   size_t length = RIFT_MAX_USERNAME_PASSWORD_LENGTH; // getline doesn't accept const
@@ -95,7 +94,7 @@ size_t rift_get_netconf_password(char * password)
 
   // Read the password. 
   char *password_start = &password[0];
-  size_t const password_length = getline (&password_start, &length, stdin);
+  size_t password_length = getline (&password_start, &length, stdin);
   rift_strip_newline(password, &password_length);
 
   printf("\n"); // clear the line becuase the newline isn't echoed
@@ -375,14 +374,13 @@ parseopts_insert(LinkList optlist, char *base, int optno)
 
 static void init_rift_args()
 {
-  rift_cmdargs.vm_instance_id = 0;
   rift_cmdargs.schema_listing = NULL;
   rift_cmdargs.trace_level = -1;
-  rift_cmdargs.use_netconf = 1;
+  rift_cmdargs.use_netconf = -1;
   rift_cmdargs.netconf_host = NULL;
   rift_cmdargs.netconf_port = NULL;
-  rift_cmdargs.netconf_username = NULL;
-  rift_cmdargs.netconf_passwd = NULL;
+  rift_cmdargs.username = NULL;
+  rift_cmdargs.passwd = NULL;
 }
 
 static void cleanup_rift_args()
@@ -399,13 +397,13 @@ static void cleanup_rift_args()
     free(rift_cmdargs.netconf_port);
     rift_cmdargs.netconf_port = NULL;
   }
-  if (rift_cmdargs.netconf_username) {
-    free(rift_cmdargs.netconf_username);
-    rift_cmdargs.netconf_username = NULL;
+  if (rift_cmdargs.username) {
+    free(rift_cmdargs.username);
+    rift_cmdargs.username = NULL;
   }
-  if (rift_cmdargs.netconf_passwd) {
-    free(rift_cmdargs.netconf_passwd);
-    rift_cmdargs.netconf_passwd = NULL;
+  if (rift_cmdargs.passwd) {
+    free(rift_cmdargs.passwd);
+    rift_cmdargs.passwd = NULL;
   }
 }
 
@@ -414,15 +412,7 @@ static int parse_rift_arg(char **argv)
   int parsed = 0;
 
   /* The -- would have been stripped already */
-  if (strcmp(*argv, RIFT_ARG_VM_INSTANCE) == 0) {
-    ++argv; parsed += 2;
-    int instance = atoi(*argv);
-    if (instance == 0) {
-      zwarn("invalid vm_instance %s", *argv);
-    } else {
-      rift_cmdargs.vm_instance_id = instance;
-    }
-  } else if (strcmp(*argv, "schema_listing") == 0) {
+  if (strcmp(*argv, "schema_listing") == 0) {
     ++argv; parsed += 2;
     if (*argv == NULL) {
       zwarn("expected schema listing value");
@@ -453,21 +443,19 @@ static int parse_rift_arg(char **argv)
       rift_cmdargs.netconf_port = strdup(*argv);
       rift_cmdargs.use_netconf = 1;
     }
-  } else if (strcmp(*argv, RIFT_ARG_NETCONF_USER) == 0) {
+  } else if (strcmp(*argv, RIFT_ARG_USER) == 0) {
     ++argv; parsed += 2;
     if (*argv == NULL) {
       zwarn("expected username value");
     } else {
-      rift_cmdargs.netconf_username = strdup(*argv);
-      rift_cmdargs.use_netconf = 1;
+      rift_cmdargs.username = strdup(*argv);
     }
-  } else if (strcmp(*argv, RIFT_ARG_NETCONF_PASSWD) == 0) {
+  } else if (strcmp(*argv, RIFT_ARG_PASSWD) == 0) {
     ++argv; parsed += 2;
     if (*argv == NULL) {
       zwarn("expected username value");
     } else {
-      rift_cmdargs.netconf_passwd = strdup(*argv);
-      rift_cmdargs.use_netconf = 1;
+      rift_cmdargs.passwd = strdup(*argv);
     }
   } else if (strcmp(*argv, RIFT_ARG_USE_NETCONF) == 0) {
     rift_cmdargs.use_netconf = 1;
@@ -491,7 +479,6 @@ static void print_rift_help()
   printf("  --username       USER  Username to login [netconf mode,default=admin]\n");
   printf("  --passwd         PASS  Password to login [neconf mode,default=admin]\n"); 
   printf("  --rwmsg              Use Riftware messaging instead of Netconf [default=no]\n");
-  printf("  --vm_instance    ID    Riftware VM Instance [rwmsg mode]\n");
 }
 
 /*
@@ -1836,27 +1823,25 @@ zsh_main(UNUSED(int argc), char **argv)
     fflush(stdout);
     // make sure we have netconf username 
     if (opts[INTERACTIVE]
-        && rift_cmdargs.use_netconf
-        && rift_cmdargs.netconf_username == NULL) {
+        && rift_cmdargs.username == NULL) {
       char username[RIFT_MAX_USERNAME_PASSWORD_LENGTH];      
       size_t username_length = 0;
       do {
-        username_length = rift_get_netconf_username(username);
+        username_length = rift_get_username(username);
       } while (username_length == 0);
 
-      rift_cmdargs.netconf_username = strdup(username);
+      rift_cmdargs.username = strdup(username);
     }
     // make sure we have netconf password
     if (opts[INTERACTIVE]
-        && rift_cmdargs.use_netconf
-        && rift_cmdargs.netconf_passwd == NULL) {
+        && rift_cmdargs.passwd == NULL) {
       char password[RIFT_MAX_USERNAME_PASSWORD_LENGTH];      
       size_t password_length = 0;
       do {
-        password_length = rift_get_netconf_password(password);
+        password_length = rift_get_password(password);
       } while (password_length == 0);
 
-      rift_cmdargs.netconf_passwd = strdup(password);
+      rift_cmdargs.passwd = strdup(password);
     }
 
     SHTTY = -1;

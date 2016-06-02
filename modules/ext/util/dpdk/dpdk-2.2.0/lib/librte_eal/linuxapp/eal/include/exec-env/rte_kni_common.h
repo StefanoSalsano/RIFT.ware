@@ -117,7 +117,8 @@ typedef uint64_t MARKER64[0]; /**< marker that allows us to overwrite 8 bytes
                                * with a single assignment */
 
 struct rw_kni_mbuf_metadata{
-    void    *userdata;
+  void    *userdata;
+  void   (*destructor)(void *);
     uint8_t pad0:4;
     uint8_t trafgen_coherency:4; //coherency used by trafgen
     uint8_t  vf_ttl;
@@ -141,10 +142,11 @@ struct rw_kni_mbuf_metadata{
     uint32_t vf_nh_policy_fwd[4];
     uint32_t vf_nh_policy_lportid;
     uint32_t vf_flow_cache_target;
-  uint32_t local_flags;
-    //uint32_t vf_signid;
+    uint32_t local_flags;
+    uint32_t vf_signid;
+  uint32_t vf_flowid;
     //uint32_t vf_vsapid;
-    //uint32_t vf_vsap_handle;
+    uint32_t vf_vsap_handle;
     //uint32_t vf_flowid_msw;
     //uint32_t vf_flowid_lsw;    
   };

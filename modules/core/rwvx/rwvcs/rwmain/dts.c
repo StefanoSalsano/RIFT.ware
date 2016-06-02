@@ -463,7 +463,7 @@ _fill_info:
 #endif
 
 #define MAX_PER_TASKLET 200
-#define MAX_PER_SINGLE_TASKLET MAX_PER_TASKLET*500
+#define MAX_PER_SINGLE_TASKLET MAX_PER_TASKLET*50
     unsigned int how_many = (!g_malloc_intercepted ? MAX_PER_SINGLE_TASKLET : !specific_instance ? MAX_PER_TASKLET : MAX_PER_SINGLE_TASKLET);
     RW_RESOURCE_TRACK_HANDLE rwresource_track_handle =  g_rwresource_track_handle;
     //g_rwresource_track_handle = 0;
@@ -533,7 +533,7 @@ _fill_info:
             free(str);
 #endif
           }
-        } else if (s[i].obj_type == RW_RAW_OBJECT || s[i].obj_type == RW_CF_OBJECT) {
+        } else if (s[i].loc && (s[i].obj_type == RW_RAW_OBJECT || s[i].obj_type == RW_CF_OBJECT)) {
           RW_ASSERT(s[i].obj_type == RW_RAW_OBJECT ||
                     s[i].obj_type == RW_CF_OBJECT);
 #ifndef DIRECT_PRINT
@@ -612,6 +612,14 @@ static rwdts_member_rsp_code_t on_config_tasklet_heap(
   g_callstack_depth = msg && ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->has_depth ? 
                       ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->depth :
                       g_callstack_depth;
+
+  g_heap_track_nth = msg && ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->has_track_nth ?
+                      ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->track_nth :
+                      g_heap_track_nth;
+
+  g_heap_track_bigger_than = msg && ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->has_track_bigger_than ?
+                      ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->track_bigger_than :
+                      g_heap_track_bigger_than;
 
   return RWDTS_ACTION_OK;
 }
@@ -1578,7 +1586,7 @@ rw_status_t send2dts_start_req(
 
   struct dts_start_stop_closure * cls = NULL;
   if (xact_info) {
-    cls = (struct dts_start_stop_closure *)malloc(sizeof(struct dts_start_stop_closure));
+    cls = (struct dts_start_stop_closure *)RW_MALLOC0(sizeof(struct dts_start_stop_closure));
     RW_ASSERT(cls);
 
     cls->rwmain = rwmain;
@@ -1667,7 +1675,7 @@ rw_status_t send2dts_stop_req(
 
   struct dts_start_stop_closure * cls = NULL;
   if (xact_info) {
-    cls = (struct dts_start_stop_closure *)malloc(sizeof(struct dts_start_stop_closure));
+    cls = (struct dts_start_stop_closure *)RW_MALLOC0(sizeof(struct dts_start_stop_closure));
     RW_ASSERT(cls);
 
     cls->rwmain = rwmain;

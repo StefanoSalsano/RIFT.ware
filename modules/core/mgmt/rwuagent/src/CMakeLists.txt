@@ -17,8 +17,6 @@ set(PKG_LONG_NAME ${PKG_NAME}-${PKG_VERSION})
 # current directory and below
 ##
 add_definitions(-DINSTALLDIR="${CMAKE_INSTALL_PREFIX}")
-add_definitions(-DCLI_CONFIG_XSD_PATH="${CMAKE_INSTALL_PREFIX}/usr/data/xsd/")
-add_definitions(-DCLI_CONFIG_XML_PATH="${CMAKE_INSTALL_PREFIX}/usr/data/manifest/")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 
@@ -38,6 +36,10 @@ set(src_files
   rwuagent_all.cpp
 )
 
+if(NOT RIFT_AGENT_BUILD STREQUAL "XML_ONLY")
+  set(src_files ${src_files} rwuagent_confd_all.cpp)
+endif()
+
 add_library(rwuagent SHARED ${src_files})
 add_dependencies(rwuagent 
   rwuagent_yang.schema 
@@ -46,6 +48,8 @@ add_dependencies(rwuagent
 
 # link with all the libraries that rwuagent depends on
 target_link_libraries(rwuagent
+  xslt
+  xml2
   rwmemlog
   rwdynschema
   rwuagent_yang_gen

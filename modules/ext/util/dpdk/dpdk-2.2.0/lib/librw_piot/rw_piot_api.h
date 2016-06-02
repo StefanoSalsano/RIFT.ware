@@ -244,8 +244,11 @@ rw_piot_thread_set_affinity(void);
 
 void
 rw_piot_get_link_info(rw_piot_api_handle_t api_handle, 
-                      rw_piot_link_info_t *eth_link_info);
+                      rw_piot_link_info_t *eth_link_info, int wait);
 
+void
+rw_piot_get_hw_link_info(rw_piot_api_handle_t api_handle, 
+                         rw_piot_link_info_t *eth_link_info, int wait);
 int
 rw_piot_set_led(rw_piot_api_handle_t api_handle, int on);
 

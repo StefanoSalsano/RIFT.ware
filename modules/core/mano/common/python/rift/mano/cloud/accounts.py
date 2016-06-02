@@ -1,5 +1,8 @@
 import sys
 import asyncio
+from gi import require_version
+require_version('RwCal', '1.0')
+
 
 from gi.repository import (
         RwTypes,

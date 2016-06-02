@@ -32,6 +32,8 @@ gi.require_version('RwMain', '1.0')
 gi.require_version('RwManifestYang', '1.0')
 gi.require_version('RwTasklet', '1.0')
 gi.require_version('RwTypes', '1.0')
+gi.require_version('RwDtsYang', '1.0')
+gi.require_version('RwDtsToyTaskletYang', '1.0')
 
 
 from gi.repository import RwDts

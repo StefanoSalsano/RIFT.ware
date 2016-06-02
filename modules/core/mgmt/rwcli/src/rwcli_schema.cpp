@@ -31,9 +31,6 @@ using namespace rw_yang;
 namespace fs = boost::filesystem;
 
 
-// Schema Path relative to rift install
-const std::string SCHEMA_PATH("var/rift/schema");
-
 const fs::path YANG_DIR{"yang"};
 const fs::path VER_DIR{"version"};
 
@@ -73,7 +70,7 @@ void SchemaChangeset::add_change(const std::string& filename, uint32_t inotify_m
 }
 
 SchemaManager::SchemaManager()
-  : SchemaManager(SCHEMA_PATH)
+  : SchemaManager(RW_SCHEMA_ROOT_PATH)
 {
 }
 
@@ -168,7 +165,7 @@ InotifySchemaUpdater::InotifySchemaUpdater(SchemaManager* mgr)
   fs::path rift_yang_path(rift_install);
   fs::path rift_ver_path(rift_install);
 
-  rift_yang_path /= LATEST_NORTHBOUND_VER_DIR;
+  rift_yang_path /= RW_SCHEMA_VER_LATEST_NB_PATH;
   rift_ver_path /= fs::path(mgr_->schema_path_) / VER_DIR;
 
   inotify_fd_ = inotify_init1(IN_CLOEXEC);

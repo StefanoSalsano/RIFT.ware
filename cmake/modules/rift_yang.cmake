@@ -531,7 +531,6 @@ endfunction(rift_confdc_shell)
 #
 #   OUT_XSD_FILES_VAR <name-of-the-var>       # Variable to hold .xsd file list
 #   OUT_C_FILES_VAR <name-of-the-var>         # Variable to hold *.c file list
-#   OUT_CMDARGS_H_FILES_VAR <name-of-the-var> # Variable to hold *.h file list needed for cmdargs rule
 # )
 function(rift_add_yang_target)
   set(parse_options
@@ -551,7 +550,6 @@ function(rift_add_yang_target)
     COMPONENT
     OUT_XSD_FILES_VAR
     OUT_C_FILES_VAR
-    OUT_CMDARGS_H_FILES_VAR
   )
   set(parse_multivalueargs
     YANG_FILES
@@ -680,7 +678,6 @@ function(rift_add_yang_target)
 
   ########################################
   set(c_file_list)
-  set(cmdargs_h_file_list)
   set(xsd_file_list)
 
   set(target_depends)
@@ -697,6 +694,8 @@ function(rift_add_yang_target)
     endif()
     list(APPEND all_yang_files ${yfile})
   endforeach()
+
+  include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
   rift_pyang_command_parallel(pycommand
     YANG_DIRS ${ARG_YANG_DIRS} ${other_dirs}
@@ -725,11 +724,12 @@ function(rift_add_yang_target)
     set(ypb_gi_c_file)
     set(pbc_c_file)
     set(pbc_h_file)
-    set(pbc_gi_c_file)
     set(bare_pbc_gi_h_file)
     set(bare_ypb_gi_h_file)
-    set(doc_api_file)
-    set(doc_user_file)
+    set(doc_api_html_file)
+    set(doc_api_txt_file)
+    set(doc_user_html_file)
+    set(doc_user_txt_file)
 
     if(NOT yang_file MATCHES "^/")
       set(yang_file ${ARG_SRC_DIR}/${yang_file})
@@ -970,7 +970,7 @@ function(rift_add_yang_target)
 
     # Produce .fxs: .yang->.fxs?
     # ATTN: conditional?: Produce .confd.h: .fxs->.confd.h?
-    if(NOT ARG_WITHOUT_CONFD)
+    if(NOT ARG_WITHOUT_CONFD AND RIFT_AGENT_BUILD MATCHES "^CONFD_(BASIC|FULL)$")
       set(fxs_file ${ARG_DEST_DIR}/${name}.fxs)
       set(confd_h_file ${ARG_DEST_DIR}/${name}.confd.h)
 
@@ -1054,10 +1054,10 @@ function(rift_add_yang_target)
       set(ypb_c_file ${ypb_base}.ypbc.cpp)
       set(ypb_gi_c_file ${ypb_base}.ypbc.gi.c)
       set(bare_ypb_gi_h_file ${name}.ypbc.h)
-      set(doc_user_file_text ${ypb_base}.doc-user.txt)
-      set(doc_user_file_html ${ypb_base}.doc-user.html)
-      set(doc_api_file_text ${ypb_base}.doc-api.txt)
-      set(doc_api_file_html ${ypb_base}.doc-api.html)
+      set(doc_user_txt_file ${ypb_base}.doc-user.txt)
+      set(doc_user_html_file ${ypb_base}.doc-user.html)
+      set(doc_api_txt_file ${ypb_base}.doc-api.txt)
+      set(doc_api_html_file ${ypb_base}.doc-api.html)
 
       rift_yangpbc_command(command
         YANG_DIRS ${ARG_YANG_DIRS} ${other_dirs}
@@ -1068,24 +1068,24 @@ function(rift_add_yang_target)
       # workaround for RIFT-5169, RIFT-5171 and RIFT-4892
       set(workaround "YUMA_MODPATH=${CMAKE_CURRENT_SOURCE_DIR}:${CMAKE_CURRENT_BINARY_DIR}:$ENV{YUMA_MODPATH}")
       add_custom_command(
-        OUTPUT ${proto_file} ${ypb_h_file} ${ypb_c_file}
-          ${ypb_gi_c_file} ${ypb_gi_h_file}
-          ${doc_user_file_text_} ${doc_api_file_text}
-	  ${doc_user_file_html} ${doc_api_file_html}
+        OUTPUT ${proto_file}
+          ${ypb_h_file} ${ypb_c_file} ${ypb_gi_c_file}
+          ${doc_user_txt_file} ${doc_api_txt_file}
+          ${doc_user_html_file} ${doc_api_html_file}
         COMMAND ${workaround} ${command}
         DEPENDS ${yangpbc_depends} ${extra_depends}
       )
-      list(APPEND doc_file_list ${doc_user_file_text})
-      list(APPEND doc_file_list ${doc_user_file_html})
-      list(APPEND doc_file_list ${doc_api_file_text})
-      list(APPEND doc_file_list ${doc_api_file_html})
+      list(APPEND doc_file_list ${doc_user_txt_file})
+      list(APPEND doc_file_list ${doc_user_html_file})
+      list(APPEND doc_file_list ${doc_api_txt_file})
+      list(APPEND doc_file_list ${doc_api_html_file})
       list(APPEND c_file_list ${ypb_c_file})
       list(APPEND c_file_list ${ypb_gi_c_file})
       if(ARG_COMPONENT)
         install(FILES ${proto_file} DESTINATION usr/data/proto COMPONENT ${ARG_COMPONENT})
         install(FILES ${ypb_h_file} DESTINATION usr/include COMPONENT ${ARG_COMPONENT})
         install(
-          FILES ${doc_user_file_text} ${doc_api_file_text} ${doc_user_file_html} ${doc_api_file_html}
+          FILES ${doc_user_txt_file} ${doc_api_txt_file} ${doc_user_html_file} ${doc_api_html_file}
           DESTINATION usr/data/yang
           COMPONENT ${ARG_COMPONENT}
         )
@@ -1097,12 +1097,9 @@ function(rift_add_yang_target)
       # ATTN: hack file names - should come from properly refactored proto rule
       set(pbc_c_file ${pbc_base}.pb-c.c)
       set(pbc_h_file ${pbc_base}.pb-c.h)
-      list(APPEND c_file_list ${pbc_c_file})
-      list(APPEND cmdargs_h_file_list ${pbc_h_file})
-
-      set(pbc_gi_c_file ${pbc_base}.pb-c.c)
       set(bare_pbc_gi_h_file ${name}.pb-c.h)
-      list(APPEND c_file_list ${pbc_gi_c_file})
+
+      list(APPEND c_file_list ${pbc_c_file})
       list(APPEND proto_cmd_args WITH_GI)
 
       if(ARG_COMPONENT)
@@ -1118,8 +1115,7 @@ function(rift_add_yang_target)
         SRC_DIR ${ARG_DEST_DIR}
         OTHER_DIRS ${other_dirs}
         PROTO_DIRS ${ARG_PROTO_DIRS}
-        SUPPRESS_PROTO_DEPEND
-        DEPENDS ${proto_depends}
+        DEPENDS ${protocc_depends}
       )
 
       ##
@@ -1164,27 +1160,34 @@ function(rift_add_yang_target)
       endif()
     endif()
 
-    list (APPEND schema_depends
-      ${confd_h_file} ${fxs_file}
-      ${dsdl_file} ${idsdl_file}
-      ${xsd_file}
+    add_custom_target(${schema_target}
+      DEPENDS
+        ${schema_depends}
+        ${confd_h_file} ${fxs_file}
+        ${dsdl_file} ${idsdl_file}
+        ${xsd_file}
     )
-    add_custom_target(${schema_target} DEPENDS ${schema_depends})
+    add_dependencies(${schema_target} ${schema_depends})
     list (APPEND target_schema_depends ${schema_target})
     #message(STATUS "RAYT: ${schema_target}: [${schema_depends}]'")
 
-    list (APPEND yangpbc_depends
-      ${proto_file}
-      ${ypb_c_file} ${ypb_h_file} ${ypb_gi_c_file}
+    add_custom_target(${yangpbc_target}
+      DEPENDS
+        ${yangpbc_depends}
+        ${ypb_h_file} ${ypb_c_file} ${ypb_gi_c_file}
+        ${doc_user_txt_file} ${doc_api_txt_file}
+        ${doc_user_html_file} ${doc_api_html_file}
     )
-    add_custom_target(${yangpbc_target} DEPENDS ${yangpbc_depends})
+    add_dependencies(${yangpbc_target} ${yangpbc_depends})
     list (APPEND target_h_depends ${yangpbc_target})
     #message(STATUS "RAYT: ${yangpbc_target}: [${yangpbc_depends}]")
 
-    list (APPEND protocc_depends
-      ${pbc_c_file} ${pbc_h_file} ${pbc_gi_c_file}
+    add_custom_target(${protocc_target}
+      DEPENDS
+        ${protocc_depends}
+        ${pbc_c_file} ${pbc_h_file}
     )
-    add_custom_target(${protocc_target} DEPENDS ${protocc_depends})
+    add_dependencies(${protocc_target} ${protocc_depends})
     list (APPEND target_h_depends ${protocc_target})
     #message(STATUS "RAYT: ${protocc_target}: [${protocc_depends}]")
 
@@ -1215,16 +1218,16 @@ function(rift_add_yang_target)
         OUTPUT ${yang_meta_file}
         COMMAND
           ${rift_meta_cmd} ${name} ${name}
-                         ${gi_namespace}-${GI_VERSION} 
-                         ${gi_vapi_namespace}-${GI_VERSION}
-                         ${library_name}
-                         ${CMAKE_CURRENT_SOURCE_DIR}
+            ${gi_namespace}-${GI_VERSION}
+            ${gi_vapi_namespace}-${GI_VERSION}
+            ${library_name}
+            ${CMAKE_CURRENT_SOURCE_DIR}
         DEPENDS ${schema_target}
           ${gi_target}
           ${library_target}
           ${rift_meta_cmd}
           ${vapi_target}
-        )
+      )
 
       set(meta_target "${name}-meta-tgt")
 
@@ -1265,10 +1268,6 @@ function(rift_add_yang_target)
 
   if(ARG_OUT_C_FILES_VAR)
     set(${ARG_OUT_C_FILES_VAR} ${c_file_list} PARENT_SCOPE)
-  endif()
-
-  if(ARG_OUT_CMDARGS_H_FILES_VAR)
-    set(${ARG_OUT_CMDARGS_H_FILES_VAR} ${cmdargs_h_file_list} PARENT_SCOPE)
   endif()
 
   ########################################

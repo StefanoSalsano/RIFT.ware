@@ -12,27 +12,29 @@ from .webserver import (
     LogoutHandler,
     Statistics,
     StateProvider,
+    ReadOnlyHandler,
 )
 
 from .util import (
+    create_dts_xpath_from_url,
     create_xpath_from_url,
     find_child_by_name,
     load_multiple_schema_root,
     load_schema_root,
     split_url,
-    watchdog_mapping,
-    WatchdogStatus,
+    naive_xml_to_json,
+    NetconfOperation,
 )
 
 from .translation import (
     ConfdRestTranslator,
-    convert_netconf_response_to_json,
     convert_rpc_to_json_output,
     convert_rpc_to_xml_output,
     convert_xml_to_collection,    
     SubscriptionParser,
     XmlToJsonTranslator,
     JsonToXmlTranslator,
+    convert_get_request_to_xml,
 )
 
 from .streamingdata import (

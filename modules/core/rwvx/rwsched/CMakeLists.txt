@@ -10,5 +10,5 @@ cmake_minimum_required(VERSION 2.8)
 ##
 # Add the subdirectories
 ##
-set(subdirs src utcli test plugins)
+set(subdirs src test plugins)
 rift_add_subdirs(SUBDIR_LIST ${subdirs})

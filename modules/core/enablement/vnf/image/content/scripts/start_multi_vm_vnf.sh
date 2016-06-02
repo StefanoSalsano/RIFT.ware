@@ -86,10 +86,12 @@ up_cmd="${CORE_UTIL_DIR}/wait_until_system_started.py --max-wait 1000"
 # Execute the command based on the vdu-name
 case "$vdu_name" in
     # VDU for Lead VM
-    "RW.VDU.LEAD.STND"|"RW.VDU.LEAD.DDPL")
+    "RW.VDU.LEAD.STND"|"RW.VDU.LEAD.DDPL"|"RW.VDU.LEAD.DDPL-IPSEC")
         # Select the correct demo-info file based the lead-vdu
         if [ "$vdu_name" == "RW.VDU.LEAD.STND" ] ; then
             DEMO_INFO_FILE_NAME="multi_vm_vnf_std_info.py"
+        elif [ "$vdu_name" == "RW.VDU.LEAD.DDPL-IPSEC" ] ; then
+            DEMO_INFO_FILE_NAME="multi_vm_vnf_ddp_ipsec_info.py"
         else
             DEMO_INFO_FILE_NAME="multi_vm_vnf_ddp_info.py"
         fi
@@ -104,7 +106,9 @@ case "$vdu_name" in
              --demoinfo-file $DEMO_INFO_FILE \
              --ip-list $vdu_ip_address \
              --northbound-listing $NORTHBOUND_LISTING \
+             --locally-install-kmods \
              --verbose"
+             # --use-xml-mode
         $DEMO_TEST_DIR/demo_start_and_configure.sh --system_cmd "${system_cmd}" --up_cmd "${up_cmd}"
         ;;
 
@@ -116,7 +120,7 @@ case "$vdu_name" in
              exit 1
         fi
         up_cmd="${up_cmd} --confd-host $lead_vdu_ip_address"
-        system_cmd="$DEMO_DIR/tests/multivm_vnf_startvm.py \
+        system_cmd="$CORE_UTIL_DIR/multi_vm_vnf/multivm_vnf_startvm.py \
              $vnf_name \
              $vdu_name \
              $lead_vdu_ip_address \

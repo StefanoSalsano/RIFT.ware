@@ -25,6 +25,22 @@ class CloudAccountDtsOperdataHandler(object):
     def delete_cloud_account(self, account_name):
         del self.cloud_accounts[account_name]
 
+    def get_saved_cloud_accounts(self, cloud_account_name):
+        ''' Get Cloud Account corresponding to passed name, or all saved accounts if name is None'''
+        saved_cloud_accounts = []
+
+        if cloud_account_name is None or cloud_account_name == "":
+            cloud_accounts = list(self.cloud_accounts.values())
+            saved_cloud_accounts.extend(cloud_accounts)
+        elif cloud_account_name in self.cloud_accounts:
+            account = self.cloud_accounts[cloud_account_name]
+            saved_cloud_accounts.append(account)
+        else:
+            errstr = "Cloud account {} does not exist".format(cloud_account_name)
+            raise KeyError(errstr)
+
+        return saved_cloud_accounts
+
     def _register_show_status(self):
         def get_xpath(cloud_name=None):
             return "D,/rw-cloud:cloud/account{}/connection-status".format(
@@ -37,25 +53,20 @@ class CloudAccountDtsOperdataHandler(object):
             cloud_account_name = path_entry.key00.name
             self._log.debug("Got show cloud connection status request: %s", ks_path.create_string())
 
-            if not cloud_account_name:
-                self._log.warning("Cloud account name %s not found", cloud_account_name)
-                xact_info.respond_xpath(rwdts.XactRspCode.NA)
-                return
-
             try:
-                account = self.cloud_accounts[cloud_account_name]
-            except KeyError:
-                self._log.warning("Cloud account %s does not exist", cloud_account_name)
+                saved_accounts = self.get_saved_cloud_accounts(cloud_account_name)
+                for account in saved_accounts:
+                    connection_status = account.connection_status
+                    self._log.debug("Responding to cloud connection status request: %s", connection_status)
+                    xact_info.respond_xpath(
+                            rwdts.XactRspCode.MORE,
+                            xpath=get_xpath(account.name),
+                            msg=account.connection_status,
+                            )
+            except KeyError as e:
+                self._log.warning(str(e))
                 xact_info.respond_xpath(rwdts.XactRspCode.NA)
                 return
-
-            connection_status = account.connection_status
-            self._log.debug("Responding to cloud connection status request: %s", connection_status)
-            xact_info.respond_xpath(
-                    rwdts.XactRspCode.MORE,
-                    xpath=get_xpath(cloud_account_name),
-                    msg=account.connection_status,
-                    )
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 

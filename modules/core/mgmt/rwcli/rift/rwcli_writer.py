@@ -19,6 +19,8 @@ import sys
 
 logger = logging.getLogger(__name__)
 
+RW_BASE_NS = "http://riftio.com/ns/riftware-1.0/rw-base"
+
 class Command(object):
     """Represents a single command line. A command line may be composed of a
     single yang node or several yang nodes.
@@ -545,7 +547,7 @@ class ConfigWriter(object):
                                 events=('start', 'end'),
                                 tag=et.Element):
             qelem = et.QName(element)
-            if qelem.localname == 'root':
+            if (qelem.localname == 'data' and qelem.namespace == RW_BASE_NS):                    
                 continue
 
             cur_cmd = self.cmd_stack[-1] 

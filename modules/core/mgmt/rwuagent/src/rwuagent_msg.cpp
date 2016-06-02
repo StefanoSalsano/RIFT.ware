@@ -14,6 +14,7 @@
 
 #include <rwvcs.h>
 #include "rwuagent.hpp"
+#include "rwuagent_msg_client.h"
 
 using namespace rw_uagent;
 using namespace rw_yang;

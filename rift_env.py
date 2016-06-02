@@ -237,7 +237,7 @@ def main(argv=sys.argv[1:]):
     # RIFT-2912: Disable g-ir-scanner home directory build cache.
     env['GI_SCANNER_DISABLE_CACHE'] = "1"
 
-    env['PYTEST_ADDOPTS'] = '"-p no:cacheprovider"'
+    env['PYTEST_ADDOPTS'] = '"-p no:cacheprovider -x -v"'
 
     env['PKG_CONFIG_PATH'] = '%s:%s' % (
         os.path.join(env['RIFT_INSTALL'], 'usr/lib/pkgconfig'),

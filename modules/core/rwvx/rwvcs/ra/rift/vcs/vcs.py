@@ -14,7 +14,7 @@
 import logging
 import time
 
-import rift.auto.proxy
+import rift.auto.session
 import gi
 gi.require_version('RwBaseYang', '1.0')
 gi.require_version('RwManifestYang', '1.0')
@@ -118,14 +118,16 @@ class VcsComponentInfo(object):
             try:
                 if self.is_system_ready():
                     return
-            except rift.auto.proxy.ProxyConnectionError as e:
+            except rift.auto.session.ProxyConnectionError as e:
                 logger.info("ProxyConnectionError: {}".format(e))
-            except rift.auto.proxy.ProxyRequestTimeout as e:
+            except rift.auto.session.ProxyRequestTimeout as e:
                 logger.info("ProxyRequestTimeout: {}".format(e))
-            except rift.auto.proxy.ProxyRequestError as e:
+            except rift.auto.session.ProxyRequestError as e:
                 logger.info("ProxyRequestError: {}".format(e))
             except ComponentInfoError as e:
                 logger.info("ComponentInfoError: {}".format(e))
+            except ConnectionRefusedError as e:
+                logger.info("ConnectionRefusedError: {}".format(e))
 
             time_elapsed = time.time() - start_time
             time_remaining = timeout_secs - time_elapsed
@@ -141,12 +143,15 @@ class VcsComponentInfo(object):
                 "enter RUNNING state: %s", timeout_secs, unstarted_names)
 
 
-def wait_until_system_started(session, timeout_secs=SYSTEM_STARTUP_TIMEOUT_SECS):
+def wait_until_system_started(session, quiet=False, timeout_secs=SYSTEM_STARTUP_TIMEOUT_SECS):
     """ Convenience wrapper to wait until system has started
 
     Arguments:
         session - A session instance
     """
+    if quiet:
+        logger.setLevel(logging.ERROR)
+
     VcsComponentInfo(session).wait_until_system_started(timeout_secs=timeout_secs)
 
 

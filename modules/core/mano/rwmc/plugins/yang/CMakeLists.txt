@@ -8,10 +8,18 @@
 ##
 # Yang targets
 ##
+rift_generate_python_log_yang(
+    LOG_CATEGORY_NAME rw-mc-log
+    START_EVENT_ID 120000
+    OUT_YANG_FILE_VAR rw_mc_log_file
+    )
+
 
 rift_add_yang_target(
   TARGET rwmc_yang
-  YANG_FILES rw-mc.yang
+  YANG_FILES 
+    rw-mc.yang 
+    ${rw_mc_log_file}
   LIBRARIES
     rwcloud_yang_gen
   DEPENDS

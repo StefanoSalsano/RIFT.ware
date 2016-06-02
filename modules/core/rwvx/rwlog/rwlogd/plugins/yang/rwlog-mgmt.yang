@@ -30,6 +30,9 @@ module rwlog-mgmt
   import rw-cli-ext {
     prefix "rwcli";
   }
+  import rwshell-mgmt {
+    prefix "rwshell-mgmt";
+  }
   import ietf-inet-types {
     prefix "inet";
    }
@@ -63,7 +66,14 @@ module rwlog-mgmt
          type inet:uri;
       } 
       uses rwlog:logging;
+      container categories {
+        config false; 
+        leaf-list category {
+           type string;
+        }
+      }
   }    
+
 
   rpc show-logs {
     description "Fetches Log events";

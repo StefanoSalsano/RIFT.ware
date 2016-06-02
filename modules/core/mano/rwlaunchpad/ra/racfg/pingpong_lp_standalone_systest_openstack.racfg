@@ -1,7 +1,7 @@
 {
   "test_name":"TC_PINGPONG_LP_STANDALONE_OPENSTACK",
-  "commandline":"./pingpong_lp_standalone_systest --cloud-type 'openstack' --cloud-host '10.66.4.115' --sysinfo --lp-standalone ",
-  "test_description":"System test for ping and pong vnf with standalone Launcpad (Openstack)",
+  "commandline":"./pingpong_lp_standalone_systest --cloud-type 'openstack' --cloud-host={cloud_host} --sysinfo --lp-standalone --user={user} {tenants} --netconf --restconf",
+  "test_description":"System test for ping and pong vnf with standalone Launchpad (Openstack)",
   "run_as_root": false,
   "status":"working",
   "keywords":["nightly","smoke","MANO","openstack"],
@@ -9,7 +9,7 @@
   "networks":[],
   "vms":[
     {
-      "name": "VM",
+      "name": "rift_auto_launchpad",
       "memory": 8192,
       "cpus": 4
     }

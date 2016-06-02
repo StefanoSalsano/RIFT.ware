@@ -935,6 +935,12 @@ TEST(YangToPb, ParseAllFiles)
       continue;
     }
 
+#ifndef CONFD_ENABLED
+    if (f.filename() == "tailf-raw.tailf.yang") {
+      continue;
+    }
+#endif
+
     std::cout << "Test yangpbc parse " << f << std::endl;
     NamespaceManager::get_global().unittest_runtime_clear();
 
@@ -1011,7 +1017,7 @@ TEST(YangToPb, ElementTypeGen)
   EXPECT_EQ(RWPB_G_PATHENTRY_VALUE(Company_data_Company_Product)->element_id.element_type,
             RW_SCHEMA_ELEMENT_TYPE_LISTY_1_SINT32);
 
-  EXPECT_EQ(RWPB_G_PATHENTRY_VALUE(OtherDataRwvcs_data_Data_Rwvcs_RwcomponentList_RwcomponentInfo)->element_id.element_type,
+  EXPECT_EQ(RWPB_G_PATHENTRY_VALUE(OtherDataRwvcs_data_DataTop_Rwvcs_RwcomponentList_RwcomponentInfo)->element_id.element_type,
             RW_SCHEMA_ELEMENT_TYPE_LISTY_1);
 
   EXPECT_EQ(RWPB_G_PATHENTRY_VALUE(TestTagGenerationBase_data_TopCont1_Cont1_Lst1)->element_id.element_type,

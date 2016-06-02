@@ -92,6 +92,7 @@ class GenericComponentCtor(Constructor):
                 instance_id=prototype.uid,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
+                start=prototype.start,
                 )
 
         for component in prototype.subcomponents:
@@ -124,6 +125,7 @@ class VirtualMachineCtor(Constructor):
         obj.valgrind = prototype.valgrind
         obj.config_ready = prototype.config_ready
         obj.recovery_action = prototype.recovery_action
+        obj.start = prototype.start
 
         for component in prototype.subcomponents:
             obj.add_component(self.compiler.create(component))
@@ -154,6 +156,7 @@ class TaskletCtor(Constructor):
                 instance_id=prototype.uid,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
+                start=prototype.start
                 )
 
 
@@ -180,6 +183,7 @@ class NativeProcessCtor(Constructor):
                 run_as=prototype.run_as,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
+                start=prototype.start
                 )
 
         obj.instance_id = prototype.uid
@@ -240,6 +244,7 @@ class LegacyProcCtor(Constructor):
         obj.valgrind = prototype.valgrind
         obj.config_ready = prototype.config_ready
         obj.recovery_action = prototype.recovery_action
+        obj.start = prototype.start
         for component in prototype.subcomponents:
             obj.add_component(self.compiler.create(component))
 
@@ -285,6 +290,7 @@ class LegacyVmCtor(Constructor):
         obj.valgrind = prototype.valgrind
         obj.config_ready = prototype.config_ready
         obj.recovery_action = prototype.recovery_action
+        obj.start = prototype.start
 
         for component in prototype.subcomponents:
             child = self.compiler.create(component)
@@ -314,13 +320,15 @@ class LegacyTaskletCtor(Constructor):
         try:
             # The uagent and message broker both need to have their ports set
             # through the constructor
-            tasklet = self.cls(prototype.name, port=prototype.port, 
+            tasklet = self.cls(prototype.name, port=prototype.port,
                                config_ready=prototype.config_ready,
                                recovery_action=prototype.recovery_action,
+                               start=prototype.start
                               )
         except AttributeError:
-            tasklet = self.cls(prototype.name, config_ready=prototype.config_ready, 
+            tasklet = self.cls(prototype.name, config_ready=prototype.config_ready,
                                recovery_action=prototype.recovery_action,
+                               start=prototype.start
                               )
 
         tasklet.instance_id = prototype.uid
@@ -344,11 +352,6 @@ class LegacyUAgentCtor(Constructor):
                 compiler,
                 rift.vcs.manifest.RaUagent)
 
-        # If we find confd within the sysinfo, find and store
-        # the VM ip address so uAgent can connect to it.
-        confd_vm = sysinfo.find_ancestor_by_class(rift.vcs.Confd)
-        self.confd_ip = confd_vm.ip if confd_vm is not None else None
-
     def create(self, prototype):
         """Returns a uAgent tasklet
 
@@ -363,10 +366,10 @@ class LegacyUAgentCtor(Constructor):
 
         tasklet = self.cls(
                 prototype.name,
-                confd_ip=self.confd_ip,
                 port=prototype.port,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
+                start=prototype.start
                 )
         tasklet.instance_id = prototype.uid
 
@@ -415,6 +418,7 @@ class FastpathTaskletCtor(Constructor):
                 hashbin_credit=prototype.hashbin_credit,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
+                start=prototype.start
                 )
         tasklet.instance_id = prototype.uid
         return tasklet
@@ -459,5 +463,6 @@ class CliTaskletCtor(Constructor):
                 manifest_file=manifest_file,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
+                start=prototype.start
                 )
         return tasklet

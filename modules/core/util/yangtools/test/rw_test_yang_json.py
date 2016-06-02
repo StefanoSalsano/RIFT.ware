@@ -16,10 +16,12 @@ import json
 import sys
 import unittest
 import gi
-from gi.repository import RwYang, TestYangJsonYang
+gi.require_version('RwYang', '1.0')
+gi.require_version('TestJsonSchemaYang', '1.0')
+from gi.repository import RwYang, TestJsonSchemaYang
 import xmlrunner
 
-class TestYangModel(unittest.TestCase):
+class TestJsonSchema(unittest.TestCase):
     def setUp(self):
         something = False
 
@@ -44,15 +46,15 @@ class TestYangModel(unittest.TestCase):
 
     def test_yang_json(self):
         model = RwYang.Model.create_libncx()
-        module = model.load_module("test-yang-json")
+        module = model.load_module("test-json-schema")
         self.assertTrue(module)
         root = model.get_root_node()
         top = root.get_first_child()
 
-        data = top.to_json(True)
+        data = top.to_json_schema(True)
         print (data)
         jdata = json.loads(data)
-        self.assertEqual(jdata["top"]["name"], "test-yang-json:top")
+        self.assertEqual(jdata["top"]["name"], "test-json-schema:top")
 
         # Test container items
         self.assertEqual(len(jdata["top"]["properties"]), 11)

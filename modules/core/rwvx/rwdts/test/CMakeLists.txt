@@ -479,6 +479,21 @@ rift_unittest(rwdts_gi_test-80
 #  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_recovery_test.py DtsTestCase.test_read_pub
 #  ENVSET_ARGS FORCE=1)
 
+rift_unittest(rwdts_gi_test-82
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_return_payload
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-83
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_return_payload_sub
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-84
+  TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_deregister
+  ENVSET_ARGS FORCE=1)
+
 add_custom_target(rwdts_gi_ut
   DEPENDS
     rwdts_gi_test-1
@@ -562,6 +577,9 @@ rwdts_gi_test-62
     rwdts_gi_test-79
     rwdts_gi_test-80
     #rwdts_gi_test-81
+    rwdts_gi_test-82
+    rwdts_gi_test-83
+    rwdts_gi_test-84
 )
 
 add_custom_target(rwdts_unittest

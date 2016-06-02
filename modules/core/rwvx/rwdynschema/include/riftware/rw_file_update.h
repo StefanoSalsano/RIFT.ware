@@ -14,7 +14,15 @@
 #if defined(__cplusplus)
 #include <string>
 #include <map>
-#include "rw_confd_upgrade.hpp"
+
+//ATTN: Boost bug 10038
+// https://svn.boost.org/trac/boost/ticket/10038
+// Fixed in 1.57
+// TODO: Remove the definition once upgraded to >= 1.57
+#define BOOST_NO_CXX11_SCOPED_ENUMS
+#include <boost/filesystem.hpp>
+#undef BOOST_NO_CXX11_SCOPED_ENUMS
+
 extern "C" {
 #endif
 
@@ -104,11 +112,6 @@ public:
   void set_state(State curr_state, State nxt_state);
 
 public:
-  // Executes the shlee command 'rw_file_proto_ops'
-  // with the option provided as argument
-  bool execute_cmd(const std::string& cmd_opt);
-
-public:
 
   typedef void (FileUpdateProtocol::*MFP)();
   // pair.first = curr_state
@@ -133,8 +136,7 @@ public:
   // App callback related info
   rwdynschema_dynamic_schema_registration_t* app_data_;
 
-  std::string rift_root_;
-  std::string cmd_;
+  std::string rift_install_;
 };
 
 /*

@@ -27,8 +27,9 @@
 #include "rw_namespace.h"
 #include "rw_xml.h"
 #include "yangncx.hpp"
-#include "rw_tree_iter.h"
 #include "rw_json.h"
+#include "yangtest_common.hpp"
+
 /* From xml2pb_test initialization */
 extern char **g_argv;
 extern int g_argc;
@@ -56,11 +57,11 @@ static const char* ydt_aug_ns = "http://riftio.com/ns/yangtools/test-ydom-aug";
 static const char* ydt_aug_prefix = "a";
 
 static const char* ydt_xml_header = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-static const char* ydt_test_header = "<root><top xmlns=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n";
-static const char* ydt_test_trailer = "</top></root>";
+static const char* ydt_test_header = "<data><top xmlns=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n";
+static const char* ydt_test_trailer = "</top></data>";
 
-static const char* ydt_cli_test_header = "<root><test-choice xmlns=\"http://riftio.com/ns/yangtools/rift-cli-test\">\n";
-static const char* ydt_cli_test_trailer = "</test-choice> </root>";
+static const char* ydt_cli_test_header = "<data><test-choice xmlns=\"http://riftio.com/ns/yangtools/rift-cli-test\">\n";
+static const char* ydt_cli_test_trailer = "</test-choice> </data>";
 
 
 
@@ -324,7 +325,7 @@ TEST (RwYangDom, InsertInYangOrder)
   EXPECT_TRUE(leaf);
 
   std::string expected_str = 
-"\n<root>\n\n"
+"\n<data>\n\n"
 "  <order_test>\n"
 "    <key1>kone</key1>\n"
 "    <key2>ktwo</key2>\n"
@@ -333,7 +334,7 @@ TEST (RwYangDom, InsertInYangOrder)
 "    <value2>two</value2>\n"
 "    <value3>three</value3>\n"
 "  </order_test>\n\n"
-"</root>";
+"</data>";
 
   std::string dom_str = dom->to_string_pretty();
   EXPECT_EQ(expected_str, dom_str);
@@ -411,7 +412,7 @@ TEST (RwYangDom, InsertInYangOrderRpc)
 
 
   std::string expected_xml =
-"\n<root>\n\n"
+"\n<data>\n\n"
 "  <start-test>\n"
 "    <test-type>latency</test-type>\n"
 "    <publishers>2</publishers>\n"
@@ -432,7 +433,7 @@ TEST (RwYangDom, InsertInYangOrderRpc)
 "      <value4>four</value4>\n"
 "    </lnode>\n"
 "  </start-test>\n\n"
-"</root>";
+"</data>";
 
   std::string dom_str = dom->to_string_pretty();
   EXPECT_EQ(expected_xml, dom_str);
@@ -1532,7 +1533,7 @@ TEST (FlatPbTest, LoadXml)
   RWPB_M_MSG_DECL_INIT(FlatConversion_FirstLevel,first);
 
   rw_yang_netconf_op_status_t ncrs =
-      dom->get_root_node()->to_pbcm(&first.base);
+      dom->get_root_node()->get_first_child()->to_pbcm(&first.base);
   EXPECT_EQ(ncrs, RW_YANG_NETCONF_OP_STATUS_OK);
 
   ProtobufCMessage *pbcm = (ProtobufCMessage *) &first;
@@ -1743,7 +1744,7 @@ TEST (ConversionAPI, NotRooted)
   ASSERT_TRUE(odvcs);
 
   const char* rooted1_xml =
-      "<root xmlns=\"http://riftio.com/ns/riftware-1.0/other-data_rwvcs\"><data><rwvcs><rwcomponent_list><rwcomponent_info>"
+      "<data xmlns=\"http://riftio.com/ns/riftware-1.0/other-data_rwvcs\"><data-top><rwvcs><rwcomponent_list><rwcomponent_info>"
       "<component_type>RWCLUSTER</component_type>"
       "<component_name>rwcluster-drone</component_name>"
       "<instance_id>1</instance_id>"
@@ -1751,7 +1752,7 @@ TEST (ConversionAPI, NotRooted)
       "<rwcomponent_parent>rwcolony-1</rwcomponent_parent>"
       "<rwcluster_info>"
       "</rwcluster_info>"
-      "</rwcomponent_info></rwcomponent_list></rwvcs></data></root>";
+      "</rwcomponent_info></rwcomponent_list></rwvcs></data-top></data>";
 
   std::string error_out;
   XMLDocument::uptr_t doc(mgr->create_document_from_string(rooted1_xml, error_out, false/*validate*/));
@@ -1765,7 +1766,7 @@ TEST (ConversionAPI, NotRooted)
   protobuf_c_message_free_unpacked_usebody(nullptr, &cinfo.base);
 
   const char* rooted2_xml =
-      "<root><data><rwvcs><rwcomponent_list><rwcomponent_info>"
+      "<data><data-top><rwvcs><rwcomponent_list><rwcomponent_info>"
       "<component_type>RWCLUSTER</component_type>"
       "<component_name>rwcluster-drone</component_name>"
       "<instance_id>1</instance_id>"
@@ -1773,7 +1774,7 @@ TEST (ConversionAPI, NotRooted)
       "<rwcomponent_parent>rwcolony-1</rwcomponent_parent>"
       "<rwcluster_info>"
       "</rwcluster_info>"
-      "</rwcomponent_info></rwcomponent_list></rwvcs></data></root>";
+      "</rwcomponent_info></rwcomponent_list></rwvcs></data-top></data>";
 
   doc = std::move(mgr->create_document_from_string(rooted2_xml, error_out, false/*validate*/));
   ASSERT_TRUE(doc.get());
@@ -2084,7 +2085,7 @@ TEST(RwYangDom, C_API)
   XMLDocument *dom = static_cast <XMLDocument *>(doc);
 
   rw_yang_netconf_op_status_t ncrs =
-      dom->get_root_node()->to_pbcm(&first.base);
+      dom->get_root_node()->get_first_child()->to_pbcm(&first.base);
   EXPECT_EQ(ncrs, RW_YANG_NETCONF_OP_STATUS_OK);
 
   CFMutableStringRef cf = CFStringCreateMutable (NULL, 0);
@@ -2103,43 +2104,6 @@ TEST(RwYangDom, C_API)
 
   ASSERT_STREQ (from_cf, str);
 }
-
-
-RWPB_T_MSG(RiftCliTest_data_GeneralContainer) *get_general_containers(int num_list_entries)
-{
-  RWPB_T_MSG(RiftCliTest_data_GeneralContainer) *gc =
-      (RWPB_T_MSG(RiftCliTest_data_GeneralContainer) *)
-      malloc (sizeof (RWPB_T_MSG(RiftCliTest_data_GeneralContainer)));
-
-  RWPB_F_MSG_INIT(RiftCliTest_data_GeneralContainer,gc);
-
-  gc->n_g_list = num_list_entries;
-  gc->g_list = (RWPB_T_MSG(RiftCliTest_data_GeneralContainer_GList) **)
-      malloc (sizeof (RWPB_T_MSG(RiftCliTest_data_GeneralContainer_GList) *) *
-              gc->n_g_list);
-
-  for (size_t i = 0; i < gc->n_g_list; i++) {
-    gc->g_list[i] =
-        (RWPB_T_MSG(RiftCliTest_data_GeneralContainer_GList)* )
-        malloc (sizeof (RWPB_T_MSG(RiftCliTest_data_GeneralContainer_GList)));
-    RWPB_F_MSG_INIT(RiftCliTest_data_GeneralContainer_GList,gc->g_list[i]);
-    gc->g_list[i]->index = i * 10;
-    gc->g_list[i]->gcl_container = (RWPB_T_MSG(RiftCliTest_data_GeneralContainer_GList_GclContainer) *)
-        malloc (sizeof (RWPB_T_MSG(RiftCliTest_data_GeneralContainer_GList_GclContainer)));
-    RWPB_F_MSG_INIT(RiftCliTest_data_GeneralContainer_GList_GclContainer, gc->g_list[i]->gcl_container);
-    if (i%2) {
-      gc->g_list[i]->gcl_container->has_gclc_empty = 1;
-      gc->g_list[i]->gcl_container->gclc_empty = 1;
-    } else {
-      gc->g_list[i]->gcl_container->has_having_a_bool = 1;
-      gc->g_list[i]->gcl_container->having_a_bool = 1;
-    }
-  }
-  return gc;
-}
-
-
-
 
 TEST(RwYangDom, ListFindPbcm)
 {
@@ -3353,6 +3317,8 @@ TEST(RwYangDom, ListKeyValidation)
   
   XMLNode* root_node = dom->get_root_node();
   ASSERT_TRUE(root_node);
+  root_node = root_node->get_first_child();
+  ASSERT_TRUE(root_node);
 
   XMLNode* cont_1 = root_node->find("container_1-1");
   ASSERT_TRUE (cont_1);
@@ -3396,7 +3362,7 @@ TEST(Xml2GI, SelCrit)
 
   static const char *xml =
       "<?xml version=\"1.0\"?>"
-      "<root>"
+      "<data>"
       "<colony xmlns=\"http://riftio.com/ns/riftware-1.0/rw-base\">"
       "<rw-base:name xmlns:rw-base=\"http://riftio.com/ns/riftware-1.0/rw-base\"></rw-base:name>"
       "<rw-base:network-context xmlns:rw-base=\"http://riftio.com/ns/riftware-1.0/rw-base\">"
@@ -3420,7 +3386,7 @@ TEST(Xml2GI, SelCrit)
       "</rw-fpath:scriptable-lb>"
       "</rw-base:network-context>"
       "</colony>"
-      "</root>";
+      "</data>";
 
   printf("%s\n", xml);
 
@@ -3554,6 +3520,8 @@ TEST(RwYangDom, NullYangNode)
   
   XMLNode* root_node = dom->get_root_node();
   ASSERT_TRUE(root_node);
+  root_node = root_node->get_first_child();
+  ASSERT_TRUE(root_node);
 
   XMLNode* cont_invalid = dom->get_root_child_element("container_1-1");
   ASSERT_FALSE (cont_invalid);
@@ -3572,6 +3540,8 @@ TEST(RwYangDom, NullYangNode)
   ASSERT_TRUE(dom2.get());
   
   XMLNode* root_node2 = dom2->get_root_node();
+  ASSERT_TRUE(root_node2);
+  root_node2 = root_node2->get_first_child();
   ASSERT_TRUE(root_node2);
 
   XMLNode* cont_valid = root_node2->find("container_1-1");
@@ -4037,4 +4007,219 @@ TEST(RwYangDom, YangPrefix)
       stack.push (child_node);
     }
   }
+}
+
+TEST (RwYangDom, FillDefaultsAll)
+{
+  TEST_DESCRIPTION("Test filling default values on a list node with empty content");
+  XMLManager::uptr_t mgr(xml_manager_create_xerces());
+  ASSERT_TRUE(mgr.get());
+
+  YangModel* model = mgr->get_yang_model();
+  ASSERT_TRUE(model);
+
+  YangModule* ydom_top = model->load_module("test-ydom-top");
+  EXPECT_TRUE(ydom_top);
+
+  std::string xmlblob =
+"\n<data>\n\n"
+"  <t:defaults_test xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n"
+"    <t:name>Test</t:name>\n"
+"  </t:defaults_test>\n\n"
+"</data>";
+
+  std::string error_out;
+  XMLDocument::uptr_t dom(mgr->create_document_from_string(xmlblob.c_str(), error_out, false/*validate*/));
+  if (!dom) {
+    std::cout << "RwYangDom.FillAllDefaults Error: " << error_out << std::endl;
+  }
+  ASSERT_TRUE(dom.get());
+
+  XMLNode* root = dom->get_root_node();
+  ASSERT_TRUE(root);
+
+  XMLNode* defaults_test = root->get_first_child();
+  ASSERT_TRUE(defaults_test);
+
+  defaults_test->fill_defaults();
+
+  std::string exptected_str =
+"\n<data>\n\n"
+"  <t:defaults_test xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n"
+"    <t:name>Test</t:name>\n"
+"    <t:d_leaf>default_val</t:d_leaf>\n"
+"    <t:d_cont1>\n"
+"      <t:d_cont2>\n"
+"        <t:d_c2>271</t:d_c2>\n"
+"      </t:d_cont2>\n"
+"      <t:d_c1>d_c1_val</t:d_c1>\n"
+"      <t:d_case_d_leaf>314</t:d_case_d_leaf>\n"
+"    </t:d_cont1>\n"
+"  </t:defaults_test>\n\n\n"
+"</data>";
+
+  EXPECT_EQ(exptected_str, dom->to_string_pretty());
+}
+
+TEST (RwYangDom, FillDefaultsWithExisting)
+{
+  TEST_DESCRIPTION("Test defaults filling with existing content");
+  XMLManager::uptr_t mgr(xml_manager_create_xerces());
+  ASSERT_TRUE(mgr.get());
+
+  YangModel* model = mgr->get_yang_model();
+  ASSERT_TRUE(model);
+
+  YangModule* ydom_top = model->load_module("test-ydom-top");
+  EXPECT_TRUE(ydom_top);
+
+  std::string xmlblob =
+"\n<data>\n\n"
+"  <t:defaults_test xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n"
+"    <t:name>Test</t:name>\n"
+"    <t:d_cont1>\n"
+"      <t:d_cont2>\n"
+"        <t:d_c2>42</t:d_c2>\n"
+"      </t:d_cont2>\n"
+"      <t:nd_case_nd_leaf>161</t:nd_case_nd_leaf>\n"
+"    </t:d_cont1>\n"
+"  </t:defaults_test>\n\n"
+"</data>";
+
+  std::string error_out;
+  XMLDocument::uptr_t dom(mgr->create_document_from_string(xmlblob.c_str(), error_out, false/*validate*/));
+  if (!dom) {
+    std::cout << "RwYangDom.FillDefaultsWithExisting Error: " << error_out << std::endl;
+  }
+  ASSERT_TRUE(dom.get());
+
+  XMLNode* root = dom->get_root_node();
+  ASSERT_TRUE(root);
+
+  XMLNode* defaults_test = root->get_first_child();
+  ASSERT_TRUE(defaults_test);
+
+  defaults_test->fill_defaults();
+
+  std::string exptected_str =
+"\n<data>\n\n"
+"  <t:defaults_test xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n"
+"    <t:name>Test</t:name>\n"
+"    <t:d_cont1>\n"
+"      <t:d_cont2>\n"
+"        <t:d_c2>42</t:d_c2>\n"
+"      </t:d_cont2>\n"
+"      <t:nd_case_nd_leaf>161</t:nd_case_nd_leaf>\n"
+"      <t:d_c1>d_c1_val</t:d_c1>\n"
+"      <t:nd_case_d_leaf>nd_case_leaf_val</t:nd_case_d_leaf>\n"
+"    </t:d_cont1>\n"
+"    <t:d_leaf>default_val</t:d_leaf>\n"
+"  </t:defaults_test>\n\n\n"
+"</data>";
+
+  EXPECT_EQ(exptected_str, dom->to_string_pretty());
+}
+
+TEST (RwYangDom, FillDefaultsRpcInput)
+{
+  TEST_DESCRIPTION("Test defaults filling in RPC input");
+  XMLManager::uptr_t mgr(xml_manager_create_xerces());
+  ASSERT_TRUE(mgr.get());
+
+  YangModel* model = mgr->get_yang_model();
+  ASSERT_TRUE(model);
+
+  YangModule* ydom_top = model->load_module("test-ydom-top");
+  EXPECT_TRUE(ydom_top);
+
+  std::string xmlblob =
+"\n<data>\n\n"
+"  <t:defaults_rpc xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n"
+"    <t:nd_leaf>Test</t:nd_leaf>\n"
+"  </t:defaults_rpc>\n\n"
+"</data>";
+
+  std::string error_out;
+  XMLDocument::uptr_t dom(mgr->create_document_from_string(xmlblob.c_str(), error_out, false/*validate*/));
+  if (!dom) {
+    std::cout << "RwYangDom.FillDefaultsRpcInput Error: " << error_out << std::endl;
+  }
+  ASSERT_TRUE(dom.get());
+
+  XMLNode* root = dom->get_root_node();
+  ASSERT_TRUE(root);
+
+  XMLNode* defaults_rpc = root->get_first_element();
+  ASSERT_TRUE(defaults_rpc);
+
+  defaults_rpc->fill_rpc_input_with_defaults();
+
+  std::string exptected_str =
+"\n<data>\n\n"
+"  <t:defaults_rpc xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n"
+"    <t:nd_leaf>Test</t:nd_leaf>\n"
+"    <t:d_leaf>d_leaf_val</t:d_leaf>\n"
+"    <t:d_cont>\n"
+"      <t:d_cont_d_leaf>314</t:d_cont_d_leaf>\n"
+"    </t:d_cont>\n"
+"  </t:defaults_rpc>\n\n\n"
+"</data>";
+
+  EXPECT_EQ(exptected_str, dom->to_string_pretty());
+}
+
+TEST (RwYangDom, FillDefaultsRpcOutput)
+{
+  TEST_DESCRIPTION("Test defaults filling in RPC output");
+  XMLManager::uptr_t mgr(xml_manager_create_xerces());
+  ASSERT_TRUE(mgr.get());
+
+  YangModel* model = mgr->get_yang_model();
+  ASSERT_TRUE(model);
+
+  YangModule* ydom_top = model->load_module("test-ydom-top");
+  EXPECT_TRUE(ydom_top);
+
+  std::string xmlblob =
+"\n<data>\n\n"
+"  <t:defaults_rpc xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n"
+"    <t:d_list>\n"
+"      <t:name>RpcOutput1</t:name>\n"
+"    </t:d_list>\n"
+"    <t:d_list>\n"
+"      <t:name>RpcOutput2</t:name>\n"
+"      <t:nd_leaf>42</t:nd_leaf>\n"
+"    </t:d_list>\n"
+"  </t:defaults_rpc>\n\n"
+"</data>";
+
+  std::string error_out;
+  XMLDocument::uptr_t dom(mgr->create_document_from_string(xmlblob.c_str(), error_out, false/*validate*/));
+  if (!dom) {
+    std::cout << "RwYangDom.FillDefaultsRpcOutput Error: " << error_out << std::endl;
+  }
+  ASSERT_TRUE(dom.get());
+
+  XMLNode* root = dom->get_root_node();
+  ASSERT_TRUE(root);
+
+  XMLNode* defaults_rpc = root->get_first_element();
+  ASSERT_TRUE(defaults_rpc);
+
+  defaults_rpc->fill_rpc_output_with_defaults();
+
+  std::string exptected_str =
+"\n<data>\n\n"
+"  <t:defaults_rpc xmlns:t=\"http://riftio.com/ns/yangtools/test-ydom-top\">\n"
+"    <t:d_list>\n"
+"      <t:name>RpcOutput1</t:name>\n"
+"      <t:d_leaf>108</t:d_leaf></t:d_list>\n"
+"    <t:d_list>\n"
+"      <t:name>RpcOutput2</t:name>\n"
+"      <t:nd_leaf>42</t:nd_leaf>\n"
+"      <t:d_leaf>108</t:d_leaf></t:d_list>\n"
+"  </t:defaults_rpc>\n\n"
+"</data>";
+
+  EXPECT_EQ(exptected_str, dom->to_string_pretty());
 }

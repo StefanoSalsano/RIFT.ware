@@ -98,13 +98,13 @@ static void launch_netconf_agent()
         argv[argc++] = rift_cmdargs.netconf_port;
       }
 
-      if (rift_cmdargs.netconf_username) {
+      if (rift_cmdargs.username) {
         argv[argc++] = "--username";
-        argv[argc++] = rift_cmdargs.netconf_username;
+        argv[argc++] = rift_cmdargs.username;
       } 
-      if (rift_cmdargs.netconf_passwd) {
+      if (rift_cmdargs.passwd) {
         argv[argc++] = "--passwd";
-        argv[argc++] = rift_cmdargs.netconf_passwd;
+        argv[argc++] = rift_cmdargs.passwd;
       } 
 
       if (rift_cmdargs.trace_level != RWTRACE_SEVERITY_ERROR) {

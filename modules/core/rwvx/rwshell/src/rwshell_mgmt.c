@@ -290,7 +290,7 @@ static rwdts_member_rsp_code_t on_show_crash_list(
     const rwdts_xact_info_t * xact_info,
     RWDtsQueryAction action,
     const rw_keyspec_path_t* key_in,
-    const ProtobufCMessage * msg,
+    const ProtobufCMessage * msg_unused,
     uint32_t credits,
     void *getnext_ptr)
 {
@@ -302,12 +302,9 @@ static rwdts_member_rsp_code_t on_show_crash_list(
   RWPB_T_MSG(RwshellMgmt_data_Crash_List_Vm)** vm_list = NULL;
 
   RW_ASSERT(xact_info);
-  RW_ASSERT(msg->descriptor == RWPB_G_MSG_PBCMD(RwshellMgmt_data_Crash_List));
 
   rwtasklet_info_ptr_t tasklet = (rwtasklet_info_ptr_t) xact_info->ud;
   char *instance_name = NULL;
-
-  //req = (RWPB_T_MSG(RwshellMgmt_data_Crash_List) *)msg;
 
   if (action != RWDTS_QUERY_READ)
     return RWDTS_ACTION_OK;
@@ -322,13 +319,13 @@ static rwdts_member_rsp_code_t on_show_crash_list(
   RW_ASSERT(m_mod);
 
   int i, crash_count=0;
-  char **crashes;
+  char **crashes = NULL;
   if (m_mod) {
     RW_ASSERT(RW_STATUS_SUCCESS == get_vmname_and_procids(tasklet, &instance_name, NULL));
 
     status = rwshell_crash_report(m_mod, instance_name, &crashes);
 
-    if (status != RW_STATUS_SUCCESS) {
+    if (status != RW_STATUS_SUCCESS || !crashes) {
       dts_ret = RWDTS_ACTION_NA;
       goto done;
     }
@@ -726,9 +723,13 @@ done:
     free(instance_name);
 
   int idx;
-  for (idx=0; pids[idx]; idx++)
-    free(pids[idx]);
-  free(pids);
+  if (pids) {
+    for (idx=0; pids[idx]; idx++) {
+      free(pids[idx]);
+    }
+    free(pids);
+    pids = NULL;
+  }
   return dts_ret;
 }
 

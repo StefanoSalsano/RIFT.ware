@@ -1113,8 +1113,7 @@ rwdts_send_registrations_to_router(void* ud)
 
     gettimeofday(&api_sent_list->tv_sent, NULL);
 
-    flags |= RWDTS_FLAG_ADVISE;
-    flags |= RWDTS_FLAG_WAIT_RESPONSE;
+    flags |= RWDTS_XACT_FLAG_ADVISE;
     flags |= RWDTS_XACT_FLAG_IMM_BOUNCE;
     flags |= RWDTS_XACT_FLAG_REG;
     if (!xact) {
@@ -1316,8 +1315,7 @@ rwdts_update_registrations_to_router(void* ud)
 
     gettimeofday(&api_sent_list->tv_sent, NULL);
 
-    flags |= RWDTS_FLAG_ADVISE;
-    flags |= RWDTS_FLAG_WAIT_RESPONSE;
+    flags |= RWDTS_XACT_FLAG_ADVISE;
     flags |= RWDTS_XACT_FLAG_IMM_BOUNCE;
     flags |= RWDTS_XACT_FLAG_REG;
     if (!xact) {
@@ -2475,7 +2473,7 @@ rwdts_send_deregistrations_to_router(void* ud)
 
     flags |= RWDTS_XACT_FLAG_NOTRAN;
     flags |= RWDTS_XACT_FLAG_END;
-    flags |= RWDTS_FLAG_ADVISE;
+    flags |= RWDTS_XACT_FLAG_ADVISE;
     rs = rwdts_advise_query_proto_int(apih,
                                       (rw_keyspec_path_t *)dts_ks,
                                       NULL,
@@ -2549,7 +2547,7 @@ rwdts_member_registration_delete(rwdts_member_registration_t *reg)
     HASH_DELETE(hh_data, reg->obj_list, mobj);
     if ((reg->flags & RWDTS_FLAG_PUBLISHER) > 0) {
       flags |= RWDTS_XACT_FLAG_NOTRAN;
-      flags |= RWDTS_FLAG_ADVISE;
+      flags |= RWDTS_XACT_FLAG_ADVISE;
       flags |= RWDTS_XACT_FLAG_END;
       rwdts_advise_query_proto_int(apih,
                                mobj->keyspec,
@@ -2653,29 +2651,7 @@ rwdts_member_deregister_keyspec(rwdts_api_t*  apih,
     next_reg = RW_SKLIST_NEXT(reg, rwdts_member_registration_t, element);
     if ((reg->ks_binpath_len == local_ks_binpath_len) &&
         (memcmp(reg->ks_binpath, local_ks_binpath, local_ks_binpath_len))) {
-      rwdts_api_reg_info_t*        sent_dereg = NULL;
-      apih->stats.num_deregistrations++;
-      reg->stats.num_deregistrations++;
-      RWDTS_API_LOG_REG_EVENT(apih, reg, RegDelKeyspec,
-                              RWLOG_ATTR_SPRINTF("%s Deleted registration for keyspec [%s], registration [0x%p]", apih->client_path, reg->keystr, reg));
-
-      rw_keyspec_path_t*                local_keyspec = NULL;
-      status = rw_keyspec_path_create_dup(keyspec, &apih->ksi , &local_keyspec);
-      RW_ASSERT(status == RW_STATUS_SUCCESS);
-
-      sent_dereg = RW_MALLOC0(sizeof(rwdts_api_reg_info_t));
-      sent_dereg->reg_id = reg->reg_id;
-      sent_dereg->keyspec = local_keyspec;
-      sent_dereg->flags = reg->flags;
-      sent_dereg->keystr = strdup(reg->keystr);
-
-      status = RW_SKLIST_INSERT(&(apih->sent_dereg_list), sent_dereg);
-      RW_ASSERT(status == RW_STATUS_SUCCESS);
-
-      rwdts_send_deregistrations_to_router(apih);
-      /* The unref should be called twice */
-      rwdts_member_reg_handle_unref((rwdts_member_reg_handle_t)reg);
-      rwdts_member_reg_handle_unref((rwdts_member_reg_handle_t)reg);
+      rwdts_member_deregister((rwdts_member_reg_handle_t)reg);
     }
     reg = next_reg;
   }
@@ -2721,6 +2697,7 @@ rwdts_member_deregister_f(rwdts_member_reg_handle_t  regh)
                           RWLOG_ATTR_SPRINTF("%s Deleted registration for keyspec [%s], registration [0x%p]", apih->client_path, tmp_str ? tmp_str : "", reg));
   free(tmp_str);
 
+  reg->reg_state = RWDTS_REG_DEL_PENDING;
   sent_dereg = RW_MALLOC0(sizeof(rwdts_api_reg_info_t));
   sent_dereg->reg_id = reg->reg_id;
   sent_dereg->keyspec = local_keyspec;
@@ -2881,7 +2858,7 @@ rwdts_send_deregister_path(void* ud)
     advice_cb.ud = dereg;
 
     flags |= RWDTS_XACT_FLAG_NOTRAN;
-    flags |= RWDTS_FLAG_ADVISE;
+    flags |= RWDTS_XACT_FLAG_ADVISE;
     flags |= RWDTS_XACT_FLAG_END;
     rwdts_advise_query_proto_int(apih,
                              (rw_keyspec_path_t *)dts_ks,
@@ -3782,7 +3759,6 @@ rwdts_member_handle_solicit_advise_ks(const rwdts_xact_info_t* xact_info,
     match = RW_SKLIST_NEXT(match, rwdts_match_info_t, match_elt);
   }
 
-  // Free match list
   rwdts_match_list_deinit(&matches);
 
 
@@ -3884,7 +3860,7 @@ rwdts_process_pending_advise(void *arg)
 
     rwdts_xact_t *xact;
     xact = rwdts_api_xact_create(reg->apih, 
-                                 RWDTS_FLAG_ADVISE,  
+                                 RWDTS_XACT_FLAG_ADVISE,  
                                  advise_cb.cb, 
                                  advise_cb.ud);
 
@@ -3900,12 +3876,12 @@ rwdts_process_pending_advise(void *arg)
                                                  keyspec,
                                                  msg,
                                                  RWDTS_QUERY_UPDATE,
-                                                 RWDTS_FLAG_ADVISE|RWDTS_FLAG_SOLICIT_RSP,
+                                                 RWDTS_XACT_FLAG_ADVISE|RWDTS_XACT_FLAG_SOLICIT_RSP,
                                                  false);
     }
 
     rwdts_xact_block_execute(block, 
-                             RWDTS_FLAG_ADVISE|RWDTS_FLAG_SOLICIT_RSP|RWDTS_XACT_FLAG_END, 
+                             RWDTS_XACT_FLAG_ADVISE|RWDTS_XACT_FLAG_SOLICIT_RSP|RWDTS_XACT_FLAG_END, 
                              NULL,
                              NULL, 
                              NULL);
@@ -4291,7 +4267,7 @@ rwdts_member_reg_handle_solicit_advise(rwdts_member_reg_handle_t  regh)
   xact = rwdts_api_query_ks(apih,
                             (rw_keyspec_path_t*)&solicit_advise_ks,
                             RWDTS_QUERY_RPC,
-                            RWDTS_FLAG_BLOCK_MERGE|RWDTS_XACT_FLAG_END,
+                            RWDTS_XACT_FLAG_BLOCK_MERGE|RWDTS_XACT_FLAG_END,
                             member_member_reg_handle_advise_solicit_rpc_cb,
                             regh,
                             &solicit_advise_msg.base);
@@ -4712,4 +4688,102 @@ rwdts_member_reg_run(rwdts_member_registration_t*        reg,
 invalid_trans:
 
   return NULL;
+}
+
+static void
+rwdts_member_promote_advise_cb(rwdts_xact_t* xact,
+                               rwdts_xact_status_t* xact_status,
+                               void*         ud)
+{
+  rwdts_member_registration_t* reg = (rwdts_member_registration_t*)ud;
+  reg->flags &= ~RWDTS_FLAG_SUBSCRIBER;;
+  reg->flags |= RWDTS_FLAG_PUBLISHER;
+  fprintf(stderr, "Inside rwdts_member_promote_advise_cb\n");
+  return;
+}
+
+void
+rwdts_send_sub_promotion_to_router(void *ud)
+{
+  RW_ASSERT(ud);
+  rwdts_member_registration_t* reg = (rwdts_member_registration_t*)ud;
+
+  rwdts_api_t* apih = reg->apih;
+  RW_ASSERT_TYPE(apih, rwdts_api_t);
+
+  RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member) member, *member_p;
+  uint32_t flags = 0;
+  uint64_t corrid = 6666;
+  int i = 0;
+  rw_status_t rs;
+
+  member_p = &member;
+  RWPB_F_MSG_INIT(RwDts_data_RtrInitRegKeyspec_Member, member_p);
+
+  strcpy(member_p->name, apih->client_path);
+
+  member_p->n_registration = 1;
+  member_p->promote_sub = 1;
+  member_p->has_promote_sub = 1;
+
+  member_p->registration = (RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member_Registration)**)
+    calloc(1,sizeof(RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member_Registration)*) * member_p->n_registration);
+  member_p->has_state = 1;
+  member_p->state = apih->dts_state;
+  member_p->has_rtr_id = 1;
+  member_p->rtr_id = apih->router_idx;
+
+
+  member_p->registration[i] = (RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member_Registration)*)
+                               calloc(1,sizeof(RWPB_T_MSG(RwDts_data_RtrInitRegKeyspec_Member_Registration)));
+  RWPB_F_MSG_INIT(RwDts_data_RtrInitRegKeyspec_Member_Registration, member_p->registration[i]);
+
+  size_t bp_len = 0;
+  const uint8_t *bp = NULL;
+  rs = rw_keyspec_path_get_binpath(reg->keyspec, &apih->ksi, &bp, &bp_len);
+  RW_ASSERT(rs == RW_STATUS_SUCCESS);
+  if (rs == RW_STATUS_SUCCESS) {
+    RW_ASSERT(bp);
+    member_p->registration[i]->keyspec.data = malloc(bp_len);
+    memcpy(member_p->registration[i]->keyspec.data, bp, bp_len);
+    member_p->registration[i]->keyspec.len = bp_len;
+    member_p->registration[i]->has_keyspec = TRUE;
+  }
+  member_p->registration[i]->keystr = strdup(reg->keystr);
+
+  RWPB_T_PATHSPEC(RwDts_data_RtrInitRegKeyspec_Member) *dts_ks = NULL;
+
+  /* register for DTS state */
+  rs = rw_keyspec_path_create_dup((rw_keyspec_path_t *)RWPB_G_PATHSPEC_VALUE(RwDts_data_RtrInitRegKeyspec_Member),
+                                  &apih->ksi,
+                                  (rw_keyspec_path_t**)&dts_ks);
+  RW_ASSERT(rs == RW_STATUS_SUCCESS);
+  dts_ks->has_dompath = 1;
+  dts_ks->dompath.path001.has_key00 = 1;
+  strncpy(dts_ks->dompath.path001.key00.name,
+          apih->client_path, sizeof(dts_ks->dompath.path001.key00.name));
+
+  rwdts_event_cb_t advice_cb = {};
+  advice_cb.cb = rwdts_member_promote_advise_cb;
+  advice_cb.ud = reg;
+
+  flags |= RWDTS_XACT_FLAG_IMM_BOUNCE;
+  flags |= RWDTS_XACT_FLAG_REG;
+  flags |= RWDTS_XACT_FLAG_END;
+  apih->stats.member_reg_advise_sent++;
+  rs = rwdts_advise_query_proto_int(apih,
+                                    (rw_keyspec_path_t *)dts_ks,
+                                    NULL,
+                                    (const ProtobufCMessage*)&member_p->base,
+                                    corrid,
+                                    NULL,
+                                    RWDTS_QUERY_UPDATE,
+                                    &advice_cb,
+                                    flags /* | RWDTS_FLAG_TRACE */,
+                                    NULL, NULL);
+
+  rw_keyspec_path_free((rw_keyspec_path_t *)dts_ks, NULL);
+
+  protobuf_c_message_free_unpacked_usebody(NULL, &member_p->base);
+  return;
 }

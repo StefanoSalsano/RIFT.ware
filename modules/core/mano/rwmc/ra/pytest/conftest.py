@@ -19,49 +19,56 @@ gi.require_version('RwMcYang', '1.0')
 
 from gi.repository import RwMcYang, RwCloudYang
 
-@pytest.fixture(scope='session', autouse=True)
-def cloud_account_name():
-    '''fixture which returns the name used to identify the cloud account'''
-    return 'cloud-0'
+@pytest.fixture(scope='session')
+def cloud_name_prefix():
+    '''fixture which returns the prefix used in cloud account names'''
+    return 'cloud'
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope='session')
+def cloud_account_name(cloud_name_prefix):
+    '''fixture which returns the name used to identify the cloud account'''
+    return '{prefix}-0'.format(prefix=cloud_name_prefix)
+
+@pytest.fixture(scope='session')
 def mgmt_domain_name():
     '''fixture which returns the name used to identify the mgmt_domain'''
     return 'mgmt-0'
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope='session')
 def vm_pool_name():
     '''fixture which returns the name used to identify the vm resource pool'''
     return 'vm-0'
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope='session')
 def network_pool_name():
     '''fixture which returns the name used to identify the network resource pool'''
     return 'net-0'
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope='session')
 def port_pool_name():
     '''fixture which returns the name used to identify the port resource pool'''
     return 'port-0'
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope='session')
 def sdn_account_name():
     '''fixture which returns the name used to identify the sdn account'''
     return 'sdn-0'
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope='session')
 def sdn_account_type():
     '''fixture which returns the account type used by the sdn account'''
     return 'odl'
 
 @pytest.fixture(scope='session', autouse=True)
-def _riftlog_scraper_session(log_manager, confd_host):
+def _riftlog_scraper_session(log_manager, confd_host, rsyslog_dir):
     '''Fixture which returns an instance of rift.auto.log.FileSource to scrape riftlog
 
     Arguments:
         log_manager - manager of logging sources and sinks
         confd_host - host on which confd is running (mgmt_ip)
     '''
+    if rsyslog_dir:
+        return None
     scraper = rift.auto.log.FileSource(host=confd_host, path='/var/log/rift/rift.log')
     scraper.skip_to('Configuration management startup complete.')
     log_manager.source(source=scraper)
@@ -105,44 +112,61 @@ def cloud_xpath(standalone_launchpad):
         xpath = '/cloud/account'
     return xpath
 
+@pytest.fixture(scope='session')
+def cloud_accounts(cloud_module, cloud_name_prefix, cloud_host, cloud_user, cloud_tenants, cloud_type):
+    '''fixture which returns a list of CloudAccounts. One per tenant provided
+
+    Arguments:
+        cloud_module        - fixture: module defining cloud account
+        cloud_name_prefix   - fixture: name prefix used for cloud account
+        cloud_host          - fixture: cloud host address
+        cloud_user          - fixture: cloud account user key
+        cloud_tenants       - fixture: list of tenants to create cloud accounts on
+        cloud_type          - fixture: cloud account type
+
+    Returns:
+        A list of CloudAccounts
+    '''
+    accounts = []
+    for idx, cloud_tenant in enumerate(cloud_tenants):
+        cloud_account_name = "{prefix}-{idx}".format(prefix=cloud_name_prefix, idx=idx)
+
+        if cloud_type == 'lxc':
+            accounts.append(
+                    cloud_module.CloudAccount.from_dict({
+                        "name": cloud_account_name,
+                        "account_type": "cloudsim"})
+            )
+        elif cloud_type == 'openstack':
+            password = 'mypasswd'
+            auth_url = 'http://{cloud_host}:5000/v3/'.format(cloud_host=cloud_host)
+            mgmt_network = os.getenv('MGMT_NETWORK', 'private')
+            accounts.append(
+                    cloud_module.CloudAccount.from_dict({
+                        'name':  cloud_account_name,
+                        'account_type': 'openstack',
+                        'openstack': {
+                            'admin': True,
+                            'key': cloud_user,
+                            'secret': password,
+                            'auth_url': auth_url,
+                            'tenant': cloud_tenant,
+                            'mgmt_network': mgmt_network}})
+            )
+    return accounts
+
+
 @pytest.fixture(scope='session', autouse=True)
-def cloud_account(cloud_module, cloud_account_name, cloud_host, cloud_type):
+def cloud_account(cloud_accounts):
     '''fixture which returns an instance of RwMcYang.CloudAccount
 
     Arguments:
-        cloud_module       - fixture: module defining cloud account
-        cloud_account_name - fixture: name used for cloud account
-        cloud_host         - fixture: cloud host address
-        cloud_type         - fixture: cloud account type
+        cloud_accounts - fixture: list of generated cloud accounts
 
     Returns:
         An instance of CloudAccount
     '''
-    account = None
-
-    if cloud_type == 'lxc':
-        account = cloud_module.CloudAccount.from_dict({
-                "name": cloud_account_name,
-                "account_type": "cloudsim"})
-
-    elif cloud_type == 'openstack':
-        username = 'pluto'
-        password = 'mypasswd'
-        auth_url = 'http://{cloud_host}:5000/v3/'.format(cloud_host=cloud_host)
-        project_name = os.getenv('PROJECT_NAME', 'demo')
-        mgmt_network = os.getenv('MGMT_NETWORK', 'private')
-        account = cloud_module.CloudAccount.from_dict({
-                'name': cloud_account_name,
-                'account_type': 'openstack',
-                'openstack': {
-                    'admin': True,
-                    'key': username,
-                    'secret': password,
-                    'auth_url': auth_url,
-                    'tenant': project_name,
-                    'mgmt_network': mgmt_network}})
-
-    return account
+    return cloud_accounts[0]
 
 @pytest.fixture(scope='session')
 def _launchpad_scraper_session(request, log_manager, mgmt_domain_name):

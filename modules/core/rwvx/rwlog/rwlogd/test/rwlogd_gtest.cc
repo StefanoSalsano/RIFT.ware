@@ -5085,15 +5085,16 @@ TEST(RwLogdGroup13, DynSchemaTest)
   }
 
   rwdynschema_module_t module = {(char *)"rwdynschema-logtest",
-                                 NULL,
+                                 nullptr,
                                  (char *)"libdynschema_log_test_yang_gen.so",
-                                 NULL,
+                                 nullptr,
                                  (char *)"rwdynschema-logtest_meta_info.txt",
                                  1};
   printf("load dynamic schema\n");
   rwlogd_handle_dynamic_schema_update(inst,
                                       1,
                                       &module);
+  rwsched_dispatch_main_until(inst->rwtasklet_info->rwsched_tasklet_info, 1.0, NULL);
 
   EXPECT_TRUE(inst->rwlogd_info->num_categories == 3);
 

@@ -2,24 +2,17 @@ include(rift_externalproject)
 
 set(libconfd_version 6.0)
 
-
-if(CONFD_FLAVOUR)
-  message(STATUS "Confd flavour set is ${CONFD_FLAVOUR}")
-
-  if(CONFD_FLAVOUR STREQUAL "FULL")
-    set(LIBCONFD_PACKAGE confd-${libconfd_version}.libconfd.tar.gz)
-    set(LIBCONFD_DIR libconfd-${libconfd_version})
-    set(INTERNAL_CONFD_DIR confd-${libconfd_version})
-  elseif(CONFD_FLAVOUR STREQUAL "BASIC")
-    set(LIBCONFD_PACKAGE confd-basic-${libconfd_version}.libconfd.tar.gz)
-    set(LIBCONFD_DIR libconfd-basic-${libconfd_version})
-    set(INTERNAL_CONFD_DIR confd-basic-${libconfd_version})
-  else()
-    message(FATAL_ERROR "Invalid value for CONFD_FLAVOUR: ${CONFD_FLAVOUR}")
-  endif()
-
+if(RIFT_AGENT_BUILD STREQUAL "CONFD_FULL")
+  set(LIBCONFD_PACKAGE confd-${libconfd_version}.libconfd.tar.gz)
+  set(LIBCONFD_DIR libconfd-${libconfd_version})
+  set(INTERNAL_CONFD_DIR confd-${libconfd_version})
+elseif(RIFT_AGENT_BUILD STREQUAL "CONFD_BASIC")
+  set(LIBCONFD_PACKAGE confd-basic-${libconfd_version}.libconfd.tar.gz)
+  set(LIBCONFD_DIR libconfd-basic-${libconfd_version})
+  set(INTERNAL_CONFD_DIR confd-basic-${libconfd_version})
 else()
-  message(FATAL_ERROR "CONFD_FLAVOUR definition not found")
+  #if confd is disabled, we should not have entered here
+  message(FATAL_ERROR "Invalid confd build type value: ${RIFT_AGENT_BUILD}")
 endif()
 
 rift_externalproject_add(

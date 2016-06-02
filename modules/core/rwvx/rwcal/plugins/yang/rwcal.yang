@@ -38,18 +38,7 @@ module rwcal
         "RIFT RWCAL cloud data";
   }
 
-  typedef cloud-account-type {
-    description "cloud account type";
-    type enumeration {
-      enum aws;
-      enum cloudsim;
-      enum cloudsim_proxy;
-      enum mock;
-      enum openmano;
-      enum openstack;
-      enum vsphere;
-    }
-  }
+
 
   typedef connection-status {
     description "Connection status for the cloud account";
@@ -134,7 +123,7 @@ module rwcal
 
   grouping provider-auth {
     leaf account-type {
-      type cloud-account-type;
+      type manotypes:cloud-account-type;
     }
 
     choice provider-specific-info {
@@ -241,6 +230,12 @@ module rwcal
           type string;
           description "Name of floating IP pool to use for floating IP address assignement";
         }
+
+        leaf cert-validate {
+          type boolean;
+          default false;
+          description "Certificate validatation policy in case of SSL/TLS connection";
+        }
         
       }
 
@@ -329,7 +324,7 @@ module rwcal
   grouping vm-info-item {
     leaf vm-name {
       rwpb:field-inline "true";
-      rwpb:field-string-max 64;
+      rwpb:field-string-max 255;
       type string;
     }
 
@@ -456,6 +451,10 @@ module rwcal
         type string;
       }
     }
+
+    leaf server-group {
+      type string;
+    }
   }
 
   grouping image-info-item {
@@ -467,9 +466,16 @@ module rwcal
       type string;
     }
 
-    leaf location {
-      description "Image URL location";
-      type string;
+    choice image_file {
+      leaf location {
+        description "Image URL location";
+        type string;
+      }
+
+      leaf fileno {
+        description "Image file descriptor";
+        type uint32;
+      }
     }
 
     leaf checksum {
@@ -555,7 +561,7 @@ module rwcal
   grouping port-info-item {
     leaf port-name {
       rwpb:field-inline "true";
-      rwpb:field-string-max 64;
+      rwpb:field-string-max 255;
       type string;
     }
 
@@ -741,7 +747,7 @@ module rwcal
 
       leaf name {
         rwpb:field-inline "true";
-        rwpb:field-string-max 64;
+        rwpb:field-string-max 255;
         type string;
       }
 
@@ -750,6 +756,7 @@ module rwcal
       uses manotypes:vswitch-epa;
       uses manotypes:hypervisor-epa;
       uses manotypes:host-epa;
+      uses manotypes:placement-group-input;
     }
   }
 
@@ -757,7 +764,7 @@ module rwcal
     leaf name {
       description "Name of the Virtual-Link";
       rwpb:field-inline "true";
-      rwpb:field-string-max 64;
+      rwpb:field-string-max 255;
       type string;
     }
 
@@ -802,7 +809,7 @@ module rwcal
     leaf name {
       description "Name of the VDU";
       rwpb:field-inline "true";
-      rwpb:field-string-max 64;
+      rwpb:field-string-max 255;
       type string;
     }
 
@@ -855,6 +862,8 @@ module rwcal
       rwpb:field-string-max 32;
     }
 
+    uses manotypes:placement-group-input;
+    
     list connection-points {
       key "name";
       leaf name {
@@ -1004,7 +1013,7 @@ module rwcal
     leaf name {
       description "Name of the Virtual-Link";
       rwpb:field-inline "true";
-      rwpb:field-string-max 64;
+      rwpb:field-string-max 255;
       type string;
     }
 
@@ -1051,7 +1060,7 @@ module rwcal
     leaf name {
       description "Name of the VDU";
       rwpb:field-inline "true";
-      rwpb:field-string-max 64;
+      rwpb:field-string-max 255;
       type string;
     }
 
@@ -1103,7 +1112,8 @@ module rwcal
     uses manotypes:vswitch-epa;
     uses manotypes:hypervisor-epa;
     uses manotypes:host-epa;
-
+    uses manotypes:placement-group-input;
+    
     list connection-points {
       key connection-point-id;
       uses connection-point-info-params;

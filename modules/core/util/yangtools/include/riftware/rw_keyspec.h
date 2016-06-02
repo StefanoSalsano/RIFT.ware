@@ -2138,13 +2138,16 @@ rw_keyspec_path_delete_proto_field(rw_keyspec_instance_t* instance,
  * @param[in] instance The keyspec instance pointer. Pass NULL to use the
  * default.
  * @param[in] msg - Message
+ * @param[in] match_c_struct - if true, check for strict c struct compatibility
+ *            else allow msg-to-path compatibility.
  *
  * @return true if the keyspec and msg match, false otherwise
  */
 
 bool rw_keyspec_path_matches_message (const rw_keyspec_path_t *ks,
                                       rw_keyspec_instance_t* instance,
-                                      const ProtobufCMessage *msg);
+                                      const ProtobufCMessage *msg,
+                                      bool match_c_struct);
 /*!
  * API to export keyspec error records.
  * This is a kind of hack to avoid making the error buffer itself

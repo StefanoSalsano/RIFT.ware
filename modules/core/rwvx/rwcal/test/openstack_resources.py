@@ -4,6 +4,9 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
+from gi import require_version
+require_version('RwCal', '1.0')
+
 from gi.repository import RwcalYang
 from gi.repository.RwTypes import RwStatus
 import logging
@@ -435,7 +438,7 @@ def main():
 
     if argument.upload_image is not None:
         image_name_list = argument.upload_image.split(',')
-        logger.info("Will upload %d iamge(s): %s" % (len(image_name_list), image_name_list))
+        logger.info("Will upload %d image(s): %s" % (len(image_name_list), image_name_list))
         for image_name in image_name_list:
             drv.create_image(image_name)
             #print("Uploaded :", image_name)

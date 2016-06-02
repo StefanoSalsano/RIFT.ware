@@ -29,13 +29,19 @@
 # $4 is the version: ie 4.0 or 4.1
 # ? $5 is the method: copy or move?
 
+if [ $# -lt 3 ]; then
+    echo 'ARGS ARE srcdir buildnum repo [ver [copy_or_move] ]'
+    echo 'EG /tmp/ 12345 nightly'
+    exit 
+fi
+
 DIR=$1
 BUILD=$2
 REPO=$3
 
 # $4 RW version. optional argument
 #VER=4.0
-VER=${4:-4.0}
+VER=$4
 
 # $5 copy or move? optional argument
 #CPMV="copy"
@@ -45,8 +51,12 @@ CPMV=${5:-copy}
 ## Arguments
 #####################################################################################################
 
+function log()
+{
+	echo "(`date`) [update-riftware-repo $$] $1 " >> $LOG 2>&1
+}
 
-REPO_BASE=/net/boson/home1/autobot/www/mirrors/releases/riftware/${VER}/20/x86_64
+
 #LOG=/tmp/createrepo-${REPO}.log
 LOG=/var/log/createrepo/createrepo.log
 ME=`basename "$0"`
@@ -55,10 +65,21 @@ LOCK=/tmp/createrepo.lock
 # we only want one lock so we don't have a bunch of createrepos running at a time
 GLOB=${DIR}/*${BUILD}*.rpm
 
-function log()
-{
-	echo "(`date`) [update-riftware-repo $$] $1 " >> $LOG 2>&1
-}
+if [[ $(ls $GLOB) =~ riftware-base-([0-9]+\.[0-9]+)\. ]]; then
+    ver=${BASH_REMATCH[1]}
+    if [ -z "$VER" ]; then
+        VER=$ver
+    elif [ "$VER" != "$ver" ]; then
+        log "WARNING...specified version $VER does not match product release version $ver"
+    fi
+fi
+
+if [ -z "$VER" ]; then
+    log "ABORTING...VER not specified and cannot be parsed"
+    exit 1
+fi
+
+REPO_BASE=/net/boson/home1/autobot/www/mirrors/releases/riftware/${VER}/20/x86_64
 
 function update_buildsys()
 {
@@ -168,6 +189,12 @@ create_lock_or_wait
 if [ "${CPMV}" == "copy" ]; then
 	log "CMD: cp -vf ${GLOB} ${REPO_BASE}/${REPO}/ "
 	cp -vf ${GLOB} ${REPO_BASE}/${REPO}/ >> $LOG 2>&1
+elif [ "${CPMV}" == "move" ]; then
+	log "CMD: mv -vf ${GLOB} ${REPO_BASE}/${REPO}/ "
+	mv -vf ${GLOB} ${REPO_BASE}/${REPO}/ >> $LOG 2>&1
+else
+	echo "We only support copy or move"
+	exit;
 fi
 
 log "CDing to ${REPO_BASE}/${REPO}"

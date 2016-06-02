@@ -25,9 +25,10 @@
 #include <boost/bimap/unordered_set_of.hpp>
 
 #include <rw_confd_upgrade.hpp>
+#include <rw_confd_annotate.hpp>
 #include <confd_xml.h>
 #include <rw-mgmtagt.confd.h>
-#include "rw-mgmtagt.pb-c.h"
+#include "rw-mgmtagt-confd.pb-c.h"
 
 
 namespace rw_uagent {
@@ -72,7 +73,7 @@ typedef enum rw_confd_client_type_t
   MAAPI_UPGRADE,
 } rw_confd_client_type_t;
 
-typedef RWPB_E(RwMgmtagt_ConfdCallbackType) RwMgmtagt_ConfdCallbackType;
+typedef RWPB_E(RwMgmtagtConfd_CallbackType) RwMgmtagt_Confd_CallbackType;
 
 inline
 void getdatetime(struct confd_datetime *datetime)
@@ -101,9 +102,9 @@ class NbReqConfdDataProvider;
 class NbReqConfdRpcExec;
 class ConfdDaemon;
 class ConfdDomStats;
+class LogFileManager;
 struct NodeMap;
 struct OperationalDomMap;
-struct ConfdUpgradeContext;
 
 /*!
  * Dispatch source context used for callbacks
@@ -123,6 +124,32 @@ struct DispatchSrcContext
   // The dispatch queue source created for the socket.
   rwsched_dispatch_source_t dp_src_;
 };
+
+
+/**
+ * ConfdUpgradeContext as the name indicates keeps the
+ * contextual information required to perform the
+ * upgrade.
+ * Note that, it owns the serial dispatch queue
+ * which will be used for performing upgrades so as to
+ * free the main thread.
+ * Use of serial queue also gurantees that at no time
+ * two or more upgrades would be performed
+ */
+ struct ConfdUpgradeContext
+ {
+   /// Flag to check if upgrade must be done or not
+   bool ready_for_upgrade_ = true;
+   
+   ///Store the version of yang schema fxs files
+   uint32_t schema_version_ = 1;
+   
+   /// Upgrade manager pointer
+   rw_yang::ConfdUpgradeMgr *upgrade_mgr_ = nullptr;
+   
+   /// Serial dispatch queue for running upgrades
+   rwsched_dispatch_queue_t serial_upgrade_q_;
+ };
 
 
 /**
@@ -163,6 +190,14 @@ class NbReqConfdConfig
    * Connect to CDB, and subscribe to events from it
    */
  public:
+
+  // Sets up the schema for confd
+  // and start confd_config instance
+  rw_status_t setup_confd_subscription();
+
+  // Annotate the YANG model with tailf hash values
+  void annotate_yang_model_confd();
+
   rw_status_t setup();
 
   /// reload configuration from CDB during startup
@@ -212,6 +247,8 @@ class NbReqConfdConfig
       cdb_sock_type type /**< type of CDB connection */
   );
 
+  // Close a CF socket
+  void close_cf_socket(rwsched_CFSocketRef s);
 
  public:
   /// fd assigned for the confd subscription socket
@@ -253,93 +290,29 @@ class NbReqConfdConfig
   /// Serial queue for performing configuration reload from CDB
   rwsched_dispatch_queue_t reload_q_;
 
+ private:
+  typedef std::unordered_map<rwsched_CFSocketRef,rwsched_CFRunLoopSourceRef> cf_src_map_t;
+
+  /// A mapping from RW-sched assigned handles to sources
+  cf_src_map_t cf_srcs_;
+
 };
 
 class ConfdDomStats
 {
  public:
-  RWPB_T_MSG(RwMgmtagt_CachedDom)  dom_params_;
+  RWPB_T_MSG(RwMgmtagtConfd_CachedDom)  dom_params_;
   struct timeval                   create_time_;
   struct timeval                   last_access_time_;
 
-  typedef std::map<RwMgmtagt_ConfdCallbackType,RWPB_T_MSG(RwMgmtagt_Callbacks) *  > cb_map_t;
+  typedef std::map<RwMgmtagt_Confd_CallbackType,RWPB_T_MSG(RwMgmtagtConfd_Callbacks) *  > cb_map_t;
   cb_map_t  callbacks_;
 
   ConfdDomStats (const char *hkeypath,
                  const char *dts_key);
   ~ConfdDomStats();
-  void log_state (RwMgmtagt_ConfdCallbackType type);
-  RWPB_T_MSG(RwMgmtagt_CachedDom) *get_pbcm ();
-};
-
-
-/**
- * Confd Log
- * ConfdLog class manages the actions on confd log files.
- * 1. Logrotate configuration for confd logs.
- * 2. Show logs rpc command
- */
-class ConfdLog
-{
-public:
-  using LogrotateConf = RWPB_T_MSG(RwMgmtagt_LogrotateConf);
-  static const char* LOGROTATE_CFG_FILE;
-
-  ConfdLog(Instance*);
-  ~ConfdLog();
-
-  // non-copyable and non-assignable
-  ConfdLog(const ConfdLog&) = delete;
-  void operator=(ConfdLog) = delete;
-
-public:
-  /*!
-   * Register as a subscriber for the
-   * logrotate config.
-   */
-  rw_status_t register_config();
-
-  /*!
-   * Called by show-agent-logs RPC
-   */
-  StartStatus show_logs(SbReqRpc* rpc,
-                        const RWPB_T_MSG(RwMgmtagt_input_ShowAgentLogs)* req);
-private:
-  /*!
-   * Creates logrotate config file.
-   * The file is created only in production mode.
-   * In non-production mode, the callback does nothing.
-   */
-  rwdts_member_rsp_code_t create_logrotate_config(const ProtobufCMessage*);
-
-  std::string get_log_records(const std::string& file);
-
-  StartStatus output_to_string(SbReqRpc* rpc);
-
-  StartStatus output_to_file(SbReqRpc* rpc,
-                             const std::string& file_name);
-
-  static rwdts_member_rsp_code_t create_logrotate_cfg_cb(
-                        const rwdts_xact_info_t* xact_info,
-                        RWDtsQueryAction action,
-                        const rw_keyspec_path_t* keyspec,
-                        const ProtobufCMessage* msg,
-                        uint32_t credits,
-                        void* get_next_key);
-private: 
-  // Non owning data members
-  Instance* instance_ = nullptr;
-  rwdts_api_t* apih_ = nullptr;
-
-private:
-  // Owning data members
-  RwMemlogBuffer memlog_buf_;
-  // Subscriber registration handle
-  rwdts_member_reg_handle_t sub_regh_ = {};
-  // script which needs to be run after file is rotated
-  std::string postrotate_script_;
-  // List of log files which needs to be rotated
-  std::vector<std::string> logs_;
+  void log_state (RwMgmtagt_Confd_CallbackType type);
+  RWPB_T_MSG(RwMgmtagtConfd_CachedDom) *get_pbcm ();
 };
 
 /**
@@ -363,6 +336,17 @@ class ConfdDaemon
    * Destructor - frees up any confd memory allocated
    */
   ~ConfdDaemon();
+
+  /*!
+   * Tries to establish connection with confd.
+   * Retries until the connection gets establish
+   * for which it has to wait till confd comes up.
+   */
+  void try_confd_connection();
+
+  /// Connect to a confd server. Does the data provider registrations
+  /// and sets up notification socket
+  rw_status_t setup_confd_connection();
 
   /**
    * The setup function allocates a confd deamon object
@@ -396,13 +380,26 @@ class ConfdDaemon
 
   void clear_statistics();
 
-  rwdts_member_rsp_code_t send_notification(const ProtobufCMessage * msg);
+  rwdts_member_rsp_code_t handle_notification(const ProtobufCMessage * msg);
+
+  // Called from SbReqGet
+  rw_yang_netconf_op_status_t get_confd_daemon(XMLNode* node);
+
+  // Called from SbReqGet
+  rw_yang_netconf_op_status_t get_dom_refresh_period(XMLNode* node);
+
+  /// Start Confd CDB upgrade
+  void start_upgrade(size_t n_modules);
 
   rwdts_member_rsp_code_t send_notification_to_confd(
            rw_yang::ConfdTLVBuilder& builder, struct xml_tag xtag);
 
-  ConfdLog* confd_log() const noexcept {
+  LogFileManager* confd_log() const noexcept {
     return confd_log_.get();
+  }
+
+  NbReqConfdConfig* confd_config() const noexcept {
+    return confd_config_.get();
   }
 
   private:
@@ -417,21 +414,23 @@ class ConfdDaemon
   Instance *instance_;
 
   /// fd assigned for the confd control socket
-  int control_fd_;
+  int control_fd_ = RWUAGENT_INVALID_SOCK_ID;
 
   /// The confd control port rwsched socket reference
   rwsched_dispatch_source_t control_sock_src_;
 
   /// confd "daemon" data
-  struct confd_daemon_ctx *daemon_ctxt_;
+  struct confd_daemon_ctx *daemon_ctxt_ = nullptr;
 
   /// context used for notification
-  struct confd_notification_ctx *notify_ctxt_;
+  struct confd_notification_ctx *notify_ctxt_ = nullptr;
 
   // List of data provider clients
   std::list<NbReqConfdDataProvider *> dp_clients_;
 
   std::list<std::unique_ptr<ConfdDomStats>> dom_stats_;
+
+  ConfdUpgradeContext upgrade_ctxt_;
 
  private:
   // The data used by worker pool API. This implementation can change at any time.
@@ -444,13 +443,19 @@ class ConfdDaemon
   std::vector<rwsched_dispatch_queue_t> dp_q_pool_;
 
   // Confd transaction that is being handled currently
-  struct confd_trans_ctx *ctxt_;
+  struct confd_trans_ctx *ctxt_ = nullptr;
 
   // Last allocated confd worker index
-  uint8_t last_alloced_index_;
+  uint8_t last_alloced_index_ = 0;
 
   // Confd log manager
-  std::unique_ptr<ConfdLog> confd_log_ = nullptr;
+  std::unique_ptr<LogFileManager> confd_log_ = nullptr;
+
+  // Confd configuration handler
+  std::unique_ptr<NbReqConfdConfig> confd_config_ = nullptr;
+
+  /// Number of attempts made to connect with Confd
+  uint8_t confd_connection_attempts_ = 0;
 
 protected:
   /// rwmemlog logging buffer
@@ -661,7 +666,7 @@ class NbReqConfdDataProvider
   int retrieve_operational_data(struct confd_trans_ctx *ctxt,
                                 confd_hkeypath_t *keypath);
 
-  void log_state (RwMgmtagt_ConfdCallbackType type,
+  void log_state (RwMgmtagt_Confd_CallbackType type,
                   const char *hkey_path,
                   const char *dts_ks = nullptr);
 
@@ -758,32 +763,6 @@ class NbReqConfdRpcExec
   struct confd_cs_node *rpc_root_;
 
   struct confd_user_info *ctxt_;
-};
-
-
-/**
- * ConfdUpgradeContext as the name indicates keeps the
- * contextual information required to perform the
- * upgrade.
- * Note that, it owns the serial dispatch queue
- * which will be used for performing upgrades so as to
- * free the main thread.
- * Use of serial queue also gurantees that at no time
- * two or more upgrades would be performed
- */
-struct ConfdUpgradeContext
-{
-  /// Flag to check if upgrade must be done or not
-  bool ready_for_upgrade_ = true;
-
-  ///Store the version of yang schema fxs files
-  uint32_t schema_version_ = 1;
-
-  /// Upgrade manager pointer
-  rw_yang::ConfdUpgradeMgr *upgrade_mgr_ = nullptr;
-
-  /// Serial dispatch queue for running upgrades
-  rwsched_dispatch_queue_t serial_upgrade_q_;
 };
 
 

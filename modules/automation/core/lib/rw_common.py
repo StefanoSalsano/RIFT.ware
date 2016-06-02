@@ -20,12 +20,19 @@ import pexpect as pe
 
 #--- CONSTANTS
 
+
+def os_write(buf, s):
+    try:
+        os.write(buf, s)
+    except Exception:
+        os.write(buf, s.encode('utf-8'))
+
 TMFMT          = '%Y%m%d.%H%M%S'    # Standard timeout template
 AGE_UNITS      = 'weeks', 'days', 'hours', 'minutes', 'seconds'
 DBGMODE        = '-DEBUG' in sys.argv
 
 SCRNAMEFULL    = os.path.realpath(sys.argv[0])     # Absolute pathname of the main script
-SCRNAMEBASE    = os.path.basename(SCRNAMEFULL)     # Filename of the main script
+SCRNAMEBASE    = os.path.splitext(os.path.basename(SCRNAMEFULL))[0]     # extension removed filename of the main script
 CURRDIR        = os.environ['PWD']                 # Current directory
 CURUSER        = getpass.getuser()                 # Current username
 MYPID          = os.getpid()                       # Current process ID
@@ -352,7 +359,7 @@ class Log(object):
             s  = tb + s + tb
         s.append('')
         s = '\n'.join(s)
-        if self.stdout: os.write(self.out, s)
+        if self.stdout: os_write(self.out, s)
         self.gq.put_nowait(('main', s))
         gevent.sleep(_stime)
         return ts
@@ -388,7 +395,7 @@ class Log(object):
                 if logId in self.allLogs:
                     logFd, guiCall = self.allLogs[logId]
                     if callable(guiCall): guiCall(logData)
-                    if logFd:             os.write(logFd.fileno(), logData)
+                    if logFd:             os_write(logFd.fileno(), logData)
             gevent.sleep(0)
 
     def _cleanLog(self):

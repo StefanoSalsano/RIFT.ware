@@ -28,7 +28,7 @@
 #define RWDTS_DEBUG_AUDIT 0
 
 /* The following defines delay between fetches */
-#define RWDTS_AUDIT_FETCH_DELAY  (NSEC_PER_SEC * 1/100)
+#define RWDTS_AUDIT_FETCH_DELAY  (NSEC_PER_SEC * 1/40)
 /*
  * A DTS audit is when started against registration will cause
  * the audit API to fetch the current data from the publisher
@@ -329,7 +329,8 @@ rwdts_member_reg_audit_fetch_f(rwdts_member_registration_t *reg)
   if (reg->audit.fetch_attempts >= RWDTS_MAX_FETCH_ATTEMPTS) {
     char* ks_str = NULL;
     rw_keyspec_path_get_new_print_buffer(reg->keyspec, NULL , rwdts_api_get_ypbc_schema(reg->apih), &ks_str);
-    RWTRACE_CRIT(apih->rwtrace_instance,
+    if (!reg->silent_retry) {
+      RWTRACE_CRIT(apih->rwtrace_instance,
                  RWTRACE_CATEGORY_RWTASKLET,
                  "%s: Audit failed to converge after %u attempts!!! -"
                  " Giving up audit in state - %s for regn id[%u] ks[%s]",
@@ -338,6 +339,7 @@ rwdts_member_reg_audit_fetch_f(rwdts_member_registration_t *reg)
                  rwdts_audit_state_str(reg->audit.audit_state),
                  reg->reg_id,
                  ks_str);
+    }
     rwdts_member_reg_audit_run(reg, RW_DTS_AUDIT_EVT_RECONCILE_FAILED, NULL);
     RW_FREE(ks_str);
     return RW_STATUS_SUCCESS;
@@ -360,7 +362,7 @@ rwdts_member_reg_audit_fetch_f(rwdts_member_registration_t *reg)
   xact = rwdts_api_query_ks(reg->apih,
                             reg->keyspec,
                             RWDTS_QUERY_READ,
-                            RWDTS_FLAG_STREAM|RWDTS_FLAG_WAIT_RESPONSE,
+                            RWDTS_XACT_FLAG_STREAM,
                             rwdts_member_reg_audit_fetch_cb,
                             reg,
                             NULL);
@@ -415,6 +417,18 @@ rwdts_member_reg_audit_fetch_cb(rwdts_xact_t*        xact,
       if (xact->track.num_query_results == 0) {
         reg->audit.n_dts_data = 0;
         reg->audit.dts_data = NULL;
+        
+        if (!reg->dts_internal 
+            && RW_SCHEMA_CATEGORY_CONFIG == rw_keyspec_path_get_category (reg->keyspec)) {
+          reg->audit.fetch_failed = true;
+          reg->silent_retry = true;
+
+          char *ks_str = NULL;
+          rw_keyspec_path_get_new_print_buffer(reg->keyspec, NULL , rwdts_api_get_ypbc_schema(apih), &ks_str);
+          RWDTS_API_LOG_REG_EVENT(reg->apih, reg, AuditConfigNoResult, ks_str);
+          RW_FREE(ks_str);
+          goto cleanup;
+        }
         break;
       }
 
@@ -1163,10 +1177,12 @@ rwdts_member_reg_audit_run(rwdts_member_registration_t *reg,
         rs = rwdts_member_reg_audit_finish(reg);
         RW_ASSERT(rs == RW_STATUS_SUCCESS);
       } else {
-        RWTRACE_CRIT(apih->rwtrace_instance,
-                     RWTRACE_CATEGORY_RWTASKLET,
-                     "%s: Audit failed - invalid event [%s] in  state [%s]",
-                      apih->client_path, rwdts_audit_evt_str(evt), rwdts_audit_state_str(audit->audit_state));
+        if (!reg->silent_retry) {
+          RWTRACE_CRIT(apih->rwtrace_instance,
+                       RWTRACE_CATEGORY_RWTASKLET,
+                       "%s: Audit failed - invalid event [%s] in  state [%s]",
+                       apih->client_path, rwdts_audit_evt_str(evt), rwdts_audit_state_str(audit->audit_state));
+        }
         goto audit_failure;
       }
       break;
@@ -1344,12 +1360,14 @@ rwdts_member_reg_audit_run(rwdts_member_registration_t *reg,
 
 audit_failure:
   RW_ASSERT(audit);
-  RWTRACE_CRIT(apih->rwtrace_instance,
+  if (!reg->silent_retry) {
+    RWTRACE_CRIT(apih->rwtrace_instance,
                RWTRACE_CATEGORY_RWTASKLET,
                "%s: Audit failed reg_id %d str %s- invalid event [%s] in  state [%s]",
                apih->client_path,
                reg->reg_id, reg->keystr,
                rwdts_audit_evt_str(evt), rwdts_audit_state_str(audit->audit_state));
+  }
   audit->audit_state = RW_DTS_AUDIT_STATE_FAILED;
   audit->audit_status = RWDTS_AUDIT_STATUS_FAILURE;
   rwdts_member_reg_audit_finish(reg);

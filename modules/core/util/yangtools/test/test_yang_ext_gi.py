@@ -272,13 +272,14 @@ class TestListKeyOrder(unittest.TestCase):
 def main(argv=sys.argv[1:]):
     logging.basicConfig(format='TEST %(message)s')
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-v', '--verbose', action='store_true')
+    if False:
+        parser = argparse.ArgumentParser()
+        parser.add_argument('-v', '--verbose', action='store_true')
 
-    args = parser.parse_args(argv)
+        args = parser.parse_args(argv)
 
-    # Set the global logging level
-    logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.ERROR)
+        # Set the global logging level
+        logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.ERROR)
 
     # The unittest framework requires a program name, so use the name of this
     # file instead (we do not want to have to pass a fake program name to main

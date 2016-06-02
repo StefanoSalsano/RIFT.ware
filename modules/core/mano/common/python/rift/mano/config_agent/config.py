@@ -158,7 +158,7 @@ class ConfigAgentSubscriber(object):
                 if msg.name in self.accounts:
                     self._log.debug("Config account already exists. Invoking on_prepare update request")
                     if msg.has_field("account_type"):
-                        raise CloudAccountError("Cannot change config's account-type")
+                        raise ConfigAccountError("Cannot change config's account-type")
 
                     account = self.accounts[msg.name]
                     yield from self._config_callbacks.on_update_prepare(account)

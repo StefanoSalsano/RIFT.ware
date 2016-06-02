@@ -34,6 +34,6 @@ class RwOsMaNfvoRestPlugin(GObject.Object, RwOsMaNfvo.Orchestrator):
     @rwstatus
     def do_init(self, rwlog_ctx):
         if not any(isinstance(h, rwlogger.RwLogger) for h in logger.handlers):
-            logger.addHandler(rwlogger.RwLogger(category="rwos-ma-nfvo-rest",
+            logger.addHandler(rwlogger.RwLogger(subcategory="rwos-ma-nfvo-rest",
                                                 log_hdl=rwlog_ctx,))
         

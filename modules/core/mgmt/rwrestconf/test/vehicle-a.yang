@@ -50,6 +50,10 @@ module vehicle-a
       leaf is-cool {
         type boolean;
       }
+
+      leaf version_str {
+        type string;
+      }
       
     }
   }

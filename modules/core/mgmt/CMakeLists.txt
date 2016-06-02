@@ -39,10 +39,8 @@ include(rift_submodule)
 set(subdirs
   rwcli
   rwdebug-scripts
-  rwnetconf
   rwrestconf
   rwuagent
-  rwwatchdog
   )
 
 rift_add_subdirs(SUBDIR_LIST ${subdirs})

@@ -17,21 +17,21 @@
 using namespace rw_uagent;
 using namespace rw_yang;
 
-extern StartStatus read_logs_and_send(Instance*, SbReqRpc*,
-     const RWPB_T_MSG(RwMgmtagt_input_ShowAgentLogs)* );
-
 SbReqRpc::SbReqRpc(
   Instance* instance,
   NbReq* nbreq,
+  RequestMode request_mode,
   const char* xml_fragment )
 : SbReq(
     instance,
     nbreq,
     RW_MGMTAGT_SB_REQ_TYPE_RPC,
+    request_mode,
     "SbReqRpcString",
     xml_fragment )
 {
   RW_MA_SBREQ_LOG( this, __FUNCTION__, xml_fragment );
+
   std::string error_out;
   XMLDocument::uptr_t rpc_dom(
       instance_->xml_mgr()->create_document_from_string(xml_fragment, error_out, false) );
@@ -52,18 +52,26 @@ SbReqRpc::SbReqRpc(
     return;
   }
 
+  if (request_mode_ == RequestMode::XML) {
+    // Fill defaults for the RPC input type children
+    node->fill_rpc_input_with_defaults();
+  }
+
   init_rpc_input( node );
 }
 
 SbReqRpc::SbReqRpc(
   Instance* instance,
   NbReq* nbreq,
+  RequestMode request_mode,
   XMLDocument* rpc_dom )
 : SbReq(
     instance,
     nbreq,
     RW_MGMTAGT_SB_REQ_TYPE_RPC,
-    "SbReqRpcDom" )
+    request_mode,
+    "SbReqRpcDom" ,
+    rpc_dom->to_string().c_str())
 {
   auto node = rpc_dom->get_root_node();
   RW_ASSERT(node); // must have DOM
@@ -139,7 +147,7 @@ StartStatus SbReqRpc::start_xact_int()
   return StartStatus::Async;
 }
 
-StartStatus SbReqRpc::start_xact_locally()
+StartStatus SbReqRpc::start_ns_mgmtagt()
 {
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "process local agent rpc");
   RWPB_M_MSG_DECL_SAFE_CAST(RwMgmtagt_input_MgmtAgent, mgmt_agent, rpc_input_.get());
@@ -157,39 +165,57 @@ StartStatus SbReqRpc::start_xact_locally()
     mgmt_agent = RWPB_M_MSG_SAFE_CAST(RwMgmtagt_input_MgmtAgent, dup_msg.get());
   }
 
-  if (mgmt_agent->clear_stats){
-    instance_->confd_daemon_->clear_statistics();
-
-    for (auto it = instance_->statistics_.begin(); it != instance_->statistics_.end(); it++) {
-      it->reset();
-    }
-  } else if (mgmt_agent->dts_trace) {
+  if (mgmt_agent->dts_trace) {
     if (dts_) {
       dts_->trace_next();
     }
-  } else if (mgmt_agent->load_yang_module) {
-    instance_->start_upgrade(mgmt_agent->load_yang_module->n_module_name,
-                             mgmt_agent->load_yang_module->module_name);
-  } else if (mgmt_agent->dom_refresh_period) {
-    if (mgmt_agent->dom_refresh_period->has_cli_dom_refresh_period) {
-      instance_->cli_dom_refresh_period_msec_ = mgmt_agent->dom_refresh_period->cli_dom_refresh_period;
-    }
-    if (mgmt_agent->dom_refresh_period->has_nc_rest_dom_refresh_period) {
-      instance_->nc_rest_refresh_period_msec_ = mgmt_agent->dom_refresh_period->nc_rest_dom_refresh_period;
-    }
-  } else if (mgmt_agent->pb_request) {
-    return start_xact_pb_request();
-  } else {
-    return done_with_error( "No choice selected" );
+    return done_with_success();
+  } else if (mgmt_agent->has_show_agent_dom) {
+    RWPB_M_MSG_DECL_INIT(RwMgmtagt_output_MgmtAgent, rsp);
+    UniquePtrProtobufCMessageUseBody<>::uptr_t pb_rsp_cleanup( &rsp.base );
+
+    auto dom_str = instance_->dom()->to_string_pretty();
+    rsp.agent_dom = strdup(dom_str.c_str());
+
+    return done_with_success(
+        &RWPB_G_PATHSPEC_VALUE(RwMgmtagt_output_MgmtAgent)->rw_keyspec_path_t, &rsp.base );
   }
 
-  return done_with_success(); // This function is always async now, so respond.
+  return done_with_error( "No choice selected" );
 }
 
-StartStatus SbReqRpc::start_xact_pb_request()
+StartStatus SbReqRpc::start_ns_mgmtagt_dts()
+{
+  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "process internal rpc dts request");
+  RWPB_M_MSG_DECL_SAFE_CAST(RwMgmtagtDts_input_MgmtAgentDts, mgmt_agent, rpc_input_.get());
+
+  UniquePtrProtobufCMessage<>::uptr_t dup_msg;
+  if (!mgmt_agent) {
+    dup_msg.reset(
+      protobuf_c_message_duplicate(
+        nullptr,
+        rpc_input_.get(),
+        RWPB_G_MSG_PBCMD(RwMgmtagtDts_input_MgmtAgentDts) ) );
+
+    if (!dup_msg.get()) {
+      return done_with_error("Cannot coerce RPC to rw-mgmtagt-dts:mgmt-agent-dts");
+    }
+
+    mgmt_agent = RWPB_M_MSG_SAFE_CAST(RwMgmtagtDts_input_MgmtAgentDts, dup_msg.get());
+  }
+
+  if (mgmt_agent->pb_request) {
+    return start_pb_request();
+  }
+
+  return done_with_error( "No choice selected" );
+}
+
+StartStatus SbReqRpc::start_pb_request()
 {
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "process pb-request rpc");
-  RWPB_M_MSG_DECL_CAST(RwMgmtagt_input_MgmtAgent, req, rpc_input_.get());
+
+  RWPB_M_MSG_DECL_CAST(RwMgmtagtDts_input_MgmtAgentDts, req, rpc_input_.get());
   RW_ASSERT(req->pb_request);
 
   // Send back into the agent as a new northbound request.
@@ -197,6 +223,15 @@ StartStatus SbReqRpc::start_xact_pb_request()
     instance_,
     this,
     req->pb_request );
+
+  if (req->pb_request->has_request_type &&
+      req->pb_request->request_type == RW_MGMTAGT_DTS_PB_REQUEST_TYPE_EDIT_CONFIG)
+  {
+    // We are on main queue
+    instance_->enqueue_pb_request(nb_req_internal);
+    return StartStatus::Async;
+  }
+
   return nb_req_internal->execute();
 }
 
@@ -221,10 +256,9 @@ StartStatus SbReqRpc::start_ssi()
 StartStatus SbReqRpc::show_agent_logs()
 {
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "process show-agent-logs rpc");
-  RWPB_M_MSG_DECL_CAST(RwMgmtagt_input_ShowAgentLogs, req, rpc_input_.get());
   nbreq_->set_timeout(SHOW_LOGS_ACTION_TIMEOUT_SEC);
 
-  return instance_->confd_daemon_->confd_log()->show_logs(this, req);
+  return instance_->mgmt_handler()->handle_rpc(this, rpc_input_.get());
 }
 
 void SbReqRpc::start_xact_async(void *ud)
@@ -233,12 +267,15 @@ void SbReqRpc::start_xact_async(void *ud)
   RW_ASSERT (rpc);
 
   std::string ns = protobuf_c_message_descriptor_xml_ns( rpc->rpc_input()->descriptor );
-  if (ns == uagent_yang_ns) {
-    rpc->start_xact_locally();
-    return;
+  if (ns == uagent_dts_yang_ns) {
+    rpc->start_ns_mgmtagt_dts();
+  } else if (ns == uagent_yang_ns) {
+    rpc->start_ns_mgmtagt();
+  } else if (ns == uagent_confd_yang_ns) {
+    rpc->instance_->mgmt_handler()->handle_rpc(rpc, rpc->rpc_input_.get());
+  } else {
+    rpc->start_xact_dts();
   }
-
-  rpc->start_xact_dts();
 }
 
 StartStatus SbReqRpc::start_xact_dts()
@@ -266,6 +303,11 @@ StartStatus SbReqRpc::start_xact_dts()
   RW_MA_SBREQ_LOG (this, __FUNCTION__, "Starting Transaction");
   update_stats (RW_UAGENT_NETCONF_DTS_XACT_START);
   return StartStatus::Async;
+}
+
+void SbReqRpc::internal_done()
+{
+  done_with_success();
 }
 
 void SbReqRpc::internal_done(

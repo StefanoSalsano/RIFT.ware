@@ -265,12 +265,12 @@ function(rift_populate_submodule_cache)
         COMMAND
         rm -rf ${_tmpdir}
         )
-    else(_result_code)
+    else(EXISTS ${_tmpdir})
       execute_process(
         COMMAND
         chmod 755 ${_cache}
         )
-    endif(_result_code)
+    endif(EXISTS ${_tmpdir})
 
   endif(EXISTS ${_cache})
 endfunction(rift_populate_submodule_cache)

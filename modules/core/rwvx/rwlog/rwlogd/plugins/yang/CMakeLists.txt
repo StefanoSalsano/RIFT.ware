@@ -6,8 +6,6 @@
 # 
 
 include(rift_yang)
-include(rift_cmdargs)
-
 
 ##
 # Build our yang files
@@ -21,4 +19,5 @@ rift_add_yang_target(
   COMPONENT ${PKG_LONG_NAME}
   LIBRARIES
     rwschema_yang_gen
+    rwshell-mgmt_yang_gen
 )

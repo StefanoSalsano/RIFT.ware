@@ -21,13 +21,17 @@ using namespace rw_yang;
 SbReqGet::SbReqGet(
     Instance* instance,
     NbReq* nbreq,
-    const char *xml_fragment)
+    RequestMode request_mode,
+    const char *xml_fragment,
+    const bool is_internal_request)
 : SbReq(
     instance,
     nbreq,
     RW_MGMTAGT_SB_REQ_TYPE_GETNETCONF,
+    request_mode,
     "SbReqGetString",
-    xml_fragment )
+    xml_fragment ),
+  is_internal_request_(is_internal_request)
 {
   // Let any execptions propagate upwards - the clients that start a transaction
   // should handle it?
@@ -53,12 +57,17 @@ SbReqGet::SbReqGet(
 SbReqGet::SbReqGet(
     Instance* instance,
     NbReq* nbreq,
-    XMLDocument::uptr_t cmd)
+    RequestMode request_mode,
+    XMLDocument::uptr_t cmd,
+    const bool is_internal_request)
 : SbReq(
     instance,
     nbreq,
     RW_MGMTAGT_SB_REQ_TYPE_GETNETCONF,
-    "SbReqGetDom" )
+    request_mode,
+    "SbReqGetDom" ,
+    cmd->to_string().c_str()),
+    is_internal_request_(is_internal_request)
 {
   rsp_dom_ = std::move(cmd);
   XMLNode *node = rsp_dom_->get_root_node()->get_first_element();
@@ -87,7 +96,7 @@ void SbReqGet::async_dispatch_f(void* cb_data)
   RW_ASSERT (get);
 
   switch (get->get_async_dt()) {
-    
+
     case async_dispatch_t::DTS_QUERY:
       get->start_dts_xact_int();
       break;
@@ -108,7 +117,7 @@ void SbReqGet::start_dts_xact_int()
   xact_ = rwdts_api_query_ks(dts_->api(),
                              query_ks_.get(),
                              RWDTS_QUERY_READ,
-                             RWDTS_FLAG_WAIT_RESPONSE|dts_flags_,
+                             RWDTS_XACT_FLAG_NOTRAN|dts_flags_,
                              dts_get_event_cb,
                              this,
                              0);
@@ -133,9 +142,8 @@ StartStatus SbReqGet::start_xact_int()
 
   // check if the first child of root is uagent - if so, handle locally.
   node = rsp_dom_->get_root_node()->get_first_element();
-
   if (node->get_name_space() == uagent_yang_ns) {
-    ::async_execute(
+    rwsched_dispatch_async_f(
         instance_->rwsched_tasklet(),
         nbreq_->get_execution_q(),
         this,
@@ -148,8 +156,11 @@ StartStatus SbReqGet::start_xact_int()
   }
 
   // Find the deepest node, and convert to keyspec
+  // if internal make keyspec at deepest xml node
+
   node = rsp_dom_->get_root_node()->find_first_deepest_node();
-  if (node->get_yang_node() && 
+
+  if (node->get_yang_node() &&
           node->get_yang_node()->is_leafy()) {
     node = node->get_parent();
   }
@@ -205,17 +216,12 @@ StartStatus SbReqGet::start_xact_uagent_get_request()
   const char *state_node_names[] = {"statistics", "specific"};
   child_handler state_handlers[] = {&SbReqGet::get_statistics, &SbReqGet::get_specific};
 
-  const char *confd_node_names[] = {"client", "dom-refresh-period"};
-  child_handler confd_handlers[] = {&SbReqGet::get_confd_daemon, &SbReqGet::get_dom_refresh_period};
-
   if ("state" == node->get_local_name()) {
     names = state_node_names;
     num_handlers = sizeof (state_node_names)/ sizeof (char *);
     handlers = state_handlers;
   } else if ("confd" == node->get_local_name()) {
-    names = confd_node_names;
-    num_handlers = sizeof (confd_node_names)/sizeof (char *);
-    handlers = confd_handlers;
+    instance_->mgmt_handler()->handle_get(this, node);
   } else if ("last-error" == node->get_local_name()) {
     // ATTN need to implement this
   } else {
@@ -223,127 +229,32 @@ StartStatus SbReqGet::start_xact_uagent_get_request()
   }
 
   // This would need to get refactored
-  if (nullptr == node->get_first_child()) {
-    // Add each branch, and get that data
-
-    for (int i = 0; i < num_handlers; i++) {
-      (this->*handlers[i])(node);
-    }
-
-  } else {
-    XMLNode *child = node->get_first_child();
-    RW_ASSERT(child);
-    for (size_t i = 0; i < num_handlers; i++) {
-      if (names[i] == child->get_local_name()) {
-        node->remove_child (child);
+  if (node->get_local_name() != "confd") {
+    if (nullptr == node->get_first_child()) {
+      // Add each branch, and get that data
+      for (int i = 0; i < num_handlers; i++) {
         (this->*handlers[i])(node);
-        break;
       }
+    } else {
+      XMLNode *child = node->get_first_child();
+      RW_ASSERT(child);
+      for (size_t i = 0; i < num_handlers; i++) {
+        if (names[i] == child->get_local_name()) {
+          node->remove_child (child);
+          (this->*handlers[i])(node);
+          break;
+        }
+      }
+      // Node is an empty list - remove it
     }
-    // Node is an empty list - remove it
   }
 
   // ATTN:- I was not sure whether the earlier async was to avoid blocking
-  // in a thread for long time or to be consistent with the dts gets. 
+  // in a thread for long time or to be consistent with the dts gets.
   // I have made this to return synchronously as we are on
   // a separate queue now. If i find any issues, i will make it async.
   done_with_success( std::move(rsp_dom_) );
   return StartStatus::Done;
-}
-
-rw_yang_netconf_op_status_t SbReqGet::get_dom_refresh_period(
-  XMLNode *node)
-{
-  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "get agent refresh" );
-  RW_ASSERT(node);
-
-  RWPB_M_MSG_DECL_INIT(RwMgmtagt_Confd, confd);
-  RWPB_M_MSG_DECL_INIT(RwMgmtagt_Confd_DomRefreshPeriod, refresh_period);
-
-  // ATTN: confd.has_total_dom_lifetime = true;
-  confd.dom_refresh_period = &refresh_period;
-
-  refresh_period.has_cli_dom_refresh_period = true;
-  refresh_period.cli_dom_refresh_period = instance_->cli_dom_refresh_period_msec_;
-
-  refresh_period.has_nc_rest_dom_refresh_period = true;
-  refresh_period.nc_rest_dom_refresh_period = instance_->nc_rest_refresh_period_msec_;
-
-  rw_yang_netconf_op_status_t ncs = node->merge( &confd.base );
-  return ncs;
-}
-
-rw_yang_netconf_op_status_t SbReqGet::get_confd_daemon(
-  XMLNode *node)
-{
-  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "get agent confd stats" );
-  RW_ASSERT(node);
-
-  RWPB_M_MSG_DECL_INIT(RwMgmtagt_Confd, confd);
-  RWPB_T_MSG(RwMgmtagt_Client) *client = (RWPB_T_MSG(RwMgmtagt_Client) *)
-      protobuf_c_message_create(nullptr, RWPB_G_MSG_PBCMD(RwMgmtagt_Client));
-
-  confd.n_client = 1;
-  confd.client = &client;
-
-  client->n_cached_dom = instance_->confd_daemon_->dom_stats_.size();
-  RWPB_T_MSG(RwMgmtagt_CachedDom) **doms = (RWPB_T_MSG(RwMgmtagt_CachedDom) **)
-      //ATTN this has to be based on some alloc on the protobuf allocator
-      RW_MALLOC(sizeof(RWPB_T_MSG(RwMgmtagt_CachedDom) *)  * client->n_cached_dom);
-
-  client->cached_dom = doms;
-  client->identifier = 0;
-
-  int i = 0; // fake index
-  for (auto& dom : instance_->confd_daemon_->dom_stats_) {
-    doms[i] = dom->get_pbcm();
-    doms[i]->index = i;
-    i++;
-  }
-
-  rw_yang_netconf_op_status_t ncrs =
-      node->merge ((ProtobufCMessage *)&confd);
-
-  if (ncrs != RW_YANG_NETCONF_OP_STATUS_OPERATION_FAILED) {
-    RW_MA_SBREQ_LOG (this, __FUNCTION__, "Failed in merge op");
-    return RW_YANG_NETCONF_OP_STATUS_OPERATION_FAILED;
-  }
-
-  RW_FREE ( doms);
-  client->n_cached_dom = 0;
-  client->cached_dom = nullptr;
-
-  for (auto dp : instance_->confd_daemon_->dp_clients_) {
-    client->identifier = (uint64_t) dp;
-    client->n_cached_dom = dp->dom_stats_.size();
-    doms = (RWPB_T_MSG(RwMgmtagt_CachedDom) **)
-        //ATTN this has to be based on some alloc on the protobuf allocator
-        RW_MALLOC (sizeof(RWPB_T_MSG(RwMgmtagt_CachedDom)*)  * client->n_cached_dom);
-
-    client->cached_dom = doms;
-    int i = 0; // fake index
-
-    for (auto& dom : dp->dom_stats_) {
-      doms[i] = dom->get_pbcm();
-      doms[i]->index = i;
-      i++;
-    }
-
-    rw_yang_netconf_op_status_t ncrs =
-        node->merge ((ProtobufCMessage *)&confd);
-
-    if (ncrs != RW_YANG_NETCONF_OP_STATUS_OK) {
-      RW_MA_SBREQ_LOG (this, __FUNCTION__, "Failed in merge op");
-      return RW_YANG_NETCONF_OP_STATUS_OPERATION_FAILED;
-    }
-
-    RW_FREE ( doms);
-    client->n_cached_dom = 0;
-    client->cached_dom = nullptr;
-  }
-
-  protobuf_c_message_free_unpacked (nullptr, (ProtobufCMessage*)client);
-  return RW_YANG_NETCONF_OP_STATUS_OK;
 }
 
 rw_yang_netconf_op_status_t SbReqGet::get_statistics(
@@ -461,7 +372,6 @@ void SbReqGet::dts_get_event_cb(rwdts_xact_t *xact,
     RW_ASSERT (xact == get->dts_xact());
 
     get->set_async_dt(async_dispatch_t::DTS_CCB);
-
     rwsched_dispatch_async_f(get->instance()->rwsched_tasklet(),
                              get->nbreq_->get_execution_q(),
                              get,

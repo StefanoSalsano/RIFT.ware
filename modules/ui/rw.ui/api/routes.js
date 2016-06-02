@@ -155,6 +155,22 @@ var routes = function(app, socketManager) {
             res.send(error.errorMessage);
         });
     });
+    app.post('/launchpad/nsr/:id/:scaling_group_id/instance', cors(), function(req, res) {
+        launchpadAPI['nsr'].createScalingGroupInstance(req).then(function(data) {
+            sendSuccessResponse(data, res);
+        }, function(error) {
+            console.log(error)
+            sendErrorResponse(error, res);
+        });
+    });
+    app.delete('/launchpad/nsr/:id/:scaling_group_id/instance/:scaling_instance_id', cors(), function(req, res) {
+        launchpadAPI['nsr'].deleteScalingGroupInstance(req).then(function(data) {
+            sendSuccessResponse(data, res);
+        }, function(error) {
+            console.log(error)
+            sendErrorResponse(error, res);
+        });
+    });
     app.get('/launchpad/vnfr', cors(), function(req, res) {
         launchpadAPI['vnfr'].get(req).then(function(data) {
             res.send(data);
@@ -191,6 +207,75 @@ var routes = function(app, socketManager) {
             sendErrorResponse(error, res);
         });
     });
+    //TODO refactor this query
+    app.get('/launchpad/decorated-catalog', cors(), function(req, res) {
+        launchpadAPI['catalog'].get(req).then(function(data) {
+            var returnData = decorateNsdCatalogWithPlacementGroups(data)
+            sendSuccessResponse(returnData, res);
+        }, function(error) {
+            if(!error || !error.statusCode) {
+                error = {
+                    statusCode: 500,
+                    message: 'unknown error with Catalog.get'
+                }
+            }
+            sendErrorResponse(error, res);
+        });
+    });
+function decorateNsdCatalogWithPlacementGroups(catalog) {
+    var newData = catalog;
+    var parsedCatalog = JSON.parse(catalog.data);
+    var nsds = parsedCatalog[0].descriptors;
+    var vnfds = parsedCatalog[1].descriptors;
+    var vnfdDict = (function(){
+        var dict = {};
+        vnfds.map(function(v, i) {
+            dict[v.id] = v;
+        })
+        return dict;
+    })(vnfds);
+
+    nsds.map(function(c, i) {
+        //Rename and decorate NSD placement groups
+        c['ns-placement-groups'] = c['placement-groups'] && c['placement-groups'].map(function(p, i) {
+            //Adds vnfd name to member-vnfd entry
+            p['member-vnfd'] = p['member-vnfd'].map(function(v) {
+                v.name = vnfdDict[v['vnfd-id-ref']].name;
+                return v;
+            });
+            p['host-aggregate'] = [];
+            return p;
+        });
+        //Remove 'placement-group' entry
+        delete c['placement-groups'];
+
+        //Adds vnf placement groups to nsd object for UI
+        c['vnf-placement-groups'] = [];
+        c['constituent-vnfd'] && c['constituent-vnfd'].map(function(v) {
+            var vnf = vnfdDict[v['vnfd-id-ref']];
+            // var vnfPg = {
+            //     name: vnf.name,
+            //     'placement-groups': vnf['placement-groups'].map(function(vp){
+            //         vp['host-aggregate'] = [{}];
+            //         return vp;
+            //     })
+            // };
+            v['vnf-name'] = vnf.name;
+            vnf['placement-groups'] && vnf['placement-groups'].map(function(vp) {
+                vp['host-aggregate'] = [];
+                vp['vnf-name'] = vnf.name;
+                vp['vnfd-id-ref'] = v['vnfd-id-ref'];
+                vp['member-vnf-index'] = v['member-vnf-index'];
+                c['vnf-placement-groups'].push(vp);
+            })
+        })
+        return c;
+    })
+    // parsedCatalog[0].descriptors = nsds;
+    newData.data = JSON.stringify(parsedCatalog);
+    return newData;
+}
+
     //TODO refactor this query
     app.post('/launchpad/vnfd', cors(), function(req, res) {
         launchpadAPI['catalog'].getVNFD(req).then(function(data) {
@@ -573,7 +658,7 @@ var routes = function(app, socketManager) {
         })
     });
     // End Logging API
-    
+
     // Start socket API
     app.post('/socket-polling', cors(), function(req, res) {
         socketManager.subscribe(req).then(function(data) {

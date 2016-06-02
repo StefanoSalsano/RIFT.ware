@@ -22,3 +22,15 @@ DESTINATION
 COMPONENT
   ${PKG_LONG_NAME}
 )
+
+#
+# Install the base riftware CLI Manifest
+#
+install(
+FILES
+  rw.cli.xml
+DESTINATION
+  usr/data/yang
+COMPONENT
+  ${PKG_LONG_NAME}
+)

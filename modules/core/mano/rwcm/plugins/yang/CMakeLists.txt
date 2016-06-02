@@ -9,14 +9,22 @@
 # Yang targets
 ##
 
+rift_generate_python_log_yang(
+    LOG_CATEGORY_NAME rw-conman-log
+    START_EVENT_ID 66000
+    OUT_YANG_FILE_VAR rw_conman_log_file
+    )
+
 rift_add_yang_target(
   TARGET rw_conman_yang
-  YANG_FILES rw-conman.yang
+  YANG_FILES rw-conman.yang ${rw_conman_log_file}
   COMPONENT ${PKG_LONG_NAME}
   LIBRARIES
     mano_yang_gen
+    rwconfig_agent_yang_gen
   DEPENDS
     mano_yang
+    rwconfig_agent_yang
 )
 
 ##

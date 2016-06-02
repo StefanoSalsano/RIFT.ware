@@ -23,6 +23,97 @@ class ArchiveInvalidPath(message.ErrorMessage):
         super().__init__("archive-error", msg.format(filename))
 
 
+class DescriptorFile(object):
+    def __init__(self, log, filename, pkgfile):
+        self.log = log
+        self.filename = filename
+        self.pkgfile = pkgfile
+
+        # The pkgfile sometimes has b'--' characters at the end of file.
+        # Here we check the last two bytes of the data and remove them if they
+        # corresponding to b'--'.
+        with open(self.pkgfile, "rb+") as tp:
+            tp.seek(-2, 2)
+            if tp.read(2) == b"--":
+                tp.seek(-2, 2)
+                tp.truncate()
+
+        self._descriptors = dict()
+        self._descriptors['vnfd'] = list()
+        self._descriptors['nsd'] = list()
+        self._descriptors['pnfd'] = list()
+        self._descriptors['vld'] = list()
+        self._descriptors['vnffgd'] = list()
+        self._descriptors['images'] = list()
+        self._descriptors['libs'] = list()
+
+        patterns = [
+                ("vnfd", self._descriptors["vnfd"].append),
+                ("nsd", self._descriptors["nsd"].append),
+                ("pnfd", self._descriptors["pnfd"].append),
+                ("vld", self._descriptors["vld"].append),
+                ("vnffgd", self._descriptors["vnffgd"].append),
+                ]
+
+
+        # Iterate through the recognized patterns and assign files accordingly
+        for pattern, store in patterns:
+            if pattern in self.filename:
+                store(filename)
+                break
+
+    @property
+    def vnfds(self):
+        """A list of VNFDs in the archive"""
+        return self._descriptors['vnfd']
+
+    @property
+    def nsds(self):
+        """A list of NSDs in the archive"""
+        return self._descriptors['nsd']
+
+    @property
+    def pnfds(self):
+        """A list of PNFDs in the archive"""
+        return self._descriptors['pnfd']
+
+    @property
+    def vlds(self):
+        """A list of VLDs in the archive"""
+        return self._descriptors['vld']
+
+    @property
+    def vnffgds(self):
+        """A list of VNFFGDs in the archive"""
+        return self._descriptors['vnffgd']
+
+    @property
+    def images(self):
+        """A list of images in the archive"""
+        return self._descriptors['images']
+
+    @property
+    def libs(self):
+        """A list of addtional files in the archive"""
+        return self._descriptors['libs']
+
+    @property
+    def filenames(self):
+        """A list of all the files in the archive"""
+        return self.pnfds + self.vnfds + self.vlds + self.vnffgds + self.nsds + self.images + self.libs
+
+    def extract(self, dest):
+        # Ensure that the destination directory exists
+        if not os.path.exists(dest):
+            os.makedirs(dest)
+
+        for filename in self.filenames:
+            # Copy the contents of the file to the correct path
+            dst = os.path.join(dest, filename)
+            src = self.pkgfile
+            shutil.copy(src,dst)
+
+
 class LaunchpadArchive(object):
     def __init__(self, tar, log):
         self._descriptors = dict()
@@ -35,6 +126,7 @@ class LaunchpadArchive(object):
         self._descriptors['schema/libs'] = list()
         self._descriptors['schema/yang'] = list()
         self._descriptors['schema/fxs'] = list()
+        self._descriptors['libs'] = list()
 
         self._checksums = dict()
         self._manifest = None
@@ -79,6 +171,7 @@ class LaunchpadArchive(object):
 
         patterns = [
                 (re.compile(r"images/([^/]+)"), self._descriptors["images"].append),
+                (re.compile(r"libs/([^/]+)"), self._descriptors["libs"].append),
                 (re.compile(r"pnfd/([^/]+)"), self._descriptors["pnfd"].append),
                 (re.compile(r"vnfd/([^/]+)"), self._descriptors["vnfd"].append),
                 (re.compile(r"vld/([^/]+)"), self._descriptors["vld"].append),
@@ -138,9 +231,14 @@ class LaunchpadArchive(object):
         return self._descriptors['images']
 
     @property
+    def libs(self):
+        """A list of addtional files in the archive"""
+        return self._descriptors['libs']
+
+    @property
     def filenames(self):
         """A list of all the files in the archive"""
-        return self.pnfds + self.vnfds + self.vlds + self.vnffgds + self.nsds + self.images
+        return self.pnfds + self.vnfds + self.vlds + self.vnffgds + self.nsds + self.images + self.libs
 
     def extract(self, dest):
         # Ensure that the destination directory exists
@@ -160,10 +258,14 @@ class LaunchpadArchive(object):
                 os.makedirs(os.path.join(dest, dirname))
 
             # Copy the contents of the file to the correct path
-            with open(os.path.join(dest, filename), 'wb') as dst:
+            destname = os.path.join(dest, filename)
+            with open(destname, 'wb') as dst:
                 src = self.tarfile.extractfile(member)
                 shutil.copyfileobj(src, dst, 10 * 1024 * 1024)
                 src.close()
+                # Set the file mode to original
+                os.chmod(destname, member.mode)
+
 
 class PackageArchive(object):
     def __init__(self):
@@ -211,13 +313,13 @@ class PackageArchive(object):
             if descriptors:
                 os.makedirs(os.path.join(archive_path, name))
 
-                path = "{}/{{}}.xml".format(os.path.join(archive_path, name))
+                path = "{}/{{}}.json".format(os.path.join(archive_path, name))
                 for desc in descriptors:
-                    xml = converter.to_xml_string(desc)
-                    open(path.format(desc.id), 'w').write(xml)
+                    json = converter.to_json_string(desc)
+                    open(path.format(desc.id), 'w').write(json)
 
                     key = os.path.relpath(path.format(desc.id), archive_path)
-                    self.checksums[key] = checksums.checksum_string(xml)
+                    self.checksums[key] = checksums.checksum_string(json)
 
         def write_images():
             if self.images:
@@ -233,9 +335,9 @@ class PackageArchive(object):
                     fp.write("{} {}\n".format(chksum, path))
 
         # Start by writing the descriptors to the archive
-        write_descriptors(self.nsds, convert.NsdYangConverter(), "nsd")
-        write_descriptors(self.vlds, convert.VldYangConverter(), "vld")
-        write_descriptors(self.vnfds, convert.VnfdYangConverter(), "vnfd")
+        write_descriptors(self.nsds, convert.NsdSerializer(), "nsd")
+        write_descriptors(self.vlds, convert.VldSerializer(), "vld")
+        write_descriptors(self.vnfds, convert.VnfdSerializer(), "vnfd")
 
         # Copy the images to the archive
         write_images()

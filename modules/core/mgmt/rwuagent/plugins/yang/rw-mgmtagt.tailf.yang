@@ -37,8 +37,4 @@ module rwuagent-cli-annotation
     tailf:callpoint mgmt_agent_show;
   }
 
-  tailf:annotate "/rw-mgmtagt:uagent/rw-mgmtagt:confd" {
-    tailf:callpoint mgmt_agent_show;
-  }
-
 }

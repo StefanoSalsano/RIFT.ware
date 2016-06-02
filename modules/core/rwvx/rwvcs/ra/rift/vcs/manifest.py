@@ -13,9 +13,19 @@ import subprocess
 import ndl
 
 from . import core
+
 import rw_manifest_pb2
 import rwvcs_types_pb2
+import gi
+gi.require_version('RwManifestYang', '1.0')
+from gi.repository.RwManifestYang import NetconfTrace
 from rift.rwlib.util import certs
+import rift.vcs.mgmt
+
+import gi
+gi.require_version('RwManifestYang', '1.0')
+from gi.repository.RwManifestYang import RwmgmtAgentMode
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,8 +40,8 @@ class RaManifestObject(object):
     However most of these methods are used as is by the derived classes
     '''
 
-    def __init__(self, name, subcomponents=None, instance_id=None, config_ready=False, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+    def __init__(self, name, subcomponents=None, instance_id=None, config_ready=False,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value, start=True
                 ):
         self.name = name
         self.subcomponents = []
@@ -42,6 +52,7 @@ class RaManifestObject(object):
         self.parent = None
         self.config_ready = config_ready
         self.recovery_action = recovery_action
+        self.start = start
 
         if subcomponents is not None:
             for subcomponent in subcomponents:
@@ -81,7 +92,8 @@ class RaManifestObject(object):
 
     def add_startup(self,c):
         '''helper function to append an object to the list of components that should be started by rwmain '''
-        self.startups.append(c)
+        if c.start:
+           self.startups.append(c)
 
     def add_component(self, component, startup=False):
         '''
@@ -130,8 +142,8 @@ class RaTasklet(RaManifestObject):
     tasklet. You should only have to instantiate an instance
     and then pass it to component_add()
     '''
-    def __init__(self, name, plugin_directory, plugin_name, instance_id=None, config_ready=False, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+    def __init__(self, name, plugin_directory, plugin_name, instance_id=None, config_ready=False,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value, start=True
                 ):
         '''
         create a tasklet definition
@@ -139,7 +151,7 @@ class RaTasklet(RaManifestObject):
         '''
 
         super(RaTasklet,self).__init__(name, instance_id=instance_id, config_ready=config_ready,
-                                       recovery_action=recovery_action,
+                                       recovery_action=recovery_action, start=start
                                        )
         self.plugin_directory = plugin_directory
         self.plugin_name = plugin_name
@@ -163,11 +175,12 @@ class RaToyTasklet(RaTasklet):
     instantiate an instance and use it.
     If you need to customize it, you should consider basing your version on
     '''
-    def __init__(self,name="RW.toytasklet", config_ready=False, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+    def __init__(self,name="RW.toytasklet", config_ready=False,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value, start=True
                 ):
-        super(RaToyTasklet,self).__init__(name, "./usr/lib/rift/plugins/rwtoytasklet-c", "rwtoytasklet-c" , config_ready=config_ready,
-                                          recovery_action=recovery_action,
+        super(RaToyTasklet,self).__init__(name, "./usr/lib/rift/plugins/rwtoytasklet-c", "rwtoytasklet-c",
+                                          config_ready=config_ready, recovery_action=recovery_action,
+                                          start=start
                                           )
         self.python_vars.append('echo_client = -1')
 
@@ -178,8 +191,9 @@ class RaToyTaskletPython(RaTasklet):
     instantiate an instance and use it.
     If you need to customize it, you should consider basing your version on
     '''
-    def __init__(self,name="RW.toytasklet.python", config_ready=False, 
+    def __init__(self,name="RW.toytasklet.python", config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         super(RaToyTaskletPython,self).__init__(
                 name,
@@ -187,6 +201,7 @@ class RaToyTaskletPython(RaTasklet):
                 "pytoytasklet",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 
@@ -196,11 +211,14 @@ class RaDtsTaskletPython(RaTasklet):
     instantiate an instance and use it.
     If you need to customize it, you should consider basing your version on
     '''
-    def __init__(self,name="RW.dtstasklet.python", config_ready=False, 
+    def __init__(self,name="RW.dtstasklet.python", config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaDtsTaskletPython,self).__init__(name, "./usr/lib/rift/plugins/rwdtstasklet", "rwdtstasklet", config_ready=config_ready,
+        super(RaDtsTaskletPython,self).__init__(name, "./usr/lib/rift/plugins/rwdtstasklet", "rwdtstasklet",
+                                                config_ready=config_ready,
                                                 recovery_action=recovery_action,
+                                                start=start
                                                 )
 
 class RaDtsPerfMgrTasklet(RaTasklet):
@@ -209,8 +227,9 @@ class RaDtsPerfMgrTasklet(RaTasklet):
     customize it, you should consider creating a new tasklet and basing your
     version on it.
     '''
-    def __init__(self,name="RW.dtsperfmgrtasklet.python", config_ready=False, 
+    def __init__(self,name="RW.dtsperfmgrtasklet.python", config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         super(RaDtsPerfMgrTasklet,self).__init__(
                 name,
@@ -218,6 +237,7 @@ class RaDtsPerfMgrTasklet(RaTasklet):
                 "rwdtsperfmgrtasklet",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 class RaNativeProcess(RaManifestObject):
@@ -226,11 +246,12 @@ class RaNativeProcess(RaManifestObject):
 
     note that it is derived from a tasklet even though it is by all definitions a proc
     '''
-    def __init__(self, name, exe, args=None, run_as=None, valgrind=None, config_ready=False, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+    def __init__(self, name, exe, args=None, run_as=None, valgrind=None, config_ready=False,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value, start=True
                 ):
         super(RaNativeProcess, self).__init__(name, "", "", config_ready=config_ready,
                                               recovery_action=recovery_action,
+                                              start=start
                                               )
         self.native_exe = exe
         self.native_args = args
@@ -266,24 +287,6 @@ class RaNativeProcess(RaManifestObject):
                 c.native_proc.interactive = self.interactive
 
 
-class RaConfd(RaNativeProcess):
-    def __init__(self, name, exe=None, args=None, run_as=None, config_ready=False, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                ):
-        if exe is None:
-            exe = "./usr/local/confd/bin/rw_confd"
-
-        super(RaConfd, self).__init__(name, exe=exe, args=args, run_as=run_as, config_ready=config_ready,
-                                      recovery_action=recovery_action,
-                                      )
-
-    @classmethod
-    def create_with_sockets(cls, name, run_as=None):
-        config = "./usr/local/confd/etc/confd/confd.conf.collapsed"
-        args =  "-c {}".format(os.path.abspath(config))
-        return cls(name, args=args, run_as=run_as)
-
-
 class RaWebServer(RaNativeProcess):
     """
     The RaWebServer class represents the rift web UI.
@@ -310,11 +313,12 @@ class RaCliProc(RaNativeProcess):
     """
     The RaCliProc class represents the Rift Cli running as native process
     """
-    def __init__(self, name, exe=None, args=None, run_as=None, config_ready=False, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+    def __init__(self, name, exe=None, args=None, run_as=None, config_ready=False,
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value, start=True
                 ):
-        super(RaCliProc, self).__init__(name, exe=exe, args=args, run_as=run_as, config_ready=config_ready,
-                                        recovery_action=recovery_action,
+        super(RaCliProc, self).__init__(name, exe=exe, args=args, run_as=run_as,
+                                        config_ready=config_ready, recovery_action=recovery_action,
+                                        start=start
                                         )
 
 class RaCli(RaTasklet):
@@ -323,11 +327,14 @@ class RaCli(RaTasklet):
     instantiate an instance and use it.
     If you need to customize it, you should consider basing your version on
     '''
-    def __init__(self, name, manifest_file="cli_rwfpath.xml", config_ready=False, 
+    def __init__(self, name, manifest_file="cli_rwfpath.xml", config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaCli, self).__init__(name, "./usr/lib/rift/plugins/rwcli-c", "rwcli-c", config_ready=config_ready,
+        super(RaCli, self).__init__(name, "./usr/lib/rift/plugins/rwcli-c", "rwcli-c",
+                                    config_ready=config_ready,
                                     recovery_action=recovery_action,
+                                    start=start
                                     )
         self.python_vars.append("""cmdargs_str = '"load cli manifest {}"'""".format(
             manifest_file
@@ -339,8 +346,9 @@ class RaMockCli(RaCli):
     instantiate an instance and use it.
     If you need to customize it, you should consider basing your version on
     '''
-    def __init__(self, name, config_ready=False, 
+    def __init__(self, name, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         super(RaCli, self).__init__(
                 name,
@@ -348,6 +356,7 @@ class RaMockCli(RaCli):
                 "pytoytasklet",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 class RaFastpath(RaTasklet):
@@ -360,9 +369,12 @@ class RaFastpath(RaTasklet):
             memory_model=None,
             config_ready=False,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
-        super(RaFastpath,self).__init__(name, "./usr/lib/rift/plugins/rwfpath-c", "rwfpath-c", config_ready=config_ready,
+        super(RaFastpath,self).__init__(name, "./usr/lib/rift/plugins/rwfpath-c", "rwfpath-c",
+                                        config_ready=config_ready,
                                         recovery_action=recovery_action,
+                                        start=start
                                         )
         self.cmdargs = None if cmdargs is None else copy.copy(cmdargs)
 
@@ -405,11 +417,14 @@ class RaFastpath(RaTasklet):
 
 
 class RaNcMgr(RaTasklet):
-    def __init__(self, name, config_ready=False, 
+    def __init__(self, name, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaNcMgr, self).__init__(name, "./usr/lib/rift/plugins/rwncmgr-c", "rwncmgr-c", config_ready=config_ready,
+        super(RaNcMgr, self).__init__(name, "./usr/lib/rift/plugins/rwncmgr-c", "rwncmgr-c",
+                                      config_ready=config_ready,
                                       recovery_action=recovery_action,
+                                      start=start
                                       )
 
     def _prepare(self):
@@ -433,11 +448,14 @@ class RaNcMgr(RaTasklet):
 
 
 class RaIfMgr(RaTasklet):
-    def __init__(self, name, config_ready=False, 
+    def __init__(self, name, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaIfMgr, self).__init__(name, "./usr/lib/rift/plugins/rwifmgr-c", "rwifmgr-c", config_ready=config_ready,
+        super(RaIfMgr, self).__init__(name, "./usr/lib/rift/plugins/rwifmgr-c", "rwifmgr-c",
+                                      config_ready=config_ready,
                                       recovery_action=recovery_action,
+                                      start=start
                                       )
         self.python_vars.append("cmdargs_str = ''")
 
@@ -453,11 +471,14 @@ class RaIfMgr(RaTasklet):
 
 
 class RaFpCtrl(RaTasklet):
-    def __init__(self, name, config_ready=False, 
+    def __init__(self, name, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaFpCtrl, self).__init__(name, "./usr/lib/rift/plugins/rwfpctrl-c", "rwfpctrl-c", config_ready=config_ready,
+        super(RaFpCtrl, self).__init__(name, "./usr/lib/rift/plugins/rwfpctrl-c", "rwfpctrl-c",
+                                       config_ready=config_ready,
                                        recovery_action=recovery_action,
+                                       start=start
                                        )
         self.python_vars.append("cmdargs_str = ''")
 
@@ -468,11 +489,14 @@ class RaFpCtrl(RaTasklet):
 
 
 class RaAppMgr(RaTasklet):
-    def __init__(self, name, config_ready=False, 
+    def __init__(self, name, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaAppMgr, self).__init__(name,"./usr/lib/rift/plugins/rwappmgr-c", "rwappmgr-c", config_ready=config_ready,
+        super(RaAppMgr, self).__init__(name,"./usr/lib/rift/plugins/rwappmgr-c", "rwappmgr-c",
+                                       config_ready=config_ready,
                                        recovery_action=recovery_action,
+                                       start=start
                                        )
         self.python_vars.append("cmdargs_str = ''")
 
@@ -491,30 +515,34 @@ class RaAppMgr(RaTasklet):
 
 
 class RaBroker(RaTasklet):
-    def __init__(self, name, port=2222, config_ready=False, 
+    def __init__(self, name, port=2222, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaBroker, self).__init__(name, "./usr/lib/rift/plugins/rwmsgbroker-c", "rwmsgbroker-c", config_ready=config_ready,
+        super(RaBroker, self).__init__(name, "./usr/lib/rift/plugins/rwmsgbroker-c", "rwmsgbroker-c",
+                                       config_ready=config_ready,
                                        recovery_action=recovery_action,
+                                       start=start
                                        )
         self.port = port
 
 
 class RaUagent(RaTasklet):
-    def __init__(self, name, port, confd_ip=None, config_ready=False, 
+    def __init__(self, name, port, confd_ip=None, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaUagent, self).__init__(name, "./usr/lib/rift/plugins/rwuagent-c", "rwuagent-c", config_ready=config_ready,
+        super(RaUagent, self).__init__(name, "./usr/lib/rift/plugins/rwuagent-c", "rwuagent-c",
+                                       config_ready=config_ready,
                                        recovery_action=recovery_action,
+                                       start=start
                                        )
         self.port = port
 
         self.host = "127.0.0.1" if confd_ip is None else confd_ip
-        hostname = subprocess.check_output(["hostnamectl", "--static"]).decode("ascii").strip("\n")
-        confd_ws = "--confd_ws confd_persist_{}".format(hostname)
 
         host = "--confd-proto AF_INET --confd-ip {0}".format(self.host)
-        cli_args = " ".join((confd_ws, host))
+        cli_args = host
 
         self.python_vars.append("cmdargs_str = '{}'".format(cli_args))
 
@@ -524,8 +552,9 @@ class RaDtsRouter(RaTasklet):
     This class represents the DTS router tasklet.
     '''
 
-    def __init__(self, name, config_ready=False, 
+    def __init__(self, name, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         '''Creates an RaDtsRouter object
 
@@ -533,7 +562,7 @@ class RaDtsRouter(RaTasklet):
             name - the name of the tasklet
             config_ready - config readiness check enable
             recovery_action - recovery action mode
-
+            start - Flag denotes whether to initially start this component
         '''
         super(RaDtsRouter, self).__init__(
                 name,
@@ -541,6 +570,7 @@ class RaDtsRouter(RaTasklet):
                 plugin_name="rwdtsrouter-c",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 
@@ -549,8 +579,9 @@ class Logd(RaTasklet):
     '''
     This class represents the Logd tasklet.
     '''
-    def __init__(self, name, config_ready=False, 
+    def __init__(self, name, config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         '''Creates a Logd object
 
@@ -558,6 +589,7 @@ class Logd(RaTasklet):
             name   - the name of the tasklet
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start - Flag denotes whether to initially start this component
 
         '''
         super(Logd, self).__init__(
@@ -566,17 +598,21 @@ class Logd(RaTasklet):
                 plugin_name='rwlogd-c',
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 class RaRwInit(RaTasklet):
     '''
     the root of all procs
     '''
-    def __init__(self, name="RW.Init", config_ready=False, 
+    def __init__(self, name="RW.Init", config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaRwInit,self).__init__(name, "./usr/lib/rift/plugins/rwinit-c", "rwinit-c", config_ready=config_ready,
+        super(RaRwInit,self).__init__(name, "./usr/lib/rift/plugins/rwinit-c", "rwinit-c",
+                                      config_ready=config_ready,
                                       recovery_action=recovery_action,
+                                      start=start
                                       )
 
 
@@ -612,11 +648,15 @@ class RaZookeeper(object):
             ))
 
 class RaProc(RaManifestObject):
-    def __init__(self, name="rwproc", run_as=None, subcomponents=None, valgrind=None, config_ready=False, 
+    def __init__(self, name="rwproc", run_as=None, subcomponents=None, valgrind=None,
+                 config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
-        super(RaProc, self).__init__(name, subcomponents=subcomponents, config_ready=config_ready,
+        super(RaProc, self).__init__(name, subcomponents=subcomponents,
+                                     config_ready=config_ready,
                                      recovery_action=recovery_action,
+                                     start=start
                                      )
         self.run_as = run_as
         self.valgrind = valgrind
@@ -651,7 +691,7 @@ class RaProc(RaManifestObject):
             a.config_ready = s.config_ready
             a.recovery_action = s.recovery_action
             # instance id added for only compoents with config_ready, False
-            if s.instance_id is not None:
+            if s.instance_id is not None and s.config_ready:
                 a.instance_id = s.instance_id
             s._add_to_inventory(parent, manifest, known)
 
@@ -670,10 +710,13 @@ class RaVm(RaManifestObject):
             valgrind=None,
             config_ready=False,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
 
-        super(RaVm,self).__init__(name, subcomponents=subcomponents, config_ready=config_ready,
+        super(RaVm,self).__init__(name, subcomponents=subcomponents,
+                                  config_ready=config_ready,
                                   recovery_action=recovery_action,
+                                  start=start
                                   )
         self.ipaddress = ipaddress
         self.leader = leader
@@ -737,7 +780,7 @@ class RaVm(RaManifestObject):
             action.start.recovery_action = component.recovery_action
             action.start.python_variable.extend(component.python_vars)
 
-            if component.instance_id is not None:
+            if component.instance_id is not None and component.config_ready:
                  action.start.instance_id = str(component.instance_id)
 
         for component in self.subcomponents:
@@ -749,8 +792,9 @@ class RaCollection(RaManifestObject):
     This class represents a generic riftware collection.
     """
 
-    def __init__(self, name, tag, subcomponents=None, instance_id=None, config_ready=False, 
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
+    def __init__(self, name, tag, subcomponents=None, instance_id=None,
+                 config_ready=False, recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates an RaCollection object
 
@@ -764,6 +808,7 @@ class RaCollection(RaManifestObject):
                             particular collection
             config_ready  - (optional) config readiness check enable
             recovery_action  - (optional) recovery action mode
+            start         - Flag denotes whether to initially start this component
 
         """
         super(RaCollection, self).__init__(
@@ -772,6 +817,7 @@ class RaCollection(RaManifestObject):
                 instance_id=instance_id,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
         self.manifest_tag = tag
 
@@ -806,7 +852,7 @@ class RaCollection(RaManifestObject):
 
             # Do not add action element to components with manifest tag 'rwclony'
             # if the element is a cluster or with config_ready, False
-            if not subcomponent.config_ready:
+            if not subcomponent.start:
                 continue
 
             action = event.action.add()
@@ -836,6 +882,7 @@ class RaCluster(RaCollection):
             instance_id=None,
             config_ready=False,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         super(RaCluster,self).__init__(
                 name,
@@ -844,6 +891,7 @@ class RaCluster(RaCollection):
                 instance_id=instance_id,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 
@@ -861,6 +909,7 @@ class RaColony(RaCollection):
             instance_id=None,
             config_ready=False,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         super(RaColony,self).__init__(
                 name,
@@ -869,11 +918,16 @@ class RaColony(RaCollection):
                 instance_id=instance_id,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                start=start
                 )
 
 
 class RaManifest(object):
-    def __init__(self, northbound_listing, zookeeper=None):
+    def __init__(self, northbound_listing,
+                 netconf_trace=NetconfTrace.AUTO,
+                 zookeeper=None,
+                 agent_mode=RwmgmtAgentMode.AUTOMODE,
+                 ):
         self.components = []
         self.bootstrap = RaRwInit()
         self.init = None
@@ -896,7 +950,13 @@ class RaManifest(object):
         self.vm_bootstrap = []
         self.proc_bootstrap = []
         self.northbound_listing = northbound_listing
-        
+        self.agent_mode = agent_mode
+
+        if netconf_trace is None:
+            self.netconf_trace = NetconfTrace.AUTO
+        else:
+            self.netconf_trace = netconf_trace
+
     def __iter__(self):
         """A depth-first generator over the manifest components"""
         for component in self.components:
@@ -1228,7 +1288,16 @@ class ProtobufManifestConverter(object):
 
         # Add northbound schema listing to the bootstrap phase
         if manifest.northbound_listing is not None:
-            bootstrap_phase.rwbaseschema.northbound_listing = manifest.northbound_listing
+            bootstrap_phase.rwmgmt.northbound_listing.append(manifest.northbound_listing)
+
+        # Add agent mode to the bootstrap phase
+        if manifest.agent_mode in [RwmgmtAgentMode.CONFD, RwmgmtAgentMode.RWXML]:
+            bootstrap_phase.rwmgmt.agent_mode = manifest.agent_mode
+        else:
+            bootstrap_phase.rwmgmt.agent_mode = rift.vcs.mgmt.default_agent_mode()
+
+        if manifest.agent_mode == RwmgmtAgentMode.CONFD:
+           bootstrap_phase.rwmgmt.northbound_listing.append("confd_nb_schema_list.txt")
 
         # Add zookeeper info to the bootstrap phase
         if manifest.zookeeper is not None:
@@ -1350,6 +1419,10 @@ class ProtobufManifestConverter(object):
                 vm = pool.static_vm_list.add()
                 vm.vm_name = "vm_{}".format(ip.replace(".", "_"))
                 vm.vm_ip_address = ip
+        
+        # Set the netconf trace
+        if settings.mgmt_agent is not None:
+            settings.mgmt_agent.netconf_trace = manifest.netconf_trace
 
     def create_inventory_section(self, pb_manifest, manifest):
         """Creates the inventory section of the manifest

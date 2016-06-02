@@ -27,19 +27,19 @@ module ut-composite
     prefix "dns";
   }
 
-  import ntp {
-    prefix "ntp";
-  }
-
   import notif {
     prefix "notif";
   }
 
-  import rw-mgmtagt {
-    prefix "rw-mgmtagt";
-  }
-
   import vehicle-b {
     prefix "example";
+  }
+
+  import rw-agent-testbed {
+    prefix "rw-agent-testbed";
+  }
+
+  import rw-mgmtagt {
+    prefix "rw-mgmtagt";
   }
 }

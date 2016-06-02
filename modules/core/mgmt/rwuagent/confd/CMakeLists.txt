@@ -6,30 +6,6 @@
 
 cmake_minimum_required(VERSION 2.8)
 
-if(CONFD_FLAVOUR)
-  message(STATUS "Confd flavour set is ${CONFD_FLAVOUR}")
-
-  if(CONFD_FLAVOUR STREQUAL "FULL")
-    set(CONFD_DIR full)
-  elseif(CONFD_FLAVOUR STREQUAL "BASIC")
-    set(CONFD_DIR basic)
-  else()
-    message(FATAL_ERROR "Invalid value for CONFD_FLAVOUR: ${CONFD_FLAVOUR}")
-  endif()
-
-else()
-  message(FATAL_ERROR "CONFD_FLAVOUR definition not found")
-endif()
-
-##
-# Include the subdirs
-##
-set(subdirs
-    ${CONFD_DIR}/scripts
-   )
-
-rift_add_subdirs(SUBDIR_LIST ${subdirs})
-
 ##
 # Install the oper user aaa restrictions
 ##
@@ -39,4 +15,20 @@ install(FILES
     usr/data/security
   COMPONENT
     ${PKG_LONG_NAME}
+  )
+
+##
+# Install the confd northbound schema listing.
+##
+install(FILES
+    confd_nb_schema_list.txt 
+  DESTINATION
+    usr/data/manifest
+  COMPONENT
+    ${PKG_LONG_NAME}
+  )
+
+install(FILES rw_confd_prototype.conf
+  DESTINATION etc
+  COMPONENT ${PKG_LONG_NAME}
   )

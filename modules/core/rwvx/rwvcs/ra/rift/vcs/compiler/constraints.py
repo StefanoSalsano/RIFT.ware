@@ -69,23 +69,6 @@ class UniqueUAgent(SystemConstraint):
             raise exc.ConstraintError('non-unique uagent')
 
 
-class NoMoreThanOneConfd(SystemConstraint):
-    def __call__(self, sysinfo):
-        """Check that the system contains 0 or 1 confd processes
-
-        Arguments:
-            sysinfo - a SystemInfo object
-
-        Raises:
-            A ConstraintError is raised if there is more than 1 Confd process
-            in the system.
-
-        """
-        processes = sysinfo.list_by_class(rift.vcs.Confd)
-        if len(processes) > 1:
-            raise exc.ConstraintError('more than one confd process found')
-
-
 class AdjacentAgentRestconfTasklets(SystemConstraint):
     def __call__(self, sysinfo):
         """Check that the system contains adjacent uAgent and restconf tasklets

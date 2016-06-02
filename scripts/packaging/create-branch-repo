@@ -1,10 +1,13 @@
 #!/bin/bash
 
+# 
+# (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
+#
+
 # This script create a basic web repo for a given branch name and version number.
 # It handles the directory creation, html header/footer setup, permissions, and an initial createrepo.
 #
-#
-# !!! needs to be run as root on boson or with a proper root@boson ssh config !!! -put sanity checks is for this
+# !!! needs to be run with a proper root@boson ssh config !!! -put sanity checks in for this
 #
 
 # arguments
@@ -43,8 +46,9 @@ nc='\e[0m'              # ${nc} (no color - disables previous color selection)
 # functions
 function ssh_cmd {
 	echo -e "${yellow}=== running: ssh ${USER}@${HOST} "$@" ${nc}"
-	#ret=`ssh ${USER}@${HOST} "$@"`
+
 	ssh ${USER}@${HOST} "$@"
+	#ret=`ssh ${USER}@${HOST} "$@"`
 	#echo $ret
 
        	if [[ "$?" -gt 0 ]]; then
@@ -62,21 +66,21 @@ function usage {
 	echo -e "This script create a basic web repo for a given branch name and version number."
 	echo -e "It handles the directory creation, html header/footer setup, permissions, and an initial createrepo. "
 	echo -e "${yellow} "
-	echo -e "Usage: ./create-branch-repo qa 4.1"
+	echo -e "Usage: ./create-branch-repo <BRANCH> <VERSION>		ex. ./create-branch-repo coreha 4.1"
 	echo -e "${nc}"
 	echo -e "-----------------------------------------------------------------------------------------------------------------"
 }
 
 # sanity
 if [[ "${NEWREPO}" == '' ]]; then
-	echo -e "${red}You must pass the newrepo as arg1${nc}"
+	echo -e "${red}You must pass the newrepo as arg1! ${nc}"
 	usage
 	exit 1
 fi
 
+###############################################################################################################
 # MAIN
-#ssh_cmd uptime
-#ssh_cmd hostname
+###############################################################################################################
 
 # check
 ssh_cmd ls -all ${REPO_BASE}
@@ -117,13 +121,10 @@ ssh_cmd "sed -i 's/BRANCHNAME/${NEWREPO}/g' 	/home1/autobot/www/mirrors/releases
 ssh_cmd "sed -i 's/VERSION/${VER}/g' 		/home1/autobot/www/mirrors/releases/repos/${NEWREPO}.repo"
 
 
-# return code test
-#ssh_cmd this_aint_a_command
-
 
 echo -e "${purple}"
 echo -e "==========================================================================================================================="
-echo -e " Done. Your new repo should be avaiable online @ ${WEB_URL} "
+echo -e " Done. Your new repo should be available online @ ${WEB_URL} "
 echo -e " "
 echo -e " You can install it into a VM with: curl -o /etc/yum.repos.d/riftware-${VER}-${NEWREPO}.repo http://repo.riftio.com/releases/repos/${NEWREPO}.repo "
 echo -e " "

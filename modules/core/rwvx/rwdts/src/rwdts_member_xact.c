@@ -389,6 +389,43 @@ rwdts_member_process_query_action(rwdts_xact_t*                xact,
     }
   }
 
+  if (flags & RWDTS_XACT_FLAG_RETURN_PAYLOAD) {
+
+    RW_ASSERT((action == RWDTS_QUERY_CREATE) || (action == RWDTS_QUERY_UPDATE));
+    rwdts_member_query_rsp_t rsp;
+    ProtobufCMessage*        single_rsp = NULL;
+
+    rw_keyspec_path_t *trunc_ks = NULL;
+    RW_ZERO_VARIABLE(&rsp);
+    rsp.msgs = &single_rsp;
+
+    rs = RW_KEYSPEC_PATH_CREATE_DUP(keyspec, NULL, &trunc_ks, NULL);
+    RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+    size_t depth_r = rw_keyspec_path_get_depth(reg->keyspec);
+
+    rs = rw_keyspec_path_trunc_suffix_n(trunc_ks, NULL, depth_r);
+    RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+    rs = rwdts_member_reg_handle_get_element_keyspec((rwdts_member_reg_handle_t)reg,
+                                                     trunc_ks,
+                                                     xact,
+                                                     NULL,
+                                                     (const struct ProtobufCMessage **)&rsp.msgs[0]);
+
+    rsp.n_msgs = rsp.msgs[0]?1:0;
+    rsp.evtrsp = RWDTS_EVTRSP_ACK;
+    rsp.ks = trunc_ks;
+    rwdts_member_send_response(xact, (rwdts_query_handle_t)match, &rsp);
+    if (reg->shard && reg->shard->appdata && (rs == RW_STATUS_SUCCESS)) {
+      if (rsp.msgs[0]) {
+        protobuf_c_message_free_unpacked(NULL, rsp.msgs[0]);
+      }
+      rwdts_shard_handle_appdata_safe_put_exec(reg->shard, reg->shard->appdata->scratch_safe_id);
+    }
+    RW_KEYSPEC_PATH_FREE(trunc_ks, NULL, NULL);
+  }
+
   // if this is a publisher registration and is a read and no prepare callback is registered
   // then respond with the data asscoiated with the registation
 
@@ -672,7 +709,7 @@ rwdts_member_xact_fsm_state_init(rwdts_xact_t*           xact,
       if (rs == RW_STATUS_SUCCESS) {
         fsm_status = FSM_OK;
         if (!rwdts_is_transactional(xact)) {
-          if (xquery->query->flags&RWDTS_FLAG_SOLICIT_RSP) {
+          if (xquery->query->flags&RWDTS_XACT_FLAG_SOLICIT_RSP) {
             rwdts_process_solicit_rsp_advise(xact, xquery->query);
           } else {
             rwdts_store_cache_obj(xact);
@@ -1688,14 +1725,12 @@ rwdts_member_xact_handle_commit(rwdts_xact_t *xact, RWDtsXact *input)
 
   xact->evtrsp = RWDTS_EVTRSP_NA;
 
-  rwdts_member_registration_t *reg = NULL;
+  rwdts_reg_commit_record_t *reg_crec = NULL;
+  reg_crec = RW_SKLIST_HEAD(&(xact->reg_cc_list), rwdts_reg_commit_record_t);
+  while(reg_crec && !abrt) {
+    rwdts_member_registration_t *reg = reg_crec->reg;
 
-  reg = RW_SKLIST_HEAD(&(apih->reg_list), rwdts_member_registration_t);
-  while(reg && !abrt) {
-    rwdts_reg_commit_record_t *reg_crec = NULL;
-    reg_crec = rwdts_member_find_reg_commit_record(xact, reg);
-
-    if (reg_crec) {
+    {
       if (reg->cb.cb.commit) {
         RWDTS_API_LOG_XACT_EVENT(xact->apih, xact, RwDtsApiLog_notif_CommitCbInvoked,
                                  "DTS member Invoking commit callback",
@@ -1731,7 +1766,7 @@ rwdts_member_xact_handle_commit(rwdts_xact_t *xact, RWDtsXact *input)
         xact->evtrsp = RWDTS_EVTRSP_ACK;
       }
     }
-    reg = RW_SKLIST_NEXT(reg, rwdts_member_registration_t, element);
+    reg_crec = RW_SKLIST_NEXT(reg_crec, rwdts_reg_commit_record_t, element);
   }
   if (abrt) {
     xact->evtrsp = RWDTS_EVTRSP_NACK;
@@ -1831,15 +1866,13 @@ rwdts_member_xact_handle_precommit(rwdts_xact_t *xact, RWDtsXact *input)
 
   xact->evtrsp = RWDTS_EVTRSP_NA;
 
-  rwdts_member_registration_t *reg = NULL;
-
-  reg = RW_SKLIST_HEAD(&(apih->reg_list), rwdts_member_registration_t);
-  while(reg) {
+  rwdts_reg_commit_record_t *reg_crec = NULL;
+  reg_crec = RW_SKLIST_HEAD(&(xact->reg_cc_list), rwdts_reg_commit_record_t);
+  while(reg_crec) {
     /* Found a successfull match -- rs == RW_STATUS_SUCCESS &&  reg != NULL */
     rwdts_member_rsp_code_t rsp_code = RWDTS_ACTION_OK;
-    rwdts_reg_commit_record_t *reg_crec = NULL;
-    reg_crec = rwdts_member_find_reg_commit_record(xact, reg);
-    if (reg_crec) {
+    rwdts_member_registration_t *reg = reg_crec->reg;
+    {
       if (reg->cb.cb.precommit) {
         RWDTS_API_LOG_XACT_EVENT(xact->apih, xact, RwDtsApiLog_notif_PrecommitCbInvoked,
                                  "DTS member Invoking precommit callback",
@@ -1884,7 +1917,7 @@ rwdts_member_xact_handle_precommit(rwdts_xact_t *xact, RWDtsXact *input)
         xact->evtrsp = RWDTS_EVTRSP_ACK;
       }
     }
-    reg = RW_SKLIST_NEXT(reg, rwdts_member_registration_t, element);
+    reg_crec = RW_SKLIST_NEXT(reg_crec, rwdts_reg_commit_record_t, element);
   } /* HASH_ITER */
   if (abrt) {
     xact->evtrsp = RWDTS_EVTRSP_NACK;
@@ -1952,19 +1985,15 @@ rwdts_member_xact_handle_abort(rwdts_xact_t *xact, RWDtsXact *input)
 
   xact->evtrsp = RWDTS_EVTRSP_NA;
 
-  rwdts_member_registration_t *reg = NULL;
+  rwdts_reg_commit_record_t *reg_crec = NULL;
+  reg_crec = RW_SKLIST_HEAD(&(xact->reg_cc_list), rwdts_reg_commit_record_t);
 
-  reg = RW_SKLIST_HEAD(&(apih->reg_list), rwdts_member_registration_t);
-  while (reg) {
+  while (reg_crec) {
     /* Found a successfull match -- rs == RW_STATUS_SUCCESS &&  reg != NULL */
     rwdts_member_rsp_code_t rsp_code;
-    rwdts_reg_commit_record_t *reg_crec = NULL;
-    reg_crec = rwdts_member_find_reg_commit_record(xact, reg);
+    rwdts_member_registration_t *reg = reg_crec->reg;
 
-    if (reg_crec) {
-      rwdts_reg_commit_record_t *reg_crec = NULL;
-      reg_crec = rwdts_member_find_reg_commit_record(xact, reg);
-
+    {
       if (reg->cb.cb.abort) {
         RWDTS_API_LOG_XACT_EVENT(xact->apih, xact, RwDtsApiLog_notif_AbortCbInvoked,
                                  "DTS member Invoking abort callback",
@@ -2001,7 +2030,7 @@ rwdts_member_xact_handle_abort(rwdts_xact_t *xact, RWDtsXact *input)
         xact->evtrsp = RWDTS_EVTRSP_ACK;
       }
     }
-    reg = RW_SKLIST_NEXT(reg, rwdts_member_registration_t, element);
+    reg_crec = RW_SKLIST_NEXT(reg_crec, rwdts_reg_commit_record_t, element);
   } /* HASH_ITER */
   if (abrt) {
     /* This being an abort operation in the first place, this NACK

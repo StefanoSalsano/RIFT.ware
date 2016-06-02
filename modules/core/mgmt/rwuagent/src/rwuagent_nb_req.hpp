@@ -16,6 +16,7 @@
 #define CORE_MGMT_RWUAGENT_NB_REQ_HPP_
 
 #include "rwuagent.h"
+#include "rwuagent_request_mode.hpp"
 
 namespace rw_uagent {
 
@@ -131,6 +132,14 @@ class NbReq
   }
 
  protected:
+  /*!
+   * Merges the changes obtained from SBreq instance
+   * into instance config DOM on COMMIT event
+   * from confd.
+   */
+  void commit_changes();
+
+ protected:
   /// The owning uAgent.
   Instance* instance_;
 
@@ -139,6 +148,15 @@ class NbReq
 
   /// The type of client.
   RwMgmtagt_NbReqType nbreq_type_;
+
+  /* Below members are valid only for Nb instances
+   * working with SbEditCfg
+   */
+  /// The data borrowed from SBreq during its response callback
+  rw_yang::XMLDocument::uptr_t sb_delta_ = nullptr;
+  
+  /// The delete ks list borrowed from SBReq during its response callback
+  std::list<UniquePtrKeySpecPath::uptr_t> sb_delete_ks_;
 };
 
 
@@ -194,6 +212,11 @@ public:
 
   // ATTN: Need or drop?
   const NetconfReq* req_;
+
+  // The netconf operation to perform
+  NetconfOperations operation_;
+
+  std::string request_str_;
 
   /// The rwmsg response closure, needed to send back response
   NetconfRsp_Closure rsp_closure_;
@@ -265,7 +288,7 @@ public:
   NbReqInternal(
     Instance* instance,
     SbReqRpc* parent_rpc,
-    const RwMgmtagt_PbRequest* pb_req );
+    const RwMgmtagtDts_PbRequest* pb_req );
   ~NbReqInternal();
 
   // cannot copy
@@ -293,6 +316,9 @@ public:
 
 private:
 
+  std::string get_response_string(
+      rw_yang::XMLDocument::uptr_t rsp_dom);
+
   void send_success(
     const rw_keyspec_path_t* ks,
     const ProtobufCMessage* msg );
@@ -304,9 +330,60 @@ private:
   void send_error(
     NetconfErrorList* nc_errors );
 
+  void async_dequeue_pb_req();
+
+  static void dequeue_pb_req_cb(void*);
+
 private:
   SbReqRpc* parent_rpc_;
-  const RwMgmtagt_PbRequest* pb_req_;
+  const RwMgmtagtDts_PbRequest* pb_req_;
+  RequestMode request_mode_;
+};
+
+
+// Fwd Decl.
+class XMLMgmtSystem;
+
+/*!
+ * An internal northbound client instance
+ * used only for handliing DTS transactions during reload
+ * of XML configuration.
+ */
+class NbReqXmlReload
+  : public NbReq
+{
+public:
+  NbReqXmlReload(Instance* instance, XMLMgmtSystem* mgmt, std::string reload_xml);
+  ~NbReqXmlReload();
+
+  // cannot copy
+  NbReqXmlReload(const NbReqXmlReload&) = delete;
+  void operator=(const NbReqXmlReload&) = delete;
+
+public:
+  StartStatus execute();
+
+  StartStatus respond(
+    SbReq* sbreq,
+    rw_yang::XMLDocument::uptr_t rsp_dom
+  ) override;
+  
+  StartStatus respond(
+    SbReq* sbreq,
+    const rw_keyspec_path_t* ks,
+    const ProtobufCMessage* msg
+  ) override;
+  
+  StartStatus respond(
+    SbReq* sbreq,
+    NetconfErrorList* nc_errors
+  ) override;
+
+private:
+  XMLMgmtSystem* mgmt_ = nullptr;
+
+  // XML String that is to be reloaded
+  std::string reload_xml_;
 };
 
 

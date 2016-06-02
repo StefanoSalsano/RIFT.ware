@@ -59,17 +59,10 @@ class ResourceMgrConfig(object):
             self._log.debug("Received on_delete_cloud_account_prepare: %s", account_name)
             self._parent.delete_cloud_account_config(account_name, dry_run=True)
 
-        @asyncio.coroutine
-        def on_update_cloud_account_prepare(account):
-            raise NotImplementedError(
-                    "Resource manager does not support updating cloud account"
-                    )
-
         cloud_callbacks = rift.mano.cloud.CloudAccountConfigCallbacks(
                 on_add_apply=on_add_cloud_account_apply,
                 on_delete_apply=on_delete_cloud_account_apply,
                 on_delete_prepare=on_delete_cloud_account_prepare,
-                on_update_prepare=on_update_cloud_account_prepare,
                 )
 
         self._cloud_sub = rift.mano.cloud.CloudAccountConfigSubscriber(

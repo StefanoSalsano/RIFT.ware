@@ -2801,13 +2801,12 @@ enum {
 
 typedef struct rift_cmdargs_s {
   int   trace_level;
-  int   vm_instance_id;
   char* schema_listing;
   int   use_netconf;
   char* netconf_host;
   char* netconf_port;
-  char* netconf_username;
-  char* netconf_passwd;
+  char* username;
+  char* passwd;
 }rift_cmdargs_t;
 
 /***************************************/

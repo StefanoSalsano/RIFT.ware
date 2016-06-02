@@ -53,7 +53,7 @@ public:
   SchemaTestFixture() {
     // dynamic schema paths
     rift_root_ = fs::path(getenv("RIFT_INSTALL"));
-    latest_path_ = rift_root_ / std::string(LATEST_NORTHBOUND_VER_DIR);
+    latest_path_ = rift_root_ / std::string(RW_SCHEMA_VER_LATEST_NB_PATH);
 
     schema_path_ = fs::path(getenv("RIFT_INSTALL")) / fs::path(TEST_SCHEMA_PATH);
     yang_path_   = schema_path_ / "yang";

@@ -5,8 +5,9 @@
 # @author Karun Ganesharatnam (karun.ganesharatnam@riftio.com)
 # @date 02/29/2016
 # @brief This module contains classes representing VMs used in MANO System
-# 
+#
 import rift.vcs
+import rift.app.strongswan.tasklet
 
 class StandardLeadVM(rift.vcs.VirtualMachine):
     """
@@ -24,12 +25,12 @@ class StandardLeadVM(rift.vcs.VirtualMachine):
         """
         name = "RW.VDU.LEAD.STND" if name is None else name
         super().__init__(name=name, *args, **kwargs)
+        self.config_ready = self.config_ready and self.start
 
         self.add_proc(rift.vcs.uAgentTasklet())
         self.add_proc(rift.vcs.RiftCli())
         self.add_proc(rift.vcs.MsgBrokerTasklet())
         self.add_proc(rift.vcs.RestconfTasklet(rest_port="8008"))
-        self.add_proc(rift.vcs.Watchdog())
         self.add_proc(rift.vcs.RestPortForwardTasklet())
 
         self.add_proc(rift.vcs.DtsRouterTasklet())
@@ -49,7 +50,7 @@ class StandardVM(rift.vcs.VirtualMachine):
         """
         name = "RW.VDU.MEMB.STND" if name is None else name
         super().__init__(name=name, *args, **kwargs)
-
+        self.config_ready = self.config_ready and self.start
 
 class LeadFastpathVM(rift.vcs.VirtualMachine):
     """
@@ -66,44 +67,62 @@ class LeadFastpathVM(rift.vcs.VirtualMachine):
         """
         name = "RW.VDU.MEMB.DDPL" if name is None else name
         super().__init__(name=name, *args, **kwargs)
+        self.config_ready = self.config_ready and self.start
+
+        fpctrl_tasklets=[rift.vcs.Controller(), rift.vcs.Controller(), rift.vcs.SfMgr(),
+                  rift.vcs.SffMgr()]
+
+        for tl in fpctrl_tasklets:
+            tl.config_ready = self.config_ready
+
         self.subcomponents = [
                 rift.vcs.Proc(
                     name="rw.proc.fpath",
                     run_as="root",
-                    tasklets=[rift.vcs.Fastpath(name='RW.Fpath')],
+                    config_ready=self.config_ready,
+                    tasklets=[rift.vcs.Fastpath(name='RW.Fpath',
+                                                config_ready=self.config_ready)],
                     ),
                 rift.vcs.Proc(
                     name="rw.proc.ncmgr",
                     run_as="root",
-                    tasklets=[rift.vcs.NetworkContextManager()],
+                    config_ready=self.config_ready,
+                    tasklets=[rift.vcs.NetworkContextManager(config_ready=self.config_ready)],
                     ),
                 rift.vcs.Proc(
                     name="rw.proc.fpctrl",
-                    tasklets=[rift.vcs.Controller(),rift.vcs.NNLatencyTasklet(), rift.vcs.Controller(), rift.vcs.SfMgr(),
-                              rift.vcs.SffMgr()],
+                    config_ready=self.config_ready,
+                    tasklets=fpctrl_tasklets,
                     ),
                 rift.vcs.Proc(
                     name="rw.proc.ifmgr",
-                    tasklets=[rift.vcs.InterfaceManager()],
+                    config_ready=self.config_ready,
+                    tasklets=[rift.vcs.InterfaceManager(config_ready=self.config_ready)],
                     ),
                 ]
 
 
-class DistDataPathLeadVM(StandardLeadVM):
+class LeadFastpathIPSECVM(LeadFastpathVM):
     """
-    This class represents VM with master components and
-    LeadVM components combined into a single VM
+    This class represents the Strongswan VM.
     """
     def __init__(self, name=None, *args, **kwargs):
-        """Creates a DistDataPathLeadVM object.
-
-        Arguments:
-            name          - the name of the VM
-
+        """Creates a StrongswanLeadVM object.
+         Arguments:
+             ip - ip address of the VM
+             name - name of the VM
         """
-        name = "RW.VDU.LEAD.DDPL" if name is None else name
+        name = "RW.VDU.MEMB.DDPL-IPSEC" if name is None else name
         super().__init__(name=name, *args, **kwargs)
-        self.subcomponents.extend(LeadFastpathVM().subcomponents)
+
+        self.subcomponents.extend([
+                rift.vcs.Proc(
+                    name="rw.proc.strongswan",
+                    run_as="root",
+                    config_ready=self.config_ready,
+                    tasklets=[rift.app.strongswan.tasklet.StrongswanTasklet(config_ready=self.config_ready)],
+                    ),
+                ])
 
 
 class FastpathVM(rift.vcs.VirtualMachine):
@@ -120,12 +139,13 @@ class FastpathVM(rift.vcs.VirtualMachine):
         """
         name = "RW.VDU.MEMB.DDPM" if name is None else name
         super().__init__(name=name, *args, **kwargs)
+        self.config_ready = self.config_ready and self.start
 
         self.subcomponents = [
                 rift.vcs.Proc(
                     name="rw.proc.fpath",
                     run_as="root",
-                    tasklets=[rift.vcs.Fastpath(name='RW.Fpath')],
+                    config_ready=self.config_ready,
+                    tasklets=[rift.vcs.Fastpath(name='RW.Fpath', config_ready=self.config_ready)],
                     ),
                 ]
-

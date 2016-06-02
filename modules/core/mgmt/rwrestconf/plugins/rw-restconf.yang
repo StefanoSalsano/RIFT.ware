@@ -22,6 +22,14 @@ module rw-restconf
   import ietf-restconf-monitoring {
     prefix "rcmon";
   }
+  
+  import rw-mgmtagt {
+    prefix "rw-mgmtagt";
+  }
+  
+  import rw-mgmtagt-dts {
+    prefix "rw-mgmtagt-dts";
+  }
 
   description "Rift RestConf Data Model";
   revision 2015-08-26 {

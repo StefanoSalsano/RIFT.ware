@@ -102,6 +102,7 @@ enum ncx_cached_t
   NCX_CACHED_NODE_PB_FIELD_NAME,
   NCX_CACHED_NODE_AUGMENT,
   NCX_CACHED_NODE_LEAFREF_REF,
+  NCX_CACHED_NODE_HAS_DEFAULT,
   NCX_CACHED_NODE_end,
 
   NCX_CACHED_KEY_base = NCX_CACHED_NULL,
@@ -596,7 +597,7 @@ public:
   rw_status_t parse_value(const char* value_string);
   rw_status_t parse_partial(const char* value_string) { return parse_value(value_string); }
   YangExtNcx* get_first_extension();
-  virtual int32_t get_integer_value() {return 0;};
+  virtual uint32_t get_position() {return 0;};
 
 public:
   virtual YangExtNcx* locked_update_first_extension();
@@ -715,7 +716,7 @@ public:
 
 public:
   // ATTN: const char* get_syntax();
-  virtual int32_t get_integer_value();
+  virtual uint32_t get_position();
 
 protected:
   virtual YangExtNcx* locked_update_first_extension();
@@ -770,7 +771,7 @@ public:
 
 public:
   // ATTN: const char* get_syntax();
-  int32_t get_integer_value() override;
+  uint32_t get_position() override;
 
 public:
   //! The libncx enum value definition.
@@ -949,6 +950,7 @@ class YangNodeNcx
   bool is_key() override;
   bool is_presence() override;
   bool is_mandatory() override;
+  bool has_default() override;
   YangNode* get_parent() override;
   YangNodeNcx* get_first_child() override;
   YangNodeNcx* get_next_sibling() override;
@@ -963,6 +965,7 @@ class YangNodeNcx
   YangNode* get_reusable_grouping() override;
   YangNodeNcx* get_case() override;
   YangNodeNcx* get_choice() override;
+  YangNodeNcx* get_default_case() override;
   virtual bool is_conflicting_node(YangNode *other) override;
   const char* get_pbc_field_name() override;
   void set_mode_path() override;
@@ -971,7 +974,7 @@ class YangNodeNcx
   bool is_rpc_input() override;
   bool is_rpc_output() override;
   bool is_notification() override;
-  std::string get_enum_string(int32_t value) override;
+  std::string get_enum_string(uint32_t value) override;
   YangNode* get_leafref_ref() override;
   std::string get_leafref_path_str() override;
   bool app_data_is_cached(const AppDataTokenBase* token) const noexcept override;
@@ -1125,6 +1128,9 @@ class YangNodeNcx
   //! uses defined.  nullptr if not from a uses
   NcxCached<YangUsesNcx*,NCX_CACHED_NODE_USES> uses_;
 
+  /// Does the node has desendant node that has a default value
+  NcxCached<bool, NCX_CACHED_NODE_HAS_DEFAULT> has_default_;
+
   //! Protobuf-c field name.  Derived from name or the
   //! RW_YANG_PB_EXT_FLD_NAME extension.  Protected by
   //! NCX_CACHED_NODE_PB_FIELD_NAME.
@@ -1165,7 +1171,7 @@ public:
 public:
   std::string get_location() { return "internal-root"; }
   const char* get_description() { return "Root node"; }
-  const char* get_name() { return "root"; }
+  const char* get_name() { return "data"; }
   const char* get_prefix() { return ""; }
   const char* get_ns() { return ""; }
   rw_yang_stmt_type_t get_stmt_type() { return RW_YANG_STMT_TYPE_ROOT; }

@@ -2469,3 +2469,71 @@ rwdts_shard_del(rwdts_shard_t** parent)
     }
   }
 }
+
+rw_status_t
+rwdts_member_shard_promote_to_publisher(rwdts_shard_handle_t *shard, char* member)
+{
+  RW_ASSERT(shard);
+  rwdts_shard_chunk_info_t *chunk=NULL, *tmp_chunk;
+  rwdts_chunk_member_info_t *mbr_elem = NULL;
+
+  HASH_ITER(hh_chunk, shard->shard_chunks, chunk, tmp_chunk) {
+    mbr_elem = NULL;
+    HASH_FIND(hh_mbr_record, chunk->elems.member_info.sub_mbr_info, member, strlen(member), mbr_elem);
+    if (mbr_elem) {
+      // Remove the member-record from subscriber list
+      HASH_DELETE(hh_mbr_record, chunk->elems.member_info.sub_mbr_info, mbr_elem); 
+
+      // Reset SUBSCRIBER flag and set PUBLISHER flag
+      mbr_elem->flags &= ~RWDTS_FLAG_SUBSCRIBER;
+      mbr_elem->flags |= RWDTS_FLAG_PUBLISHER;
+
+      // Insert the member record into publisher list
+      HASH_ADD_KEYPTR(hh_mbr_record, chunk->elems.member_info.pub_mbr_info, member, strlen(member), mbr_elem); 
+      chunk->elems.member_info.n_sub_reg--;
+      chunk->elems.member_info.n_pub_reg++;
+    }
+  }
+  return RW_STATUS_SUCCESS;
+}
+
+rw_status_t
+rwdts_rts_shard_promote_element(rwdts_shard_t *shard, rwdts_chunk_id_t chunk_id, 
+                                uint32_t membid, char *msgpath)
+{
+  rwdts_shard_chunk_info_t *shard_chunk;
+  rwdts_chunk_rtr_info_t *rtr_record = NULL;
+
+  RW_ASSERT_TYPE(shard, rwdts_shard_t);
+
+  RW_ASSERT(membid <= RWDTS_SHARD_CHUNK_SZ);
+
+  // add record to last chunk, if last chunk is full add new chunk 
+  HASH_FIND(hh_chunk, shard->shard_chunks, &chunk_id, sizeof(chunk_id), shard_chunk);
+
+  if (!shard_chunk) { // kick the bucket
+    return RW_STATUS_FAILURE;
+  }
+
+  HASH_FIND(hh_rtr_record, shard_chunk->elems.rtr_info.sub_rtr_info, msgpath, strlen(msgpath), rtr_record);
+
+  if (!rtr_record) {
+    return RW_STATUS_FAILURE;
+  }
+
+  HASH_DELETE(hh_rtr_record, shard_chunk->elems.rtr_info.sub_rtr_info, rtr_record);
+
+  // Reset SUBSCRIBER flag and set PUBLISHER flag
+  rtr_record->flags &= ~RWDTS_FLAG_SUBSCRIBER;
+  rtr_record->flags |= RWDTS_FLAG_PUBLISHER;
+
+ 
+  // Insert the member record into publisher list
+  HASH_ADD_KEYPTR(hh_rtr_record, shard_chunk->elems.rtr_info.pub_rtr_info, msgpath, strlen(msgpath), rtr_record);
+
+  shard_chunk->elems.member_info.n_sub_reg--;
+  shard_chunk->elems.member_info.n_pub_reg++;
+
+  return RW_STATUS_SUCCESS;
+ 
+}

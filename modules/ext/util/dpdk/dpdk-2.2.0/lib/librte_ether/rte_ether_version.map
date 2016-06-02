@@ -114,6 +114,6 @@ DPDK_2.2 {
 	rte_eth_tx_queue_setup;
 	rte_eth_xstats_get;
 	rte_eth_xstats_reset;
-
+        rte_eth_hw_link_get;
 	local: *;
 };

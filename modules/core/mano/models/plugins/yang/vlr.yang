@@ -56,6 +56,13 @@ module vlr
         type string;
       }
 
+      leaf nsr-id-ref {
+        description 
+            "NS instance identifier. 
+             This is a leafref /nsr:ns-instance-config/nsr:nsr/nsr:id";
+        type yang:uuid;
+      }
+
       leaf res-id {
         description "Identifier for resmgr id mapping";
         type yang:uuid;

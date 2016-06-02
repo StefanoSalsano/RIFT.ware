@@ -292,7 +292,7 @@ class ResourceMgrMock(object):
                             response_info, response_xpath
                             )
                     yield from self._dts.query_update(response_xpath,
-                                                      rwdts.Flag.ADVISE,
+                                                      rwdts.XactFlag.ADVISE,
                                                       response_info)
                     return
                 else:
@@ -304,7 +304,7 @@ class ResourceMgrMock(object):
             response_info = RwResourceMgrYang.VDUEventData_ResourceInfo()
             response_info.resource_state = 'failed'
             yield from self._dts.query_update(response_xpath,
-                                              rwdts.Flag.ADVISE,
+                                              rwdts.XactFlag.ADVISE,
                                               response_info)
             return
 

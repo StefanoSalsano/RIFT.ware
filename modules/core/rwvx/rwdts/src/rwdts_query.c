@@ -654,14 +654,14 @@ rwdts_xact_init_query(rwdts_api_t*                  apih,
 
   query->flags = query_flags;
 
-  if (query->flags & RWDTS_FLAG_DEPTH_FULL) {
-    query->flags &= ~(RWDTS_FLAG_DEPTH_LISTS|RWDTS_FLAG_DEPTH_ONE);
-  } else if (query->flags & RWDTS_FLAG_DEPTH_LISTS) {
-    query->flags &= ~RWDTS_FLAG_DEPTH_ONE;
+  if (query->flags & RWDTS_XACT_FLAG_DEPTH_FULL) {
+    query->flags &= ~(RWDTS_XACT_FLAG_DEPTH_LISTS|RWDTS_XACT_FLAG_DEPTH_ONE);
+  } else if (query->flags & RWDTS_XACT_FLAG_DEPTH_LISTS) {
+    query->flags &= ~RWDTS_XACT_FLAG_DEPTH_ONE;
   }
 
-  if (!(query->flags & (RWDTS_FLAG_DEPTH_LISTS|RWDTS_FLAG_DEPTH_ONE))) {
-    query->flags |= RWDTS_FLAG_DEPTH_FULL;
+  if (!(query->flags & (RWDTS_XACT_FLAG_DEPTH_LISTS|RWDTS_XACT_FLAG_DEPTH_ONE))) {
+    query->flags |= RWDTS_XACT_FLAG_DEPTH_FULL;
   }
 
   query->has_queryidx = 1;
@@ -1127,6 +1127,13 @@ rwdts_xact_block_add_query_int(rwdts_xact_block_t*          block,
     return RW_STATUS_FAILURE;
   }
 
+  if (flags & RWDTS_XACT_FLAG_RETURN_PAYLOAD) {
+    if ((action != RWDTS_QUERY_CREATE) &&
+        (action != RWDTS_QUERY_UPDATE)) {
+      return RW_STATUS_FAILURE;
+    }
+  }
+
   ProtobufCMessage *dup_msg = NULL;
   if (msg) {
     dup_msg = protobuf_c_message_duplicate(NULL, msg, msg->descriptor);
@@ -1224,15 +1231,15 @@ rwdts_advise_query_proto_int(rwdts_api_t*                  apih,
 
   RW_ASSERT(xact_parent == NULL); /* not supported */
   RW_ASSERT(action != RWDTS_QUERY_INVALID);
-  RW_ASSERT(!(flags & RWDTS_FLAG_DEPTH_OBJECT));
-  RW_ASSERT(!(flags & RWDTS_FLAG_DEPTH_ONE));
+  RW_ASSERT(!(flags & RWDTS_XACT_FLAG_DEPTH_OBJECT));
+  RW_ASSERT(!(flags & RWDTS_XACT_FLAG_DEPTH_ONE));
   RW_ASSERT((!xact_parent && ((flags&RWDTS_XACT_FLAG_END))) ||
             xact_parent);
 
   if (out_xact) *out_xact = NULL;
   if (!xact) {
     xact = rwdts_api_xact_create(apih,
-                                flags|RWDTS_FLAG_ADVISE,
+                                flags|RWDTS_XACT_FLAG_ADVISE,
                                 cb ? cb->cb : NULL,
                                 cb ? cb->ud : NULL);
 
@@ -1251,7 +1258,7 @@ rwdts_advise_query_proto_int(rwdts_api_t*                  apih,
                                       keyspec,
                                       NULL,
                                       action,
-                                      flags|RWDTS_FLAG_ADVISE,
+                                      flags|RWDTS_XACT_FLAG_ADVISE,
                                       corrid,
                                       NULL,
                                       msg,

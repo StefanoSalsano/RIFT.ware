@@ -42,12 +42,10 @@ target_link_libraries(${PLUGIN_NAME}
   rwuagent_yang_gen
   rwuagentproto
   rwmsg
-  rwconfd
   rwyang
   ncx
   nanomsg
   rwdts_api
-  ${CMAKE_INSTALL_PREFIX}/usr/local/confd/lib/libconfd.so
   CoreFoundation
   ${CMAKE_INSTALL_PREFIX}/usr/lib/rift/plugins/librw_tasklet_plugin-1.0.so
   rwvcs
@@ -57,6 +55,14 @@ target_link_libraries(${PLUGIN_NAME}
   # System libraries
   xml2
   )
+
+if(NOT RIFT_AGENT_BUILD STREQUAL "XML_ONLY")
+  target_link_libraries(${PLUGIN_NAME} 
+    rwconfd
+    ${CMAKE_INSTALL_PREFIX}/usr/local/confd/lib/libconfd.so
+  )
+endif()
+
 
 add_dependencies(${PLUGIN_NAME} rwuagent rwuagentproto rwuagent_yang_pb )
 

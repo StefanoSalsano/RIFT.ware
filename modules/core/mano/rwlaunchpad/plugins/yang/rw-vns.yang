@@ -45,10 +45,6 @@ module rw-vns
     prefix "yang";
   }
 
-  import rw-iwp {
-    prefix "rwiwp";
-  }
-
   import rw-vlr {
     prefix "rwvlr";
   }

@@ -79,7 +79,7 @@ class DtsTestCase(unittest.TestCase):
             dts = rift.tasklets.DTS(tinfo, self.loop)
             yield from events[0].wait()
 
-            res_iter = yield from dts.read(xpath, rwdts.Flag.MERGE)
+            res_iter = yield from dts.read(xpath, rwdts.XactFlag.MERGE)
 
             for i in res_iter:
                 result = yield from i
@@ -139,7 +139,7 @@ class DtsTestCase(unittest.TestCase):
             dts = rift.tasklets.DTS(tinfo, self.loop)
             yield from events[0].wait()
 
-            res_iter = yield from dts.read(xpath, rwdts.Flag.MERGE)
+            res_iter = yield from dts.read(xpath, rwdts.XactFlag.MERGE)
 
             for i in res_iter:
                 result = yield from i
@@ -198,7 +198,7 @@ class DtsTestCase(unittest.TestCase):
             dts = rift.tasklets.DTS(tinfo, self.loop)
             yield from events[0].wait()
 
-            res_iter = yield from dts.read(xpath, rwdts.Flag.MERGE)
+            res_iter = yield from dts.read(xpath, rwdts.XactFlag.MERGE)
 
             for i in res_iter:
                 result = yield from i
@@ -273,7 +273,7 @@ class DtsTestCase(unittest.TestCase):
             yield from events[1].wait()
             res_iter = yield from dts.read(
                     xpath,
-                    rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+                    rwdts.XactFlag.MERGE)
 
             for i in res_iter:
                 result = yield from i
@@ -316,10 +316,10 @@ class DtsTestCase(unittest.TestCase):
             tinfo = self.new_tinfo('pub')
             dts = rift.tasklets.DTS(tinfo, self.loop)
 
-            yield from dts.create(xpath, rwdts.Flag.ADVISE, ret1)
+            yield from dts.create(xpath, rwdts.XactFlag.ADVISE, ret1)
             events[0].set()
             yield from events[1].wait()
-            yield from dts.update(xpath, rwdts.Flag.ADVISE, ret2)
+            yield from dts.update(xpath, rwdts.XactFlag.ADVISE, ret2)
             events[3].set()
 
             yield from events[2].wait()
@@ -371,7 +371,7 @@ class DtsTestCase(unittest.TestCase):
             results.append(reg.get_element(xpath))
             res_iter = yield from dts.read(
                     xpath,
-                    rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+                    rwdts.XactFlag.MERGE)
 
             for i in res_iter:
                 result = yield from i
@@ -415,13 +415,13 @@ class DtsTestCase(unittest.TestCase):
             tinfo = self.new_tinfo('pub')
             dts = rift.tasklets.DTS(tinfo, self.loop)
 
-            #yield from dts.create(xpath, rwdts.Flag.ADVISE|rwdts.Flag.TRACE, ret1)
-            yield from dts.create(xpath, rwdts.Flag.ADVISE, ret1)
+            #yield from dts.create(xpath, rwdts.XactFlag.ADVISE|rwdts.XactFlag.TRACE, ret1)
+            yield from dts.create(xpath, rwdts.XactFlag.ADVISE, ret1)
             events[0].set()
             yield from events[1].wait()
             #regh.update_element(xpath, ret2)
-            #yield from dts.update(xpath, rwdts.Flag.ADVISE|rwdts.Flag.TRACE, ret2)
-            yield from dts.update(xpath, rwdts.Flag.ADVISE, ret2)
+            #yield from dts.update(xpath, rwdts.XactFlag.ADVISE|rwdts.XactFlag.TRACE, ret2)
+            yield from dts.update(xpath, rwdts.XactFlag.ADVISE, ret2)
 
             @asyncio.coroutine
             def on_ready(regh, status):
@@ -486,7 +486,7 @@ class DtsTestCase(unittest.TestCase):
             results.append(reg.get_element(xpath))
             res_iter = yield from dts.read(
                     xpath,
-                    rwdts.Flag.MERGE|rwdts.Flag.CACHE)
+                    rwdts.XactFlag.MERGE)
 
             print ('------SUB:res_iter:', res_iter)
             for i in res_iter:
@@ -534,14 +534,14 @@ class DtsTestCase(unittest.TestCase):
             tinfo = self.new_tinfo('pub')
             dts = rift.tasklets.DTS(tinfo, self.loop)
 
-            #yield from dts.create(xpath, rwdts.Flag.ADVISE|rwdts.Flag.TRACE, ret)
-            yield from dts.create(xpath, rwdts.Flag.ADVISE, ret)
+            #yield from dts.create(xpath, rwdts.XactFlag.ADVISE|rwdts.XactFlag.TRACE, ret)
+            yield from dts.create(xpath, rwdts.XactFlag.ADVISE, ret)
             events[0].set()
             yield from events[1].wait()
 
             try:
-                #yield from dts.update(xpath, rwdts.Flag.ADVISE|rwdts.Flag.TRACE, ret)
-                yield from dts.update(xpath, rwdts.Flag.ADVISE, ret)
+                #yield from dts.update(xpath, rwdts.XactFlag.ADVISE|rwdts.XactFlag.TRACE, ret)
+                yield from dts.update(xpath, rwdts.XactFlag.ADVISE, ret)
             except rift.tasklets.dts.TransactionAborted:
                 abort_exception = True
             events[2].set()
@@ -647,7 +647,7 @@ class DtsTestCase(unittest.TestCase):
 
             yield from dts.update(
                     xpath,
-                    flags=rwdts.Flag.ADVISE,
+                    flags=rwdts.XactFlag.ADVISE,
                     msg=ret)
 
             yield from events[1].wait()

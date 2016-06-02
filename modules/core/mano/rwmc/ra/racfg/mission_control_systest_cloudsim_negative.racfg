@@ -10,7 +10,12 @@
   "networks":[],
   "vms":[
     {
-      "name": "VM",
+      "name": "rift_auto_mission_control",
+      "memory": 8192,
+      "cpus": 4
+    },
+    {
+      "name": "rift_auto_launchpad",
       "memory": 8192,
       "cpus": 4
     }

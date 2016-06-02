@@ -2,6 +2,7 @@
   <yang-modules>
     <module name="rw-base"/>
     <module name="rw-mgmtagt"/>
+    <module name="rw-mgmtagt-confd"/>
     <module name="rw-manifest"/>
     <module name="rw-vcs"/>
     <module name="rw-mc"/>
@@ -34,6 +35,7 @@
     <module name="rw-launchpad"/>
     <module name="rw-cloud"/>
     <module name="rw-sdn"/>
+    <module name="rw-config-agent"/>
   </yang-modules>
 
   <plugin-list>
@@ -72,6 +74,7 @@
     <addPrintHook path="perf-test" hook="rwcli_plugin:default_print"/>
     <addPrintHook path="rw-memlog-state" hook="rwcli_plugin:default_print"/>
     <addPrintHook path="sdn" hook="rwcli_plugin:default_print"/>
+    <addPrintHook path="config-agent" hook="rwcli_plugin:default_print"/>
     <addPrintHook path="mission-control" hook="rwcli_plugin:default_print"/>
     <addPrintHook path="network" hook="rwcli_plugin:default_print"/>
     <addPrintHook path="ns-instance-opdata" hook="rwcli_plugin:default_print"/>

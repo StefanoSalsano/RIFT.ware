@@ -336,12 +336,14 @@
         <nsd:name>Corporation Name</nsd:name>
         <nsd:data-type>string</nsd:data-type>
         <nsd:mandatory>true</nsd:mandatory>
+        <nsd:default-value>SP Test Corp</nsd:default-value>
       </nsd:parameter>
       <nsd:parameter>
         <nsd:name>Tunnel Key</nsd:name>
         <nsd:data-type>integer</nsd:data-type>
         <nsd:mandatory>true</nsd:mandatory>
         <nsd:default-value>10</nsd:default-value>
+        <nsd:hidden>true</nsd:hidden>
       </nsd:parameter>
       <nsd:parameter-group>
         <nsd:name>PE1</nsd:name>
@@ -350,24 +352,28 @@
           <nsd:data-type>integer</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>3000</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Interface Name</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>eth3</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Corp. Network</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>10.0.1.0/24</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Corp. Gateway</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>10.0.1.1</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:mandatory>false</nsd:mandatory>
       </nsd:parameter-group>
@@ -378,24 +384,28 @@
           <nsd:data-type>integer</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>3000</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Interface Name</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>eth3</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Corp. Network</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>10.0.2.0/24</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Corp. Gateway</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>10.0.2.1</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:mandatory>false</nsd:mandatory>
       </nsd:parameter-group>
@@ -406,24 +416,28 @@
           <nsd:data-type>integer</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>3000</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Interface Name</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>eth3</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Corp. Network</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>10.0.3.0/24</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Corp. Gateway</nsd:name>
           <nsd:data-type>string</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>10.0.3.1</nsd:default-value>
+          <nsd:hidden>true</nsd:hidden>
         </nsd:parameter>
         <nsd:mandatory>false</nsd:mandatory>
       </nsd:parameter-group>
@@ -435,12 +449,14 @@
         <nsd:name>Corporation Name</nsd:name>
         <nsd:data-type>string</nsd:data-type>
         <nsd:mandatory>true</nsd:mandatory>
+        <nsd:default-value>CorpA</nsd:default-value>
       </nsd:parameter>
       <nsd:parameter>
         <nsd:name>Tunnel Key</nsd:name>
         <nsd:data-type>integer</nsd:data-type>
         <nsd:mandatory>true</nsd:mandatory>
         <nsd:default-value>1</nsd:default-value>
+        <nsd:hidden>true</nsd:hidden>
       </nsd:parameter>
       <nsd:parameter-group>
         <nsd:name>PE1</nsd:name>
@@ -449,6 +465,7 @@
           <nsd:data-type>integer</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>101</nsd:default-value>
+          <nsd:read-only>true</nsd:read-only>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Interface Name</nsd:name>
@@ -477,6 +494,7 @@
           <nsd:data-type>integer</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>102</nsd:default-value>
+          <nsd:read-only>true</nsd:read-only>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Interface Name</nsd:name>
@@ -505,6 +523,7 @@
           <nsd:data-type>integer</nsd:data-type>
           <nsd:mandatory>true</nsd:mandatory>
           <nsd:default-value>108</nsd:default-value>
+          <nsd:read-only>true</nsd:read-only>
         </nsd:parameter>
         <nsd:parameter>
           <nsd:name>Interface Name</nsd:name>

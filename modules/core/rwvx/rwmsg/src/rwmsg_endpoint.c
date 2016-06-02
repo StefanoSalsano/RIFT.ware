@@ -850,10 +850,38 @@ rwmsg_method_t *rwmsg_endpoint_find_method(rwmsg_endpoint_t *ep,
   if (r) {
     struct rwmsg_methbinding_s *mb = (struct rwmsg_methbinding_s*)ck_ht_entry_value(&hent);
     if (mb->srvchans_ct) {
-      rwmsg_method_t *meth = mb->meth;
-      ck_pr_inc_32(&meth->refct);
-      RW_ASSERT(ep == mb->ep);
-      return meth;
+#if 1
+      if (ep == mb->ep) {
+        rwmsg_method_t *meth = mb->meth;
+        ck_pr_inc_32(&meth->refct);
+        return meth;
+      } else {
+#endif
+        RWMSG_RG_LOCK();
+        {
+          ck_ht_iterator_t iter = CK_HT_ITERATOR_INITIALIZER;
+          ck_ht_entry_t *ent=NULL;
+          while (ck_ht_next(&rwmsg_global.localdesttab, &iter, &ent)) {
+            RW_ASSERT(ent);
+            struct rwmsg_methbinding_s *mb = (struct rwmsg_methbinding_s *)ent->value;
+            RW_ASSERT(mb->srvchans_ct<=(sizeof(mb->srvchans)/sizeof(mb->srvchans[0])));
+            if (mb->ep == ep) {
+              rwmsg_method_t *meth = mb->meth;
+              if (meth
+                  && meth->pathhash == pathhash
+                  && meth->sig
+                  && meth->sig->payt == payt
+                  && meth->sig->methno == methno) {
+                RWMSG_RG_UNLOCK();
+                ck_pr_inc_32(&meth->refct);
+                return meth;
+              }
+            }
+            ent = NULL;
+          }
+        }
+        RWMSG_RG_UNLOCK();
+      }
     }
   }
 

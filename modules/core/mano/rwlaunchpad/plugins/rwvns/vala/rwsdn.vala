@@ -7,6 +7,13 @@ namespace RwSdn {
     public abstract RwTypes.RwStatus init(RwLog.Ctx log_ctx);
 
     /*
+     * Credential Validation related APIs
+     */
+    public abstract RwTypes.RwStatus validate_sdn_creds(
+      Rwsdn.SDNAccount account,
+      out Rwsdn.SdnConnectionStatus status);
+
+    /*
      * Configuring  related APIs
      */
     /* TODO */

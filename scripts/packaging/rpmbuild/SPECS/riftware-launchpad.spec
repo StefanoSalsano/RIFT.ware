@@ -10,6 +10,7 @@
 %define buildroot         %{_topdir}/%{name}-%{version}-root
 %define DST_RIFT_ROOT     %{_dst_rift_root}
 %define RIFT_ROOT         %{_rift_root}
+%define AGENT_BUILD       %{_agent_build}
 
 %define _binaries_in_noarch_packages_terminate_build   0 	# http://winzter143.blogspot.com/2011/11/linux-arch-dependent-binaries-in-noarch.html
 
@@ -77,8 +78,7 @@ echo "   Name:  %{name}"
 echo "Version:  %{version}.%{_buildnum}"
 echo "Release:  %{release}"
 echo "Source0:  %{name}-%{version}.tar.gz"
-
-
+echo "Agent_Build:  %{AGENT_BUILD}"
 
 
 # copy in service files to buildroot .install location
@@ -88,6 +88,10 @@ cp -p %{RIFT_ROOT}/scripts/packaging/services/%{name}/rwlp-stop.sh   %{buildroot
 cp -p %{RIFT_ROOT}/scripts/packaging/services/%{name}/rwlp.screenrc  %{buildroot}/%{DST_RIFT_ROOT}/.install/var/rift/services/%{name}/
 # and service to final OS location
 install -p -D -m 644 %{RIFT_ROOT}/scripts/packaging/services/%{name}/rwlp.service  %{buildroot}%{_unitdir}/rwlp.service
+
+# helpers
+mkdir -p %{buildroot}/%{DST_RIFT_ROOT}/.install/usr/bin/
+cp -p %{RIFT_ROOT}/scripts/packaging/services/%{name}/riftware-reset-data.sh  %{buildroot}/%{DST_RIFT_ROOT}/.install/usr/bin/
 
 # copy all copied source files
 echo "running CMD: cp -Rp %{RIFT_ROOT}/.install/rpmbuild/SOURCES/%{name}-%{version}/* %{buildroot}/"

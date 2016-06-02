@@ -1573,7 +1573,12 @@ uint32_t rwlog_get_category_severity_level(rwlog_ctx_t *ctx,const char *category
     }
   }
   if(cat < mem_hdr->num_categories) {
-     return ctx->category_filter[cat].severity;
+    if(ctx->category_filter[cat].bitmap == 0) {
+      return ctx->category_filter[cat].severity;
+    }
+    else {
+     return RW_LOG_LOG_SEVERITY_DEBUG;
+    }
   }
   else {
     return RW_LOG_LOG_SEVERITY_ERROR;

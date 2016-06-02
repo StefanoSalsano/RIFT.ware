@@ -34,7 +34,6 @@ add_library(rwlogd_sink SHARED
   )
 
 target_link_libraries(rwlogd_sink
-  rwcmdargs
   rwlib
   rwpython_util-1.0
   rw_tasklet_plugin-1.0

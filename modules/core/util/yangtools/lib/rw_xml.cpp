@@ -430,7 +430,7 @@ rw_yang_netconf_op_status_t XMLNode::find(
 
     if (!yn) {
       yn = ym->search_node (elem_id->system_ns_id, elem_id->element_tag);
-      /* If a fake <root> node has not been added to the dom, the first
+      /* If a fake <data> node has not been added to the dom, the first
          node in the DOM might actually be the same as the child of the
          root of the module, ie, at the same level as this yang node. In
          this case, continue */
@@ -461,7 +461,7 @@ rw_yang_netconf_op_status_t XMLNode::find(
       node = child;
     }
     else {
-      bool is_wildcard = rw_keyspec_path_has_wildcards_for_depth(keyspec, path_index - offset + 1);
+      bool is_wildcard = rw_keyspec_path_has_wildcards_for_depth(spec_ks, path_index - offset + 1);
       XMLNode *child = node->find_list_by_key(yn, (ProtobufCMessage *)path_v, &nodes, is_wildcard);
 
       if (nullptr == child) {
@@ -488,12 +488,12 @@ XMLNode* XMLNode::find_list_by_key(YangNode *list_ynode,
   std::stringstream log_strm;
 
   const ProtobufCMessageDescriptor *p_desc = message->descriptor;
-  char* path_v = (char  *) message;
+  char* path_v = reinterpret_cast<char  *>(message); // ATTN: wtf?
   XMLNode *candidate = find(list_ynode->get_name(), list_ynode->get_ns());
 
   bool found = false;
 
-  while ((nullptr != candidate) &&  !found) {
+  while ((candidate != nullptr) && !found) {
     found = true;
 
     for (size_t key_index = 0; key_index < p_desc->n_fields; key_index++) {
@@ -597,7 +597,15 @@ rw_yang_netconf_op_status_t XMLNode::find_list_by_key(
 
   YangNode* yang_node = get_descend_yang_node();
   if (yang_node) {
-    RW_ASSERT(list_ynode->get_parent() == yang_node);
+    if (yang_node->is_rpc()) {
+      // In case the XML Node is RPC, the child list node's parent will be
+      // input/output node. The RPC node should be validated against the child
+      // list node's parent's (input/output) parent.
+      RW_ASSERT(list_ynode->get_parent());
+      RW_ASSERT(list_ynode->get_parent()->get_parent() == yang_node);
+    } else {
+      RW_ASSERT(list_ynode->get_parent() == yang_node);
+    }
   }
 
   XMLNodeList::uptr_t children(get_children());
@@ -737,6 +745,35 @@ rw_yang_netconf_op_status_t XMLNode::find_list_by_key_pb_msg(
 }
 
 XMLNode* XMLNode::find_first_deepest_node()
+{
+  XMLNodeList::uptr_t my_children = get_children();
+  size_t i;
+
+  for ( i = 0; i < my_children->length(); i++) {
+    YangNode *yn = my_children->at(i)->get_yang_node();
+
+    if (nullptr == yn) {
+      continue;
+    }
+
+    if (yn->is_leafy()) {
+      continue;
+    }
+
+    return my_children->at(i)->find_first_deepest_node();
+  }
+
+  // fell off the end - which means this is the node that is searched for
+  if (i == 0) {
+    // no children - return myself
+    return this;
+  }
+
+  return my_children->at(0);
+
+}
+
+XMLNode* XMLNode::find_first_deepest_node_in_xml_tree()
 {
   XMLNodeList::uptr_t my_children = get_children();
   size_t i;
@@ -1094,6 +1131,7 @@ rw_yang_netconf_op_status_t XMLNode::merge(const rw_keyspec_path_t *in_keyspec,
       rw_keyspec_path_free (keyspec, NULL);
       return RW_YANG_NETCONF_OP_STATUS_DATA_MISSING;
     }
+
     if (RW_YANG_STMT_TYPE_RPCIO == yn->get_stmt_type()) {
       // RPC IO nodes are not present in the XML DOM. the children
       // of the RPC IO node become the children of the RPC node. keep
@@ -1507,7 +1545,7 @@ rw_yang_netconf_op_status_t XMLNode::merge(/*ATTN:const*/ProtobufCMessage* msg,
           if (RW_YANG_STMT_TYPE_LEAF == stmt_type) {
             RW_ASSERT(0 == j);
           }
-
+          
           // ATTN: De-duplication of leaf-list happens inside append
           ncrs = append_node_from_pb_field( &finfo, child_ynode );
           if (RW_YANG_NETCONF_OP_STATUS_OK != ncrs) {
@@ -1629,6 +1667,7 @@ XMLNode* XMLNode::append_child(
    * So, this function needs to do some extra work to unpeel the extra
    * layers, and also skip the string key.
    */
+
   auto pe_mdesc = path_entry->descriptor;
   for (size_t key_index = 0; key_index < pe_mdesc->n_fields; key_index++) {
 
@@ -1660,7 +1699,7 @@ XMLNode* XMLNode::append_child(
 
       YangNode *key_yn = yn->search_child_by_mangled_name(keyval_fdesc->name);
       RW_ASSERT(key_yn);
-
+      
       ProtobufCFieldInfo keyval_finfo;
       ok = protobuf_c_message_get_field_instance(
         NULL/*instance*/,
@@ -2825,6 +2864,225 @@ XMLManager::XMLManager()
 }
 
 /***************************************************************************
+ * Subtree Filtering
+ */
+
+rw_status_t XMLDocument::subtree_filter(rw_yang::XMLDocument* filter_dom)
+{
+  RW_ASSERT (filter_dom);
+  std::stringstream log_strm;
+
+  XMLNode* filter_root = filter_dom->get_root_node();
+  RW_ASSERT (filter_root);
+
+  XMLNode* data_root = this->get_root_node();
+  RW_ASSERT (data_root);
+
+  // Check for empty filter
+  if (!filter_root->get_first_child()) return RW_STATUS_SUCCESS;
+
+  // initial filtering
+  filter_selection_node(filter_root->get_first_child(), data_root);
+
+  // Data node should always be one step above the filter node
+  // Its easier to filter that way
+  return filter_containment_node(filter_root->get_first_child(), data_root);
+}
+
+rw_status_t XMLDocument::filter_containment_node(XMLNode* filter_node, XMLNode* data_node)
+{
+  RW_ASSERT (filter_node);
+  RW_ASSERT (data_node);
+  rw_status_t ret = RW_STATUS_SUCCESS;
+  std::stringstream log_strm;
+
+  XMLNodeList::uptr_t children(filter_node->get_children());
+  size_t clen = children->length();
+
+  if (clen == 0) {
+    return filter_selection_node(filter_node, data_node);
+  }
+
+  data_node = data_node->find(filter_node->get_local_name().c_str(),
+                              filter_node->get_name_space().c_str());
+  if (!data_node) {
+    // go to next
+    log_strm << "Data node not found: " << filter_node->get_local_name();
+    RW_XML_DOC_DEBUG (this, log_strm);
+    return RW_STATUS_SUCCESS;
+  }
+
+  XMLNode* tmp_data_node = data_node;
+
+  while (tmp_data_node) {
+    // Check for the presence of content match node under this
+    // containment node.
+    // RFC-6241 does not specify any ordering for such nodes as in 
+    // whether those should be first entry or not. So, we have to
+    // do a full scan of children under this containment node.
+    std::list<XMLNode*> content_match_nodes;
+    std::list<XMLNode*> sibling_nodes;
+    find_content_match_nodes(filter_node, content_match_nodes, sibling_nodes);
+
+    // Remove all nodes under data node which are not there in sibling_nodes
+    std::list<XMLNode*> delete_nodes;
+    XMLNode* data_child_node = tmp_data_node->get_first_child();
+
+    while (data_child_node) {
+      auto dnode = data_child_node;
+      data_child_node = data_child_node->get_next_sibling();
+
+      // Check if the node is from content_match_nodes
+      // if yes, ignore it.
+      bool content_match = false;
+      for (auto cnode : content_match_nodes) {
+        if (cnode->get_local_name() == dnode->get_local_name()) {
+          content_match = true;
+          break;
+        }
+      }
+      if (content_match) continue;
+
+      bool match = false;
+      for (auto snode : sibling_nodes) {
+        if (dnode->get_local_name() == snode->get_local_name()) {
+          match = true;
+          break;
+        }
+      }
+      // If only content match nodes are present and
+      // no sibling nodes are mentioned in the filter,
+      // then all the sibling nodes must be maintained
+      // ELSE
+      // If sibling_nodes are present, then irrespective of
+      // whether content match nodes are present or not,
+      // delete the nodes from data node if they are not present
+      // in the filter.
+      if (sibling_nodes.size()) {
+        if (!match && !dnode->get_yang_node()->is_key()) {
+          delete_nodes.push_back(dnode);
+        }
+      }
+    }
+
+    for (auto del_node : delete_nodes) {
+      tmp_data_node->remove_child(del_node);
+    }
+    delete_nodes.clear();
+
+    // filter_content_match_nodes deletes the current XML element 
+    // i.e tmp_data_node if it does not match the filter criteria.
+    // Therefor it should not be used in case filter_content_match_nodes
+    // returs RW_STATUS_SUCCESS, which means it got removed from the DOM
+    auto next_sibling = tmp_data_node->get_next_sibling();
+
+    bool tmp_data_node_dirty = false;
+
+    // Do the filtering for content match nodes
+    if (content_match_nodes.size()) {
+      ret = filter_content_match_nodes(content_match_nodes, tmp_data_node);
+      if (ret == RW_STATUS_SUCCESS) {
+        // tmp_data_node is no longer valid
+        tmp_data_node_dirty = true;
+      }
+    }
+    // Now recurse on the sibling nodes
+    if (!tmp_data_node_dirty) {
+      for (auto snode : sibling_nodes) {
+        if (!snode->is_leaf_node()) {
+          ret = filter_containment_node(snode, tmp_data_node);
+        }
+      }
+
+      // delete tmp_data_node if it's empty and not a presence container
+      YangNode * ynode = tmp_data_node->get_yang_node();
+      if (tmp_data_node->get_first_child() == nullptr &&
+          ynode->get_stmt_type() == RW_YANG_STMT_TYPE_CONTAINER &&
+          !ynode->is_presence()) {
+        // No children for a non-presence container, they are only present to
+        // maintain hierarchy. Remove it
+        XMLNode* parent = tmp_data_node->get_parent();
+        if (parent) {
+          parent->remove_child(tmp_data_node);
+        }
+      }
+
+    }
+
+    tmp_data_node = next_sibling;
+  }
+  
+
+
+  return RW_STATUS_SUCCESS;
+}
+
+rw_status_t XMLDocument::filter_selection_node(XMLNode* filter_node, XMLNode* data_node)
+{
+  RW_ASSERT (filter_node);
+  RW_ASSERT (data_node);
+
+  std::list<XMLNode*> del_nodes;
+  auto dnode = data_node->get_first_child();
+
+  while (dnode) {
+    auto n = dnode;
+    dnode = dnode->get_next_sibling();
+    if (n->get_local_name() == filter_node->get_local_name()) continue;
+    del_nodes.push_back(n);
+  }
+
+  for (auto node : del_nodes) data_node->remove_child(node);
+
+  return RW_STATUS_SUCCESS;
+}
+
+void XMLDocument::find_content_match_nodes(XMLNode* filter_node,
+                                           std::list<XMLNode*>& content_match_nodes,
+                                           std::list<XMLNode*>& sibling_nodes)
+{
+  RW_ASSERT (filter_node);
+  XMLNode* cnode = filter_node->get_first_child();
+
+  while (cnode) {
+    auto node = cnode;
+    cnode = cnode->get_next_sibling();
+
+    if (node->is_leaf_node() && node->get_text_value().length()) {
+      content_match_nodes.push_back(node);
+    } else {
+      sibling_nodes.push_back(node);
+    }
+  }
+}
+
+rw_status_t XMLDocument::filter_content_match_nodes(std::list<XMLNode*>& content_match_nodes,
+                                                    XMLNode* data_node)
+{
+  RW_ASSERT (data_node);
+  std::stringstream log_strm;
+  bool match = true;
+
+  for (auto cmnode : content_match_nodes) {
+    auto mnode = data_node->find(cmnode->get_local_name().c_str(),
+                                 cmnode->get_name_space().c_str());
+    if (mnode) {
+      if (mnode->get_text_value() != cmnode->get_text_value()) {
+        match = false;
+        break;
+      }
+    }
+  }
+
+  if (!match && content_match_nodes.size()) {
+    data_node->get_parent()->remove_child(data_node);
+    return RW_STATUS_SUCCESS;
+  }
+
+  return RW_STATUS_FAILURE;
+}
+
+/***************************************************************************
  * Name methods in base
  */
 
@@ -2917,6 +3175,124 @@ XMLNode* XMLNode::get_previous_sibling (const std::string& localname,
     node = node->get_previous_sibling();
   }
   return node;
+}
+
+void XMLNode::fill_defaults()
+{
+  YangNode* ynode = get_yang_node();
+  RW_ASSERT(ynode);
+  fill_defaults(ynode);
+}
+
+void XMLNode::fill_rpc_input_with_defaults()
+{
+  YangNode* ynode = get_yang_node();
+  RW_ASSERT(ynode);
+  RW_ASSERT(ynode->get_stmt_type() == RW_YANG_STMT_TYPE_RPC);
+
+  ynode = ynode->search_child("input");
+  if (ynode) {
+    fill_defaults(ynode);
+  }
+}
+
+void XMLNode::fill_rpc_output_with_defaults()
+{
+  YangNode* ynode = get_yang_node();
+  RW_ASSERT(ynode);
+  RW_ASSERT(ynode->get_stmt_type() == RW_YANG_STMT_TYPE_RPC);
+
+  ynode = ynode->search_child("output");
+  if (ynode) {
+    fill_defaults(ynode);
+  }
+}
+
+void XMLNode::fill_defaults(YangNode* ynode)
+{
+  for (YangNodeIter it = ynode->child_begin();
+       it != ynode->child_end(); ++it) {
+    YangNode* ychild = &(*it);
+    if (ychild->get_stmt_type() == RW_YANG_STMT_TYPE_LIST) {
+      fill_defaults_list(ychild);
+      continue;
+    }
+    const char* default_val = ychild->get_default_value();
+    if (!default_val && !ychild->has_default()) {
+      // Only default values nodes need to checked for existence
+      continue;
+    }
+
+    // Default values may be within a choice/case. Check if the choice has
+    // another case. If the same case is present
+    YangNode* ychoice = ychild->get_choice();
+    YangNode* ycase = ychild->get_case();
+    bool add_default = true;
+    if (ychoice && ycase && (ychoice->get_default_case() != ycase)) {
+      add_default = false;
+    }
+
+    for (XMLNodeIter xit = child_begin(); xit != child_end(); ++xit) {
+      XMLNode* xchild = &(*xit);
+      if (xchild->get_local_name() == ychild->get_name() &&
+          xchild->get_name_space() == ychild->get_ns()) {
+        if (ychild->get_stmt_type() == RW_YANG_STMT_TYPE_CONTAINER) {
+          // The container has a default descendant node
+          xchild->fill_defaults();
+        }
+        // Default node already present in the current tree 
+        add_default = false;
+        break;
+      }
+      
+      if (!ychoice) {
+        // Not part of a choice, check the next xml child
+        continue;
+      }
+
+      YangNode* other_choice = xchild->get_yang_node()->get_choice();
+      if (!other_choice || (other_choice != ychoice)) {
+        // Other node is not a choice, or not the same choice, not conflicting
+        continue;
+      }
+
+      YangNode* other_case = xchild->get_yang_node()->get_case();
+      if (other_case && (ycase != other_case)) {
+        // There is a node with conflicting case. Hence no default
+        add_default = false;
+        break;
+      }
+
+      // Same case, in-case the case is not default, some-other node in the same
+      // case is set. Then add this default, unless the same node is found in
+      // the current tree.
+      add_default = true;
+    }
+
+    if (add_default) {
+      XMLNode* xn = add_child(ychild, default_val);
+      RW_ASSERT(xn);
+      if (ychild->get_stmt_type() == RW_YANG_STMT_TYPE_CONTAINER) {
+          // The container has a default descendant node
+          xn->fill_defaults();
+      }
+    }
+
+  }
+}
+
+void XMLNode::fill_defaults_list(YangNode* ylist)
+{
+  // Go through the the current XML and find all the matching list nodes and
+  // fill them with defaults
+  for (XMLNodeIter it = child_begin();
+       it != child_end(); ++it) {
+    XMLNode* xchild = &(*it);
+    if (xchild->get_local_name() == ylist->get_name() &&
+        xchild->get_name_space() == ylist->get_ns()) {
+      xchild->fill_defaults(ylist);
+    }
+  }
 }
 
 rw_yang_netconf_op_status_t XMLNode::to_keyspec(rw_keyspec_path_t **keyspec)
@@ -3171,7 +3547,7 @@ void XMLWalkerInOrder::walk_recursive(XMLNode *node, XMLVisitor *visitor)
       return;
     default:
       // Hmmm ... Assert for now
-      RW_CRASH();
+      RW_ASSERT(0);
   }
   if (next_node) {
     walk_recursive(next_node, visitor);
@@ -3255,7 +3631,7 @@ rw_xml_next_action_t Builder::append_child (XMLNode *node)
 {
   UNUSED (node);
 
-  RW_CRASH();
+  RW_ASSERT(0);
   return RW_XML_ACTION_ABORT;
 }
 
@@ -3267,7 +3643,7 @@ rw_xml_next_action_t Builder::append_child (const char *local_name,
   UNUSED (ns);
   UNUSED (text_val);
 
-  RW_CRASH();
+  RW_ASSERT(0);
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3278,7 +3654,7 @@ rw_xml_next_action_t Builder::mark_child_for_deletion(const char *local_name,
   UNUSED (local_name);
   UNUSED (ns);
 
-  RW_CRASH();
+  RW_ASSERT(0);
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3291,7 +3667,7 @@ rw_xml_next_action_t Builder::append_child_enum (const char *local_name,
   UNUSED (ns);
   UNUSED (val);
 
-  RW_CRASH();
+  RW_ASSERT(0);
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3300,7 +3676,7 @@ rw_xml_next_action_t Builder::push (XMLNode *node)
 {
   UNUSED (node);
 
-  RW_CRASH();
+  RW_ASSERT(0);
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3311,7 +3687,7 @@ rw_xml_next_action_t Builder::push (const char *local_name,
   UNUSED (local_name);
   UNUSED (ns);
 
-  RW_CRASH();
+  RW_ASSERT(0);
   return RW_XML_ACTION_ABORT;
 
 }
@@ -3357,10 +3733,6 @@ rw_xml_next_action_t XMLBuilder::append_child_enum (const char *local_name,
       // error - abort traversal
       return RW_XML_ACTION_ABORT;
     }
-    if (!child_yang->is_key()) {
-      is_non_key_set_ = true;
-      merge_op_ = true;
-    }
 
     if (current_node_->add_child (child_yang, text_val.c_str()) == nullptr) {
       // error - abort traversal
@@ -3391,11 +3763,6 @@ rw_xml_next_action_t XMLBuilder::append_child (const char *local_name,
     return RW_XML_ACTION_TERMINATE;
   }
 
-  if (!child_yang->is_key()) {
-    is_non_key_set_ = true;
-    merge_op_ = true;
-  }
-
   if (current_node_->add_child (child_yang, text_val) == nullptr) {
     // error - abort traversal
     return RW_XML_ACTION_ABORT;
@@ -3417,11 +3784,7 @@ rw_xml_next_action_t XMLBuilder::mark_child_for_deletion (const char *local_name
   XMLNode *child = current_node_->add_child (child_yang);
   RW_ASSERT(nullptr != child);
 
-  // If there was a set on an attribute which was non-key node
-  // we must not suppress the merge operation.
-  if (!is_non_key_set_) {
-    merge_op_ = false;
-  }
+  merge_op_ = false;
 
   if (child_yang->has_keys()) {
     // This is a list. Need to push this node, get all the keys, and be back
@@ -3455,9 +3818,7 @@ rw_xml_next_action_t XMLBuilder::push (const char *local_name,
 {
   stack_.push (current_node_);
 
-  // Reset to default values
   if (!merge_op_) merge_op_ = true;
-  if (is_non_key_set_) is_non_key_set_ = false;
 
   YangNode* my_yang_node = current_node_->get_descend_yang_node();
   RW_ASSERT (my_yang_node);
@@ -3562,11 +3923,11 @@ rw_yang_netconf_op_status_t Traverser::traverse()
         return RW_YANG_NETCONF_OP_STATUS_FAILED;
 
       default:
-        RW_CRASH();
+        RW_ASSERT(0);
     }
   }
 
-  RW_CRASH();
+  RW_ASSERT(0);
   return RW_YANG_NETCONF_OP_STATUS_FAILED;
 }
 

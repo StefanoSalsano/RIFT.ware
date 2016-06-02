@@ -1,0 +1,6 @@
+{
+    "root": "public",
+    "name": "Login",
+    "dashboard" : "./login.jsx",
+    "order": 99
+}

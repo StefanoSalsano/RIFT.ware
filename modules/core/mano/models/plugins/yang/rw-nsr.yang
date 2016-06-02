@@ -27,6 +27,10 @@ module rw-nsr
     prefix "rw-cloud";
   }
 
+  import rw-sdn {
+    prefix "rw-sdn";
+  }
+
   import ietf-yang-types {
     prefix "yang";
   }
@@ -125,6 +129,15 @@ module rw-nsr
          using the cloud-account's associated CAL instance";
       type leafref {
         path "/rw-cloud:cloud/rw-cloud:account/rw-cloud:name";
+      }
+    }
+
+    leaf sdn-account {
+      description
+        "The SDN account associted with the cloud account using which an
+         NS was instantiated.";
+      type leafref {
+        path "/rw-sdn:sdn-account/rw-sdn:name";
       }
     }
 
@@ -272,6 +285,13 @@ module rw-nsr
 
   augment /nsr:ns-instance-opdata {
     uses nsd-ref-count;
+  }
+
+  augment /nsr:ns-instance-opdata/nsr:nsr/nsr:vlr {
+    leaf assigned-subnet {
+      description "Subnet added for the VL";
+      type string;
+    }
   }
 
   augment /nsr:ns-instance-config {

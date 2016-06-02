@@ -21,9 +21,11 @@ import os
 import subprocess
 import tempfile
 import gi
+import time
 
 gi.require_version('RwlogMgmtYang', '1.0')
 gi.require_version('RwLogYang', '1.0')
+gi.require_version('RwYang', '1.0')
 
 import gi.repository.RwlogMgmtYang as rwlogmgmt
 import gi.repository.RwLogYang as rwlog
@@ -47,7 +49,7 @@ class SinkInterface(object):
     """
 
     @abc.abstractmethod
-    def post_startup(self, proxy):
+    def post_startup(self, mgmt_session):
         pass
 
     @abc.abstractmethod
@@ -85,10 +87,11 @@ class SyslogSink(SinkInterface):
         self.syslog_url = "http://{}/loganalyzer".format(self.ip)
         self.install_loganalyzer = install_loganalyzer
 
-    def post_startup(self, proxy):
+    def post_startup(self, mgmt_session):
         """
         Converts the config data to Yang model and applies the config.
         """
+
         parsed_filters = []
         for filter_name, severity in self.filters.items():
             parsed_filters.append({
@@ -96,21 +99,61 @@ class SyslogSink(SinkInterface):
                     "severity": severity})
 
         category = {"category": parsed_filters}
-        config = {
-                "syslog_viewer": self.syslog_url,
-                "sink": [{"name": self.name,
-                          "server_address": self.ip,
-                          "port": self.port,
-                          "filter": category}]
-                }
+        sink_config = { "sink" : [
+            {
+                "name": self.name,
+                "server_address": self.ip,
+                "port": self.port,
+                "filter": category
+            }
+        ]}
+                
 
         model = gi.repository.RwYang.Model.create_libncx()
         model.load_schema_ypbc(rwlogmgmt.get_schema())
         model.load_schema_ypbc(rwlog.get_schema())
 
-        sink = rwlogmgmt.Logging.from_dict(config)
-        xml = sink.to_xml_v2(model)
-        proxy.merge_config(xml=xml)
+        proxy = mgmt_session.proxy(rwlogmgmt)
+
+        logging = proxy.get_config("/rwlog-mgmt:logging")
+        if logging is not None:
+            # rwrest doesn't do PATCH (RIFT-9036) so we can't blow away the current config
+            # when we add the syslog information. so do a GET and fill in the extra we
+            # need for syslog before "blowing away" the old container. This is an obvious
+            # race condition at boot time.
+
+            # there is possibly already config in place for the syslog viewer from the reload
+            # operations. so don't blow away the config that already exists.
+            update_count = 2 
+
+            if not logging.has_field("syslog_viewer"):
+                logging.syslog_viewer = self.syslog_url
+            else:
+                update_count -= 1
+
+            if not logging.has_field("sink"):
+                sink = rwlogmgmt.Logging.from_dict(sink_config)
+                for e in sink.sink:
+                    new = logging.sink.add()
+                    new.from_dict(e.as_dict())
+
+            else:
+                update_count -= 1
+
+            if update_count == 0:
+                return
+        else:
+            # no config exists
+            logging = rwlogmgmt.Logging()
+            sink = rwlogmgmt.Logging.from_dict(sink_config)
+            for e in sink.sink:
+                new = logging.sink.add()
+                new.from_dict(e.as_dict())
+
+            logging.syslog_viewer = self.syslog_url
+
+
+        proxy.replace_config(xpath="/rwlog-mgmt:logging", obj=logging)
 
     def pre_startup(self):
         """
@@ -183,7 +226,7 @@ def worker(config_file, confd_ip):
         # Try to figure out the IP from the config file, if a confd_ip is
         # not provided.
         if confd_ip is None:
-            confd_vm = module.sysinfo.find_ancestor_by_class(rift.vcs.Confd)
+            confd_vm = module.sysinfo.find_ancestor_by_class(rift.vcs.uAgentTasklet)
             confd_ip = confd_vm.ip
 
     if sink is None:
@@ -191,16 +234,24 @@ def worker(config_file, confd_ip):
         sink = SyslogSink(name="syslog", ip=confd_ip)
     sink.pre_startup()
 
-    mgmt_session = rift.auto.session.NetconfSession(host=confd_ip)
-    mgmt_session.connect()
-    rift.vcs.vcs.wait_until_system_started(mgmt_session)
+    # Wait time for restconf to come up
+    timeout = 360 #seconds
+    mgmt_session = rift.auto.session.RestconfSession(host=confd_ip)
 
-    # For now retaining the old proxy method. Will be eventually moved to
-    # session module's proxy.
-    proxy = rift.auto.proxy.NetconfProxy(confd_ip)
-    proxy.connect()
+    while timeout:
+        try:
+            rift.vcs.vcs.wait_until_system_started(mgmt_session, quiet=True)
+            break
+        except Exception as e:
+            logger.info("Waiting for restconf to start")
+            time.sleep(10)
+            timeout = timeout - 10
 
-    sink.post_startup(proxy)
+    if timeout == 0:
+        logging.error("Restconf did not come up within timeout period of 360 seconds")
+        return
+
+    sink.post_startup(mgmt_session)
 
 
 def configure_sink(config_file, confd_ip):

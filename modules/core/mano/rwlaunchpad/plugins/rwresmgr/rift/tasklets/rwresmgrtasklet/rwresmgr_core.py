@@ -5,6 +5,7 @@
 import uuid
 import collections
 import asyncio
+import concurrent.futures
 
 import gi
 gi.require_version('RwDts', '1.0')
@@ -68,15 +69,29 @@ class ResMgrCALOperationFailure(Exception):
     pass
 
 
+
 class ResourceMgrCALHandler(object):
-    def __init__(self, log, log_hdl, account):
+    def __init__(self, loop, executor, log, log_hdl, account):
         self._log = log
+        self._loop = loop
+        self._executor = executor
         self._account = account.cal_account_msg
         self._rwcal = account.cal
         if account.account_type == 'aws':
             self._subnets = ["172.31.97.0/24", "172.31.98.0/24", "172.31.99.0/24", "172.31.100.0/24", "172.31.101.0/24"]
         else:
-            self._subnets = ["11.0.0.0/24", "12.0.0.0/24", "13.0.0.0/24", "14.0.0.0/24", "15.0.0.0/24"]
+            self._subnets = ["11.0.0.0/24",
+                             "12.0.0.0/24",
+                             "13.0.0.0/24",
+                             "14.0.0.0/24",
+                             "15.0.0.0/24",
+                             "16.0.0.0/24",
+                             "17.0.0.0/24",
+                             "18.0.0.0/24",
+                             "19.0.0.0/24",
+                             "20.0.0.0/24",
+                             "21.0.0.0/24",
+                             "22.0.0.0/24",]
         self._subnet_ptr = 0
 
     def _select_link_subnet(self):
@@ -86,33 +101,57 @@ class ResourceMgrCALHandler(object):
             self._subnet_ptr = 0
         return subnet
 
+    @asyncio.coroutine
     def create_virtual_network(self, req_params):
-        rc, rsp = self._rwcal.get_virtual_link_list(self._account)
+        #rc, rsp = self._rwcal.get_virtual_link_list(self._account)
+        self._log.debug("Calling get_virtual_link_list API")
+        rc, rsp = yield from self._loop.run_in_executor(self._executor,
+                                                        self._rwcal.get_virtual_link_list,
+                                                        self._account)
+            
         assert rc == RwStatus.SUCCESS
+
         links = [vlink for vlink in rsp.virtual_link_info_list if vlink.name == req_params.name]
         if links:
+            self._log.debug("Found existing virtual-network with matching name in cloud. Reusing the virtual-network with id: %s" %(links[0].virtual_link_id))
             return links[0].virtual_link_id
 
         params = RwcalYang.VirtualLinkReqParams()
         params.from_dict(req_params.as_dict())
         params.subnet = self._select_link_subnet()
-        rc, rs = self._rwcal.create_virtual_link(self._account, params)
+        #rc, rs = self._rwcal.create_virtual_link(self._account, params)
+        self._log.debug("Calling create_virtual_link API with params: %s" %(str(req_params)))
+        rs, rs = yield from self._loop.run_in_executor(self._executor,
+                                                       self._rwcal.create_virtual_link,
+                                                       self._account,
+                                                       params)
         if rc != RwStatus.SUCCESS:
             self._log.error("Virtual-network-allocate operation failed for cloud account: %s", self._account.name)
             raise ResMgrCALOperationFailure("Virtual-network allocate operationa failed for cloud account: %s" %(self._account.name))
         return rs
 
-
+    @asyncio.coroutine
     def delete_virtual_network(self, network_id):
-        rc = self._rwcal.delete_virtual_link(self._account, network_id)
+        #rc = self._rwcal.delete_virtual_link(self._account, network_id)
+        self._log.debug("Calling delete_virtual_link API with id: %s" %(network_id))
+        rc = yield from self._loop.run_in_executor(self._executor,
+                                                   self._rwcal.delete_virtual_link,
+                                                   self._account,
+                                                   network_id)
         if rc != RwStatus.SUCCESS:
             self._log.error("Virtual-network-release operation failed for cloud account: %s. ResourceID: %s",
                             self._account.name,
                             network_id)
             raise ResMgrCALOperationFailure("Virtual-network release operation failed for cloud account: %s. ResourceId: %s" %(self._account.name, network_id))
 
+    @asyncio.coroutine        
     def get_virtual_network_info(self, network_id):
-        rc, rs = self._rwcal.get_virtual_link(self._account, network_id)
+        #rc, rs = self._rwcal.get_virtual_link(self._account, network_id)
+        self._log.debug("Calling get_virtual_link_info API with id: %s" %(network_id))
+        rc, rs = yield from self._loop.run_in_executor(self._executor,
+                                                       self._rwcal.get_virtual_link,
+                                                       self._account,
+                                                       network_id)
         if rc != RwStatus.SUCCESS:
             self._log.error("Virtual-network-info operation failed for cloud account: %s. ResourceID: %s",
                             self._account.name,
@@ -120,42 +159,70 @@ class ResourceMgrCALHandler(object):
             raise ResMgrCALOperationFailure("Virtual-network-info operation failed for cloud account: %s. ResourceID: %s" %(self._account.name, network_id))
         return rs
 
+    @asyncio.coroutine
     def create_virtual_compute(self, req_params):
-        rc, rsp = self._rwcal.get_vdu_list(self._account)
+        #rc, rsp = self._rwcal.get_vdu_list(self._account)
+        self._log.debug("Calling get_vdu_list API")
+        rc, rsp = yield from self._loop.run_in_executor(self._executor,
+                                                        self._rwcal.get_vdu_list,
+                                                        self._account)
         assert rc == RwStatus.SUCCESS
         vdus = [vm for vm in rsp.vdu_info_list if vm.name == req_params.name]
         if vdus:
+            self._log.debug("Found existing virtual-compute with matching name in cloud. Reusing the virtual-compute element with id: %s" %(vdus[0].vdu_id))
             return vdus[0].vdu_id
 
         params = RwcalYang.VDUInitParams()
         params.from_dict(req_params.as_dict())
 
         image_checksum = req_params.image_checksum if req_params.has_field("image_checksum") else None
-        params.image_id = self.get_image_id_from_image_info(req_params.image_name, image_checksum)
+        params.image_id = yield from self.get_image_id_from_image_info(req_params.image_name, image_checksum)
 
-        self._log.info("Creating virtual-compute, Name: %s, ImageID: %s, FlavorID: %s", params.name, params.image_id, params.flavor_id)
-        rc, rs = self._rwcal.create_vdu(self._account, params)
+        #rc, rs = self._rwcal.create_vdu(self._account, params)
+        self._log.debug("Calling create_vdu API with params %s" %(str(params)))
+        rc, rs = yield from self._loop.run_in_executor(self._executor,
+                                                       self._rwcal.create_vdu,
+                                                       self._account,
+                                                       params)
         if rc != RwStatus.SUCCESS:
             self._log.error("Virtual-compute-create operation failed for cloud account: %s", self._account.name)
             raise ResMgrCALOperationFailure("Virtual-compute-create operation failed for cloud account: %s" %(self._account.name))
         return rs
 
+    @asyncio.coroutine
     def modify_virtual_compute(self, req_params):
-        rc = self._rwcal.modify_vdu(self._account, req_params)
+        #rc = self._rwcal.modify_vdu(self._account, req_params)
+        self._log.debug("Calling modify_vdu API with params: %s" %(str(req_params)))
+        rc = yield from self._loop.run_in_executor(self._executor,
+                                                   self._rwcal.modify_vdu,
+                                                   self._account,
+                                                   req_params)
         if rc != RwStatus.SUCCESS:
             self._log.error("Virtual-compute-modify operation failed for cloud account: %s", self._account.name)
             raise ResMgrCALOperationFailure("Virtual-compute-modify operation failed for cloud account: %s" %(self._account.name))
 
+    @asyncio.coroutine        
     def delete_virtual_compute(self, compute_id):
-        rc = self._rwcal.delete_vdu(self._account, compute_id)
+        #rc = self._rwcal.delete_vdu(self._account, compute_id)
+        self._log.debug("Calling delete_vdu API with id: %s" %(compute_id))
+        rc = yield from self._loop.run_in_executor(self._executor,
+                                                   self._rwcal.delete_vdu,
+                                                   self._account,
+                                                   compute_id)
         if rc != RwStatus.SUCCESS:
             self._log.error("Virtual-compute-release operation failed for cloud account: %s. ResourceID: %s",
                             self._account.name,
                             compute_id)
             raise ResMgrCALOperationFailure("Virtual-compute-release operation failed for cloud account: %s. ResourceID: %s" %(self._account.name, compute_id))
 
+    @asyncio.coroutine        
     def get_virtual_compute_info(self, compute_id):
-        rc, rs = self._rwcal.get_vdu(self._account, compute_id)
+        #rc, rs = self._rwcal.get_vdu(self._account, compute_id)
+        self._log.debug("Calling get_vdu API with id: %s" %(compute_id))
+        rc, rs = yield from self._loop.run_in_executor(self._executor,
+                                                       self._rwcal.get_vdu,
+                                                       self._account,
+                                                       compute_id)
         if rc != RwStatus.SUCCESS:
             self._log.error("Virtual-compute-info operation failed for cloud account: %s. ResourceID: %s",
                             self._account.name,
@@ -163,49 +230,67 @@ class ResourceMgrCALHandler(object):
             raise ResMgrCALOperationFailure("Virtual-compute-info operation failed for cloud account: %s. ResourceID: %s" %(self._account.name, compute_id))
         return rs
 
+    @asyncio.coroutine
     def get_compute_flavor_info_list(self):
         rc, rs = self._rwcal.get_flavor_list(self._account)
+        self._log.debug("Calling get_flavor_list API")
+        #rc, rs = yield from self._loop.run_in_executor(self._executor,
+        #                                               self._rwcal.get_flavor_list,
+        #                                               self._account)
         if rc != RwStatus.SUCCESS:
             self._log.error("Get-flavor-info-list operation failed for cloud account: %s",
                             self._account.name)
             raise ResMgrCALOperationFailure("Get-flavor-info-list operation failed for cloud account: %s" %(self._account.name))
         return rs.flavorinfo_list
 
+    @asyncio.coroutine
     def create_compute_flavor(self, request):
         flavor = RwcalYang.FlavorInfoItem()
         flavor.name = str(uuid.uuid4())
-        epa_types = ['vm_flavor', 'guest_epa']
+        epa_types = ['vm_flavor', 'guest_epa', 'host_epa', 'host_aggregate']
         epa_dict = {k: v for k, v in request.as_dict().items() if k in epa_types}
         flavor.from_dict(epa_dict)
 
         self._log.info("Creating flavor: %s", flavor)
         rc, rs = self._rwcal.create_flavor(self._account, flavor)
+        #self._log.debug("Calling create_flavor API")
+        #rc, rs = yield from self._loop.run_in_executor(self._executor,
+        #                                               self._rwcal.create_flavor,
+        #                                               self._account,
+        #                                               flavor)
         if rc != RwStatus.SUCCESS:
             self._log.error("Create-flavor operation failed for cloud account: %s",
                             self._account.name)
             raise ResMgrCALOperationFailure("Create-flavor operation failed for cloud account: %s" %(self._account.name))
         return rs
 
+    @asyncio.coroutine
     def get_image_info_list(self):
-        rc, rs = self._rwcal.get_image_list(self._account)
+        #rc, rs = self._rwcal.get_image_list(self._account)
+        self._log.debug("Calling get_image_list API")
+        rc, rs = yield from self._loop.run_in_executor(self._executor,
+                                                       self._rwcal.get_image_list,
+                                                       self._account)
         if rc != RwStatus.SUCCESS:
             self._log.error("Get-image-info-list operation failed for cloud account: %s",
                             self._account.name)
             raise ResMgrCALOperationFailure("Get-image-info-list operation failed for cloud account: %s" %(self._account.name))
         return rs.imageinfo_list
 
+    @asyncio.coroutine
     def get_image_id_from_image_info(self, image_name, image_checksum=None):
         self._log.debug("Looking up image id for image name %s and checksum %s on cloud account: %s",
                 image_name, image_checksum, self._account.name
                 )
-        image_list = self.get_image_info_list()
+        image_list = yield from self.get_image_info_list()
         matching_images = [i for i in image_list if i.name == image_name]
 
         # If the image checksum was filled in then further filter the images by the checksum
         if image_checksum is not None:
             matching_images = [i for i in matching_images if i.checksum == image_checksum]
         else:
-            self._log.warning("Image checksum not provided.  Lookup using image name only.")
+            self._log.warning("Image checksum not provided.  Lookup using image name (%s) only.",
+                              image_name)
 
         if len(matching_images) == 0:
             raise ResMgrCALOperationFailure("Could not find image name {} (using checksum: {}) for cloud account: {}".format(
@@ -221,8 +306,14 @@ class ResourceMgrCALHandler(object):
 
         return matching_images[0].id
 
+    @asyncio.coroutine
     def get_image_info(self, image_id):
-        rc, rs = self._rwcal.get_image(self._account, image_id)
+        #rc, rs = self._rwcal.get_image(self._account, image_id)
+        self._log.debug("Calling get_image API for id: %s" %(image_id))
+        rc, rs = yield from self._loop.run_in_executor(self._executor,
+                                                       self._rwcal.get_image,
+                                                       self._account,
+                                                       image_id)
         if rc != RwStatus.SUCCESS:
             self._log.error("Get-image-info-list operation failed for cloud account: %s",
                             self._account.name)
@@ -386,7 +477,7 @@ class ResourcePool(object):
             raise ResMgrResourceIdNotAllocated("Resource Id: %s not in use. Read operation failed" %(resource_id))
 
         resource = self._allocated_resources[resource_id]
-        resource_info = self.get_resource_info(resource)
+        resource_info = yield from self.get_resource_info(resource)
         return resource_info
 
     def get_pool_info(self):
@@ -409,13 +500,14 @@ class ResourcePool(object):
         for _, v in self._all_resources.items():
             v.cleanup()
 
+    @asyncio.coroutine
     def _allocate_static_resource(self, request, resource_type):
         unit_type = {'compute': 'VDU', 'network':'VirtualLink'}
         match_found = False
         resource = None
         self._log.info("Doing resource match from pool :%s", self._free_resources)
         for resource in self._free_resources:
-            resource_info = self.get_resource_info(resource)
+            resource_info = yield from self.get_resource_info(resource)
             self._log.info("Attempting to match %s-requirements for %s: %s with resource-id :%s",
                            resource_type, unit_type[resource_type],request.name, resource.resource_id)
             if self.match_epa_params(resource_info, request):
@@ -423,7 +515,7 @@ class ResourcePool(object):
                     match_found = True
                     self._log.info("%s-requirements matched for %s: %s with resource-id :%s",
                                    resource_type, unit_type[resource_type],request.name, resource.resource_id)
-                    self.initialize_resource_in_cal(resource, request)
+                    yield from self.initialize_resource_in_cal(resource, request)
             break
 
         if not match_found:
@@ -447,7 +539,7 @@ class ResourcePool(object):
     @asyncio.coroutine
     def allocate_resource(self, request):
         resource = yield from self.allocate_resource_in_cal(request)
-        resource_info =  self.get_resource_info(resource)
+        resource_info =  yield from self.get_resource_info(resource)
         return resource.resource_id, resource_info
 
     @asyncio.coroutine
@@ -461,7 +553,7 @@ class ResourcePool(object):
 
         ### Get resource object
         resource = self._allocated_resources.pop(resource_id)
-        self.uninitialize_resource_in_cal(resource)
+        yield from self.uninitialize_resource_in_cal(resource)
         yield from self.release_cal_resource(resource)
 
 
@@ -475,14 +567,14 @@ class NetworkPool(ResourcePool):
         if self.pool_type == 'static':
             self._log.info("Attempting network resource allocation from static pool: %s", self.name)
             ### Attempt resource allocation from static pool
-            resource = self._allocate_static_resource(request, 'network')
+            resource = yield from self._allocate_static_resource(request, 'network')
         elif self.pool_type == 'dynamic':
             ### Attempt resource allocation from dynamic pool
             self._log.info("Attempting network resource allocation from dynamic pool: %s", self.name)
             if len(self._free_resources) != 0:
                 self._log.info("Dynamic pool: %s has %d static resources, Attempting resource allocation from static resources",
                                self.name, len(self._free_resources))
-                resource =  self._allocate_static_resource(request, 'network')
+                resource =  yield from self._allocate_static_resource(request, 'network')
             if resource is None:
                 self._log.info("Could not resource from static resources. Going for dynamic resource allocation")
                 ## Not static resource available. Attempt dynamic resource from pool
@@ -493,7 +585,7 @@ class NetworkPool(ResourcePool):
 
     @asyncio.coroutine
     def allocate_dynamic_resource(self, request):
-        resource_id = self._cal.create_virtual_network(request)
+        resource_id = yield from self._cal.create_virtual_network(request)
         resource = self._resource_class(resource_id, 'dynamic')
         self._all_resources[resource_id] = resource
         self._allocated_resources[resource_id] = resource
@@ -504,15 +596,16 @@ class NetworkPool(ResourcePool):
     def release_cal_resource(self, resource):
         if resource.resource_type == 'dynamic':
             self._log.debug("Deleting virtual network with network_id: %s", resource.resource_id)
-            self._cal.delete_virtual_network(resource.resource_id)
+            yield from self._cal.delete_virtual_network(resource.resource_id)
             self._all_resources.pop(resource.resource_id)
             self._log.info("Successfully released virtual-network resource in CAL with resource-id: %s", resource.resource_id)
         else:
             self._log.info("Successfully released virtual-network resource with resource-id: %s into available-list", resource.resource_id)
             self._free_resources.append(resource)
 
+    @asyncio.coroutine
     def get_resource_info(self, resource):
-        info = self._cal.get_virtual_network_info(resource.resource_id)
+        info = yield from self._cal.get_virtual_network_info(resource.resource_id)
         self._log.info("Successfully retrieved virtual-network information from CAL with resource-id: %s. Info: %s",
                        resource.resource_id, str(info))
         response = RwResourceMgrYang.VirtualLinkEventData_ResourceInfo()
@@ -521,8 +614,9 @@ class NetworkPool(ResourcePool):
         response.resource_state = 'active'
         return response
 
+    @asyncio.coroutine
     def get_info_by_id(self, resource_id):
-        info = self._cal.get_virtual_network_info(resource_id)
+        info = yield from self._cal.get_virtual_network_info(resource_id)
         self._log.info("Successfully retrieved virtual-network information from CAL with resource-id: %s. Info: %s",
                        resource_id, str(info))
         return info
@@ -574,9 +668,11 @@ class NetworkPool(ResourcePool):
             return False
         return True
 
+    @asyncio.coroutine
     def initialize_resource_in_cal(self, resource, request):
         pass
 
+    @asyncio.coroutine
     def uninitialize_resource_in_cal(self, resource):
         pass
 
@@ -591,7 +687,7 @@ class ComputePool(ResourcePool):
         if self.pool_type == 'static':
             self._log.info("Attempting compute resource allocation from static pool: %s", self.name)
             ### Attempt resource allocation from static pool
-            resource = self._allocate_static_resource(request, 'compute')
+            resource = yield from self._allocate_static_resource(request, 'compute')
         elif self.pool_type == 'dynamic':
             ### Attempt resource allocation from dynamic pool
             self._log.info("Attempting compute resource allocation from dynamic pool: %s", self.name)
@@ -599,7 +695,7 @@ class ComputePool(ResourcePool):
                 self._log.info("Dynamic pool: %s has %d static resources, Attempting resource allocation from static resources",
                                len(self._free_resources),
                                self.name)
-                resource = self._allocate_static_resource(request, 'compute')
+                resource = yield from self._allocate_static_resource(request, 'compute')
             if resource is None:
                 self._log.info("Attempting for dynamic resource allocation")
                 resource = yield from self.allocate_dynamic_resource(request)
@@ -613,8 +709,8 @@ class ComputePool(ResourcePool):
 
     @asyncio.coroutine
     def allocate_dynamic_resource(self, request):
-        request.flavor_id = self.select_resource_flavor(request)
-        resource_id = self._cal.create_virtual_compute(request)
+        request.flavor_id = yield from self.select_resource_flavor(request)
+        resource_id = yield from self._cal.create_virtual_compute(request)
         resource = self._resource_class(resource_id, 'dynamic')
         self._all_resources[resource_id] = resource
         self._allocated_resources[resource_id] = resource
@@ -626,15 +722,16 @@ class ComputePool(ResourcePool):
         if hasattr(resource, 'requested_params'):
             delattr(resource, 'requested_params')
         if resource.resource_type == 'dynamic':
-            self._cal.delete_virtual_compute(resource.resource_id)
+            yield from self._cal.delete_virtual_compute(resource.resource_id)
             self._all_resources.pop(resource.resource_id)
             self._log.info("Successfully released virtual-compute resource in CAL with resource-id: %s", resource.resource_id)
         else:
             self._log.info("Successfully released virtual-compute resource with resource-id: %s into available-list", resource.resource_id)
             self._free_resources.append(resource)
 
+    @asyncio.coroutine
     def get_resource_info(self, resource):
-        info = self._cal.get_virtual_compute_info(resource.resource_id)
+        info = yield from self._cal.get_virtual_compute_info(resource.resource_id)
         self._log.info("Successfully retrieved virtual-compute information from CAL with resource-id: %s. Info: %s",
                        resource.resource_id, str(info))
         response = RwResourceMgrYang.VDUEventData_ResourceInfo()
@@ -643,8 +740,9 @@ class ComputePool(ResourcePool):
         response.resource_state = self._get_resource_state(info, resource.requested_params)
         return response
 
+    @asyncio.coroutine
     def get_info_by_id(self, resource_id):
-        info = self._cal.get_virtual_compute_info(resource_id)
+        info = yield from self._cal.get_virtual_compute_info(resource_id)
         self._log.info("Successfully retrieved virtual-compute information from CAL with resource-id: %s. Info: %s",
                        resource_id, str(info))
         return info 
@@ -672,16 +770,20 @@ class ComputePool(ResourcePool):
                 return 'pending'
 
         if(len(requested_params.connection_points) != 
-             len(resource_info.connection_points)):
+           len(resource_info.connection_points)):
+            self._log.warning("<Compute-Resource: %s> Waiting for requested number of ports to be assigned to virtual-compute, requested: %d, assigned: %d",
+                              resource_info.name,
+                              len(requested_params.connection_points),
+                              len(resource_info.connection_points))
             return 'pending'
 
-        not_active = [c for c in resource_info.connection_points
-                      if c.state != 'active']
+        #not_active = [c for c in resource_info.connection_points
+        #              if c.state != 'active']
 
-        if not_active:
-            self._log.warning("<Compute-Resource: %s> Management IP not assigned- waiting for connection_points , %s",
-                              resource_info.name, resource_info)
-            return 'pending'
+        #if not_active:
+        #    self._log.warning("<Compute-Resource: %s> Management IP not assigned- waiting for connection_points , %s",
+        #                      resource_info.name, resource_info)
+        #    return 'pending'
 
         ## Find the connection_points which are in active state but does not have IP address
         no_address = [c for c in resource_info.connection_points
@@ -694,8 +796,9 @@ class ComputePool(ResourcePool):
 
         return 'active'
 
+    @asyncio.coroutine
     def select_resource_flavor(self, request):
-        flavors = self._cal.get_compute_flavor_info_list()
+        flavors = yield from self._cal.get_compute_flavor_info_list()
         self._log.debug("Received %d flavor information from RW.CAL", len(flavors))
         flavor_id = None
         match_found = False
@@ -713,7 +816,7 @@ class ComputePool(ResourcePool):
             ### Check if CAL account allows dynamic flavor creation
             if self._cal.dynamic_flavor_supported():
                 self._log.info("Attempting to create a new flavor for required compute-requirement for VDU: %s", request.name)
-                flavor_id = self._cal.create_compute_flavor(request)
+                flavor_id = yield from self._cal.create_compute_flavor(request)
             else:
                 ### No match with existing flavors and CAL does not support dynamic flavor creation
                 self._log.error("Unable to create flavor for compute requirement for VDU: %s. VDU instantiation failed", request.name)
@@ -725,6 +828,7 @@ class ComputePool(ResourcePool):
         return flavor_id
 
     def _match_vm_flavor(self, required, available):
+        self._log.info("Matching VM Flavor attributes")
         if available.vcpu_count != required.vcpu_count:
             self._log.debug("VCPU requirement mismatch. Required: %d, Available: %d",
                             required.vcpu_count,
@@ -744,6 +848,23 @@ class ComputePool(ResourcePool):
         return True
 
     def _match_guest_epa(self, required, available):
+        self._log.info("Matching Guest EPA attributes")
+        if required.has_field('pcie_device'):
+            self._log.debug("Matching pcie_device")
+            if available.has_field('pcie_device') == False:
+                self._log.debug("Matching pcie_device failed. Not available in flavor")
+                return False
+            else:
+                for dev in required.pcie_device:
+                    if not [ d for d in available.pcie_device
+                             if ((d.device_id == dev.device_id) and (d.count == dev.count)) ]:
+                        self._log.debug("Matching pcie_device failed. Required: %s, Available: %s", required.pcie_device, available.pcie_device)
+                        return False
+        elif available.has_field('pcie_device'):
+            self._log.debug("Rejecting available flavor because pcie_device not required but available")
+            return False
+                        
+                    
         if required.has_field('mempage_size'):
             self._log.debug("Matching mempage_size")
             if available.has_field('mempage_size') == False:
@@ -753,7 +874,10 @@ class ComputePool(ResourcePool):
                 if required.mempage_size != available.mempage_size:
                     self._log.debug("Matching mempage_size failed. Required: %s, Available: %s", required.mempage_size, available.mempage_size)
                     return False
-
+        elif available.has_field('mempage_size'):
+            self._log.debug("Rejecting available flavor because mempage_size not required but available")
+            return False
+        
         if required.has_field('cpu_pinning_policy'):
             self._log.debug("Matching cpu_pinning_policy")
             if required.cpu_pinning_policy != 'ANY':
@@ -764,7 +888,10 @@ class ComputePool(ResourcePool):
                     if required.cpu_pinning_policy != available.cpu_pinning_policy:
                         self._log.debug("Matching cpu_pinning_policy failed. Required: %s, Available: %s", required.cpu_pinning_policy, available.cpu_pinning_policy)
                         return False
-
+        elif available.has_field('cpu_pinning_policy'):
+            self._log.debug("Rejecting available flavor because cpu_pinning_policy not required but available")
+            return False
+        
         if required.has_field('cpu_thread_pinning_policy'):
             self._log.debug("Matching cpu_thread_pinning_policy")
             if available.has_field('cpu_thread_pinning_policy') == False:
@@ -774,6 +901,9 @@ class ComputePool(ResourcePool):
                 if required.cpu_thread_pinning_policy != available.cpu_thread_pinning_policy:
                     self._log.debug("Matching cpu_thread_pinning_policy failed. Required: %s, Available: %s", required.cpu_thread_pinning_policy, available.cpu_thread_pinning_policy)
                     return False
+        elif available.has_field('cpu_thread_pinning_policy'):
+            self._log.debug("Rejecting available flavor because cpu_thread_pinning_policy not required but available")
+            return False
 
         if required.has_field('trusted_execution'):
             self._log.debug("Matching trusted_execution")
@@ -785,7 +915,10 @@ class ComputePool(ResourcePool):
                     if required.trusted_execution != available.trusted_execution:
                         self._log.debug("Matching trusted_execution failed. Required: %s, Available: %s", required.trusted_execution, available.trusted_execution)
                         return False
-
+        elif available.has_field('trusted_execution'):
+            self._log.debug("Rejecting available flavor because trusted_execution not required but available")
+            return False
+        
         if required.has_field('numa_node_policy'):
             self._log.debug("Matching numa_node_policy")
             if available.has_field('numa_node_policy') == False:
@@ -801,7 +934,10 @@ class ComputePool(ResourcePool):
                         if required.numa_node_policy.node_cnt != available.numa_node_policy.node_cnt:
                             self._log.debug("Matching numa_node_policy node_cnt failed. Required: %s, Available: %s",required.numa_node_policy.node_cnt, available.numa_node_policy.node_cnt)
                             return False
-
+                elif available.numa_node_policy.has_field('node_cnt'):
+                    self._log.debug("Rejecting available flavor because numa node count not required but available")
+                    return False
+                
                 if required.numa_node_policy.has_field('mem_policy'):
                     self._log.debug("Matching numa_node_policy mem_policy")
                     if available.numa_node_policy.has_field('mem_policy') == False:
@@ -811,6 +947,9 @@ class ComputePool(ResourcePool):
                         if required.numa_node_policy.mem_policy != available.numa_node_policy.mem_policy:
                             self._log.debug("Matching numa_node_policy mem_policy failed. Required: %s, Available: %s", required.numa_node_policy.mem_policy, available.numa_node_policy.mem_policy)
                             return False
+                elif available.numa_node_policy.has_field('mem_policy'):
+                    self._log.debug("Rejecting available flavor because num node mem_policy not required but available")
+                    return False
 
                 if required.numa_node_policy.has_field('node'):
                     self._log.debug("Matching numa_node_policy nodes configuration")
@@ -833,6 +972,13 @@ class ComputePool(ResourcePool):
                             numa_match = True
                         if numa_match == False:
                             return False
+                elif available.numa_node_policy.has_field('node'):
+                    self._log.debug("Rejecting available flavor because numa nodes not required but available")
+                    return False
+        elif available.has_field('numa_node_policy'):
+            self._log.debug("Rejecting available flavor because numa_node_policy not required but available")
+            return False
+        self._log.info("Successful match for Guest EPA attributes")
         return True
 
     def _match_vswitch_epa(self, required, available):
@@ -844,8 +990,130 @@ class ComputePool(ResourcePool):
         return True
 
     def _match_host_epa(self, required, available):
+        self._log.info("Matching Host EPA attributes")
+        if required.has_field('cpu_model'):
+            self._log.debug("Matching CPU model")
+            if available.has_field('cpu_model') == False:
+                self._log.debug("Matching CPU model failed. Not available in flavor")
+                return False
+            else:
+                #### Convert all PREFER to REQUIRE since flavor will only have REQUIRE attributes
+                if required.cpu_model.replace('PREFER', 'REQUIRE') != available.cpu_model:
+                    self._log.debug("Matching CPU model failed. Required: %s, Available: %s", required.cpu_model, available.cpu_model)
+                    return False
+        elif available.has_field('cpu_model'):
+            self._log.debug("Rejecting available flavor because cpu_model not required but available")
+            return False
+        
+        if required.has_field('cpu_arch'):
+            self._log.debug("Matching CPU architecture")
+            if available.has_field('cpu_arch') == False:
+                self._log.debug("Matching CPU architecture failed. Not available in flavor")
+                return False
+            else:
+                #### Convert all PREFER to REQUIRE since flavor will only have REQUIRE attributes
+                if required.cpu_arch.replace('PREFER', 'REQUIRE') != available.cpu_arch:
+                    self._log.debug("Matching CPU architecture failed. Required: %s, Available: %s", required.cpu_arch, available.cpu_arch)
+                    return False
+        elif available.has_field('cpu_arch'):
+            self._log.debug("Rejecting available flavor because cpu_arch not required but available")
+            return False
+        
+        if required.has_field('cpu_vendor'):
+            self._log.debug("Matching CPU vendor")
+            if available.has_field('cpu_vendor') == False:
+                self._log.debug("Matching CPU vendor failed. Not available in flavor")
+                return False
+            else:
+                #### Convert all PREFER to REQUIRE since flavor will only have REQUIRE attributes
+                if required.cpu_vendor.replace('PREFER', 'REQUIRE') != available.cpu_vendor:
+                    self._log.debug("Matching CPU vendor failed. Required: %s, Available: %s", required.cpu_vendor, available.cpu_vendor)
+                    return False
+        elif available.has_field('cpu_vendor'):
+            self._log.debug("Rejecting available flavor because cpu_vendor not required but available")
+            return False
+
+        if required.has_field('cpu_socket_count'):
+            self._log.debug("Matching CPU socket count")
+            if available.has_field('cpu_socket_count') == False:
+                self._log.debug("Matching CPU socket count failed. Not available in flavor")
+                return False
+            else:
+                if required.cpu_socket_count != available.cpu_socket_count:
+                    self._log.debug("Matching CPU socket count failed. Required: %s, Available: %s", required.cpu_socket_count, available.cpu_socket_count)
+                    return False
+        elif available.has_field('cpu_socket_count'):
+            self._log.debug("Rejecting available flavor because cpu_socket_count not required but available")
+            return False
+        
+        if required.has_field('cpu_core_count'):
+            self._log.debug("Matching CPU core count")
+            if available.has_field('cpu_core_count') == False:
+                self._log.debug("Matching CPU core count failed. Not available in flavor")
+                return False
+            else:
+                if required.cpu_core_count != available.cpu_core_count:
+                    self._log.debug("Matching CPU core count failed. Required: %s, Available: %s", required.cpu_core_count, available.cpu_core_count)
+                    return False
+        elif available.has_field('cpu_core_count'):
+            self._log.debug("Rejecting available flavor because cpu_core_count not required but available")
+            return False
+        
+        if required.has_field('cpu_core_thread_count'):
+            self._log.debug("Matching CPU core thread count")
+            if available.has_field('cpu_core_thread_count') == False:
+                self._log.debug("Matching CPU core thread count failed. Not available in flavor")
+                return False
+            else:
+                if required.cpu_core_thread_count != available.cpu_core_thread_count:
+                    self._log.debug("Matching CPU core thread count failed. Required: %s, Available: %s", required.cpu_core_thread_count, available.cpu_core_thread_count)
+                    return False
+        elif available.has_field('cpu_core_thread_count'):
+            self._log.debug("Rejecting available flavor because cpu_core_thread_count not required but available")
+            return False
+    
+        if required.has_field('cpu_feature'):
+            self._log.debug("Matching CPU feature list")
+            if available.has_field('cpu_feature') == False:
+                self._log.debug("Matching CPU feature list failed. Not available in flavor")
+                return False
+            else:
+                for feature in required.cpu_feature:
+                    if feature not in available.cpu_feature:
+                        self._log.debug("Matching CPU feature list failed. Required feature: %s is not present. Available features: %s", feature, available.cpu_feature)
+                        return False
+        elif available.has_field('cpu_feature'):
+            self._log.debug("Rejecting available flavor because cpu_feature not required but available")
+            return False
+        self._log.info("Successful match for Host EPA attributes")            
         return True
 
+
+    def _match_placement_group_inputs(self, required, available):
+        self._log.info("Matching Host aggregate attributes")
+        
+        if not required and not available:
+            # Host aggregate not required and not available => success
+            self._log.info("Successful match for Host Aggregate attributes")
+            return True
+        if required and available:
+            # Host aggregate requested and available => Do a match and decide
+            xx = [ x.as_dict() for x in required ]
+            yy = [ y.as_dict() for y in available ]
+            for i in xx:
+                if i not in yy:
+                    self._log.debug("Rejecting available flavor because host Aggregate mismatch. Required: %s, Available: %s ", required, available)
+                    return False
+            self._log.info("Successful match for Host Aggregate attributes")
+            return True
+        else:
+            # Either of following conditions => Failure
+            #  - Host aggregate required but not available
+            #  - Host aggregate not required but available
+            self._log.debug("Rejecting available flavor because host Aggregate mismatch. Required: %s, Available: %s ", required, available)
+            return False
+                    
+    
     def match_image_params(self, resource_info, request_params):
         return True
 
@@ -880,9 +1148,16 @@ class ComputePool(ResourcePool):
             self._log.debug("Host EPA mismatched")
             return False
 
+        result = self._match_placement_group_inputs(getattr(request_params, 'host_aggregate'),
+                                                    getattr(resource_info, 'host_aggregate'))
+
+        if result == False:
+            self._log.debug("Host Aggregate mismatched")
+            return False
+        
         return True
 
-
+    @asyncio.coroutine
     def initialize_resource_in_cal(self, resource, request):
         self._log.info("Initializing the compute-resource with id: %s in RW.CAL", resource.resource_id)
         modify_params = RwcalYang.VDUModifyParams()
@@ -895,19 +1170,20 @@ class ComputePool(ResourcePool):
             point = modify_params.connection_points_add.add()
             point.name = c_point.name
             point.virtual_link_id = c_point.virtual_link_id
-        self._cal.modify_virtual_compute(modify_params)
+        yield from self._cal.modify_virtual_compute(modify_params)
 
+    @asyncio.coroutine        
     def uninitialize_resource_in_cal(self, resource):
         self._log.info("Un-initializing the compute-resource with id: %s in RW.CAL", resource.resource_id)
         modify_params = RwcalYang.VDUModifyParams()
         modify_params.vdu_id = resource.resource_id
-        resource_info =  self.get_resource_info(resource)
+        resource_info =  yield from self.get_resource_info(resource)
         for c_point in resource_info.connection_points:
             self._log.debug("Removing connection point: %s from VDU: %s ",
                             c_point.name,resource_info.name)
             point = modify_params.connection_points_remove.add()
             point.connection_point_id = c_point.connection_point_id
-        self._cal.modify_virtual_compute(modify_params)
+        yield from self._cal.modify_virtual_compute(modify_params)
 
 
 class ResourceMgrCore(object):
@@ -916,6 +1192,7 @@ class ResourceMgrCore(object):
         self._log_hdl = log_hdl
         self._dts = dts
         self._loop = loop
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._parent = parent
         self._cloud_cals = {}
         # Dictionary of pool objects keyed by name
@@ -982,7 +1259,7 @@ class ResourceMgrCore(object):
 
         self._cloud_pool_table[account.name] = {}
 
-        cal = ResourceMgrCALHandler(self._log, self._log_hdl, account)
+        cal = ResourceMgrCALHandler(self._loop, self._executor, self._log, self._log_hdl, account)
         self._cloud_cals[account.name] = cal
 
         self._add_default_cloud_pools(account.name)
@@ -1082,7 +1359,7 @@ class ResourceMgrCore(object):
             cloud_pool_table = self._get_cloud_pool_table(request.cloud_account)
             pool = cloud_pool_table[pool_name]
             if pool.resource_type == resource_type:
-                info = pool.get_resource_info(r_id)
+                info = yield from pool.get_resource_info(r_id)
                 return info
             else:
                 self._log.error("Event-id conflict. Duplicate event-id: %s", event_id)
@@ -1108,7 +1385,7 @@ class ResourceMgrCore(object):
             cloud_pool_table = self._get_cloud_pool_table(cloud_account_name)
             pool = cloud_pool_table[pool_name]
             if pool.resource_type == resource_type:
-                info = pool.get_resource_info(r_id)
+                info = yield from pool.get_resource_info(r_id)
                 return info
             else:
                 self._log.error("Event-id conflict. Duplicate event-id: %s", event_id)
@@ -1120,10 +1397,10 @@ class ResourceMgrCore(object):
         if pool.resource_type == resource_type:
             if resource_type == 'network':
               r_id = resource.virtual_link_id
-              r_info = pool.get_info_by_id(resource.virtual_link_id)
+              r_info = yield from pool.get_info_by_id(resource.virtual_link_id)
             elif resource_type == 'compute':
               r_id = resource.vdu_id
-              r_info = pool.get_info_by_id(resource.vdu_id)
+              r_info = yield from pool.get_info_by_id(resource.vdu_id)
 
         if r_info is None:
             r_id, r_info = yield from pool.allocate_resource(request)

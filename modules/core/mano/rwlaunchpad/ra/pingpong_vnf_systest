@@ -10,9 +10,9 @@ source $RIFT_INSTALL/usr/rift/systemtest/util/mano/mano_common.sh
 
 # Helper script for invoking the mission control system test using the systest_wrapper
 
-SCRIPT_TEST="py.test -v \
+SCRIPT_TEST="py.test -x -v -p no:cacheprovider \
             ${PYTEST_DIR}/mission_control/test_mission_control.py \
-            ${PYTEST_DIR}/mission_control/pingpong_vnf/test_pingpong_vnf.py"
+            ${PYTEST_DIR}/mission_control/pingpong_vnf/test_onboard_vnf.py"
 
 test_prefix="pingpong_vnf_systest"
 test_cmd=""

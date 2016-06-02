@@ -654,8 +654,7 @@ rwdts_member_data_advice_query_action_xact(rwdts_xact_t*             xact,
     free(tmp);
   }
 
-  flags |= RWDTS_FLAG_ADVISE;
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
   flags |= RWDTS_XACT_FLAG_NOTRAN;
   // Increment the serial associated with this registration 
   if (inc_serial) {
@@ -730,8 +729,7 @@ rwdts_member_data_advice_query_action(rwdts_xact_t*             xact,
     free(tmp);
   }
 
-  flags |= RWDTS_FLAG_ADVISE;
-  flags |= RWDTS_FLAG_WAIT_RESPONSE;
+  flags |= RWDTS_XACT_FLAG_ADVISE;
 
   // Increment the serial associated with this registration 
   if (inc_serial) {
@@ -2121,6 +2119,7 @@ rwdts_member_data_delete_list_element_w_key_f(rwdts_member_data_record_t *mbr_da
   const uint8_t* key                      = NULL;
   size_t key_len                          = 0;
   bool update_advice                      = false;
+  rw_keyspec_path_t *derived_ks = NULL;
 
   RW_ASSERT_TYPE(mbr_data, rwdts_member_data_record_t);
   RW_ASSERT_TYPE(mbr_data->reg, rwdts_member_registration_t);
@@ -2243,24 +2242,33 @@ rwdts_member_data_delete_list_element_w_key_f(rwdts_member_data_record_t *mbr_da
         rwdts_member_pub_del(mbr_data, mobj);
       }
     }
-  } else {
 
-    rw_keyspec_path_t* derived_ks = NULL;
+  } else { /* depth_i != depth_o */
 
     rw_status= rw_keyspec_path_create_dup(mbr_data->keyspec, NULL, &derived_ks);
     RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
     if (rw_status != RW_STATUS_SUCCESS) {
       goto finish;
     }
+    RW_ASSERT(derived_ks);
+
     if (depth_i > depth_o) {
+      /* When query key (i) is longer, we trim it to match the
+	 registration key length, then look up registration objects
+	 from the truncated query key's binpath.  
+
+	 BUG, this seems like it will miss wildcard queries which
+	 match.  I beleive this should be collapsed into a single
+	 iterate-and-compare code path like the i < o one below.
+	 Possibly the above case as well.  Needing four different
+	 vaguely similar ways to match can't be right.
+      */
       rw_status = rw_keyspec_path_trunc_suffix_n(derived_ks, NULL, depth_o);
       RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
       if (rw_status != RW_STATUS_SUCCESS) {
         goto finish;
       }
-    }
 
-    if (depth_i > depth_o) {
       if (mbr_data->xact == NULL) {
         rw_status = RW_KEYSPEC_PATH_GET_BINPATH(derived_ks, NULL , (const uint8_t **)&key, &key_len, NULL);
         RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
@@ -2288,7 +2296,6 @@ rwdts_member_data_delete_list_element_w_key_f(rwdts_member_data_record_t *mbr_da
           }
           update_advice = true;
         } else {
-          rw_keyspec_path_free(derived_ks, NULL);
           RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
                                   NULL, rw_status,
                                   "Delete list element failed; no such object");
@@ -2300,7 +2307,6 @@ rwdts_member_data_delete_list_element_w_key_f(rwdts_member_data_record_t *mbr_da
            be truncated to find the object. Most of this code is temporary
            and will be modified when protobuf delta is available */
         if (rw_keyspec_path_has_wildcards(derived_ks)) {
-          rw_keyspec_path_free(derived_ks, NULL); 
           RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
                                   NULL, RW_STATUS_FAILURE,
                                   RWDTS_ERRSTR_KEY_WILDCARDS);
@@ -2338,43 +2344,66 @@ rwdts_member_data_delete_list_element_w_key_f(rwdts_member_data_record_t *mbr_da
           apih->stats.num_xact_update_objects++;
           mbr_data->reg->stats.num_xact_update_objects++;
         } else {
-          rw_keyspec_path_free(derived_ks, NULL);
           RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
                                   NULL, rw_status,
                                   "Delete list element failed; no such object");
           goto finish;
         }
       }
-    } else {
+
+    } else { /* depth_i < depth_o */
+
+      /* Query (i) key is shorter than this (matching) registration
+	 keypath; we iterate over the registration's objects and
+	 compare the query's key to see if it is a prefix match.
+
+	 Even though we already know the query key matches this
+	 registration's key, an explicit per-object compare is needed
+	 for the case of query=DELETE /foo[1], reg=/foo[*]/bar,
+	 mobj=/foo[2]/bar.  It's the possibility of wildcards in the
+	 registration that makes the query-vs-registration key match
+	 insufficient. */
+
       if (mbr_data->xact == NULL) {
-          rwdts_member_data_object_t *mobj, *tmp;
+	rwdts_member_data_object_t *mobj, *tmp;
         HASH_ITER(hh_data, mbr_data->reg->obj_list, mobj, tmp) {
-          HASH_DELETE(hh_data, mbr_data->reg->obj_list, mobj);
-          rwdts_member_pub_del(mbr_data, mobj);
-          rw_status = rwdts_member_data_deinit(mobj);
-          RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
-          if (rw_status != RW_STATUS_SUCCESS) {
-            goto finish;
-          }
+
+	  /* Compare derived_ks to first depth_i elements of mobj->keyspec */
+	  if (rw_keyspec_path_is_a_sub_keyspec(NULL, derived_ks, mobj->keyspec)) {
+	    HASH_DELETE(hh_data, mbr_data->reg->obj_list, mobj);
+	    rwdts_member_pub_del(mbr_data, mobj);
+	    rw_status = rwdts_member_data_deinit(mobj);
+	    RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
+	    if (rw_status != RW_STATUS_SUCCESS) {
+	      goto finish;
+	    }
+	  }
         }
       } else {
         rwdts_member_data_object_t *mobj, *tmp;
         HASH_ITER(hh_data, mbr_data->reg->obj_list, mobj, tmp) {
-          rwdts_member_data_object_t *newobj = NULL;
-          newobj = rwdts_member_data_duplicate_obj(mobj);
-          newobj->delete_mark = 1;
-          HASH_ADD_KEYPTR(hh_data, (*obj_list_p), newobj->key, newobj->key_len, newobj);
-          apih->stats.num_xact_delete_objects++;
-          mbr_data->reg->stats.num_xact_delete_objects++;
+	  /* Compare derived_ks to first depth_i elements of mobj->keyspec */
+	  if (rw_keyspec_path_is_a_sub_keyspec(NULL, derived_ks, mobj->keyspec)) {
+	    rwdts_member_data_object_t *newobj = NULL;
+	    newobj = rwdts_member_data_duplicate_obj(mobj);
+	    newobj->delete_mark = 1;
+	    HASH_ADD_KEYPTR(hh_data, (*obj_list_p), newobj->key, newobj->key_len, newobj);
+	    apih->stats.num_xact_delete_objects++;
+	    mbr_data->reg->stats.num_xact_delete_objects++;
+	  }
         }
+
+	/* BUG need to find and delete-mark any matching create
+	   item(s) in xact obj_list_p.  Journal-themed PbDelta based
+	   revamp will make this issue moot. */
       }
-    }
-    rw_keyspec_path_free(derived_ks, NULL);
+
+    } /* depth_i < depth_o */
   }
 
   if (update_advice) {
     if ((mbr_data->reg->flags & RWDTS_FLAG_PUBLISHER) != 0) {
-      uint32_t flags = RWDTS_FLAG_REPLACE;
+      uint32_t flags = RWDTS_XACT_FLAG_REPLACE;
       if (mbr_data->member_advise_cb.cb)  {
         flags |= RWDTS_XACT_FLAG_EXECNOW;
       }
@@ -2413,6 +2442,11 @@ finish:
   {
     rw_status = rwdts_member_data_record_deinit(mbr_data);
     RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
+  }
+
+  if (derived_ks) {
+    rw_keyspec_path_free(derived_ks, NULL);
+
   }
 
   return rw_status;
@@ -2841,7 +2875,7 @@ void rwdts_member_data_merge_store(rwdts_member_data_record_t *mbr_data,
   }
 
   // Free the old proto and update with the new proto
-  if (mbr_data->flags & RWDTS_FLAG_REPLACE) {
+  if (mbr_data->flags & RWDTS_XACT_FLAG_REPLACE) {
     if (mbr_data->msg) {
       protobuf_c_message_free_unpacked(NULL, mobj->msg);
       mobj->msg =  mbr_data->msg;
@@ -3107,7 +3141,7 @@ rwdts_member_reg_handle_handle_create_update_element(rwdts_member_reg_handle_t  
     return RW_STATUS_FAILURE;
   }
 
-  if(!rw_keyspec_path_matches_message(keyspec, NULL, msg)) {
+  if(!rw_keyspec_path_matches_message(keyspec, NULL, msg, true)) {
     return RW_STATUS_FAILURE;
   }
 

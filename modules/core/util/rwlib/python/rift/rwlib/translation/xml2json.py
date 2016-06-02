@@ -4,7 +4,7 @@
 # Creation Date: 11/9/15
 # 
 
-from lxml import etree 
+from lxml import etree
 
 import tornado.escape
 
@@ -18,22 +18,22 @@ from ..xml import (
 )
 
 def xml_to_json(schema_root, xml_string):
-    '''Used to convert rooted XML into equivalent JSON 
-    
+    '''Used to convert rooted XML into equivalent JSON
+
     This function walks the xml tree and emits the equivalent json.
-    
+
     '''
     def walk(schema_node, xml_node, depth=1):
-        
+
         json = list()
         indent = "  " * depth
-        
+
         siblings = collect_siblings(xml_node)
 
         for child_name, is_last in iterate_with_lookahead(siblings):
 
             sibling_xml_nodes = siblings[child_name]
-    
+
             child_schema_node = schema_node.search_child(child_name)
             json.append('%s"%s:%s" : ' % (indent, child_schema_node.get_prefix(), child_schema_node.get_name()))
 
@@ -49,17 +49,21 @@ def xml_to_json(schema_root, xml_string):
 
                     if not sibling_is_last:
                         json[-1] += (",")
-                    
+
                 json.append("%s]" % indent)
-                
+
             elif is_leafy:
                 actual_type = child_schema_node.node_type().get_leaf_type()
 
                 if actual_type is RwYang.LeafType.LEAF_TYPE_STRING:
                     # unescape the xml
-                    raw_string = tornado.escape.xhtml_unescape(sibling_xml_nodes[0].text)
+                    text = sibling_xml_nodes[0].text
+                    if text is not None:
+                        raw_string = tornado.escape.xhtml_unescape(sibling_xml_nodes[0].text)
+                    else:
+                        raw_string = ""
                 else:
-                    raw_string = sibling_xml_nodes[0].text                    
+                    raw_string = sibling_xml_nodes[0].text
 
                 escaped_json = tornado.escape.json_encode(raw_string)
 
@@ -93,12 +97,12 @@ def xml_to_json(schema_root, xml_string):
                 json[-1] += (",")
 
         return '\n'.join(json)
-            
+
     if not (xml_string.startswith("<root") or xml_string.startswith("<data")):
-        xml_string = "<root>%s</root>" % xml_string        
+        xml_string = "<data>%s</data>" % xml_string
 
     root_xml_node = etree.fromstring(xml_string)
-    
+
     json_string = walk(schema_root, root_xml_node)
 
     return "{\n" + json_string + "\n}"

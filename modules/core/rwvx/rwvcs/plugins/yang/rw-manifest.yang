@@ -41,18 +41,34 @@ module rw-manifest
     }
   }
 
+  typedef rwmgmt-agent-mode {
+    description
+      "Modes for the RW.MgmtAgent northbound interface.";
+
+    type enumeration {
+      enum CONFD;
+      enum RWXML;
+      enum AUTOMODE;
+    }
+  }
+
   grouping bootstrap-phase {
     container bootstrap-phase {
       description "This section contains the bootstrap phase configuration";
       rwpb:msg-new BootstrapPhase;
 
-      container rwbaseschema {
+      container rwmgmt {
         description "Base schema used by the system";
-        rwpb:msg-new BaseSchema;
+        rwpb:msg-new BootPhaseMgmt;
 
-        leaf northbound-listing {
+        leaf-list northbound-listing {
           description "Filename of the file enumerating the northbound exposed schema.";
           type string;
+        }
+
+        leaf agent-mode {
+          description "Select the RW.MgmtAgent northbound interface.";
+          type rwmgmt-agent-mode;
         }
       }
 
@@ -269,11 +285,11 @@ module rw-manifest
           type boolean;
         }
         leaf cert {
-          description "bootstrap ssl certificate";          
+          description "bootstrap ssl certificate";
           type string;
         }
         leaf key {
-          description "bootstrap ssl key";          
+          description "bootstrap ssl key";
           type string;
         }
       }
@@ -504,6 +520,21 @@ module rw-manifest
             default false;
           }
         } // container rwvcs
+
+        container mgmt-agent {
+          description "This section contains the init phase settings for management agent";
+
+          leaf netconf-trace {
+            description "Enable/Disable the generation of netconf trace files";
+            type enumeration {
+              enum ENABLE;
+              enum DISABLE;
+              enum AUTO;  // Decided based on RIFT_INSTALL
+            }
+            default AUTO;
+          }
+
+        } // container mgmt-agent
       } // container settings
     } // container init-phase
   } // grouping init-phase
@@ -556,8 +587,8 @@ module rw-manifest
     uses init-phase;
 
     container inventory {
-      description 
-          "This section contains all of the manifest 
+      description
+          "This section contains all of the manifest
            inventory items";
       rwpb:msg-new Inventory;
 
@@ -565,8 +596,8 @@ module rw-manifest
     }
 
     container operational-inventory {
-      description 
-          "This section contains all of the manifest 
+      description
+          "This section contains all of the manifest
            Operational Inventory items";
       rwpb:msg-new OpInventory;
 

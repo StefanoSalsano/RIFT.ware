@@ -11,6 +11,7 @@
 # operations across many VM's
 
 import collections
+import hashlib
 import itertools
 import logging
 import os
@@ -30,16 +31,33 @@ RIFT_INSTALL = os.environ["RIFT_INSTALL"]
 KMOD_DIR = os.path.join(RIFT_INSTALL, "usr/lib/modules/3.12.9-301.fc20.x86_64/extra/dpdk/kmod")
 KMOD_MODULES = ["igb_uio", "rte_kni"]
 
+def md5checksum(fname):
+    """
+    This calculates md5 check for a given file
+
+    Argument:
+        fname - file name for the checksum
+
+    Return:
+        checksum as hex
+    """
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
 def run_command_on_vm(ip_address, command_str, root=False):
     '''
     this is not as straightforward as it seems
     we can be root on a host, root on a VM, a regular user on the VM or a regular user on a host
     '''
     if root and os.geteuid() != 0:
-        fmt = "ssh -q -o StrictHostKeyChecking=no -i /usr/rift/etc/id_grunt -o BatchMode=yes -o ConnectTimeout=5 -t -t root@{ip_address} \"{command}\""
+        logger.info('Skipped running command because user is non-root - %s', command_str)
+        return 0
     else:
         fmt = "ssh -q -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 -t -t {ip_address} \"{command}\""
-    ssh_command = fmt.format(ip_address=ip_address, command=command_str)
+    ssh_command = fmt.format(rift_root=os.environ["RIFT_ROOT"], ip_address=ip_address, command=command_str)
     logger.info('ssh command: {}'.format(ssh_command))
 
     command_args = shlex.split(ssh_command)
@@ -320,6 +338,7 @@ class VmPreparer(object):
             self.install_kmod_drivers()
         if self._delete_ip_netns:
             self.delete_ip_netns()
+        run_command_on_vm(self._ip_list[0], "rm -rf  %s/zk/server*" % os.environ.get('RIFT_INSTALL'), True)
 
 
 class ProcessMatcher(object):

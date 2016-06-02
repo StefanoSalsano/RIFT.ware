@@ -55,6 +55,7 @@ target_link_libraries(rwyang PRIVATE
   rw_schema_pb
   rwyangutil_lib
   ${XERCES_C_LIBRARIES}
+  xalan-c
   ${EDIT_LIBRARIES}
   ${GOBJECT_LIBRARIES}
   ${NCX_LIBRARIES}
@@ -87,16 +88,16 @@ rift_make_pc(rwyang
 install(FILES
   ../include/riftware/rw_gi.h
   ../include/riftware/rw_json.h
-  ../include/riftware/rw_yang_json.h
   ../include/riftware/rw_keyspec.h
   ../include/riftware/rw_keyspec_gi.h
   ../include/riftware/rw_keyspec_mk.h
   ../include/riftware/rw_namespace.h
   ../include/riftware/rw_pb.h
-  ../include/riftware/rw_protobuf_c.h
   ../include/riftware/rw_pb_schema.h
-  ../include/riftware/rw_tree_iter.h
+  ../include/riftware/rw_protobuf_c.h
+  ../include/riftware/rw_schema_defs.h
   ../include/riftware/rw_xml.h
+  ../include/riftware/rw_yang_json.h
   ../include/riftware/rw_yang_pb.h
   ../include/riftware/yangmodel.h
   ../include/riftware/yangmodel_gi.h
@@ -107,13 +108,12 @@ install(FILES
 
 install(FILES
   ../include/riftware/rw_app_data.hpp
-  ../include/riftware/rw_confd_upgrade.hpp
+  ../include/riftware/rw_yang_json.h
   ../include/riftware/rw_yang_mutex.hpp
   ../include/riftware/util.hpp
   ../include/riftware/yangcli.hpp
   ../include/riftware/yangncx.hpp
   ../include/riftware/yangpbc.hpp
-  ../include/riftware/rw_yang_json.h
   DESTINATION usr/include/c++ COMPONENT ${PKG_LONG_NAME})
 
 
@@ -121,50 +121,59 @@ install(FILES
 # confd-related
 # ATTN: Should have special package name!
 
-set (rwconfd_sources
-  confd_xml.cpp
-  rw_ut_confd.cpp
-  rw_tree_iter.cpp
-  rw_confd_upgrade.cpp
-)
+if(NOT RIFT_AGENT_BUILD STREQUAL "XML_ONLY")
 
-find_library(boost_filesystem_path NAMES boost_filesystem)
-if (NOT boost_filesystem_path)
-  message (FATAL_ERROR "Could not find library ${boost_filesystem_path}")
-endif ()
-find_library(boost_system_path NAMES boost_system)
-if (NOT boost_system_path)
-  message (FATAL_ERROR "Could not find library ${boost_system_path}")
-endif ()
+    set (rwconfd_sources
+         confd_xml.cpp
+         rw_ut_confd.cpp
+         rw_tree_iter.cpp
+         rw_confd_upgrade.cpp
+         rw_confd_annotate.cpp
+    )
 
-add_library(rwconfd SHARED ${rwconfd_sources})
-target_link_libraries(rwconfd PRIVATE
-  ${CMAKE_INSTALL_PREFIX}/usr/local/confd/lib/libconfd.so
-  rwyang
-  rwlib
-  rw_schema_pb
-  ${boost_filesystem_path}
-  ${boost_system_path}
-  glib-2.0
-)
-rift_make_pc(rwconfd
-  LIBS -lrwconfd
-  COMPONENT yangtools-1.0
-)
+    find_library(boost_filesystem_path NAMES boost_filesystem)
+    if (NOT boost_filesystem_path)
+       message (FATAL_ERROR "Could not find library ${boost_filesystem_path}")
+    endif ()
+    find_library(boost_system_path NAMES boost_system)
+    if (NOT boost_system_path)
+       message (FATAL_ERROR "Could not find library ${boost_system_path}")
+    endif ()
 
-install(TARGETS rwconfd LIBRARY
-  DESTINATION usr/lib COMPONENT ${PKG_LONG_NAME})
+    add_library(rwconfd SHARED ${rwconfd_sources})
+    target_link_libraries(rwconfd PRIVATE
+         ${CMAKE_INSTALL_PREFIX}/usr/local/confd/lib/libconfd.so
+         rwyang
+         rwlib
+         rw_schema_pb
+         ${boost_filesystem_path}
+         ${boost_system_path}
+         glib-2.0
+        )
 
-install(FILES
-  ../include/riftware/confd_xml.h
-  DESTINATION usr/include COMPONENT ${PKG_LONG_NAME})
+   rift_make_pc(rwconfd
+        LIBS -lrwconfd
+        COMPONENT yangtools-1.0
+   )
 
-install(FILES
-  ../include/riftware/rw_ut_confd.hpp
-  DESTINATION usr/include/c++ COMPONENT ${PKG_LONG_NAME})
+  install(TARGETS rwconfd LIBRARY
+       DESTINATION usr/lib COMPONENT ${PKG_LONG_NAME})
 
-install(FILES confd.conf.harness
-  DESTINATION usr/local/confd/etc/confd COMPONENT ${PKG_LONG_NAME})
+  install(FILES
+       ../include/riftware/rw_confd_upgrade.hpp
+       ../include/riftware/rw_confd_annotate.hpp
+       ../include/riftware/rw_ut_confd.hpp
+       DESTINATION usr/include/c++ COMPONENT ${PKG_LONG_NAME})
+
+  install(FILES
+       ../include/riftware/rw_tree_iter.h
+       ../include/riftware/confd_xml.h
+       DESTINATION usr/include COMPONENT ${PKG_LONG_NAME})
+
+  install(FILES confd.conf.harness
+      DESTINATION usr/local/confd/etc/confd COMPONENT ${PKG_LONG_NAME})
+
+endif()
 
 
 ###############################################################################

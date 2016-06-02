@@ -239,7 +239,7 @@ class NetconfChannel(object):
         Returns:
             Returns the response XML.
         """
-        # Remove the <root/> element
+        # Remove the <data/> element
         xml = xml[0]
         rpc_rsp = yield from self.netconf_mgr.dispatch(xml)
         logger.debug('RPC response xml: %s', rpc_rsp.xml)
@@ -256,7 +256,7 @@ class NetconfChannel(object):
         Returns:
             Returns the response XML.
         """
-        # Remove the <root/> element
+        # Remove the <data/> element
         xml = xml[0]
         get_rsp = yield from self.netconf_mgr.get(('subtree', xml))
 
@@ -286,7 +286,7 @@ class NetconfChannel(object):
             Returns the response XML.
         """
         if len(xml):
-            # Remove the <root/> element
+            # Remove the <data/> element
             xml = xml[0]
             gc_filter = ('subtree', xml)
             logger.debug('GET-CONFIG request: %s', lxml.etree.tostring(xml))
@@ -304,9 +304,8 @@ class NetconfChannel(object):
 
         logger.debug('GET-CONFIG rpc response xml: %s', get_config_rsp.xml)
 
-        # Strip the <data> tag in the response, and cover it with <root>
-        # element. <aaa> and <nacm> elements are also removed 
-        new_xml = lxml.etree.Element('root', 
+        # Remove the <aaa> and <nacm> elements.
+        new_xml = lxml.etree.Element('data', 
                     nsmap={None:"http://riftio.com/ns/riftware-1.0/rw-base"})
         if get_config_rsp.ok:
             for element in get_config_rsp.data_ele:
@@ -318,7 +317,7 @@ class NetconfChannel(object):
             # Extract the error response
             parser = lxml.etree.XMLParser(remove_blank_text=True)
             err_xml = lxml.etree.fromstring(get_config_rsp.xml.encode(),
-                            parser)
+                                            parser)
             # get the error responses
             rpc_errors = err_xml.xpath('//nc:rpc-error',
                 namespaces={'nc':'urn:ietf:params:xml:ns:netconf:base:1.0'})
@@ -334,7 +333,6 @@ class NetconfChannel(object):
                         qual.localname != 'rpc-error'):
                     new_xml.append(element)
             rsp_xml = lxml.etree.tostring(new_xml)
-
 
         logger.debug('GET-CONFIG processed response xml: %s', rsp_xml)
         return rsp_xml 

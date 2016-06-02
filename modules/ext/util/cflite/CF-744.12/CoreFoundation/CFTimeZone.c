@@ -81,7 +81,9 @@ static void __InitTZStrings(void);
 
 #if DEPLOYMENT_TARGET_LINUX
 // Symbol aliases
-CF_EXPORT CFStringRef const kCFDateFormatterTimeZone __attribute__((weak, alias ("kCFDateFormatterTimeZoneKey")));
+//CF_EXPORT CFStringRef const kCFDateFormatterTimeZone __attribute__((weak, alias ("kCFDateFormatterTimeZoneKey")));
+// RIFT-12421
+// https://jira.riftio.com/browse/RIFT-12421?focusedCommentId=37596&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-37596
 #endif
 
 CONST_STRING_DECL(kCFTimeZoneSystemTimeZoneDidChangeNotification, "kCFTimeZoneSystemTimeZoneDidChangeNotification")

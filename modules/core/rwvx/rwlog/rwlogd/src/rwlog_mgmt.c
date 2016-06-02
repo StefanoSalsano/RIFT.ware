@@ -263,6 +263,7 @@ rwlog_rpc_apply_category_filter(rwlogd_instance_ptr_t instance,
   int cat= rwlogd_map_category_string_to_index(instance,category->name);
   if(cat == -1) {
     fprintf(stderr, "Invalid category name %s used.\n",category->name);
+    return status;
   }
 
   if (category->n_attribute) {
@@ -296,6 +297,9 @@ rwlog_rpc_apply_all_categories_filter(rwlogd_instance_ptr_t instance,
 {
   rw_status_t status = RW_STATUS_SUCCESS;
   status = rwlog_rpc_apply_category_filter(instance, sink_name,category);
+  if (status != RW_STATUS_SUCCESS) {
+    return status;
+  }
   if (category->packet) {
     rwlog_rpc_apply_packet_filter(instance, category->packet);
   }
@@ -310,6 +314,9 @@ rwlog_apply_all_categories_filter(rwlogd_instance_ptr_t instance,
 {
   rw_status_t status = RW_STATUS_FAILURE;
   status = rwlog_apply_category_filter(instance, sink_name,category);
+  if (status != RW_STATUS_SUCCESS) {
+    return status;
+  }
   if (category->packet) {
     rwlog_apply_packet_filter(instance, category->packet);
   }
@@ -411,6 +418,7 @@ rwlog_apply_default_verbosity(rwlogd_instance_ptr_t instance, rwlog_severity_t s
   int cat= rwlogd_map_category_string_to_index(instance,category_str);
   if(cat == -1) {
     fprintf(stderr, "Invalid category name %s used.\n",category_str);
+    return;
   }
   rwlogd_handle_default_severity(instance, category_str, sev);
 }
@@ -428,6 +436,7 @@ rwlog_apply_category_filter(rwlogd_instance_ptr_t instance,
   int cat= rwlogd_map_category_string_to_index(instance,category->name);
   if(cat == -1) {
     fprintf(stderr, "Invalid category name %s used.\n",category->name);
+    return status;
   }
 
   if (category->n_attribute) {
@@ -531,6 +540,7 @@ rwlog_mgmt_rpc_config_filter(rwlogd_instance_ptr_t instance,
                "RWLOGD-%d:Filter configuration failed for category %s",
                instance->rwtasklet_info->identity.rwtasklet_instance_id,
                Category[index]->name);
+      return rw_status;
     }
   }
 
@@ -597,6 +607,7 @@ rwlog_mgmt_config_filter(rwlogd_instance_ptr_t instance,
                "RWLOGD-%d:Filter configuration failed for category %s",
                instance->rwtasklet_info->identity.rwtasklet_instance_id,
                Category[index]->name);
+      return rw_status;
     }
   }
 
@@ -700,6 +711,7 @@ rwlog_apply_sink_config(rwlogd_instance_ptr_t instance,
                         RWPB_T_MSG(RwlogMgmt_data_Logging_Sink) *Sink)
 {
   RWPB_T_MSG(RwBase_ReturnStatus) ret_status;
+  rw_status_t status = RW_STATUS_SUCCESS;
 
   if (Sink->server_address && Sink->has_port) {
       rwlogd_create_sink(rwlogd_syslog_sink, instance, Sink->name, Sink->server_address, Sink->port);
@@ -717,9 +729,9 @@ rwlog_apply_sink_config(rwlogd_instance_ptr_t instance,
   }
 
   if (Sink && Sink->filter) {
-    rwlog_mgmt_config_filter(instance, &ret_status, Sink->name, (void *)Sink->filter);
+    status = rwlog_mgmt_config_filter(instance, &ret_status, Sink->name, (void *)Sink->filter);
   }
-  return RW_STATUS_SUCCESS;
+  return status;
 }
 
 static rw_status_t 
@@ -727,6 +739,7 @@ rwlog_mgmt_config_console(rwlogd_instance_ptr_t instance,
                           RWPB_T_MSG(RwBase_ReturnStatus) *ret_status,
                           RWPB_T_MSG(RwlogMgmt_data_Logging_Console) *Console)
 {
+  rw_status_t status = RW_STATUS_SUCCESS;
   if(Console->off) {
     stop_rwlogd_console_sink(instance,RWLOGD_CONSOLE_SINK_NAME);
     return RW_STATUS_SUCCESS;
@@ -738,9 +751,9 @@ rwlog_mgmt_config_console(rwlogd_instance_ptr_t instance,
     rwlogd_sink_update_vnf_id(instance, RWLOGD_CONSOLE_SINK_NAME, Console->vnf_id);
   }
   if(Console->filter) {
-    rwlog_mgmt_config_filter(instance, ret_status, RWLOGD_CONSOLE_SINK_NAME, (RWPB_T_MSG(RwlogMgmt_data_Logging_Sink_Filter) *)Console->filter);
+    status = rwlog_mgmt_config_filter(instance, ret_status, RWLOGD_CONSOLE_SINK_NAME, (RWPB_T_MSG(RwlogMgmt_data_Logging_Sink_Filter) *)Console->filter);
   }
-  return RW_STATUS_SUCCESS;
+  return status;
 }
 
 
@@ -763,6 +776,7 @@ rwlog_mgmt_config_sink(rwlogd_instance_ptr_t instance, size_t n_sink,
                   "RWLOGD-%d:Sink configuration failed",
                   instance->rwtasklet_info->identity.rwtasklet_instance_id);
 
+        return rw_status;
       }
     }
     return RW_STATUS_SUCCESS;
@@ -799,7 +813,10 @@ rwlog_mgmt_handle_colony_request_dts (const rwdts_xact_info_t* xact_info,
     case RWDTS_QUERY_CREATE:
     case RWDTS_QUERY_UPDATE:
       if (Config->n_sink) {
-        rwlog_mgmt_config_sink(instance, Config->n_sink, &ret_status, Config->sink);
+        rw_status_t rs = rwlog_mgmt_config_sink(instance, Config->n_sink, &ret_status, Config->sink);
+        if (rs != RW_STATUS_SUCCESS) {
+          return RWDTS_ACTION_NOT_OK;
+        }
       }
       if (Config->n_default_severity) {
         int index;
@@ -824,7 +841,10 @@ rwlog_mgmt_handle_colony_request_dts (const rwdts_xact_info_t* xact_info,
        rwlog_allow_dup_events(instance); 
       }
       if(Config->console) {
-        rwlog_mgmt_config_console(instance, &ret_status, Config->console);
+        rw_status_t rs = rwlog_mgmt_config_console(instance, &ret_status, Config->console);
+        if (rs != RW_STATUS_SUCCESS) {
+          return RWDTS_ACTION_NOT_OK;
+        }
       }
     
       break;
@@ -892,7 +912,10 @@ rwlog_mgmt_handle_log_request_dts (const rwdts_xact_info_t* xact_info,
     rwlog_apply_next_call_filter(instance,name,log_action->filter);
   }
   else if (log_action->filter) {
-    rwlog_mgmt_rpc_config_filter(instance, &ret_status, name, log_action->filter);
+    rw_status_t rs = rwlog_mgmt_rpc_config_filter(instance, &ret_status, name, log_action->filter);
+    if (rs != RW_STATUS_SUCCESS) {
+      return RWDTS_ACTION_NOT_OK;
+    }
   }
   if (log_action->has_checkpoint && log_action->checkpoint) {
         status = rwlogd_chkpt_logs(instance);
@@ -1297,6 +1320,62 @@ static rwdts_member_rsp_code_t rwlog_mgmt_handle_log_query_debug(const rwdts_xac
 }
 
 static rwdts_member_rsp_code_t
+rwlog_mgmt_handle_get_category_list (const rwdts_xact_info_t* xact_info,
+                                 RWDtsQueryAction         action,
+                                 const rw_keyspec_path_t*      key,
+                                 const ProtobufCMessage*  msg,
+                                 uint32_t credits,
+                                 void *getnext_ptr)
+{
+  RW_ASSERT(xact_info);
+  rwdts_member_query_rsp_t rsp;
+  ProtobufCMessage *resp_msg[1];
+  rwlogd_instance_ptr_t instance = (rwlogd_instance_ptr_t) xact_info->ud;
+  int i = 0;
+
+  RWPB_T_MSG(RwlogMgmt_data_Logging_Categories) category;
+  RWPB_F_MSG_INIT(RwlogMgmt_data_Logging_Categories,&category);
+  rw_keyspec_path_t *ks = (rw_keyspec_path_t *) RWPB_G_PATHSPEC_VALUE(RwlogMgmt_data_Logging_Categories);
+
+  if (!xact_info) {
+    return RWDTS_ACTION_NOT_OK;
+  }
+
+  switch (action) {
+    case RWDTS_QUERY_CREATE:
+    case RWDTS_QUERY_UPDATE:
+    case RWDTS_QUERY_DELETE:
+      return RWDTS_ACTION_OK;
+    case RWDTS_QUERY_READ:
+      break;
+    default:
+      RW_CRASH();
+  }
+  
+
+  memset (&rsp, 0, sizeof (rsp));
+  rsp.n_msgs = 1;
+  rsp.msgs = resp_msg;
+  resp_msg[0] = (ProtobufCMessage *) &category;
+  rsp.ks = ks;
+
+
+  category.n_category = instance->rwlogd_info->num_categories;
+  char **category_list = (char **)RW_MALLOC(sizeof(char *)*instance->rwlogd_info->num_categories);    
+  category_str_t *cat_list = rwlogd_get_category_list(instance);
+  for(i=0;i<instance->rwlogd_info->num_categories;i++) {
+   category_list[i] = (char *)cat_list[i];
+  }
+  category.category = (char **)category_list;
+
+  rsp.evtrsp = RWDTS_EVTRSP_ACK;
+  rwdts_member_send_response (xact_info->xact, xact_info->queryh, &rsp);
+  RW_FREE(category_list);
+  return RWDTS_ACTION_OK;
+}
+
+
+static rwdts_member_rsp_code_t
 rwlog_mgmt_handle_log_query_dts (const rwdts_xact_info_t* xact_info,
                                  RWDtsQueryAction         action,
                                  const rw_keyspec_path_t*      key,
@@ -1687,13 +1766,17 @@ static void rwlog_dts_registration_continue(rwlogd_instance_ptr_t instance) {
             (*RWPB_G_MSG_PBCMD(RwlogMgmt_data_Logging)), \
             rwlog_mgmt_handle_colony_request_dts, RWDTS_FLAG_SUBSCRIBER), /* config colony event */ 
 
+    DTS_TBL((*RWPB_G_PATHSPEC_VALUE(RwlogMgmt_data_Logging_Categories)),       \
+            (*RWPB_G_MSG_PBCMD(RwlogMgmt_data_Logging_Categories)), \
+            rwlog_mgmt_handle_get_category_list, RWDTS_FLAG_PUBLISHER|RWDTS_XACT_FLAG_ANYCAST), /* config colony event */ 
+
     DTS_TBL((*RWPB_G_PATHSPEC_VALUE(RwlogMgmt_input_LogEvent)), \
             (*RWPB_G_MSG_PBCMD(RwlogMgmt_input_LogEvent)),\
             rwlog_mgmt_handle_log_request_dts, RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_SHARED), /* Log enable-disable event */
 
     DTS_TBL((*RWPB_G_PATHSPEC_VALUE(RwlogMgmt_input_ShowLogs)),
             (*RWPB_G_MSG_PBCMD(RwlogMgmt_input_ShowLogs)),
-            rwlog_mgmt_handle_log_query_dts, RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_SHARED|RWDTS_FLAG_ANYCAST), /* Log request */
+            rwlog_mgmt_handle_log_query_dts, RWDTS_FLAG_PUBLISHER|RWDTS_FLAG_SHARED|RWDTS_XACT_FLAG_ANYCAST), /* Log request */
 
 #ifdef MULTI_VM_LOG_DISPLAY
     DTS_TBL((*RWPB_G_PATHSPEC_VALUE(RwLog_input_ShowLogsInternal)),
@@ -1709,7 +1792,10 @@ static void rwlog_dts_registration_continue(rwlogd_instance_ptr_t instance) {
     rw_keyspec_path_create_dup(regns[i].keyspec, NULL, &lks);
     if (i ==0 ) {
       rw_keyspec_path_set_category(lks, NULL, RW_SCHEMA_CATEGORY_CONFIG);
-    } else {
+    } 
+    else if (i ==1){
+      rw_keyspec_path_set_category(lks, NULL, RW_SCHEMA_CATEGORY_DATA);
+    }else {
       rw_keyspec_path_set_category(lks, NULL, RW_SCHEMA_CATEGORY_RPC_INPUT);
     }
     rwdts_member_register(NULL, instance->dts_h,lks, &regns[i].callback,

@@ -75,9 +75,9 @@ typedef enum _RWDtsRtrConnState {
 
 #endif /* __GI_SCANNER__ */
 
-typedef enum _RWDtsFlag {
+typedef enum _RWDtsXactFlag {
 
-  RWDTS_FLAG_NONE                = 0,
+  RWDTS_XACT_FLAG_NONE           = 0,
 
 
   /* See also strings in both rwdts_router_xact.c and rwdts_api.c Gi binding glue */
@@ -92,35 +92,50 @@ typedef enum _RWDtsFlag {
   RWDTS_XACT_FLAG_IMM_BOUNCE     = (1<<6),
   RWDTS_XACT_FLAG_REG            = (1<<7),
   RWDTS_XACT_FLAG_PEER_REG       = (1<<8),
+  RWDTS_XACT_FLAG_BLOCK_MERGE    = (1<<9),
+  RWDTS_XACT_FLAG_STREAM         = (1<<10),
+  RWDTS_XACT_FLAG_TRACE          = (1<<11),
+  RWDTS_XACT_FLAG_SOLICIT_RSP    = (1<<12),
+  RWDTS_XACT_FLAG_ADVISE         = (1<<13),
+  RWDTS_XACT_FLAG_DEPTH_FULL     = (1<<14),
+  RWDTS_XACT_FLAG_DEPTH_OBJECT   = (1<<15),
+  RWDTS_XACT_FLAG_DEPTH_LISTS    = (1<<16),
+  RWDTS_XACT_FLAG_DEPTH_ONE      = (1<<17),
+  RWDTS_XACT_FLAG_RETURN_PAYLOAD = (1<<18),
+  RWDTS_XACT_FLAG_ANYCAST        = (1<<19),
+  RWDTS_XACT_FLAG_REPLACE        = (1<<20)
+
+} RWDtsXactFlag;  
+  
+
+typedef enum _RWDtsFlag {
+
+  RWDTS_FLAG_NONE                = 0,
+
+
+  /* See also strings in both rwdts_router_xact.c and rwdts_api.c Gi binding glue */
 
   /* RWDtsFlags */
-  RWDTS_FLAG_FILE_DATASTORE = (1<<9),
-  RWDTS_FLAG_INTERNAL_REG   = (1<<10), /* This is used for internal DTS operation */
-  RWDTS_FLAG_DELTA_READY    = (1<<11),
-  RWDTS_FLAG_SUBOBJECT      = (1<<12),
-  RWDTS_FLAG_DEPTH_FULL     = (1<<13),
-  RWDTS_FLAG_DEPTH_OBJECT   = (1<<14),
-  RWDTS_FLAG_DEPTH_LISTS    = (1<<15),
-  RWDTS_FLAG_DEPTH_ONE      = (1<<16),
-  RWDTS_FLAG_NO_PREP_READ   = (1<<17),
-  RWDTS_FLAG_SUBSCRIBER     = (1<<18),
-  RWDTS_FLAG_PUBLISHER      = (1<<19),
-  RWDTS_FLAG_DATASTORE      = (1<<20),
-  RWDTS_FLAG_ANYCAST        = (1<<21),
-  RWDTS_FLAG_ADVISE         = (1<<22),
-  RWDTS_FLAG_CACHE          = (1<<23),
-  RWDTS_FLAG_REPLACE        = (1<<24),
-  RWDTS_FLAG_BLOCK_MERGE    = (1<<25),
-  RWDTS_FLAG_SHARED         = (1<<26),
-  RWDTS_FLAG_STREAM         = (1<<27),
-  RWDTS_FLAG_WAIT_RESPONSE  = (1<<28),
-  RWDTS_FLAG_TRACE          = (1<<29),
-  RWDTS_FLAG_SOLICIT_RSP    = (1<<30),
-  RWDTS_FLAG_SHARDING       = (1<<31)
+  RWDTS_FLAG_FILE_DATASTORE = (1<<0),
+  RWDTS_FLAG_INTERNAL_REG   = (1<<1), /* This is used for internal DTS operation */
+  RWDTS_FLAG_DELTA_READY    = (1<<2),
+  RWDTS_FLAG_SUBOBJECT      = (1<<3),
+  RWDTS_FLAG_DEPTH_FULL     = (1<<4),
+  RWDTS_FLAG_DEPTH_OBJECT   = (1<<5),
+  RWDTS_FLAG_DEPTH_LISTS    = (1<<6),
+  RWDTS_FLAG_DEPTH_ONE      = (1<<7),
+  RWDTS_FLAG_NO_PREP_READ   = (1<<8),
+  RWDTS_FLAG_SUBSCRIBER     = (1<<9),
+  RWDTS_FLAG_PUBLISHER      = (1<<10),
+  RWDTS_FLAG_DATASTORE      = (1<<11),
+  RWDTS_FLAG_CACHE          = (1<<13),
+  RWDTS_FLAG_SHARED         = (1<<15),
+  RWDTS_FLAG_SHARDING       = (1<<16)
 } RWDtsFlag;
 
 GType rwdts_query_action_get_type(void);
 GType rwdts_flag_get_type(void);
+GType rwdts_xact_flag_get_type(void);
 GType rwdts_xact_main_state_get_type(void);
 
 

@@ -26,10 +26,12 @@ class TaskletAsyncIOLoop(tornado.platform.asyncio.BaseAsyncIOLoop):
         current Tornado IOLoop on every scheduler tick.
         """
         super().initialize(asyncio_loop=asyncio_loop)
-        asyncio_loop.register_tick_hook(self.make_current)
+        asyncio_loop.register_tick_enter_hook(self.make_current)
+        asyncio_loop.register_tick_exit_hook(self.clear_current)
 
     def close(self, all_fds=False):
         """ Close the Tornado IOLoop """
-        self.asyncio_loop.unregister_tick_hook(self.make_current)
+        self.asyncio_loop.unregister_tick_enter_hook(self.make_current)
+        self.asyncio_loop.unregister_tick_exit_hook(self.clear_current)
         self.asyncio_loop=None
         super().close(all_fds)

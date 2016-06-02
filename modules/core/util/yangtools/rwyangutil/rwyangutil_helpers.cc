@@ -6,19 +6,197 @@
  * 
  */
 
+#include <fstream>
+#include <iostream>
 #include <map>
 #include <set>
 #include <string>
-#include <fstream>
+
 #define BOOST_NO_CXX11_SCOPED_ENUMS
 #include <boost/filesystem.hpp>
 #undef BOOST_NO_CXX11_SCOPED_ENUMS
 
 #include "rwyangutil.h"
+#include "rwyangutil_helpers.hpp"
 
 namespace fs = boost::filesystem;
 
 namespace rwyangutil {
+
+std::string get_rift_artifacts()
+{
+  auto rift_artifacts = getenv("RIFT_ARTIFACTS");
+  if (!rift_artifacts) return "/home/rift/.artifacts";
+  return rift_artifacts;
+}
+
+std::vector<std::string> get_filestems(std::vector<std::string> const & paths,
+                                       std::string const & directory)
+{
+  std::vector<std::string> filestems;
+
+  for (fs::recursive_directory_iterator it(directory);
+       it != fs::recursive_directory_iterator();
+       ++it) {
+    std::string const filestem = it->path().stem().string();
+    if (std::find(paths.begin(), paths.end(), filestem) != paths.end()) {
+      continue;
+    }
+
+    filestems.push_back(filestem);
+  }
+  std::sort(filestems.begin(), filestems.end());
+  return filestems;
+}
+
+bool fs_create_directory(const std::string& path)
+{
+  try {
+    if (!fs::create_directory(path)) {
+      return false;
+    }
+  } catch (const fs::filesystem_error& e) {
+    std::cerr << "Exception while creating directory: "
+              << path << " "
+              << e.what() << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+bool fs_create_directories(const std::string& path)
+{
+  // ATTN: Would prefer fs::create_directories, but it is buggy.
+  // https://svn.boost.org/trac/boost/ticket/7258
+  // Fixed in boost 60.0.
+  fs::path fs_path(path);
+  fs::path full_path;
+  for (auto dir: fs_path) {
+    boost::system::error_code ec;
+    full_path /= dir;
+    bool exists = fs::exists(full_path, ec);
+    bool is_dir = fs::is_directory(full_path, ec);
+
+    if (exists) {
+      if (is_dir) {
+        continue;
+      }
+
+      bool rv = fs_remove(full_path.string());
+      if (!rv) {
+        return rv;
+      }
+    }
+
+    bool rv = fs_create_directory(full_path.string());
+    if (!rv) {
+      return rv;
+    }
+  }
+
+  return true;
+}
+
+bool fs_create_hardlinks(const std::string& spath,
+                         const std::string& dpath)
+{
+  for (fs::directory_iterator file(spath); file != fs::directory_iterator(); ++file) {
+    try {
+      fs::create_hard_link(file->path(), dpath + "/" + file->path().filename().string());
+    } catch (const fs::filesystem_error& e) {
+      std::cerr << "Exception while creating symbolic link to: "
+                << file->path().string() << ": "
+                << e.what() << std::endl;
+      return false;
+    }
+  }
+  return true;
+}
+
+bool fs_empty_the_directory(const std::string& dpath)
+{
+  for (fs::directory_iterator file(dpath); file != fs::directory_iterator(); ++file) {
+    fs::remove_all(file->path());
+  }
+  return true;
+}
+
+bool fs_remove_directory(const std::string& dpath)
+{
+  try {
+    fs::remove_all(dpath);
+  } catch (const fs::filesystem_error& e) {
+    std::cerr << "Exception while removing the dir: "
+              << dpath << " "
+              << e.what() << std::endl;
+    return false;
+  }
+  return true;
+}
+
+std::string fs_read_symlink(const std::string& sym_link)
+{
+  std::string target;
+
+  try {
+    fs::path const tpath = fs::read_symlink(sym_link);
+    if (!tpath.empty()) {
+      target = tpath.string();
+    }
+  } catch (const fs::filesystem_error& e) {
+    std::cerr << "Exception while reading the symlink: "
+              << sym_link << " "
+              << e.what() << std::endl;
+    return target;
+  }
+
+  return target;
+}
+
+bool fs_create_symlink(const std::string& target,
+                       const std::string& link)
+{
+  try {
+    fs::create_symlink(target, link);
+  } catch (const fs::filesystem_error& e) {
+    std::cerr << "Exception while creating sym link to "
+              << target << " as " << link << " "
+              << e.what() << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+bool fs_rename(const std::string& old_path,
+               const std::string& new_path)
+{
+  try {
+    fs::rename(old_path, new_path);
+  } catch (const fs::filesystem_error& e) {
+    std::cerr << "Exception while renaming "
+              << old_path << " to " << new_path << " "
+              << e.what() << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+bool fs_remove(const std::string& path)
+{
+  try {
+    fs::remove(path);
+  } catch (const fs::filesystem_error& e) {
+    std::cerr << "Exception while removing "
+              << path << " "
+              << e.what() << std::endl;
+    return false;
+  }
+
+  return true;
+}
 
 std::string get_rift_install()
 {
@@ -27,20 +205,22 @@ std::string get_rift_install()
   return rift_install;
 }
 
-std::set<std::string> const read_northbound_schema_listing(std::string const & rift_root,
-                                                           std::string const & northbound_listing)
+// ATTN: Should have proper error handling!
+std::set<std::string> read_northbound_schema_listing(
+    std::string const & rift_root,
+    std::vector<std::string> const & northbound_listings)
 {
-
-  std::string const northbound_listing_filename = rift_root
-                                                  + "/usr/data/manifest/"
-                                                  + northbound_listing;
-  
-  std::ifstream northbound_listing_file(northbound_listing_filename);
   std::set<std::string> northbound_schema_listing;
 
-  std::string line;
-  while (std::getline(northbound_listing_file,line)) {
-    northbound_schema_listing.insert(line);
+  for (auto const& northbound_listing_filename: northbound_listings) {
+    std::string northbound_listing_path
+      = rift_root + "/usr/data/manifest/" + northbound_listing_filename;
+
+    std::ifstream northbound_listing_file(northbound_listing_path);
+    std::string line;
+    while (std::getline( northbound_listing_file, line )) {
+      northbound_schema_listing.insert(line);
+    }
   }
 
   return northbound_schema_listing;
@@ -68,7 +248,7 @@ std::string get_so_file_for_module(const std::string& module_name)
 {
   auto prefix_directory = get_rift_install() + "/usr";
   const std::string& cmd = "pkg-config --define-variable=prefix=" + prefix_directory
-                         + " --libs " + module_name;
+                           + " --libs " + module_name;
 
   auto result = execute_command_and_get_result(cmd);
   auto lpos = result.find("-l");
@@ -81,7 +261,7 @@ std::string get_so_file_for_module(const std::string& module_name)
   if (split_pos == std::string::npos) return std::string();
 
   std::string so_file = result.substr(2, split_pos - 2) + "/lib"
-    + result.substr(lpos + 2, result.length() - (lpos + 2) - 2) + ".so";
+                        + result.substr(lpos + 2, result.length() - (lpos + 2) - 2) + ".so";
 
   return so_file;
 }
@@ -95,11 +275,11 @@ bool validate_module_consistency(const std::string& module_name,
   // fxs files are not found at correct path
   if (module_name.find("ietf") == 0) return true;
 
-  std::string meta_name = module_name + META_INFO_FILE_PREFIX;
+  std::string meta_name = module_name + RW_SCHEMA_META_FILE_SUFFIX;
   std::string rift_install = get_rift_install();
 
-  std::string version_dir = rift_install + "/" + LATEST_VER_DIR;
-  auto meta_info = rift_install + IMAGE_SCHEMA_DIR;
+  std::string version_dir = rift_install + "/" + RW_SCHEMA_VER_LATEST_PATH;
+  auto meta_info = rift_install + "/" + RW_INSTALL_YANG_PATH;
 
   std::ifstream inf(meta_info + "/" + meta_name);
   if (!inf) {
@@ -122,8 +302,10 @@ bool validate_module_consistency(const std::string& module_name,
   }
 
   std::map<std::string, std::vector<std::string>> prefix_path_map = {
-    {module_name + ".yang",    {rift_install + IMAGE_SCHEMA_DIR}},
-    {module_name + ".fxs",     {rift_install + IMAGE_SCHEMA_DIR}},
+    {module_name + ".yang",    {rift_install + "/" + RW_INSTALL_YANG_PATH}},
+#ifdef CONFD_ENABLED
+    {module_name + ".fxs",     {rift_install + "/" + RW_INSTALL_YANG_PATH}},
+#endif
     {module_name + ".pc",      {rift_install + "/usr/lib/pkgconfig/"}},
     {mangled_name + "Yang-1.0.typelib",     {rift_install + "/usr/lib/rift/girepository-1.0/"}},
     {fs::path(so_file).filename().string(), {rift_install + "/usr/lib/"}},

@@ -305,6 +305,12 @@ function(rift_add_proto_target)
     endif()
     set(dso_file)
 
+    if(ARG_SUPPRESS_PROTO_DEPEND)
+      set(proto_file_depend)
+    else()
+      set(proto_file_depend ${proto_file})
+    endif()
+
     # Compile the protobuf to c++?  .proto->.pb.cc, .pb.h, .dso?
     if(ARG_WITH_GPROTOC)
       set(gpc_base ${ARG_DEST_DIR}/${name}.pb)
@@ -317,12 +323,6 @@ function(rift_add_proto_target)
         list(APPEND dso_file_list ${dso_file})
       else()
         set(dso_arg)
-      endif()
-
-      if(ARG_SUPPRESS_PROTO_DEPEND)
-        set(proto_file_depend)
-      else()
-        set(proto_file_depend ${proto_file})
       endif()
 
       rift_gprotoc_command(command
@@ -343,7 +343,6 @@ function(rift_add_proto_target)
         install(FILES ${gpc_h_file} DESTINATION usr/include/c++ COMPONENT ${ARG_GPCH_COMPONENT})
       endif()
     endif()
-
 
     # Compile the protobuf: .proto->.pb-c.*,.dso?
     if(NOT ARG_NO_PROTOCC)
@@ -375,10 +374,10 @@ function(rift_add_proto_target)
       set(py_file "${ARG_DEST_DIR}/${PYTHON_OUTPUT_DIR}/${py_name}_pb2.py")
 
       add_custom_command(
-           OUTPUT ${pcc_c_file} ${pcc_h_file} ${dso_file} ${py_file}
-           COMMAND ${command} && ${CMAKE_INSTALL_PREFIX}/usr/bin/protoc ${proto_path_arg} --python_out=${ARG_DEST_DIR} ${proto_file}
-           DEPENDS ${ARG_DEPENDS} ${extra_depends} ${proto_file_depend}
-           )
+        OUTPUT ${pcc_c_file} ${pcc_h_file} ${dso_file} ${py_file}
+        COMMAND ${command} && ${CMAKE_INSTALL_PREFIX}/usr/bin/protoc ${proto_path_arg} --python_out=${ARG_DEST_DIR} ${proto_file}
+        DEPENDS ${ARG_DEPENDS} ${extra_depends} ${proto_file_depend}
+      )
 
       list(APPEND c_file_list ${pcc_c_file})
       list(APPEND h_file_list ${pcc_h_file})

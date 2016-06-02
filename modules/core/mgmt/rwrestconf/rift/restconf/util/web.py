@@ -8,6 +8,64 @@
 import urllib.parse
 import base64
 
+import tornado.escape
+
+from .util import (
+    PayloadType,
+    Result,
+    naive_xml_to_json,
+    NetconfOperation,
+)
+
+ERROR_MAP = {
+    Result.Data_Exists : 409,
+    Result.Operation_Failed : 405,
+    Result.Rpc_Error : 405,
+    Result.Unknown_Error : 500,
+    Result.Upgrade_In_Progress : 405,
+    Result.Upgrade_Performed : 405,
+}
+
+
+def determine_payload_type(accept_type):
+    if accept_type is None:
+        return PayloadType.XML
+    else:
+        if "xml" in accept_type:
+            if "collection" in accept_type:
+                return PayloadType.XML_COLLECTION
+            else:
+                return PayloadType.XML
+        elif "json" in accept_type:
+            if "collection" in accept_type:
+                return PayloadType.JSON_COLLECTION
+            else:
+                return PayloadType.JSON
+        else:
+            return None
+
+def format_error_message(accept_type, message):
+    if accept_type in (PayloadType.JSON, PayloadType.JSON_COLLECTION):
+        return naive_xml_to_json(message)
+    else:
+        return message
+
+def get_username_and_password_from_auth_header(auth_header):
+    """Gets the username and password from the auth_header
+
+    Arguments:
+    auth_header - Encoded auth_header received for basic auth
+
+    Returns: Decoded username and password.
+    """
+    if not auth_header.startswith("Basic "):
+        raise ValueError("only supoprt for basic authorization")
+
+    encoded = auth_header[6:]
+    decoded = base64.decodestring(bytes(encoded, "utf-8")).decode("utf-8")
+    username, password = decoded.split(":", 2)
+    return username, password
+
 def split_url(url):
     is_operation = False
     url_parts = urllib.parse.urlsplit(url)
@@ -32,7 +90,11 @@ def split_url(url):
 
     url_pieces = relevant_url.split("/")
 
-    return url_pieces, relevant_url, url_parts[3], is_operation
+    unescaped_url_pieces = list()
+    for p in url_pieces:
+        unescaped_url_pieces.append(tornado.escape.url_unescape(p))
+
+    return unescaped_url_pieces, relevant_url, url_parts[3], is_operation
 
 def split_stream_url(url):
     """Splits the stream URL.
@@ -75,24 +137,36 @@ def is_config(url):
     whole_url = url_parts[2]
     return whole_url.startswith("/api/running") or whole_url.startswith("/api/config")
 
+def is_operation(url):
+    url_parts = urllib.parse.urlsplit(url)
+    whole_url = url_parts[2]
+    return whole_url.startswith("/api/operations")
+
 def is_schema_api(url):
     url_parts = urllib.parse.urlsplit(url)
     whole_url = url_parts[2]
     return whole_url.startswith("/api/schema")
 
-def get_username_and_password_from_auth_header(auth_header):
-    """Gets the username and password from the auth_header
+def map_error_to_http_code(result):
+    assert result is not Result.OK
 
-    Arguments:
-    auth_header - Encoded auth_header received for basic auth
+    return ERROR_MAP.get(result, (500))
 
-    Returns: Decoded username and password.
-    """
-    if not auth_header.startswith("Basic "):
-        raise ValueError("only supoprt for basic authorization")
-
-    encoded = auth_header[6:]
-    decoded = base64.decodestring(bytes(encoded, "utf-8")).decode("utf-8")
-    username, password = decoded.split(":", 2)
-    return username, password
-
+def map_request_to_netconf_operation(request):
+    if request.method == "DELETE":
+        return NetconfOperation.DELETE
+    elif request.method == "GET":
+        if is_config(request.uri):
+            return NetconfOperation.GET_CONFIG
+        else:
+            return NetconfOperation.GET
+    elif request.method == "POST":
+        if is_operation(request.uri):
+            return NetconfOperation.RPC
+        else:
+            return NetconfOperation.CREATE
+    elif request.method == "PUT":
+        return NetconfOperation.REPLACE
+    else:
+        raise ValueError("unknown request type %s" % request.method)
+    

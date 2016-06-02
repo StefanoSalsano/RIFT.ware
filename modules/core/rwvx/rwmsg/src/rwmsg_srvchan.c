@@ -46,6 +46,14 @@ static void rwmsg_srvchan_recv_req(rwmsg_srvchan_t *sc,
 						    req->hdr.payt,
 						    req->hdr.methno);
   if (meth) {
+    /*
+    if (meth && meth->pathidx)
+    fprintf(stderr, "sc->->ch.ep->paths[%u].path=%s hashlittle=0x%lu req->hdr.pathhash=0x%lu\n",
+            meth->pathidx,
+            sc->ch.ep->paths[meth->pathidx].path,
+            rw_hashlittle64(sc->ch.ep->paths[meth->pathidx].path, strlen(sc->ch.ep->paths[meth->pathidx].path)),
+            req->hdr.pathhash);
+    */
     RW_ASSERT(rw_hashlittle64(sc->ch.ep->paths[meth->pathidx].path, strlen(sc->ch.ep->paths[meth->pathidx].path)) == req->hdr.pathhash);
     RW_ASSERT(meth->sig->methno == req->hdr.methno);
     RW_ASSERT(meth->sig->payt == req->hdr.payt);

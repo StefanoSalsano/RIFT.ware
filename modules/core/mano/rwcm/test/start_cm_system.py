@@ -53,7 +53,6 @@ sysinfo = rift.vcs.SystemInfo(
                                     rift.vcs.uAgentTasklet(),
                                     ],
                                 procs=[
-                                    rift.vcs.Confd(),
                                     rift.vcs.CliTasklet(manifest_file="cli_rwcm.xml"),
                                     rift.vcs.DtsRouterTasklet(),
                                     rift.vcs.MsgBrokerTasklet(),
@@ -101,7 +100,7 @@ def main(argv=sys.argv[1:]):
                               port_groups=port_groups)
 
     # Create the prepared system from the demo
-    system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args)
+    system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args, netconf_trace_override=True)
 
     # Start the prepared system
     system.start()

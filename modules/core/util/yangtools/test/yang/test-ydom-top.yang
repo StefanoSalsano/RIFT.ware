@@ -540,5 +540,100 @@ module test-ydom-top
       type string;
     }
   }
+
+  list defaults_test {
+    key "name";
+    leaf name {
+      type string;
+    }
+
+    leaf nd_leaf {
+      type string;
+    }
+
+    leaf d_leaf {
+      type string;
+      default "default_val";
+    }
+
+    container d_cont1 {
+      leaf nd_c1 {
+        type string;
+      }
+
+      container d_cont2 {
+        leaf d_c2 {
+          type int32;
+          default 271;
+        }
+        leaf nd_c2 {
+          type int32;
+        }
+      }
+
+      leaf d_c1 {
+        type string;
+        default "d_c1_val";
+      }
+
+      choice ch {
+        default d_case;
+        case nd_case {
+          leaf nd_case_d_leaf {
+            type string;
+            default "nd_case_leaf_val";
+          }
+          leaf nd_case_nd_leaf {
+            type uint32;
+          }
+        }
+        case d_case {
+          leaf d_case_nd_leaf {
+            type uint32;
+          }
+          leaf d_case_d_leaf {
+            type uint32;
+            default 314;
+          }
+        }
+      }
+    }
+  }
+
+  rpc defaults_rpc {
+    input {
+      leaf nd_leaf {
+        type string;
+      }
+      leaf d_leaf {
+        type string;
+        default "d_leaf_val";
+      }
+      container d_cont {
+        leaf d_cont_d_leaf {
+          type uint32;
+          default 314;
+        }
+        leaf d_cont_nd_leaf {
+          type uint32;
+        }
+      }
+    }
+    output {
+      list d_list {
+        key "name";
+        leaf name {
+          type string;
+        }
+        leaf nd_leaf {
+          type uint32;
+        }
+        leaf d_leaf {
+          type uint32;
+          default 108;
+        }
+      }
+    }
+  }
 }
 

@@ -18,14 +18,16 @@ import gi
 
 from rift.restconf import (
     ConfdRestTranslator,
-    convert_netconf_response_to_json,
+    naive_xml_to_json,
     convert_rpc_to_json_output,
     convert_rpc_to_xml_output,
     convert_xml_to_collection,
+    create_dts_xpath_from_url,
     create_xpath_from_url,
     XmlToJsonTranslator,
     load_schema_root,
     load_multiple_schema_root,
+    convert_get_request_to_xml,
 )
 
 gi.require_version('VehicleAYang', '1.0')
@@ -34,7 +36,14 @@ gi.require_version('RwYang', '1.0')
 from gi.repository import (
     RwYang,
     VehicleAYang,
+    RwKeyspec,
+    RwRestconfYang,
 )
+
+from rift.rwlib.testing import (
+    are_xml_doms_equal,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +60,17 @@ def _ordered(obj):
         return obj
 
 class TestRest(unittest.TestCase):
+
+    def compare_doms(self, dom1, dom2):
+        are_equal, errors = are_xml_doms_equal(dom1, dom2)
+
+        if not are_equal:
+            for e in errors:
+                print(e)
+
+        # also compare strings directly
+        self.assertEqual(dom1, dom2)
+        self.assertTrue(are_equal)        
 
     def test_conversion_PUT_JSON_to_XML_1(self):
         self.maxDiff = None
@@ -82,7 +102,7 @@ class TestRest(unittest.TestCase):
 
         actual_xml = converter.convert("PUT", url, (json,"application/data+json"))
 
-        self.assertEqual(actual_xml, expected_xml)
+        self.compare_doms(actual_xml, expected_xml)
 
     def test_conversion_POST_JSON_to_XML_1(self):
         self.maxDiff = None
@@ -122,14 +142,12 @@ class TestRest(unittest.TestCase):
         # trailing '/' is on purpose to test that edge case
         url = "/api/operational/car/subaru/models/" 
         expected_xml = _collapse_string('''
-<car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><brand>subaru</brand><models xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" /></car>
+<data><vehicle-a:car xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><brand>subaru</brand><vehicle-a:models><name-m></name-m></vehicle-a:models></vehicle-a:car></data>
         ''')
 
-        root = load_schema_root("vehicle-a")
+        schema = load_schema_root("vehicle-a")
         
-        converter = ConfdRestTranslator(root)
-
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = convert_get_request_to_xml(schema, url)        
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -137,14 +155,12 @@ class TestRest(unittest.TestCase):
         self.maxDiff = None # expected_xml is too large
         url = "/api/operational/whatever/inner-whatever/list-whatever"
         expected_xml = _collapse_string('''
-<whatever xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-whatever xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><list-whatever xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" /></inner-whatever></whatever>
+<data><vehicle-a:whatever xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><vehicle-a:inner-whatever><vehicle-a:list-whatever/></vehicle-a:inner-whatever></vehicle-a:whatever></data>
         ''')
 
-        root = load_schema_root("vehicle-a")
+        schema = load_schema_root("vehicle-a")
         
-        converter = ConfdRestTranslator(root)
-
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = convert_get_request_to_xml(schema, url)        
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -153,22 +169,13 @@ class TestRest(unittest.TestCase):
 
         url = "/api/operational/car/subaru/extras?select=speakers;engine(*)"
         expected_xml = _collapse_string('''
-<car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">
-  <brand>
-  subaru</brand>
-  <extras xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-augment-a">
-    <engine xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-augment-a" />
-    <speakers />
-  </extras>
-</car>
+<data><vehicle-a:car xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><brand>subaru</brand><vehicle-augment-a:extras xmlns:vehicle-augment-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-augment-a"/></vehicle-a:car></data>
 
         ''')
 
         schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
 
-        converter = ConfdRestTranslator(schema)
-
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = convert_get_request_to_xml(schema, url)        
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -176,14 +183,12 @@ class TestRest(unittest.TestCase):
         self.maxDiff = None # expected_xml is too large
         url = "/api/operational/whatever/inner-whatever?deep"
         expected_xml = _collapse_string('''
-<whatever xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-whatever xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" /></whatever>
+<data><vehicle-a:whatever xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><vehicle-a:inner-whatever/></vehicle-a:whatever></data>
         ''')
 
-        root = load_schema_root("vehicle-a")
-        
-        converter = ConfdRestTranslator(root)
+        schema = load_schema_root("vehicle-a")
 
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = convert_get_request_to_xml(schema, url)        
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -192,14 +197,12 @@ class TestRest(unittest.TestCase):
         self.maxDiff = None # expected_xml is too large
         url = "/api/operational/whatever/inner-whatever"
         expected_xml = _collapse_string('''
-<whatever xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-whatever xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" /></whatever>
+<data><vehicle-a:whatever xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><vehicle-a:inner-whatever/></vehicle-a:whatever></data>
         ''')
 
-        root = load_schema_root("vehicle-a")
+        schema = load_schema_root("vehicle-a")
         
-        converter = ConfdRestTranslator(root)
-
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = convert_get_request_to_xml(schema, url)        
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -207,14 +210,12 @@ class TestRest(unittest.TestCase):
         self.maxDiff = None # expected_xml is too large
         url = "/api/operational/car?select=brand"
         expected_xml = _collapse_string('''
-<car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><brand /></car>
+<data><vehicle-a:car xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"/></data>
         ''')
 
-        root = load_schema_root("vehicle-a")
+        schema = load_schema_root("vehicle-a")
         
-        converter = ConfdRestTranslator(root)
-
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = convert_get_request_to_xml(schema, url)        
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -223,14 +224,12 @@ class TestRest(unittest.TestCase):
 
         url = "/api/operational/car?deep"
         expected_xml = _collapse_string('''
-<car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" />
+<data><vehicle-a:car xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"/></data>
         ''')
 
         schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
 
-        converter = ConfdRestTranslator(schema)
-
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = convert_get_request_to_xml(schema, url)        
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -239,14 +238,12 @@ class TestRest(unittest.TestCase):
 
         url = "/api/operational/car"
         expected_xml = _collapse_string('''
-<car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><brand /><models xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><name-m /></models><extras xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-augment-a"><name-e /><engine xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-augment-a"></engine><features xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-augment-a"><package /><items xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-augment-a"><name /></items></features></extras></car>
+<data><vehicle-a:car xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"/></data>
         ''')
 
         schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
 
-        converter = ConfdRestTranslator(schema)
-
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = convert_get_request_to_xml(schema, url)        
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -255,14 +252,54 @@ class TestRest(unittest.TestCase):
 
         url = "/api/operational/car/honda"
         expected_xml = _collapse_string('''
-<car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><brand>honda</brand></car>
+<data><vehicle-a:car xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><brand>honda</brand></vehicle-a:car></data>
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
+
+        actual_xml = convert_get_request_to_xml(schema, url) 
+
+        self.assertEquals(actual_xml, expected_xml)
+
+    def test_conversion_CONFD_URL_to_XML_delete_list_key_simple(self):
+        self.maxDiff = None # expected_xml is too large
+
+        url = "/api/operational/car/honda"
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="delete">
+    <brand>honda</brand>
+  </car>
+</config>
         ''')
 
         schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
 
         converter = ConfdRestTranslator(schema)
 
-        actual_xml = converter.convert("GET", url, None)
+        actual_xml = converter.convert("DELETE", url, None)
+
+        self.assertEquals(actual_xml, expected_xml)
+
+    def test_conversion_CONFD_URL_to_XML_delete_list_in_container(self):
+        self.maxDiff = None # expected_xml is too large
+
+        url = "/api/operational/top-container-deep/inner-list-shallow/asdf?deep"
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0">
+  <top-container-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">
+    <inner-list-shallow xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="delete">
+      <k>asdf</k>
+    </inner-list-shallow>
+  </top-container-deep>
+</config>
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
+
+        converter = ConfdRestTranslator(schema)
+
+        actual_xml = converter.convert("DELETE", url, None)
 
         self.assertEquals(actual_xml, expected_xml)
 
@@ -277,7 +314,7 @@ class TestRest(unittest.TestCase):
 
         caught_exception = False
         try:
-            actual_xml = converter.convert("GET", url, None)
+            actual_xml = convert_get_request_to_xml(schema, url) 
         except ValueError:
             caught_exception = True
 
@@ -322,7 +359,7 @@ class TestRest(unittest.TestCase):
 {"rpc-reply" : {"rpc-error" : {"error-type" : "application","error-tag" : "data-missing","error-severity" : "error","error-path" : "/nc:rpc/nc:edit-config/nc:config/rw-mc:cloud/rw-mc:account[rw-mc:name='cloudname']","error-info" : {"bad-element" : "account"}}}}
         ''')
 
-        actual_json = convert_netconf_response_to_json(bytes(xml,"utf-8"))
+        actual_json = naive_xml_to_json(bytes(xml,"utf-8"))
 
         actual = _ordered(json.loads(actual_json))
         expected = _ordered(json.loads(expected_json))
@@ -357,7 +394,7 @@ class TestRest(unittest.TestCase):
 {"rpc-reply" : {"rpc-error" : {"error-type" : "application","error-tag" : "data-missing","error-severity" : "error","error-app-tag" : "instance-required","error-path" : "/rpc/edit-config/config/rw-mc:network-pool/rw-mc:pool[rw-mc:name='n1']/rw-mc:cloud-account","error-message" : "illegal reference /network-pool/pool[name='n1']/cloud-account","error-info" : {"bad-keyref" : {"bad-element" : "/rw-mc:network-pool/rw-mc:pool[rw-mc:name='n1']/rw-mc:cloud-account","missing-element" : "/rw-mc:cloud/rw-mc:account[rw-mc:name='c1']"}}}}}
         ''')
 
-        actual_json = convert_netconf_response_to_json(bytes(xml,"utf-8"))
+        actual_json = naive_xml_to_json(bytes(xml,"utf-8"))
 
         actual = _ordered(json.loads(actual_json))
         expected = _ordered(json.loads(expected_json))
@@ -379,7 +416,7 @@ class TestRest(unittest.TestCase):
         {"rpc-reply" : {"ok" : ""}}
         ''')
 
-        actual_json = convert_netconf_response_to_json(bytes(xml,"utf-8"))
+        actual_json = naive_xml_to_json(bytes(xml,"utf-8"))
 
         actual = _ordered(json.loads(actual_json))
         expected = _ordered(json.loads(expected_json))
@@ -428,7 +465,7 @@ class TestRest(unittest.TestCase):
 {"rpc-reply" : {"rpc-error" : {"error-type" : "application","error-tag" : "data-missing","error-severity" : "error","error-app-tag" : "instance-required","error-path" : "/rpc/edit-config/config/rw-mc:mgmt-domain/rw-mc:domain[rw-mc:name='m1']/rw-mc:pools/rw-mc:network[rw-mc:name='n1']/rw-mc:name","error-message" : "illegal reference /mgmt-domain/domain[name='m1']/pools/network[name='n1']/name","error-info" : {"bad-keyref" : {"bad-element" : "/rw-mc:mgmt-domain/rw-mc:domain[rw-mc:name='m1']/rw-mc:pools/rw-mc:network[rw-mc:name='n1']/rw-mc:name","missing-element" : "/rw-mc:network-pool/rw-mc:pool[rw-mc:name='n1']"}}}}}
         ''')
 
-        actual_json = convert_netconf_response_to_json(bytes(xml,"utf-8"))
+        actual_json = naive_xml_to_json(bytes(xml,"utf-8"))
 
         actual = _ordered(json.loads(actual_json))
         expected = _ordered(json.loads(expected_json))
@@ -439,17 +476,17 @@ class TestRest(unittest.TestCase):
     def test_conversion_post_container_list_1(self):
         self.maxDiff = None # expected_xml is too large
 
-        url = "/api/config/top-container-deep/inner-list-deep"
+        url = "/api/config/top-container-deep/inner-list-deep/asdf"
         expected_xml = _collapse_string('''
-<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-container-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-list-deep xc:operation="create"><k>asdf</k><inner-container-shallow><a>fdsa</a></inner-container-shallow></inner-list-deep></top-container-deep></config>
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-container-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-list-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="create"><k>asdf</k><inner-container-shallow><a>fdsa</a></inner-container-shallow></inner-list-deep></top-container-deep></config>
         ''')
 
         body = _collapse_string('''
 <inner-list-deep>
-<k>asdf</k>
-<inner-container-shallow>
-  <a>fdsa</a>
-</inner-container-shallow>
+  <k>asdf</k>
+  <inner-container-shallow>
+    <a>fdsa</a>
+  </inner-container-shallow>
 </inner-list-deep>
         ''')
 
@@ -467,7 +504,7 @@ class TestRest(unittest.TestCase):
 
         url = "/api/config/top-container-deep"
         expected_xml = _collapse_string('''
-<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><vehicle-a:top-container-deep xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><top-container-deep xc:operation="create"><a>asdf</a><inner-list-deep><k>asdf</k><inner-container-shallow><a>fdsa</a></inner-container-shallow></inner-list-deep></top-container-deep></vehicle-a:top-container-deep></config>
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-container-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="create"><a>asdf</a><inner-list-deep><k>asdf</k><inner-container-shallow><a>fdsa</a></inner-container-shallow></inner-list-deep></top-container-deep></config>
         ''')
 
         body = _collapse_string('''
@@ -496,7 +533,7 @@ class TestRest(unittest.TestCase):
 
         url = "/api/config/top-container-deep/inner-container"
         expected_xml = _collapse_string('''
-<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-container-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><vehicle-a:inner-container xmlns:vehicle-a="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-container xc:operation="create"><a>fdsa</a></inner-container></vehicle-a:inner-container></top-container-deep></config>
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-container-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-container xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="create"><a>fdsa</a></inner-container></top-container-deep></config>
         ''')
 
         body = _collapse_string('''
@@ -523,7 +560,7 @@ class TestRest(unittest.TestCase):
         ''')
 
         expected_xml = _collapse_string('''
-<output><out xmlns="http://riftio.com/ns/riftware-1.0/rw-restconf">true</out></output>
+<output><out xmlns="http://riftio.com/ns/riftware-1.0/rw-restconf" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0">true</out></output>
         ''')
 
         actual_xml = convert_rpc_to_xml_output(xml)
@@ -537,7 +574,7 @@ class TestRest(unittest.TestCase):
         ''')
 
         expected_xml = _collapse_string('''
-<output><out1 xmlns="http://riftio.com/ns/riftware-1.0/rw-restconf">hello</out1><out2 xmlns="http://riftio.com/ns/riftware-1.0/rw-restconf">world</out2></output>
+<output><out1 xmlns="http://riftio.com/ns/riftware-1.0/rw-restconf" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0">hello</out1><out2 xmlns="http://riftio.com/ns/riftware-1.0/rw-restconf" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0">world</out2></output>
         ''')
 
         actual_xml = convert_rpc_to_xml_output(xml)
@@ -558,7 +595,7 @@ class TestRest(unittest.TestCase):
 {"output": {"out": "true"}}
         ''')
 
-        intermediate_json = convert_netconf_response_to_json(bytes(xml,"utf-8"))
+        intermediate_json = naive_xml_to_json(bytes(xml,"utf-8"))
 
         actual_json = convert_rpc_to_json_output(intermediate_json)
 
@@ -641,7 +678,7 @@ class TestRest(unittest.TestCase):
 
         url = "/api/config/top-container-deep/inner-list-shallow"
         expected_xml = _collapse_string('''
-<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-container-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-list-shallow xmlns="http://riftio.com/ns/example" xc:operation="create"><k>asdf</k></inner-list-shallow></top-container-deep></config>
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><top-container-deep xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><inner-list-shallow xmlns="http://riftio.com/ns/example" xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="create"><k>asdf</k></inner-list-shallow></top-container-deep></config>
         ''')
 
         body = _collapse_string('''
@@ -687,6 +724,31 @@ class TestRest(unittest.TestCase):
         expected = _ordered(json.loads(expected_json))
 
         self.assertEquals(actual, expected)
+
+    def test_conversion_POST_JSON_to_XML_rpc_negative(self):
+        self.maxDiff = None
+
+        url = '/api/operations/in-list-no-out'
+        json = _collapse_string('''
+{
+  "input" : 
+    {
+"extra":"asdf"
+    }
+}
+        ''')
+
+
+        root = load_schema_root("vehicle-a")
+
+        converter = ConfdRestTranslator(root)
+
+        caught = False
+        try:
+            actual_xml = converter.convert("POST", url, (json,"application/data+json"))
+        except ValueError:
+            caught = True
+        self.assertEquals(True, caught)
 
     def test_conversion_POST_JSON_to_XML_rpc_with_list_input(self):
         self.maxDiff = None
@@ -748,7 +810,6 @@ class TestRest(unittest.TestCase):
         notif_xml += "</notification>"
 
         json_str = converter.convert_notification(notif_xml)
-        print(json_str)
 
         actual = _ordered(json.loads(json_str))
         expected = _ordered(json.loads(expected_json))
@@ -795,6 +856,249 @@ class TestRest(unittest.TestCase):
         actual_xml = converter.convert("POST", url, (json,"application/data+json"))
 
         self.assertEqual(actual_xml, expected_xml)
+
+
+    def test_conversion_url_to_dts_xpath(self):
+        self.maxDiff = None
+        url = "/api/operational/car/toyota/models"
+        expected = ""
+
+        schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
+
+        actual = create_dts_xpath_from_url(url, schema)
+
+        xpath = "D,/vehicle-a:car[vehicle-a:key_name = 'toyota']"
+        value = RwKeyspec.path_from_xpath(VehicleAYang.get_schema(), actual, RwKeyspec.RwXpathType.KEYSPEC, None);
+
+
+
+    def test_conversion_url_to_dts_xpath_2(self):
+        self.maxDiff = None
+        url = "/api/running/rwrestconf-configuration/" # trailing / on purpose
+        expected = ""
+
+        schema = load_multiple_schema_root(["rw-restconf"])
+
+        actual = create_dts_xpath_from_url(url, schema)
+
+        value = RwKeyspec.path_from_xpath(RwRestconfYang.get_schema(), actual, RwKeyspec.RwXpathType.KEYSPEC, None);
+
+    def test_conversion_XML_to_JSON_vcs(self):
+        self.maxDiff = None
+        url = "/api/operational/vcs/info"
+        xml = _collapse_string('''
+<data>
+<rw-base:vcs xmlns:rw-base="http://riftio.com/ns/riftware-1.0/rw-base">
+    <rw-base:info>
+        <rw-base:components>
+            <rw-base:component_info>
+                <rw-base:instance_name>RW_VM_MASTER-2</rw-base:instance_name>
+                <rw-base:component_type>RWVM</rw-base:component_type>
+                <rw-base:component_name>RW_VM_MASTER</rw-base:component_name>
+                <rw-base:instance_id>2</rw-base:instance_id>
+                <rw-base:state>RUNNING</rw-base:state>
+                <rw-base:config-ready>true</rw-base:config-ready>
+                <rw-base:recovery-action>FAILCRITICAL</rw-base:recovery-action>
+                <rw-base:rwcomponent_parent>rw.colony-102</rw-base:rwcomponent_parent>
+                <rw-base:rwcomponent_children>msgbroker-100</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>dtsrouter-101</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>RW.Proc_1.uAgent-103</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>RW.TermIO-105</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>RW.CLI-104</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>RW.Proc_2.Restconf-106</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>RW.Proc_3.RestPortForward-108</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>RW.MC.UI-109</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>logd-110</rw-base:rwcomponent_children>
+                <rw-base:rwcomponent_children>confd-114</rw-base:rwcomponent_children>
+                <rw-base:vm_info>
+                    <rw-base:vm-ip-address>127.0.2.1</rw-base:vm-ip-address>
+                    <rw-base:pid>31610</rw-base:pid>
+                    <rw-base:leader>true</rw-base:leader>
+                </rw-base:vm_info>
+            </rw-base:component_info>
+        </rw-base:components>
+    </rw-base:info>
+</rw-base:vcs>
+</data>
+        ''')
+
+        schema = load_multiple_schema_root(["rw-base"])
+
+        converter = XmlToJsonTranslator(schema, logger)
+
+        xpath = create_xpath_from_url(url, schema)
+        
+        actual_json = converter.convert(False, url, xpath, xml)
+
+    def test_conversion_url_to_dts_xpath_2(self):
+        self.maxDiff = None
+        url = "/api/running/rwrestconf-configuration/" # trailing / on purpose
+        expected = ""
+
+        schema = load_multiple_schema_root(["rw-restconf"])
+
+        actual = create_dts_xpath_from_url(url, schema)
+
+        value = RwKeyspec.path_from_xpath(RwRestconfYang.get_schema(), actual, RwKeyspec.RwXpathType.KEYSPEC, None);
+
+    def test_conversion_PUT_JSON_to_XML_199(self):
+        self.maxDiff = None
+
+        url = '/api/running/rwrestconf-configuration/log-timing'
+        json = _collapse_string('''
+{"log-timing" : "True"
+}
+
+       ''')
+
+        root = load_schema_root("rw-restconf")
+
+        converter = ConfdRestTranslator(root)
+
+        actual_xml = converter.convert("POST", url, (json,"application/data+json"))
+
+    def test_dts_xpath_multi_key(self):
+        self.maxDiff = None
+        url = "/api/config/multi-key/k1,k2"
+
+        expected_xpath = "C,/vehicle-a:multi-key[foo = 'k1'][bar = 'k2']"
+
+        schema = load_multiple_schema_root(["vehicle-a"])
+
+        actual_xpath = create_dts_xpath_from_url(url, schema)
+
+        self.assertEquals(actual_xpath, expected_xpath)
+
+
+    def test_conversion_XML_to_JSON_version(self):
+        self.maxDiff = None
+        url = "/api/config/car/toyota/models"
+        xml = _collapse_string('''
+<data>
+          <car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">
+            <models>
+              <name-m>Camry</name-m>	  
+              <year>2015</year>	  
+              <capacity>5</capacity>	  
+              <version_str>2.0</version_str>
+            </models>
+          </car>
+        </data>
+        ''')
+        #
+
+        expected_json = _collapse_string('''
+{"vehicle-a:models":[{"year" : 2015,"name-m" : "Camry","capacity" : 5, "version_str":"2.0"}]}
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
+
+        converter = XmlToJsonTranslator(schema, logger)
+
+        xpath = create_xpath_from_url(url, schema)
+        
+        actual_json = converter.convert(False, url, xpath, xml)
+
+        actual = _ordered(json.loads(actual_json))
+        expected = _ordered(json.loads(expected_json))
+
+        self.assertEquals(actual, expected)
+
+    def test_conversion_XML_to_JSON_get_leaf(self):
+        self.maxDiff = None
+        url = "/api/config/car/toyota/models/Camry/year"
+        xml = _collapse_string('''
+<data>
+          <car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">
+            <models>
+              <name-m>Camry</name-m>	  
+              <year>2015</year>	  
+              <capacity>5</capacity>	  
+              <version_str>2.0</version_str>
+            </models>
+          </car>
+        </data>
+        ''')
+        #
+
+        expected_json = _collapse_string('''
+        {"year" : "2015"}
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
+
+        converter = XmlToJsonTranslator(schema, logger)
+
+        xpath = create_xpath_from_url(url, schema)
+        
+        actual_json = converter.convert(False, url, xpath, xml)
+
+        actual = _ordered(json.loads(actual_json))
+        expected = _ordered(json.loads(expected_json))
+
+        self.assertEquals(actual, expected)
+
+    def test_conversion_PUT_JSON_to_XML_list_with_escaped_url(self):
+        self.maxDiff = None
+
+        url = '/api/config/car/subaru%252F1%252F1/models/WRX/'
+        json = _collapse_string('''
+{
+            "models":{
+                "name-m":"WRX",
+                "year":2015,
+                "capacity":5,
+                "is-cool":"True"
+            }
+
+
+}
+       ''')
+
+        expected_xml = _collapse_string('''
+<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0"><car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a"><brand>subaru/1/1</brand><models xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a" xc:operation="replace"><name-m xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">WRX</name-m><year xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">2015</year><capacity xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">5</capacity><is-cool xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">true</is-cool></models></car></config>
+        ''')
+
+        root = load_schema_root("vehicle-a")
+
+        converter = ConfdRestTranslator(root)
+
+        actual_xml = converter.convert("PUT", url, (json,"application/data+json"))
+
+        self.assertEqual(actual_xml, expected_xml)
+
+    def test_conversion_XML_to_JSON_get_list_with_name_of_child(self):
+        self.maxDiff = None
+        url = "/api/config/car/toyota/models/name-m"
+        xml = _collapse_string('''
+        <data>
+          <car xmlns="http://riftio.com/ns/core/mgmt/rwrestconf/test/vehicle-a">
+            <brand>toyota</brand>
+            <models>
+              <name-m>name-m</name-m>    
+              <capacity>5</capacity>     
+            </models>
+          </car>
+        </data>
+        ''')
+        #
+
+        expected_json = _collapse_string('''
+{"vehicle-a:models" :{"name-m" : "name-m","capacity" : 5}}
+        ''')
+
+        schema = load_multiple_schema_root(["vehicle-a","vehicle-augment-a"])
+
+        converter = XmlToJsonTranslator(schema, logger)
+
+        xpath = create_xpath_from_url(url, schema)
+        
+        actual_json = converter.convert(False, url, xpath, xml)
+
+        actual = _ordered(json.loads(actual_json))
+        expected = _ordered(json.loads(expected_json))
+
+        self.assertEquals(actual, expected)
 
 
 ########################################

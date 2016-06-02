@@ -39,7 +39,6 @@ set(C_SOURCES rwdtsperf-c.c)
 ##
 
 add_definitions(-DINSTALLDIR="${CMAKE_INSTALL_PREFIX}")
-add_definitions(-DCLI_CONFIG_XSD_PATH="${CMAKE_INSTALL_PREFIX}/usr/data/xsd/")
 
 ##
 # Adds a library target to be built from the source files listed in the command invocation

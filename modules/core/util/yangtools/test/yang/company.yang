@@ -89,6 +89,19 @@ module company
       }
     }
 
+    list wacky-interests {
+      description "Wacky employee interests";
+      key "id name";
+
+      leaf name {
+        type string;
+      }
+
+      leaf id {
+        type int32;
+      }
+    }
+
 
     list product {
       description "Products";
@@ -124,5 +137,22 @@ module company
         type string;
       }
     }
+  }
+
+
+  container mangle-base {
+    list mangle {
+    
+      key "name id";
+    
+      leaf name {
+        type string;
+      }
+      leaf id {
+        type int8;
+      }
+
+    }
+
   }
 }

@@ -25,10 +25,19 @@ import random
 from rift.auto.session import NetconfSession
 from random import choice
 from string import ascii_lowercase
+import xml.etree.ElementTree as ET
 
 from gi.repository import GLib
+
+gi.require_version('RwYang', '1.0')
 from gi.repository import RwYang
-from gi.repository import InterfacesYang, DnsYang, RoutesYang, NtpYang, UtCompositeYang, RwMgmtagtYang
+
+gi.require_version('InterfacesYang', '1.0')
+gi.require_version('DnsYang', '1.0')
+gi.require_version('RoutesYang', '1.0')
+gi.require_version('UtCompositeYang', '1.0')
+gi.require_version('RwMgmtagtYang', '1.0')
+from gi.repository import InterfacesYang, DnsYang, RoutesYang, UtCompositeYang, RwMgmtagtYang
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +54,17 @@ class TestMgmtAgent(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
        # Start the mgmt-agent system test in background
-       cls.fd = open("logfile", "w")
 
        install_dir = os.environ.get("RIFT_INSTALL")
        demo_dir = os.path.join(install_dir, 'demos')
        testbed = os.path.join(demo_dir, 'mgmt_tbed.py')
+
+       tmp_dir = install_dir + "/tmp"
+       if not os.path.exists(tmp_dir):
+          os.makedirs(tmp_dir)
+
+       logfile = tmp_dir + "/logfile"
+       cls.fd = open(logfile, "w")
 
        try:
          cls.sys_proc=Popen([testbed], stdin=DEVNULL, stdout=cls.fd, stderr=cls.fd,
@@ -106,15 +121,6 @@ class TestMgmtAgent(unittest.TestCase):
         self.assertEqual(ret_obj.status, "Success")
         print(ret_obj)
 
-    def test_logrotate_rpc(self):
-        mgmt_proxy=self.mgmt_session.proxy(RwMgmtagtYang)
-        rpc=RwMgmtagtYang.LogrotateConf()
-        rpc.compress = false
-        ret_obj=mgmt_proxy.rpc(rpc)
-        self.assertTrue(ret_obj)
-        self.assertEqual(ret_obj.status, "Success")
-        print(ret_obj)
-
     def test_notification(self):
         mgmt_proxy=self.mgmt_session.proxy(InterfacesYang)
 
@@ -134,14 +140,6 @@ class TestMgmtAgent(unittest.TestCase):
         self.assertEqual(ret_obj.status, "Success")
         print(ret_obj)
 
-    def test_dts_rpc_nb(self):
-        # RPC to trigger a DTS NB rpc.
-        mgmt_proxy=self.mgmt_session.proxy(NtpYang)
-        rpc=NtpYang.YangInput_Ntp_ConfigureRpc()
-        ret_obj = mgmt_proxy.rpc(rpc)
-        self.assertTrue(ret_obj)
-        self.assertEqual(ret_obj.status, "Success")
-        
     def test_dts_rpcs_edit_cfg(self):
         # Send an edit-config via agent rpc.
         ec_rpc=RwMgmtagtYang.YangInput_RwMgmtagt_MgmtAgent()
@@ -167,8 +165,9 @@ class TestMgmtAgent(unittest.TestCase):
         ret_obj=mgmt_proxy.rpc(ec_rpc)
         self.assertTrue(ret_obj)
         print(ret_obj)
-        #ATTN:- verify in the agent dom
 
+    def test_dts_rpcs_del_cfg(self): 
+        self.test_dts_rpcs_edit_cfg();
         # Send a delete cfg rpc
         dc_rpc=RwMgmtagtYang.YangInput_RwMgmtagt_MgmtAgent()
         dc_rpc.pb_request.xpath = "C,/dns:dns/dns:server[dns:address='10.0.1.10']"
@@ -194,35 +193,6 @@ class TestMgmtAgent(unittest.TestCase):
         self.assertEqual(len(ret_obj.binaryblob), 5000)
         self.assertEqual(len(ret_obj.bigstring), 10000)
         
-    def test_reload_config(self):
-        self.restart_system("--no-clean-exit")
-        # Write and read some configuration
-        print("test_reload_config: Create configuration")
-        self.test_edit_config()
-        # restart
-        self.restart_system("--reuse-confd-ws")
-        # read the saved configuration
-        print("test_reload_config: Read configuration after restart")
-        self.test_get()
-
-        # restart the system with cleanup
-        self.restart_system()
-
-    @classmethod
-    def restart_system(cls, args=""):
-        os.killpg(cls.sys_proc.pid, signal.SIGTERM)
-        try:
-            cls.sys_proc=Popen(["./run_agent_ut.sh", args], stdin=DEVNULL, stdout=cls.fd, stderr=cls.fd,
-                                preexec_fn=os.setsid)
-        except Exception as e:
-            print("Failed to start system test.. error: {0}".format(e))
-            raise
-        
-        print("Restarted the Mgmt Agent Mini System Test..sleeping for {} secs".format(WAIT_TIME))
-        time.sleep(WAIT_TIME)
-        cls.mgmt_session=NetconfSession(cls.confd_host)
-        cls.mgmt_session.connect()
-
     @classmethod
     def tearDownClass(cls):
         print("Stopping the Mgmt Agent Mini System Test..")

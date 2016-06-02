@@ -772,6 +772,16 @@ rwdts_member_get_shard_db_info_keyspec(rwdts_api_t*              apih,
 void
 rwdts_member_delete_shard_db_info(rwdts_api_t*    apih);
 
+/*!
+ *  Promote the registration from SUBSCRIBER to PUBLISHER
+ *  This API will promote the registration from SUBSCRIBER
+ *  to PUBLISHER
+ *
+ *  @param ud              registration handle
+ */
+void
+rwdts_send_sub_promotion_to_router(void *ud);
+
 __END_DECLS
 
 

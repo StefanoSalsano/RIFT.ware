@@ -8,11 +8,12 @@ import tornado.httpclient
 #WS_URL = "ws://127.0.0.1:8888/ws_streams/NETCONF"
 
 # For Json content
-WS_URL = "ws://127.0.0.1:8888/ws_streams/NETCONF-JSON"
+WS_URL = "wss://127.0.0.1:8888/ws_streams/NETCONF-JSON"
 HTTP_REQ = tornado.httpclient.HTTPRequest(
               url = WS_URL,
               auth_username = "admin",
-              auth_password = "admin")
+              auth_password = "admin",
+              validate_cert = False)
 
 
 @tornado.gen.coroutine

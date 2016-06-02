@@ -17,7 +17,7 @@ gi.require_version('RwVcsYang', '1.0')
 from gi.repository import RwVcsYang
 
 logger = logging.getLogger("rwlogd-report-cores")
-rwlogger = rwlogger.RwLogger(category="rw-vcs")
+rwlogger = rwlogger.RwLogger(subcategory="rw-vcs")
 logger.addHandler(rwlogger)
 
 def get_file_size_bytes(filepath):
@@ -56,14 +56,19 @@ def get_executable_from_file_cmd_output(file_cmd_output):
     return exe
 
 def get_backtrace_from_core_file(core_filepath, exe):
-    gdb_command = '/usr/bin/gdb {exe} --core {core} --batch --quiet -ex "bt" -ex "quit"'.format(
+    gdb_command = '/usr/bin/gdb {exe} --core {core} --batch --quiet -ex "thread apply all bt" -ex "thread apply all py-bt" -ex "quit"'.format(
             exe=exe,
             core=core_filepath)
 
-    try:
-        return subprocess.check_output(shlex.split(gdb_command), stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError:
-        logger.debug("GDB command failed: %s", gdb_command, exc_info=True)
+    if os.path.isfile('/usr/bin/gdb'):
+        try:
+            print('calling GDB')
+            return subprocess.check_output(shlex.split(gdb_command), stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError:
+            logger.debug("GDB command failed: %s", gdb_command, exc_info=True)
+            return ""
+    else:
+        logger.warning("GDB command not found: %s", gdb_command, exc_info=True)
         return ""
 
 def get_file_command_output(filepath):

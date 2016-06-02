@@ -804,7 +804,7 @@ get_plugin_loader_module (gint loader_id)
 
   loader_name = peas_utils_get_loader_from_id (loader_id);
   module_name = peas_utils_get_loader_module_from_id (loader_id);
-  module_dir = peas_dirs_get_plugin_loader_dir (NULL);
+  module_dir = peas_dirs_get_plugin_loader_dir (loader_name);
 
   /* Bind loaders globally, binding
    * locally can break the plugin loaders
@@ -812,15 +812,6 @@ get_plugin_loader_module (gint loader_id)
   global_loader_info->module = peas_object_module_new_full (module_name,
                                                             module_dir,
                                                             TRUE, FALSE);
-
-  if (!g_type_module_use (G_TYPE_MODULE (global_loader_info->module))) {
-     g_clear_object (&global_loader_info->module);
-     g_free (module_dir);
-     module_dir = peas_dirs_get_plugin_loader_dir (loader_name);
-     global_loader_info->module = peas_object_module_new_full (module_name,
-                                                            module_dir,
-                                                            TRUE, FALSE);
-  }
 
   if (!g_type_module_use (G_TYPE_MODULE (global_loader_info->module)))
     {

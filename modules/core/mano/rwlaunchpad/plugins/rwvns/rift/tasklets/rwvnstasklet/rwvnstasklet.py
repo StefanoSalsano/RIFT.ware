@@ -13,6 +13,7 @@ gi.require_version('RwVnsYang', '1.0')
 gi.require_version('RwDts', '1.0')
 from gi.repository import (
     RwVnsYang,
+    RwSdnYang,
     RwDts as rwdts,
     RwTypes,
     ProtobufC,
@@ -56,6 +57,86 @@ class VlRecordNotFound(Exception):
 class SdnAccountExistsError(Exception):
     pass
 
+class SdnAccountNotFound(Exception):
+    pass
+
+class SDNAccountDtsOperdataHandler(object):
+    def __init__(self, dts, log, loop, parent):
+        self._dts = dts
+        self._log = log
+        self._loop = loop
+        self._parent = parent
+
+    def _register_show_status(self):
+        def get_xpath(sdn_name=None):
+            return "D,/rw-sdn:sdn-account{}/rw-sdn:connection-status".format(
+                    "[name='%s']" % sdn_name if sdn_name is not None else ''
+                   )
+
+        @asyncio.coroutine
+        def on_prepare(xact_info, action, ks_path, msg):
+            path_entry = RwSdnYang.SDNAccountConfig.schema().keyspec_to_entry(ks_path)
+            sdn_account_name = path_entry.key00.name
+            self._log.debug("Got show sdn connection status request: %s", ks_path.create_string())
+
+            try:
+                saved_accounts = self._parent._acctmgr.get_saved_sdn_accounts(sdn_account_name)
+                for account in saved_accounts:
+                    sdn_acct = RwSdnYang.SDNAccountConfig()
+                    sdn_acct.from_dict(account.as_dict())
+
+                    self._log.debug("Responding to sdn connection status request: %s", sdn_acct.connection_status)
+                    xact_info.respond_xpath(
+                            rwdts.XactRspCode.MORE,
+                            xpath=get_xpath(account.name),
+                            msg=sdn_acct.connection_status,
+                            )
+            except KeyError as e:
+                self._log.warning(str(e))
+                xact_info.respond_xpath(rwdts.XactRspCode.NA)
+                return
+
+            xact_info.respond_xpath(rwdts.XactRspCode.ACK)
+
+        yield from self._dts.register(
+                xpath=get_xpath(),
+                handler=rift.tasklets.DTS.RegistrationHandler(
+                    on_prepare=on_prepare),
+                flags=rwdts.Flag.PUBLISHER,
+                )
+
+    def _register_validate_rpc(self):
+        def get_xpath():
+            return "/rw-sdn:update-sdn-status"
+
+        @asyncio.coroutine
+        def on_prepare(xact_info, action, ks_path, msg):
+            if not msg.has_field("sdn_account"):
+                raise SdnAccountNotFound("SDN account name not provided")
+
+            sdn_account_name = msg.sdn_account
+            account = self._parent._acctmgr.get_sdn_account(sdn_account_name)
+            if account is None:
+                self._log.warning("SDN account %s does not exist", sdn_account_name)
+                xact_info.respond_xpath(rwdts.XactRspCode.NA)
+                return
+
+            self._parent._acctmgr.start_validate_credentials(self._loop, sdn_account_name)
+
+            xact_info.respond_xpath(rwdts.XactRspCode.ACK)
+
+        yield from self._dts.register(
+                xpath=get_xpath(),
+                handler=rift.tasklets.DTS.RegistrationHandler(
+                    on_prepare=on_prepare
+                    ),
+                flags=rwdts.Flag.PUBLISHER,
+                )
+
+    @asyncio.coroutine
+    def register(self):
+        yield from self._register_show_status()
+        yield from self._register_validate_rpc()
 
 class SDNAccountDtsHandler(object):
     XPATH = "C,/rw-sdn:sdn-account"
@@ -143,6 +224,7 @@ class VnsManager(object):
         self._vlr_handler = VlrDtsHandler(dts, log, loop, self)
         self._vld_handler = VldDtsHandler(dts, log, loop, self)
         self._sdn_handler = SDNAccountDtsHandler(dts,log,self)
+        self._sdn_opdata_handler = SDNAccountDtsOperdataHandler(dts,log, loop, self)
         self._acctmgr = SdnAccountMgr(self._log, self._log_hdl, self._loop)
         self._nwtopdata_store = NwtopDataStore(log)
         self._nwtopdiscovery_handler = NwtopDiscoveryDtsHandler(dts, log, loop, self._acctmgr, self._nwtopdata_store)
@@ -169,6 +251,7 @@ class VnsManager(object):
         """ Register vlr DTS handler """
         self._log.debug("Registering  SDN Account config handler")
         yield from self._sdn_handler.register()
+        yield from self._sdn_opdata_handler.register()
 
     @asyncio.coroutine
     def register_nwtopstatic_handler(self):
@@ -261,8 +344,9 @@ class VnsTasklet(rift.tasklets.Tasklet):
     """ The VNS tasklet class """
     def __init__(self, *args, **kwargs):
         super(VnsTasklet, self).__init__(*args, **kwargs)
-        
-        #self.add_log_stderr_handler()
+        self.rwlog.set_category("rw-mano-log")
+        self.rwlog.set_subcategory("vns")
+
         self._dts = None
         self._vlr_handler = None
 

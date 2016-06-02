@@ -13,6 +13,7 @@
  */
 
 #include "rwuagent.hpp"
+#include "rwuagent_request_mode.hpp"
 
 using namespace rw_uagent;
 using namespace rw_yang;
@@ -31,6 +32,10 @@ NbReq::NbReq(
   RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "northbound request created",
     RWMEMLOG_ARG_PRINTF_INTPTR("nbreq=0x%" PRIX64,(intptr_t)this) );
   RW_ASSERT(instance_);
+
+  if (instance_->mgmt_handler()->is_ready_for_nb_clients()) {
+    instance_->log_file_manager()->log_string(this, type, "");
+  }
 }
 
 NbReq::~NbReq()
@@ -91,13 +96,14 @@ StartStatus NbReq::respond(
 
       bool resp = false; // Checck if we got any result
       bool first = true;
-      while (auto result = rwdts_xact_query_result(xact, 0)) {
+      size_t count = 0;
+      while (rwdts_query_result_t * result = rwdts_xact_query_result(xact, 0)) {
         RWMEMLOG(memlog_buf_, RWMEMLOG_MEM6, "merge one result",
                  RWMEMLOG_ARG_PRINTF_INTPTR("sbreq=0x%" PRIX64,(intptr_t)sbreq),
                  RWMEMLOG_ARG_PRINTF_INTPTR("dts xact=0x%" PRIXPTR, (intptr_t)xact) );
 
         resp = true;
-
+        count++;
         if (first) {
           rw_keyspec_path_t* dup_ks = nullptr;
           auto rs = rw_keyspec_path_create_dup( result->keyspec, nullptr, &dup_ks );
@@ -128,7 +134,7 @@ StartStatus NbReq::respond(
       sbreq->update_stats(RW_UAGENT_NETCONF_RESPONSE_BUILT);
 
       if (resp) {
-        if (first) {
+        if (first) { // not possible?
           return respond( sbreq );
         }
         if (rsp_dom.get()) {
@@ -204,3 +210,33 @@ StartStatus NbReq::respond(
   return respond( sbreq, &nc_errors );
 }
 
+void NbReq::commit_changes()
+{
+  RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "confd subscription");
+  RW_MA_NBREQ_LOG (this, ClientDebug, __FUNCTION__, "Commiting changes");
+
+  RW_ASSERT (nbreq_type_ == RW_MGMTAGT_NB_REQ_TYPE_CONFDCONFIG
+          || nbreq_type_ == RW_MGMTAGT_NB_REQ_TYPE_INTERNAL
+          || nbreq_type_ == RW_MGMTAGT_NB_REQ_TYPE_RWMSG);
+
+  XMLNode *root = instance_->dom()->get_root_node();
+
+  for (auto& ks : sb_delete_ks_) {
+    std::list<XMLNode *>found;
+    rw_yang_netconf_op_status_t ncrs = root->find(ks.get(), found);
+
+    if (ncrs != RW_YANG_NETCONF_OP_STATUS_OK ||
+        !found.size()) {
+      RW_MA_NBREQ_LOG (this, ClientError, __FUNCTION__, "Error - config entry not found in DOM");
+      break;
+    }
+    for (auto node : found) {
+      XMLNode* parent = node->get_parent();
+      RW_ASSERT (parent);
+      parent->remove_child(node);
+    }
+  }
+
+  // Merge delta with configuration DOM
+  instance_->dom()->merge(sb_delta_.get());
+}

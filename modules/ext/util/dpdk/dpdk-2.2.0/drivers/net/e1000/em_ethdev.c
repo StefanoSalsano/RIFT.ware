@@ -338,7 +338,13 @@ static struct eth_driver rte_em_pmd = {
 	.pci_drv = {
 		.name = "rte_em_pmd",
 		.id_table = pci_id_em_map,
-		.drv_flags = RTE_PCI_DRV_NEED_MAPPING | RTE_PCI_DRV_INTR_LSC |
+		.drv_flags =
+#if defined (RTE_EAL_UNBIND_PORTS) && defined(RTE_LIBRW_PIOT)
+                RTE_PCI_DRV_FORCE_UNBIND
+#else
+                RTE_PCI_DRV_NEED_MAPPING
+#endif
+                | RTE_PCI_DRV_INTR_LSC |
 			RTE_PCI_DRV_DETACHABLE,
 	},
 	.eth_dev_init = eth_em_dev_init,
@@ -1520,7 +1526,9 @@ eth_em_interrupt_action(struct rte_eth_dev *dev)
 	E1000_WRITE_REG(hw, E1000_TCTL, tctl);
 	E1000_WRITE_REG(hw, E1000_RCTL, rctl);
 	E1000_WRITE_FLUSH(hw);
-
+#if defined(RTE_LIBRW_PIOT)
+        _rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC);
+#endif
 	return 0;
 }
 
@@ -1543,7 +1551,11 @@ eth_em_interrupt_handler(__rte_unused struct rte_intr_handle *handle,
 
 	eth_em_interrupt_get_status(dev);
 	eth_em_interrupt_action(dev);
-	_rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC);
+#if defined(RTE_LIBRW_PIOT)
+        ;
+#else
+        _rte_eth_dev_callback_process(dev, RTE_ETH_EVENT_INTR_LSC);
+#endif
 }
 
 static int

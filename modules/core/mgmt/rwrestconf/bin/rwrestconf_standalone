@@ -55,7 +55,8 @@ def main():
     )
 
 
-    xml = '''
+    
+    '''
 <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0">
 <dyn-schema-test-a xmlns="http://riftio.com/ns/riftware-1.0/rw-dyn-schema-test-a">
 <hello-world-a>
@@ -66,12 +67,8 @@ test
     '''
     '''<dyn-schema-test-a xmlns="http://riftio.com/ns/riftware-1.0/rw-dyn-schema-test-a"/>
     '''
-    ''' 
-<cloud xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">
-  <account xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">
-    <name>openstack</name>
-  </account>
-</cloud>
+    xml =''' 
+<cloud xmlns="http://riftio.com/ns/riftware-1.0/rw-mc" />
     '''
     '''
 <cloud xmlns="http://riftio.com/ns/riftware-1.0/rw-mc">
@@ -115,12 +112,12 @@ testing
 
     '''
 
-    print(nc_mgr.edit_config(target="running",
-                             config=xml))
+    #print(nc_mgr.edit_config(target="running",
+    #                         config=xml))
 
     #print(nc_mgr.dispatch(lxml.etree.fromstring(xml)))
     #print(nc_mgr.get_config(source="running", filter=('subtree',xml)))
-    #print(nc_mgr.get(('subtree',xml)))
+    print(nc_mgr.get(('subtree',xml)))
 
 if __name__ == "__main__":
     main()

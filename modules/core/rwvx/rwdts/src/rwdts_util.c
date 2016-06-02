@@ -258,19 +258,19 @@ void rwdts_dbg_tracert_dump(RWDtsTraceroute *tr,
             if (q->flags & RWDTS_FLAG_DATASTORE) {
               strcat(flagstr, "|DATASTORE");
             }
-            if (q->flags & RWDTS_FLAG_ANYCAST) {
+            if (q->flags & RWDTS_XACT_FLAG_ANYCAST) {
               strcat(flagstr, "|ANYCAST");
             }
-            if (q->flags & RWDTS_FLAG_ADVISE) {
+            if (q->flags & RWDTS_XACT_FLAG_ADVISE) {
               strcat(flagstr, "|ADVISE");
             }
             if (q->flags & RWDTS_FLAG_CACHE) {
               strcat(flagstr, "|CACHE");
             }
-            if (q->flags & RWDTS_FLAG_REPLACE) {
+            if (q->flags & RWDTS_XACT_FLAG_REPLACE) {
               strcat(flagstr, "|REPLACE");
             }
-            if (q->flags & RWDTS_FLAG_BLOCK_MERGE) {
+            if (q->flags & RWDTS_XACT_FLAG_BLOCK_MERGE) {
               strcat(flagstr, "|BLOCK_MERGE");
             }
             if (q->flags & RWDTS_FLAG_SHARED) {
@@ -412,17 +412,17 @@ void rwdts_trace_event_print_block(RWDtsTracerouteEnt *ent, char *logbuf, rw_yan
       if (q->flags & RWDTS_FLAG_SUBSCRIBER) { strcat(flagstr, "|SUBSCRIBER"); }
       if (q->flags & RWDTS_FLAG_PUBLISHER) { strcat(flagstr, "|PUBLISHER"); }
       if (q->flags & RWDTS_FLAG_DATASTORE) { strcat(flagstr, "|DATASTORE"); }
-      if (q->flags & RWDTS_FLAG_ANYCAST) { strcat(flagstr, "|ANYCAST"); }
-      if (q->flags & RWDTS_FLAG_ADVISE) { strcat(flagstr, "|ADVISE"); }
+      if (q->flags & RWDTS_XACT_FLAG_ANYCAST) { strcat(flagstr, "|ANYCAST"); }
+      if (q->flags & RWDTS_XACT_FLAG_ADVISE) { strcat(flagstr, "|ADVISE"); }
       if (q->flags & RWDTS_FLAG_CACHE) { strcat(flagstr, "|CACHE"); }
-      if (q->flags & RWDTS_FLAG_REPLACE) { strcat(flagstr, "|REPLACE"); }
-      if (q->flags & RWDTS_FLAG_BLOCK_MERGE) { strcat(flagstr, "|BLOCK_MERGE"); }
-      if (q->flags & RWDTS_FLAG_STREAM) { strcat(flagstr, "|STREAM"); }
+      if (q->flags & RWDTS_XACT_FLAG_REPLACE) { strcat(flagstr, "|REPLACE"); }
+      if (q->flags & RWDTS_XACT_FLAG_BLOCK_MERGE) { strcat(flagstr, "|BLOCK_MERGE"); }
+      if (q->flags & RWDTS_XACT_FLAG_STREAM) { strcat(flagstr, "|STREAM"); }
       if (q->flags & RWDTS_FLAG_SHARED) { strcat(flagstr, "|SHARED"); }
       if (q->flags & RWDTS_FLAG_SHARDING) { strcat(flagstr, "|SHARDING"); }
-      if (q->flags & RWDTS_FLAG_DEPTH_FULL) { strcat(flagstr, "|DEPTH_FULL"); }
-      if (q->flags & RWDTS_FLAG_DEPTH_LISTS) { strcat(flagstr, "|DEPTH_LISTS"); }
-      if (q->flags & RWDTS_FLAG_DEPTH_ONE) { strcat(flagstr, "|DEPTH_ONE"); }
+      if (q->flags & RWDTS_XACT_FLAG_DEPTH_FULL) { strcat(flagstr, "|DEPTH_FULL"); }
+      if (q->flags & RWDTS_XACT_FLAG_DEPTH_LISTS) { strcat(flagstr, "|DEPTH_LISTS"); }
+      if (q->flags & RWDTS_XACT_FLAG_DEPTH_ONE) { strcat(flagstr, "|DEPTH_ONE"); }
       if (q->flags & RWDTS_FLAG_SUBOBJECT) { strcat(flagstr, "|SUBOBJECT"); }
       if (q->key && schema) {
         if (q->key->ktype == RWDTS_KEY_RWKEYSPEC && q->key->keyspec) {
@@ -1059,7 +1059,7 @@ void rwdts_journal_consume_xquery(rwdts_xact_query_t *xquery,
        match = RW_SKLIST_NEXT(match, rwdts_match_info_t, match_elt)) {
     if (((match->evtrsp == RWDTS_EVTRSP_ACK)
          || (match->evtrsp == RWDTS_EVTRSP_ASYNC))
-        && (xquery->query->flags & RWDTS_FLAG_ADVISE) 
+        && (xquery->query->flags & RWDTS_XACT_FLAG_ADVISE) 
         && (match->reg->flags & RWDTS_FLAG_SUBSCRIBER)) {
       rs = rwdts_journal_update(match->reg, xquery, evt);
       RW_ASSERT(rs == RW_STATUS_SUCCESS);

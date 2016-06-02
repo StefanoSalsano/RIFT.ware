@@ -29,7 +29,7 @@ rift_files_prepend_path(
 rift_add_yang_target(
   TARGET log_test_yang
   YANG_FILES ${log_test_yang_src}
-  LIBRARIES 
+  LIBRARIES
     rwschema_yang_gen
   NO_INSTALL
 )

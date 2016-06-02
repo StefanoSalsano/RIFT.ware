@@ -156,6 +156,8 @@ _RW_THREAD_ RW_RESOURCE_TRACK_HANDLE g_rwresource_track_handle;
 pthread_mutex_t g_rwresource_track_mutex = PTHREAD_MUTEX_INITIALIZER;
 int g_malloc_intercepted;
 int g_callstack_depth;
+int g_heap_track_nth;
+int g_heap_track_bigger_than;
 
 static void __attribute__((constructor)) _rw_res_track_init(void)
 {

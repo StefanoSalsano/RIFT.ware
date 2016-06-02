@@ -170,13 +170,13 @@ module other-data_rwvcs
     }
   }
 
-  container data {
+  container data-top {
     rwpb:msg-new RwvcsData;
     config false;
   }
 
   
-  augment "/data" {
+  augment "/data-top" {
     container rwvcs {
       rwpb:msg-new RwvcsDataRwvcs;
       config false;

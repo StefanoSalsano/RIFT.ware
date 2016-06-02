@@ -179,24 +179,7 @@ class UIServer(rift.vcs.NativeProcess):
                  ):
         super(UIServer, self).__init__(
                 name=name,
-                exe="./usr/share/rw.ui/webapp/scripts/launch_ui.sh",
-                config_ready=config_ready,
-                recovery_action=recovery_action,
-                )
-
-    @property
-    def args(self):
-        return get_ui_ssl_args()
-
-
-class ComposerUI(rift.vcs.NativeProcess):
-    def __init__(self, name="RW.COMPOSER.UI",
-                 config_ready=True,
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 ):
-        super(ComposerUI, self).__init__(
-                name=name,
-                exe="./usr/share/composer/scripts/launch_composer.sh",
+                exe="./usr/share/rw.ui/skyquake/scripts/launch_ui.sh",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
                 )
@@ -232,25 +215,20 @@ class ConfigManagerTasklet(rift.vcs.core.Tasklet):
 
 
 class Demo(rift.vcs.demo.Demo):
-    def __init__(self, with_cntr_mgr=False):
+    def __init__(self):
 
         procs = [
-            rift.vcs.RiftCli(),
-            rift.vcs.uAgentTasklet(),
+            ConfigManagerTasklet(),
+            UIServer(),
             rift.vcs.DtsRouterTasklet(),
             rift.vcs.MsgBrokerTasklet(),
-            rift.vcs.RestconfTasklet(),
-            rift.vcs.Watchdog(),
             rift.vcs.RestPortForwardTasklet(),
-            rift.vcs.CalProxy(),
-            MonitorTasklet(),
+            rift.vcs.RestconfTasklet(),
+            rift.vcs.RiftCli(),
+            rift.vcs.uAgentTasklet(),
             NsmTasklet(),
-            #VnfmTasklet(recovery_action=core.RecoveryType.RESTART.value,),
             VnsTasklet(),
             MonitorTasklet(),
-            UIServer(),
-            ComposerUI(),
-            ConfigManagerTasklet(),
             rift.vcs.Launchpad(),
             ResMgrTasklet(),
             ]
@@ -258,9 +236,6 @@ class Demo(rift.vcs.demo.Demo):
         restart_procs = [
             VnfmTasklet(recovery_action=core.RecoveryType.RESTART.value,),
             ]
-        if with_cntr_mgr:
-            procs.append(rift.vcs.ContainerManager())
-
         super(Demo, self).__init__(
             # Construct the system. This system consists of 1 cluster in 1
             # colony. The master cluster houses CLI and management VMs
@@ -297,50 +272,11 @@ class Demo(rift.vcs.demo.Demo):
         )
 
 
-def clear_salt_keys():
-    # clear all the previously installed salt keys
-    logger.info("Removing all unconnected salt keys")
-    stdout = subprocess.check_output(
-            shlex.split('salt-run manage.down'),
-            universal_newlines=True,
-            )
-
-    down_minions = stdout.splitlines()
-
-    for line in down_minions:
-        salt_id = line.strip().replace("- ", "")
-        logger.info("Removing old unconnected salt id: %s", salt_id)
-        minion_keys_stdout = subprocess.check_output(
-                shlex.split('salt-key -f {}'.format(salt_id)),
-                universal_newlines=True)
-
-        minion_keys = minion_keys_stdout.splitlines()
-        for key_line in minion_keys:
-            if "Keys" in key_line:
-                continue
-
-            key_split = key_line.split(":")
-            if len(key_split) < 2:
-                continue
-
-            key = key_split[0]
-
-            # Delete the minion key
-            logger.info("Deleting minion %s key: %s", salt_id, key)
-            subprocess.check_call(shlex.split('salt-key -d {} -y'.format(key)))
-
-
 def main(argv=sys.argv[1:]):
     logging.basicConfig(format='%(asctime)-15s %(levelname)s %(message)s')
 
     # Create a parser which includes all generic demo arguments
     parser = rift.vcs.demo.DemoArgParser()
-
-    parser.add_argument(
-            '--with-cntr-mgr',
-            action='store_true',
-            help='Enable the container manager tasklet'
-            )
 
     args = parser.parse_args(argv)
 
@@ -348,25 +284,18 @@ def main(argv=sys.argv[1:]):
     # since it doesn't need it and it will fail within containers
     os.environ["NO_KERNEL_MODS"] = "1"
 
-    if args.with_cntr_mgr:
-        # In order to reliably module test, the virbr0 bridge
-        # with IP 192.168.122.1 must exist before we start executing.
-        # This is because in expanded mode, we need to use a container
-        # accessible IP address for zookeeper clients.
-        rift.rwcal.cloudsim.net.virsh_initialize_default()
-        clear_salt_keys()
-
     # Remove the persistant DTS recovery files 
     for f in os.listdir(os.environ["INSTALLDIR"]):
         if f.endswith(".db"):
             os.remove(os.path.join(os.environ["INSTALLDIR"], f))
 
     #load demo info and create Demo object
-    demo = Demo(args.with_cntr_mgr)
+    demo = Demo()
 
     # Create the prepared system from the demo
     system = rift.vcs.demo.prepared_system_from_demo_and_args(demo, args, 
-              northbound_listing="cli_rwmc_schema_listing.txt")
+              northbound_listing="cli_rwmc_schema_listing.txt",
+              netconf_trace_override=True)
 
     confd_ip = socket.gethostbyname(socket.gethostname())
     intf = netifaces.ifaddresses('eth0')

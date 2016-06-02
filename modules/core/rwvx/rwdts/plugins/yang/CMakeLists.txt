@@ -6,7 +6,6 @@
 # 
 
 include(rift_yang)
-include(rift_cmdargs)
 
 
 ##

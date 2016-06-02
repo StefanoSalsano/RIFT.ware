@@ -19,6 +19,10 @@ release=$(cat RELEASE)
 if [ -f ".build/BUILD" ]; then 
     build=$(cat .build/BUILD)
 elif [ -z "$JOB_NAME" ]; then
+    echo "No Jenkins JOB_NAME"
+    printenv
+    ALT_JOB_NAME=${ENV, var="JOB_NAME"}
+    echo "ALT_JOB_NAME=${ALT_JOB_NAME}"
     # not in Jenkins
     build=1
 else
@@ -30,6 +34,7 @@ else
     jobname=$JOB_NAME
     build=$(wget -O - -o /dev/null --post-data="githash=$githash&release=$release&branch=$branch&username=$username&hostname=$hostname&workspace=$workspace&jobname=$jobname" "http://charm:8000/postbuild/")
     if [ -z "$build" ]; then
+        echo "Wget failed, data:githash=$githash&release=$release&branch=$branch&username=$username&hostname=$hostname&workspace=$workspace&jobname=$jobname"
         build=1
     fi
 fi

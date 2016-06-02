@@ -16,8 +16,9 @@ class Controller(core.Tasklet):
     This class represents a fastpath controller tasklet
     """
 
-    def __init__(self, name="RW.FpCtrl", uid=None, config_ready=True, 
+    def __init__(self, name="RW.FpCtrl", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a Controller object.
 
@@ -26,10 +27,12 @@ class Controller(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action  - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(Controller, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                          recovery_action=recovery_action,
+                                         start=start
                                          )
 
     plugin_name = ClassProperty("rwfpctrl-c")
@@ -37,11 +40,13 @@ class Controller(core.Tasklet):
 
 
 class CalProxy(core.Tasklet):
-    def __init__(self, name="RW.CalProxy", config_ready=True, 
+    def __init__(self, name="RW.CalProxy", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         super(CalProxy, self).__init__(name=name, config_ready=config_ready,
                                        recovery_action=recovery_action,
+                                       start=start
                                        )
 
     plugin_name = "rwcalproxytasklet"
@@ -53,8 +58,9 @@ class NNLatencyTasklet(core.Tasklet):
     This class represents a fastpath Noisy Neighbor (NN) Latency tasklet
     """
 
-    def __init__(self, name="RW.NNLatencyTasklet", uid=None, config_ready=True, 
+    def __init__(self, name="RW.NNLatencyTasklet", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a NN Latency object.
 
@@ -63,10 +69,12 @@ class NNLatencyTasklet(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(NNLatencyTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
+                                               start=start
                                                )
 
     plugin_name = ClassProperty("rwnnlatencytasklet")
@@ -78,8 +86,9 @@ class SfMgr(core.Tasklet):
     This class represents a Service Function manager tasklet
     """
 
-    def __init__(self, name="RW.SfMgr", uid=None, config_ready=True, 
+    def __init__(self, name="RW.SfMgr", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a SF Mgr object.
 
@@ -88,10 +97,12 @@ class SfMgr(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(SfMgr, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                     recovery_action=recovery_action,
+                                    start=start
                                     )
 
     plugin_name = ClassProperty("rwsfmgr")
@@ -102,8 +113,9 @@ class SffMgr(core.Tasklet):
     This class represents a Service Function Forwardermanager tasklet
     """
 
-    def __init__(self, name="RW.SffMgr", uid=None, config_ready=True, 
+    def __init__(self, name="RW.SffMgr", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a SFF Mgr object.
 
@@ -112,10 +124,12 @@ class SffMgr(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(SffMgr, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                      recovery_action=recovery_action,
+                                     start=start
                                      )
 
     plugin_name = ClassProperty("rwsffmgr")
@@ -126,8 +140,9 @@ class NetworkContextManager(core.Tasklet):
     This class represents a network context manager tasklet.
     """
 
-    def __init__(self, name="RW.NcMgr", uid=None, fp_uid=None, config_ready=True, 
+    def __init__(self, name="RW.NcMgr", uid=None, fp_uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a NetworkContextManager object.
 
@@ -137,10 +152,12 @@ class NetworkContextManager(core.Tasklet):
             fp_uid - the instance ID of the fastpath tasklet
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(NetworkContextManager, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                     recovery_action=recovery_action,
+                                                    start=start
                                                     )
         self.fp_uid = fp_uid
 
@@ -153,8 +170,9 @@ class InterfaceManager(core.Tasklet):
     This class represents an interface manager tasklet.
     """
 
-    def __init__(self, name="RW.IfMgr", uid=None, config_ready=True, 
+    def __init__(self, name="RW.IfMgr", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.RESTART.value,
+                 start=True
                 ):
         """Creates an InterfaceManager object.
 
@@ -163,10 +181,12 @@ class InterfaceManager(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(InterfaceManager, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
+                                               start=start
                                                )
 
     plugin_name = ClassProperty("rwifmgr-c")
@@ -178,8 +198,9 @@ class ApplicationManager(core.Tasklet):
     This class represents an application manager tasklet.
     """
 
-    def __init__(self, name="RW.AppMgr", uid=None, config_ready=True, 
+    def __init__(self, name="RW.AppMgr", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates an ApplicationManager object.
 
@@ -188,10 +209,12 @@ class ApplicationManager(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(ApplicationManager, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                  recovery_action=recovery_action,
+                                                 start=start
                                                  )
 
     plugin_name = ClassProperty("rwappmgr-c")
@@ -203,8 +226,9 @@ class CliTasklet(core.Tasklet):
     This class represents a CLI tasklet.
     """
 
-    def __init__(self, name="RW.Cli", uid=None, manifest_file="cli_rwfpath.xml", config_ready=True, 
+    def __init__(self, name="RW.Cli", uid=None, manifest_file="cli_rwfpath.xml", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a CliTasklet object.
 
@@ -213,10 +237,12 @@ class CliTasklet(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(CliTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                          recovery_action=recovery_action,
+                                         start=start
                                          )
         self.manifest_file = manifest_file
 
@@ -228,8 +254,9 @@ class MockCliTasklet(CliTasklet):
     This class represents a Mock CLI tasklet.
     """
 
-    def __init__(self, name="RW.MockCli", uid=None, config_ready=True, 
+    def __init__(self, name="RW.MockCli", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a MockCliTasklet object.
 
@@ -238,10 +265,12 @@ class MockCliTasklet(CliTasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(MockCliTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                              recovery_action=recovery_action,
+                                             start=start
                                              )
 
     plugin_name = ClassProperty("pytoytasklet")
@@ -259,6 +288,7 @@ class uAgentTasklet(core.Tasklet):
             port=None,
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a uAgentTasklet object.
 
@@ -268,10 +298,12 @@ class uAgentTasklet(core.Tasklet):
             port   - the port that the tasklet uses for communication
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(uAgentTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                             recovery_action=recovery_action,
+                                            start=start
                                             )
         self.port = str(os.getuid()) if port is None else port
         self.port = os.environ.get("_UAGENT_PORT", self.port)
@@ -284,8 +316,9 @@ class MgmtMockTasklet(core.Tasklet):
     This class represents a mgmtmock tasklet.
     """
 
-    def __init__(self, name="RW.MgmtMock", uid=None, port=None, config_ready=True, 
+    def __init__(self, name="RW.MgmtMock", uid=None, port=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a MgmtMock object.
 
@@ -295,10 +328,12 @@ class MgmtMockTasklet(core.Tasklet):
             port - the port that the tasklet uses for communication
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(MgmtMockTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                               recovery_action=recovery_action,
+                                              start=start
                                               )
         self.port = str(os.getuid()) if port is None else port
         self.port = os.environ.get("_UAGENT_PORT", self.port)
@@ -319,6 +354,7 @@ class RestconfTasklet(core.Tasklet):
             rest_port="8888",
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a Rift Restconf Server object.
 
@@ -330,10 +366,12 @@ class RestconfTasklet(core.Tasklet):
             rest_port  - the port that the restconf server listens on
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(RestconfTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                               recovery_action=recovery_action,
+                                              start=start
                                               )
         self.confd_host = confd_host
         self.confd_port = confd_port
@@ -353,6 +391,7 @@ class RestStreamTasklet(core.Tasklet):
             name="RW.RestStream",
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a Rift RestStream Server object.
 
@@ -361,10 +400,12 @@ class RestStreamTasklet(core.Tasklet):
             name   - the name of the process
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(RestStreamTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                 recovery_action=recovery_action,
+                                                start=start
                                                 )
 
     plugin_name = ClassProperty("reststream")
@@ -380,6 +421,7 @@ class RestPortForwardTasklet(core.Tasklet):
             name="RW.RestPortForward",
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
+            start=True
             ):
         """Creates a Rift RestStream Server object.
 
@@ -388,10 +430,12 @@ class RestPortForwardTasklet(core.Tasklet):
             name   - the name of the process
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(RestPortForwardTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                      recovery_action=recovery_action,
+                                                     start=start
                                                      )
 
     plugin_name = ClassProperty("restportforward")
@@ -402,8 +446,9 @@ class ToyTasklet(core.Tasklet):
     This class represents a toy tasklet.
     """
 
-    def __init__(self, name="RW.toytasklet", uid=None, config_ready=True, 
+    def __init__(self, name="RW.toytasklet", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a ToyTasklet object.
 
@@ -412,10 +457,12 @@ class ToyTasklet(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action  - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(ToyTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                          recovery_action=recovery_action,
+                                         start=start
                                          )
 
     plugin_name = ClassProperty("rwtoytasklet-c")
@@ -427,8 +474,9 @@ class ToyTaskletPython(core.Tasklet):
     This class represents a python toy tasklet.
     """
 
-    def __init__(self, name="RW.toytasklet.python", uid=None, config_ready=True, 
+    def __init__(self, name="RW.toytasklet.python", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a Python ToyTasklet object.
 
@@ -437,10 +485,12 @@ class ToyTaskletPython(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action  - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(ToyTaskletPython, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
+                                               start=start
                                                )
 
     plugin_name = ClassProperty("pytoytasklet")
@@ -452,8 +502,9 @@ class DtsTaskletPython(core.Tasklet):
     This class represents a python DTS toy tasklet.
     """
 
-    def __init__(self, name="RW.dtstasklet.python", uid=None, config_ready=True, 
+    def __init__(self, name="RW.dtstasklet.python", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a Python DTS ToyTasklet object.
 
@@ -462,10 +513,12 @@ class DtsTaskletPython(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action  - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(DtsTaskletPython, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
+                                               start=start
                                                )
 
     plugin_name = ClassProperty("rwdtstasklet")
@@ -477,8 +530,9 @@ class MsgBrokerTasklet(core.Tasklet):
     This class represents a message broker tasklet.
     """
 
-    def __init__(self, name="RW.Msgbroker", port=None, uid=None, config_ready=True, 
+    def __init__(self, name="RW.Msgbroker", port=None, uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a MsgBrokerTasklet object.
 
@@ -487,10 +541,12 @@ class MsgBrokerTasklet(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(MsgBrokerTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
+                                               start=start
                                                )
         self.port = random.randint(20000, 30000) if port is None else port
 
@@ -503,8 +559,9 @@ class DtsRouterTasklet(core.Tasklet):
     This class represents a DTS router tasklet.
     """
 
-    def __init__(self, name="RW.DTS.Router", uid=None, config_ready=True, 
+    def __init__(self, name="RW.DTS.Router", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a DtsRouterTasklet object.
 
@@ -513,10 +570,12 @@ class DtsRouterTasklet(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(DtsRouterTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
+                                               start=start
                                                )
 
     plugin_directory = ClassProperty("./usr/lib/rift/plugins/rwdtsrouter-c")
@@ -528,8 +587,9 @@ class LogdTasklet(core.Tasklet):
     This class represents a Logd tasklet.
     """
 
-    def __init__(self, name='rwlog', uid=None, schema="rw-mgmt", config_ready=True, 
+    def __init__(self, name='rwlog', uid=None, schema="rw-mgmt", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a LogdTasklet object.
 
@@ -539,10 +599,12 @@ class LogdTasklet(core.Tasklet):
             schema - the name of the schema that the tasklet should use
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(LogdTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                           recovery_action=recovery_action,
+                                          start=start
                                           )
         self.schema = schema
 
@@ -555,8 +617,9 @@ class DtsPerfTasklet(core.Tasklet):
     This class represents a DTS router peformance test tasklet.
     """
 
-    def __init__(self, name="RW.DTSPerf", uid=None, config_ready=True, 
+    def __init__(self, name="RW.DTSPerf", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a DtsPerfTasklet object.
 
@@ -565,10 +628,12 @@ class DtsPerfTasklet(core.Tasklet):
             uid  - a unique identifier
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
 
         """
         super(DtsPerfTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                              recovery_action=recovery_action,
+                                             start=start
                                              )
 
     plugin_directory = ClassProperty("./usr/lib/rift/plugins/rwdtsperf-c")
@@ -578,8 +643,9 @@ class DtsPerfTasklet(core.Tasklet):
 class DtsPerfMgrTasklet(core.Tasklet):
     """This class represents a DTS router performance manger tasklet."""
 
-    def __init__(self, name="RW.DTSPerfMgrTasklet", uid=None, config_ready=True, 
+    def __init__(self, name="RW.DTSPerfMgrTasklet", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a DtsPerfMgrTasklet object.
 
@@ -588,9 +654,11 @@ class DtsPerfMgrTasklet(core.Tasklet):
             uid     - a unique identifier
             config_ready -  config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
         """
         super(DtsPerfMgrTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                 recovery_action=recovery_action,
+                                                start=start
                                                 )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwdtsperfmgrtasklet')
@@ -600,8 +668,9 @@ class DtsPerfMgrTasklet(core.Tasklet):
 class DtsMockServerTasklet(core.Tasklet):
     """This class represents a DTS mock server tasklet."""
 
-    def __init__(self, name="RW.DTSMockServerTasklet", uid=None, config_ready=True, 
+    def __init__(self, name="RW.DTSMockServerTasklet", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """Creates a DtsMockServerTasklet object.
 
@@ -610,9 +679,11 @@ class DtsMockServerTasklet(core.Tasklet):
             uid     - a unique identifier
             config_ready -   config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
         """
         super(DtsMockServerTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                    recovery_action=recovery_action,
+                                                   start=start
                                                    )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwdtsmockservertasklet')
@@ -624,8 +695,9 @@ class VnfMgrTasklet(core.Tasklet):
     This class represents a VnfMgr tasklet.
     """
 
-    def __init__(self, name='vnfmgr', uid=None, config_ready=True, 
+    def __init__(self, name='vnfmgr', uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """
         Creates a VnfMgrTasklet object.
@@ -635,9 +707,11 @@ class VnfMgrTasklet(core.Tasklet):
             uid   - a unique identifier
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
         """
         super(VnfMgrTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                             recovery_action=recovery_action,
+                                            start=start
                                             )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/vnfmgr')
@@ -648,8 +722,9 @@ class Launchpad(core.Tasklet):
     This class represents a launchpad tasklet.
     """
 
-    def __init__(self, name='launchpad', uid=None, config_ready=True, 
+    def __init__(self, name='launchpad', uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """
         Creates a Launchpad object.
@@ -659,9 +734,11 @@ class Launchpad(core.Tasklet):
             uid   - a unique identifier
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
         """
         super(Launchpad, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                         recovery_action=recovery_action,
+                                        start=start
                                         )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwlaunchpad')
@@ -673,8 +750,9 @@ class MissionControl(core.Tasklet):
     This class represents a mission control tasklet.
     """
 
-    def __init__(self, name='mission-control', uid=None, config_ready=True, 
+    def __init__(self, name='mission-control', uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """
         Creates a MissionControl object.
@@ -684,9 +762,11 @@ class MissionControl(core.Tasklet):
             uid   - a unique identifier
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
         """
         super(MissionControl, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                              recovery_action=recovery_action,
+                                             start=start
                                              )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwmctasklet')
@@ -700,6 +780,7 @@ class MissionControlCTasklet(core.Tasklet):
 
     def __init__(self, name='mission-control-ctasklet', uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         """
         Creates a MissionControlCTasklet object.
@@ -709,9 +790,11 @@ class MissionControlCTasklet(core.Tasklet):
             uid   - a unique identifier
             config_ready - config readiness check enable
             recovery_action - recovery action mode
+            start        - Flag denotes whether to initially start this component
         """
         super(MissionControlCTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                      recovery_action=recovery_action,
+                                                     start=start
                                                      )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwmctasklet-c')
@@ -719,11 +802,13 @@ class MissionControlCTasklet(core.Tasklet):
 
 
 class ContainerManager(core.Tasklet):
-    def __init__(self, name="RW.CntMgr", config_ready=False, 
+    def __init__(self, name="RW.CntMgr", config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 start=True
                 ):
         super(ContainerManager, self).__init__(name=name, config_ready=config_ready,
                                                recovery_action=recovery_action,
+                                               start=start
                                                )
 
     plugin_name = "rwcntmgrtasklet"

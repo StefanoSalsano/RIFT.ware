@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
 # 
@@ -26,8 +26,8 @@ This tool has three modes --
        if running this as a daemon (as root) you will need to allow sudo without a tty. run visudo and comment out requiretty
 
 """
-
 import argparse
+import glob
 import json
 import logging
 import os
@@ -39,6 +39,8 @@ import tempfile
 import textwrap
 import time
 import socket
+import uuid
+
 from datetime import datetime
 from junit_xml import TestSuite, TestCase
 
@@ -78,18 +80,23 @@ class RA_TestSuite(object):
 
     die_now = 0
 
-    def __init__(self, job=None):
+    def __init__(self, job=None, harness=None):
         self.job=None
         self.logfile = None
         self.logfile_handle = None
         self.pid = None
         self.priority = 100
         self.suts = None
+        self.sut_file = None
         self.test_config = None
         self.borrow_testbed = False
         self.cmdargs = None
+        self.tenants = []
         if job is not None:
             self.from_job(job)
+        if harness is not None:
+            self.harness = harness
+        self.task_id = uuid.uuid4().hex[:10]
 
     def setup(self, rift_root, testcase_config_file):
         ''' setup this test
@@ -160,12 +167,11 @@ class RA_TestSuite(object):
     def create_sut_file(self):
         ''' create the sut file that is used by the test to map logical entities (VMs and networks) to actual entities
         '''
-
         all_suts={ 'nets': self.nets ,
                    'vms':  self.suts }
         self.sut_file  = tempfile.NamedTemporaryFile(delete=False)
         sss = json.dumps(all_suts, sort_keys=False, indent=4, separators=(',', ': '))
-        self.sut_file.write(sss)
+        self.sut_file.write(sss.encode('ascii'))
         self.sut_file.close()
         os.chmod(self.sut_file.name, 0o777)
         logger.debug("suts are %s" % ",".join(self.suts.values() ) )
@@ -178,7 +184,7 @@ class RA_TestSuite(object):
         return pathname
 
 
-    def launch_driver(self, cmdargs):
+    def launch_driver(self, cmdargs, iplist=None):
         ''' fork and exec the driver which will run the test itself
         '''
         driver = os.path.join( self.rift_root, ".install/usr/rift/systemtest/harness/driver")
@@ -192,23 +198,52 @@ class RA_TestSuite(object):
         else:
             f = open( self.logfile, "a")
             self.logfile_handle = f
+
+
         env = self.generate_env()
         if cmdargs.target:
             env['RIFT_ROOT'] = cmdargs.target
+        if cmdargs.openstack:
+            self.sut_file = tempfile.NamedTemporaryFile(delete=False)
         cmds = [ driver,    '--log-dir', cmdargs.logdir, 
-                            '--configfile', self.test_config.configfile, 
-                            '--sut-file', self.sut_file.name, 
+                            '--configfile', self.test_config.configfile,
+                            '--sut-file', self.sut_file.name,
                             '--timeout-factor', str(cmdargs.timeout)  ]
+
+        if cmdargs.user:
+            cmds = cmds + [ '--username', cmdargs.user ]
         if self.submitted_by is not None:
-            cmds = cmds + [  '--USER', self.submitted_by ]
+            cmds = cmds + [ '--USER', self.submitted_by ]
         if cmdargs.chown:
-            cmds = cmds + [  '--chown' ]
-            
-        logger.debug("launch driver %s" % " ".join(cmds))
+            cmds = cmds + [ '--chown' ]
+        if iplist:
+            cmds = cmds + [ '--ip-list', ','.join(iplist) ]
+        if cmdargs.rsyslog:
+            cmds = cmds + [ '--rsyslog' ]
+
+        if cmdargs.openstack:
+            cmds = cmds + [
+                '--prepare',
+                '--openstack', cmdargs.openstack,
+                '--image', cmdargs.image,
+                '--task-id', self.task_id
+            ]
+
+            for tenant in self.tenants:
+                cmds = cmds +  [ '--tenant', tenant ]
+
+            if self.cmdargs.nfs_root:
+                cmds += [ '--nfs-root', cmdargs.nfs_root ]
+
+            if not self.cmdargs.skip_teardown:
+                cmds += [ '--scrub' ]
+
+
+        logger.info("launch driver %s" % " ".join(cmds))
         self.pid = subprocess.Popen(cmds, stdout=f, stderr=subprocess.STDOUT, stdin=None, env=env )
 
 
-    def start_job(self, cmdargs, testbed ):
+    def start_job(self, cmdargs, testbed):
         ''' start a job running aynchronously
             returns True if sucessfull
             It is common for this to fail due to lack of resources
@@ -222,25 +257,30 @@ class RA_TestSuite(object):
         self.testbed = testbed or Testbed()
         self.cmdargs = cmdargs
 
-        logger.debug("starting resource selection")
-        self.nets, self.suts = self.testbed.select_by_config(self.test_config)
-        if self.suts is None:
-            logger.info( "cannot run %s: insufficient resources. testbed has %d VMs and %d networks" % ( self.test_name, len(self.testbed.vms), len(self.testbed.switches) ))
-            self.bump_priority()
-            self.set_status('Q')
-            return False
-        else:
-            logger.debug("resource selection complete. hosts are %s" % ",".join(self.suts.values() ) )
-
-        if self.test_config.vms:
-            self.testbed.reserve(self.suts.values())
-        logger.info( "Running test suite %s (%s)..." % ( self.test_name, self.test_config.configfile ))
-        try:
-            self.create_sut_file()
+        if self.openstack:
+            if not self.tenants:
+                return None
             self.launch_driver(cmdargs)
-        except:
-            self.testbed.release(self.suts.values())
-            raise
+        else:
+            logger.debug("starting resource selection")
+            self.nets, self.suts = self.testbed.select_by_config(self.test_config)
+            if self.suts is None:
+                logger.info( "cannot run %s: insufficient resources. testbed has %d VMs and %d networks" % ( self.test_name, len(self.testbed.vms), len(self.testbed.switches) ))
+                self.bump_priority()
+                self.set_status('Q')
+                return False
+            else:
+                logger.debug("resource selection complete. hosts are %s" % ",".join(self.suts.values() ) )
+
+            if self.test_config.vms:
+                self.testbed.reserve(self.suts.values())
+            logger.info( "Running test suite %s (%s)..." % ( self.test_name, self.test_config.configfile ))
+            try:
+                self.create_sut_file()
+                self.launch_driver(cmdargs)
+            except:
+                self.testbed.release(self.suts.values())
+                raise
 
         self.set_status('R')
         self.last_signal = None
@@ -344,7 +384,8 @@ class RA_TestSuite(object):
 
         if self.sut_file is not None and os.path.exists(self.sut_file.name):
             os.remove(self.sut_file.name)
-        self.release_resources()
+        if not self.cmdargs.openstack:
+            self.release_resources()
 
         if self.return_code == TestCaseManager.get_code('DEFERRED'):
             self.set_status('Q', 0)
@@ -447,7 +488,7 @@ class RA_Harness(object):
             submit -- find tests and submit them to the testcase job server
             auto -- get tests from the testcase job server and run them
 
-        it can run tests in parallel (default) resources permitting or serial (--serial)
+        it can run tests in parallel resources permitting or serial (default)
     '''
 
     def __init__(self, cmdargs):
@@ -457,6 +498,8 @@ class RA_Harness(object):
         self.last_get_job_time = None
         self.return_code = -1
         self.workspaces = set()
+        self.tenants = set()
+        self.num_tenants = 0
 
         '''
         return_code tracks the work result seen in a run and provides the overall return code
@@ -468,6 +511,16 @@ class RA_Harness(object):
             OR
             we ask for resources from the testbed system one test at a time
         '''
+
+        if self.cmdargs.tenant:
+            self.tenants.update(self.cmdargs.tenant)
+
+        self.num_tenants = len(self.tenants)
+
+        if self.cmdargs.openstack and not self.tenants:
+            tenant = os.getenv('USER', 'demo')
+            logger.debug('No tenants specified, defaulting to using tenant [%s]', tenant)
+            self.tenants = set([tenant])
 
         self.load_testbed()
         if not os.path.exists(self.cmdargs.logdir):
@@ -503,27 +556,29 @@ class RA_Harness(object):
 
     def load_testbed(self):
         self.testbed = None
-        if not self.cmdargs.nouser:
-            # first try to see if the user has reserved any already
-            self.testbed = Testbed(url='auto', user=self.cmdargs.user)
-            if not self.testbed.hosts:
-                # if the host list is empty, the testbed is useless so discard it
-                self.testbed = None
-            else:
-                logger.info( "Using %d resources pre-allocated by %s: %s" % (len(self.testbed.vms), self.cmdargs.user,",".join(self.testbed.vms)))
-                if self.cmdargs.iplist:
-                    iplist = self.cmdargs.iplist.split(',')
-                    deleteme = []
-                    for host in self.testbed.hosts.itervalues():
-                        if host.ipaddress not in iplist:
-                            logger.info("NOT using %s (%s) because it is not in iplist" % ( host.name, host.ipaddress ))
-                            deleteme.append(host)
-                    for host in deleteme:
-                        del self.testbed.hosts[host.name]
-                        del host
-                    logger.info("trimmed testbed has %d hosts" % len(self.testbed.hosts))
-        else:
+
+        if self.cmdargs.nouser or self.cmdargs.openstack:
             self.testbed = None
+            return
+
+        # first try to see if the user has reserved any already
+        self.testbed = Testbed(url='auto', user=self.cmdargs.user)
+        if not self.testbed.hosts:
+            # if the host list is empty, the testbed is useless so discard it
+            self.testbed = None
+        else:
+            logger.info( "Using %d resources pre-allocated by %s: %s" % (len(self.testbed.vms), self.cmdargs.user,",".join(self.testbed.vms)))
+            if self.cmdargs.iplist:
+                iplist = self.cmdargs.iplist.split(',')
+                deleteme = []
+                for host in self.testbed.hosts.itervalues():
+                    if host.ipaddress not in iplist:
+                        logger.info("NOT using %s (%s) because it is not in iplist" % ( host.name, host.ipaddress ))
+                        deleteme.append(host)
+                for host in deleteme:
+                    del self.testbed.hosts[host.name]
+                    del host
+                logger.info("trimmed testbed has %d hosts" % len(self.testbed.hosts))
  
     def update_return_code(self, rc):
         if rc > self.return_code:
@@ -532,7 +587,7 @@ class RA_Harness(object):
     def add_job(self, job):
         ''' add a job retrieved from the testcase server to our queue
         '''
-        new_test_suite = RA_TestSuite(job=job)
+        new_test_suite = RA_TestSuite(job=job, harness=self)
         self.queue.add(new_test_suite)
         logger.debug('added job %s' % job['id'] )
 
@@ -686,7 +741,7 @@ class RA_Harness(object):
 
             ''' do not start more jobs in serial mode if any jobs are running
             '''
-            if self.cmdargs.serial and self.count_jobs_by_status('R') > 0:
+            if self.cmdargs.execution_mode == 'serial' and self.count_jobs_by_status('R') > 0:
                 try_start = False
 
             if self.cmdargs.until_fail and self.return_code > 0:
@@ -720,7 +775,10 @@ class RA_Harness(object):
                             try_start_next_loop = True
                             sleep_time = 0
                             display = True
-                            self.free_workspace(test.rift_root)
+                            if self.cmdargs.openstack:
+                                self.free_tenants(test)
+                            else:
+                                self.free_workspace(test.rift_root)
                             try:
                                 self.create_junit_xml(test.rift_root)
                             except Exception as e:
@@ -759,6 +817,67 @@ class RA_Harness(object):
             if self.count_jobs_by_status('R') == 0:
                 self.load_testbed()
 
+    def scrub_tenant(self, cloud_host, tenant, user, task_id=None):
+        logger.info("Cleaning up openstack [%s@%s]", tenant, cloud_host)
+        scrub_cmd = (
+            '{rift_root}/rift-shell -e -r -- '
+            '{rift_root}/.install/usr/rift/systemtest/harness/scrub_tenant.py '
+            '--cloud-host {cloud_host} '
+            '--tenant {tenant} '
+            '--user {user} '
+        ).format(
+            rift_root=os.environ['RIFT_ROOT'],
+            cloud_host=cloud_host,
+            tenant=tenant,
+            user=user,
+        )
+
+        if task_id:
+            scrub_cmd += '--task-id {task_id} '.format(task_id=task_id)
+
+        subprocess.check_call(scrub_cmd, shell=True)
+
+
+    def allocate_tenants(self, test):
+        assert test.test_config.required_tenants <= self.num_tenants, "Insufficient tenant resources to run test %s" % (test.test_name)
+
+        if len(self.tenants) < test.test_config.required_tenants:
+            logger.info('Waiting for more free tenants to run %s' % (test.test_name))
+            return None
+
+        logger.info("Allocating %d tenants for test: %s", test.test_config.required_tenants, test.test_name)
+        test.tenants = [self.tenants.pop() for _ in range(0, test.test_config.required_tenants)]
+        logger.info("Allocated tenants %s for test: %s", test.tenants, test.test_name)
+
+        if self.cmdargs.clean:
+            for tenant in test.tenants:
+                self.scrub_tenant(test.openstack, tenant, self.cmdargs.user)
+
+            if self.cmdargs.rsyslog:
+                pid_path = '{rift_root}/.artifacts/rsyslog_*/rsyslog.pid'.format(rift_root=os.environ['RIFT_ROOT'])
+                pid_files = glob.glob(pid_path)
+                if pid_files:
+                    kill_cmd = "kill $(cat {pid_path})".format(pid_path=pid_path)
+                    try:
+                        subprocess.check_call(kill_cmd, shell=True)
+                    except subprocess.CalledProcessError:
+                        pass
+
+                    cleanup_cmd = "rm {pid_path}".format(pid_path=pid_path)
+                    try:
+                        subprocess.check_call(cleanup_cmd, shell=True)
+                    except subprocess.CalledProcessError:
+                        pass
+
+
+
+
+    def free_tenants(self, test):
+        for tenant in test.tenants:
+            self.tenants.add(tenant)
+        test.tenants = []
+        
+
     def take_workspace(self, ws):
         ''' check if a workspace is in use or not
             mark it as in use if it was free and return True
@@ -780,15 +899,34 @@ class RA_Harness(object):
         res = False
         for test in sorted(todolist, key=lambda x: x.priority, reverse=True ):
             if test.status == 'Q':
-                if not self.take_workspace(test.rift_root):
-                    logger.debug("workspace %s is in use" % test.rift_root)
-                    continue
-                if self.cmdargs.debug:
-                    if test.start_job(self.cmdargs, self.testbed):
-                        res = True
-                    else:
-                        self.free_workspace(test.rift_root)
-                else:
+                if self.cmdargs.openstack: # running on openstack
+                    test.openstack = self.cmdargs.openstack
+                    try:
+                        self.allocate_tenants(test)
+                    except Exception as e:
+                        logger.error("Failed to allocate test resources - %s" % (e))
+                        test.set_status('C', result=TestCaseManager.get_code('EXCEPTION'))
+                        raise
+
+                    if not test.tenants:
+                        continue
+
+                    try:
+                        logger.info("Using {} to run test {} on {}".format(test.tenants, test.test_name, test.openstack))
+                        if test.start_job(self.cmdargs, self.testbed):
+                            res = True
+                        else:
+                            self.free_tenants(test)
+                    except Exception as e:
+                        logger.error("error %s from start_job" % e)
+                        test.set_status('C', result=TestCaseManager.get_code('EXCEPTION'))
+                        self.free_tenants(test)
+                        raise
+
+                else: # running on reserved hosts
+                    if not self.take_workspace(test.rift_root):
+                        logger.debug("workspace %s is in use" % test.rift_root)
+                        continue
                     try:
                         if test.start_job(self.cmdargs, self.testbed):
                             res = True
@@ -798,7 +936,9 @@ class RA_Harness(object):
                         logger.error("error %s from start_job" % e)
                         test.set_status('C', result=TestCaseManager.get_code('EXCEPTION'))
                         self.free_workspace(test.rift_root)
-            if res and self.cmdargs.serial:
+                        raise
+
+            if res and self.cmdargs.execution_mode == 'serial':
                 break
         return res
 
@@ -885,6 +1025,7 @@ class RA_Harness(object):
         else:
             logger.info("found %d job(s), starting execution" % len(self.queue))
             self.run_queue()
+
             logger.info("DONE")
             self.print_queue(log=True)
 
@@ -916,9 +1057,7 @@ def main():
 
     #
     # USER
-    parser.add_argument('-u', '--user',    dest='user', type=str,
-                        help='username to use for reserving resources',
-                        default=os.environ.get('USER', 'ruser'))
+    parser.add_argument('-u', '--user', dest='user', type=str, help='username to use for reserving resources')
     parser.add_argument('--iplist', dest='iplist', type=str, help='list of the ipaddresses of the VMs you do want to use.', default='' )
     parser.add_argument('--no-user', dest='nouser', action='store_true', help='disable using any pre-reserved resources')
 
@@ -928,7 +1067,21 @@ def main():
 
     # Serial or parallel
     # only applies to run and auto mode
-    parser.add_argument('--serial', dest='serial', action='store_true', help='run tests serially')
+    parallel_group = parser.add_mutually_exclusive_group(required=False)
+    parallel_group.add_argument('--serial', dest='execution_mode', action='store_const', const='serial', help='run tests serially')
+    parallel_group.add_argument('--parallel', dest='execution_mode', action='store_const', const='parallel', help='run tests in parallel')
+    parser.set_defaults(execution_mode='serial')
+
+    parser.add_argument('--nfs-root', dest='nfs_root', action='store', help='location of RIFT_ROOT in nfs mounted workspace')
+    parser.add_argument('--reserve', dest='reserve', action='store_true', help='Use the reservation system rather than openstack to host tests')
+    parser.add_argument('--clean', dest='clean', action='store_true', help='Clean tenant before executing test')
+    parser.add_argument('--skip-teardown', dest='skip_teardown', action='store_true', help='Skip tearing down prepared resources')
+    parser.add_argument('--openstack', default='10.66.4.102', dest='openstack', action='store', help='prepare hosts on specified openstack controller')
+    parser.add_argument('--tenant', dest='tenant', action='append', help='tenant in which to initialize resources')
+    parser.add_argument('--image', dest='image', action='store', help='image to use to boot prepared resources', 
+                    default="{rift_root}/images/rift-ui-lab-latest.qcow2".format(
+                        rift_root=os.environ.get('RIFT_ROOT')
+                    ))
 
     parser.add_argument('--top', dest='top', default='.install/usr/rift', type=str, help='portion of RIFT_ROOT to search for config files (run and submit modes only')
 
@@ -939,6 +1092,7 @@ def main():
     parser.add_argument('--until-fail', dest='until_fail', action='store_true', help='exit on error')
     parser.add_argument('--repeat', dest='repeat', default=1, type=int, help='repeat count. Use -1 for forever')
     parser.add_argument('--target', dest='target', type=str, help='target directory on the VM, defaults to this systems RIFT_ROOT')
+    parser.add_argument('--rsyslog', dest='rsyslog', action='store_true', help='start rsyslog server and direct system and test ouptut to it')
 
     # List of specific tests to be run
     # Should only be used in 'run' mode
@@ -952,6 +1106,19 @@ def main():
     signal.signal(signal.SIGINT,  signal_handler )
     signal.signal(signal.SIGTERM, signal_handler )
     signal.signal(signal.SIGUSR1, signal_handler )
+
+    if cmdargs.reserve:
+        cmdargs.openstack = None
+
+    if not cmdargs.user:
+        if cmdargs.openstack:
+            cmdargs.user = os.environ.get('USER') + "_automation"
+        else:
+            cmdargs.user= os.environ.get('USER')
+
+    if not cmdargs.tenant:
+        if cmdargs.openstack:
+            cmdargs.tenant = [os.getenv('USER') + "_automation"]
 
     if cmdargs.test_name:
         cmdargs.test_status='any'

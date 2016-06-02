@@ -489,6 +489,7 @@ rwdts_member_rsp_code_t do_vstop_new(
     const rwdts_xact_info_t * xact_info,
     struct rwmain_gi * rwmain,
     char *stop_instance_name);
+int main_function(int argc, char ** argv, char ** envp);
 
 /*
  * Send a response to a start request.

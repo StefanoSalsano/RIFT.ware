@@ -50,6 +50,7 @@ target_link_libraries(librwmain
   ${TALLOC_LIBRARIES}
   ${RWLIB_LIBRARIES}
   ${COREDUMPER_LIBRARIES}
+  python3
 
   reaper_client
   rwdts_api

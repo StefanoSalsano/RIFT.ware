@@ -6,7 +6,6 @@
 # 
 
 include(rift_yang)
-include(rift_cmdargs)
 
 set(PKG_NAME rwsched)
 set(PKG_VERSION 1.0)

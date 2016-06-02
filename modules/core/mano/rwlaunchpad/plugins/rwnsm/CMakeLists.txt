@@ -29,10 +29,7 @@ rift_python_install_tree(
     rift/tasklets/${TASKLET_NAME}/config_value_pool.py
     rift/tasklets/${TASKLET_NAME}/publisher.py
     rift/tasklets/${TASKLET_NAME}/xpath.py
-    rift/tasklets/${TASKLET_NAME}/rwnsmconfigplugin.py
-    rift/tasklets/${TASKLET_NAME}/rwnsm_conagent.py
-    rift/tasklets/${TASKLET_NAME}/jujuconf_nsm.py
-    rift/tasklets/${TASKLET_NAME}/juju_intf.py
     rift/tasklets/${TASKLET_NAME}/rwvnffgmgr.py
+    rift/tasklets/${TASKLET_NAME}/scale_group.py
   COMPONENT ${PKG_LONG_NAME}
   PYTHON3_ONLY)

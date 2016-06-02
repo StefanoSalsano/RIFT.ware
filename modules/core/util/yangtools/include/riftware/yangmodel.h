@@ -224,22 +224,6 @@ typedef struct rw_yang_uses_s {} rw_yang_uses_t;
 #endif  /* __GI_SCANNER__ */
 
 
-/*!
- * Unit test callback function pointer.  The pointer may be NULL if
- * there is no function to call.  Compilation is optional - only unit
- * test programs will have this member, as determined by the
- * RW_YANGPBC_ENABLE_UTCLI macro.
- *
- * @return The callback status.
- */
-typedef rw_status_t (*rw_yang_utcli_callback_argv_f_t)(
-  //! [in] The number of command arguments
-  int argc,
-
-  //! [in] The command arguments
-  const char** argv
-);
-
 struct rw_yang_pb_group_root_t;
 struct rw_yang_pb_module_t;
 struct rw_yang_pb_rpcdef_t;
@@ -440,21 +424,6 @@ struct rw_yang_pb_msgdesc_t
    */
   size_t num_fields;
   const rw_yang_pb_flddesc_t* ypbc_flddescs;
-
-#ifdef RW_YANGPBC_ENABLE_UTCLI
-  /*!
-   * Unit test callback function pointer.  The pointer may be NULL if
-   * there is no function to call.  Compilation is optional - only unit
-   * test programs will have this member, as determined by the
-   * RW_YANGPBC_ENABLE_UT_CLI macro.
-   *
-   * ATTN: This is kind of hacky, and we should find a better way of
-   * doing this!
-   */
-  const rw_yang_utcli_callback_argv_f_t utcli_callback_argv;
-#else
-  void* utcli_callback_argv;
-#endif /* RW_YANG_ENABLE_UTCLI */
 
   /*!
    * The parent ypbc msg descriptor structure, for messages defined in
@@ -741,8 +710,6 @@ typedef std::unordered_map <std::string, uint32_t> namespace_map_t;
 
 extern const char* YANGMODEL_ANNOTATION_KEY;
 extern const char* YANGMODEL_ANNOTATION_PBNODE;
-extern const char* YANGMODEL_ANNOTATION_CONFD_NS;
-extern const char* YANGMODEL_ANNOTATION_CONFD_NAME;
 extern const char* YANGMODEL_ANNOTATION_SCHEMA_NODE;
 extern const char* YANGMODEL_ANNOTATION_SCHEMA_MODULE;
 extern const char* YANGMODEL_ANNOTATION_SCHEMA_MODEL;
@@ -1182,19 +1149,6 @@ public:
    * @return the current module logging level
    */
   virtual rw_yang_log_level_t log_level() const = 0;
-
-  /*!
-   * Annotate the YANG model with hash values of name spaces and node names
-   * Used for working with TAILF/CONFD.
-   * This is a wrapper around the function on the node. At the model level, the
-   * root's annotate_nodes is called.
-   * @see YangNode::annotate_nodes
-   */
-  rw_status_t annotate_nodes (
-    namespace_map_t& map, /*!< [in] A map containing string to integer associations for namespaces */
-    ymodel_map_func_ptr_t func, /*!< [in] a function that can map a string to a number */
-    const char *ns_ext, /*!< [in] extension value to be used for name space */
-    const char *name_ext); /*!< [in] extension value to be used for name  */
 
   /*!
    * Given a namespace identifier and a tag number associated with a top level
@@ -1986,6 +1940,13 @@ public:
   virtual bool is_mandatory();
 
   /*!
+   * Determine if the node has a descendnat that has a default value.
+   *
+   * @return true if the node has a default descendant, false otherwise
+   */
+  virtual bool has_default();
+
+  /*!
    * Get this node's parent node.  Skips choice and case nodes.
    * Several kinds of nodes may have no node parent: groupings,
    * augments, the root model node.
@@ -2085,17 +2046,6 @@ public:
       uint32_t system_ns_id,/*!<  [in] a number that is mapped from the
                                 namespace of the child being searched for */
       uint32_t element_tag);/*!< [in] protobuf tag assigned to the element */
-
-  /*!
-   * When a YANG model is decorated with associated confd tags, each node
-   * in the model has a associated tag and namespace. This is generated
-   * by confd, but the namespace and tag should uniquely identify a child
-   * node.   *
-   * @return the child node if found, nullptr otherwise
-   *
-   * @return the child node if found, nullptr otherwise
-   */
-  virtual YangNode* search_child_confd_tags(uint32_t ns, uint32_t tag);
 
   /*!
    * Search this node's children for a node that matches the specified
@@ -2337,6 +2287,15 @@ public:
   virtual YangNode* get_choice();
 
   /*!
+   * Get the choice node's default case.
+   *
+   * @returns The default case node. nullptr if not a choice or there is no
+   * default case.
+   */
+  virtual YangNode* get_default_case();
+
+
+  /*!
    * Two YANG nodes can be mutually exclusive. This happens when both
    * nodes are children of case nodes, and the case nodes are mutually
    * exclusive.
@@ -2450,7 +2409,7 @@ public:
    *   null string for other types
    */
   virtual std::string get_enum_string(
-    int32_t value /*!< Value that is to be converted to string
+    uint32_t value /*!< Value that is to be converted to string
                        representation */
   );
 
@@ -2476,12 +2435,19 @@ public:
    */
   virtual std::string get_leafref_path_str();
 
+  /*!
+   * Converts the yang node to its json representation. This
+   * will return the json representation as std::string.
+   */
+  virtual std::string to_json_schema(bool pretty_print = false);
+
   /*
    * ATTN: Should the app-data API actually be just an access to get
    * the cache object?  And the the caller can make accesses to the
    * cache directly?  Maybe, also, accessing the cache creates it on
    * demand, instead of always wasting the memory?
    */
+
 
   /*!
    * Check if an attribute is cached.
@@ -2667,29 +2633,6 @@ public:
   );
 
   /*!
-   * TAILF/confd works by mapping strings and name spaces to integers for easier
-   * lookup in CDB and other TAILF libraries. To work nicely with Riftware, these
-   * integer values also need to be used to traverse rw_xml doms, and extended
-   * protobuf structures.
-   *
-   * This function takes as an input a map that provides mapping for name space
-   * values to integers, and a function pointer that can be invoked to translate
-   * names to integers. With these available, this function annotate a node and
-   * its children with a node name number value and name space number value.
-   *
-   * @return RW_STATUS_SUCCESS, if the namespace and node names of the node and
-   *         its subtree can be mapped
-   * @return RW_STATUS_FAILURE otherwise. Mapping stops on encountering a node
-   *         which does not map correctly
-   */
-  rw_status_t annotate_nodes (
-    YangModel *model, /*!< [in] The model that gets annotated */
-    namespace_map_t& map, /*!< [in] A map containing string to integer associations for namespaces */
-    ymodel_map_func_ptr_t func, /*!< [in] a function that can map a string to a number */
-    const char *ns_ext, /*!< [in] extension value to be used for name space */
-    const char *name_ext); /*!< [in] extension value to be used for name  */
-
-  /*!
    * Get the YangModel that the YangNode is part of
    *
    * @return The YANG Model. Cannot be null. Value owned by Model
@@ -2717,6 +2660,9 @@ public:
    */
   const rw_yang_pb_msgdesc_t* get_ypbc_msgdesc();
 };
+
+
+
 
 
 /*!
@@ -2965,7 +2911,7 @@ public:
 
   // for a enumeration, get the integer value specified in the YANG model
   // for bits type, get the position value specified in the YANG model
-  virtual int32_t get_integer_value() {return 0;};
+  virtual uint32_t get_position() {return 0;};
 
   // ATTN: virtual YangModule* get_module() = 0;
 };
@@ -3222,6 +3168,9 @@ class YangNodeIter
 
     //! Dereference iterator.
     YangNode* operator->() { return p_; }
+
+    //! Get at the underlying pointer.
+    YangNode* raw() { return p_; }
 
     typedef YangNode value_type;
     typedef void difference_type;
@@ -3771,6 +3720,27 @@ data_type YangModule::app_data_set_and_keep_ownership(
 
 } /* namespace rw_yang */
 
+namespace std {
+  // needed for unordered std containers
+
+  template <> struct hash<rw_yang::YangNode*>
+  {
+    size_t operator()(rw_yang::YangNode* const & x) const
+    {
+      return reinterpret_cast<size_t>(x);
+    }
+  };
+
+  template <> struct equal_to<rw_yang::YangNode*>
+  {
+    bool operator()(rw_yang::YangNode* const & left, rw_yang::YangNode* const & right) const
+    {
+      return left == right;
+    }
+  };
+}
+
+
 #endif /* __cplusplus */
 
 __BEGIN_DECLS
@@ -3825,6 +3795,7 @@ extern const char* RW_YANG_UTCLI_EXT_CALLBACK_ARGV;
 extern const char* RW_YANG_NOTIFY_MODULE;
 extern const char* RW_YANG_NOTIFY_EXT_LOG_COMMON;
 extern const char* RW_YANG_NOTIFY_EXT_LOG_EVENT_ID;
+
 
 
 __END_DECLS

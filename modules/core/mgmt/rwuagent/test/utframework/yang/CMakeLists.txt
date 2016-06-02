@@ -12,14 +12,12 @@ cmake_minimum_required(VERSION 2.8)
 ##
 rift_add_yang_target(
   TARGET uagent_ut_test_yang
-  YANG_FILES ut-types.yang interfaces.yang routes.yang dns.yang ntp.yang notif.yang vehicle-b.yang vehicle-b-augment.yang
-  NO_INSTALL
-)
-
-rift_add_yang_target(
-  TARGET utcomposite_yang_parse
-  YANG_FILES ut-composite.yang
-  NO_INSTALL
-  LIBRARIES uagent_ut_test_yang_gen rwuagent_yang_gen
-  DEPENDS uagent_ut_test_yang
+  YANG_FILES ut-types.yang interfaces.yang routes.yang dns.yang
+  notif.yang vehicle-b.yang vehicle-augment-b.yang rw-agent-testbed.yang ut-composite.yang
+  COMPONENT
+    ${PKG_LONG_NAME}
+  DEPENDS
+   rwuagent_yang
+  LIBRARIES
+   rwuagent_yang_gen
 )

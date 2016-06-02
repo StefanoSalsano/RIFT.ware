@@ -20,9 +20,20 @@
 #include "rwdynschema.h"
 #include "rwdynschema_load_schema.h"
 
-char * extract_northbound_listing_from_manifest(rwdts_api_t * dts_handle)
+char ** extract_northbound_listing_from_manifest(rwdts_api_t * dts_handle, int* n_northbound_listing)
 {
-  return dts_handle->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwbaseschema->northbound_listing;
+  if (dts_handle->rwtasklet_info && 
+      dts_handle->rwtasklet_info->rwvcs &&
+      dts_handle->rwtasklet_info->rwvcs->pb_rwmanifest &&
+      dts_handle->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase &&
+      dts_handle->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt &&
+      dts_handle->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->northbound_listing) {
+
+    *n_northbound_listing = dts_handle->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->n_northbound_listing;
+    return dts_handle->rwtasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->northbound_listing;
+  }
+
+  return NULL;
 }
 
 static rwdynschema_dynamic_schema_registration_t *
@@ -59,9 +70,11 @@ rwdynschema_dynamic_schema_registration_unref(rwdynschema_dynamic_schema_registr
   }
 
   RW_FREE(boxed->modules);
+  for (i = 0; i < boxed->n_northbound_listing; ++i) {
+    RW_FREE(boxed->northbound_listing[i]);
+  }
   RW_FREE(boxed->northbound_listing);
   RW_FREE(boxed->app_name);
-
   g_free(boxed);
 }
 
@@ -71,7 +84,8 @@ rwdynschema_dynamic_schema_registration_new(char const * app_name,
                                             void * app_instance,
                                             rwdynschema_app_sub_cb app_sub_cb,
                                             RwdynschemaAppType app_type,
-                                            char * northbound_listing)
+                                            char ** northbound_listing,
+                                            int n_northbound_listing)
 {
   rwdynschema_dynamic_schema_registration_t *boxed =
       (rwdynschema_dynamic_schema_registration_t *)g_new0(rwdynschema_dynamic_schema_registration_t, 1);
@@ -88,7 +102,13 @@ rwdynschema_dynamic_schema_registration_new(char const * app_name,
   boxed->modules = RW_MALLOC(boxed->batch_capacity * sizeof(rwdynschema_module_t));
 
   boxed->app_type = app_type;
-  boxed->northbound_listing = RW_STRDUP(northbound_listing);
+  boxed->n_northbound_listing = n_northbound_listing;
+  boxed->northbound_listing = RW_MALLOC(n_northbound_listing * sizeof(char*));
+
+  int i = 0;
+  for (i = 0; i < n_northbound_listing; ++i) {
+    boxed->northbound_listing[i] = RW_STRDUP(northbound_listing[i]);
+  }
 
   boxed->app_name = RW_STRDUP(app_name);
   boxed->memlog_instance = rwmemlog_instance_alloc(app_name, 0, 200);
@@ -101,10 +121,8 @@ rwdynschema_dynamic_schema_registration_new(char const * app_name,
 
 void rwdynschema_grow_module_array(rwdynschema_dynamic_schema_registration_t * reg)
 {
-  
   reg->batch_capacity = reg->batch_capacity * 2;
-
-  reg->modules = RW_REALLOC(reg->modules, reg->batch_capacity * sizeof(rwdynschema_module_t));
+  reg->modules = RW_REALLOC(reg->modules, reg->batch_capacity * sizeof(rwdynschema_module_t));  
 }
 
 void rwdynschema_add_module_to_batch(rwdynschema_dynamic_schema_registration_t * reg,
@@ -140,9 +158,7 @@ rwdts_member_rsp_code_t rwdynschema_app_commit(rwdts_xact_info_t const * xact_in
                               xact_info->apih->rwtasklet_info,
                               xact_info->apih->tasklet,
                               app_data);
-                      
-  app_data->batch_size = 0;
-
+  
   return RWDTS_ACTION_OK;
 }
 
@@ -190,6 +206,13 @@ rwdynschema_instance_register(rwdts_api_t * dts_handle,
                               void * app_instance,
                               GDestroyNotify app_instance_destructor)
 {
+
+  char **northbound_listing = NULL;
+  int n_northbound_listing = 0;
+
+  northbound_listing = extract_northbound_listing_from_manifest(dts_handle, &n_northbound_listing);
+  RW_ASSERT (northbound_listing);
+
   // construct app data collection 
   rwdynschema_dynamic_schema_registration_t * app_data =
       rwdynschema_dynamic_schema_registration_new(app_name,
@@ -197,7 +220,8 @@ rwdynschema_instance_register(rwdts_api_t * dts_handle,
                                                   app_instance,
                                                   app_sub_cb,
                                                   app_type,
-                                                  extract_northbound_listing_from_manifest(dts_handle));
+                                                  northbound_listing,
+                                                  n_northbound_listing);
 
   rw_yang_pb_schema_t const * mgmt_schema = rw_load_schema("librwschema_yang_gen.so", "rw-mgmt-schema");
   rwdts_api_add_ypbc_schema(dts_handle, mgmt_schema);
@@ -231,8 +255,16 @@ rwdynschema_instance_register(rwdts_api_t * dts_handle,
   app_data->dts_registration = sub_registration;
 
   // Create the runtime schema directories on this vm, if not already created, and load the schema
+
+  rwsched_dispatch_queue_t queue = rwsched_dispatch_queue_create(
+      app_data->dts_handle->tasklet,
+      "dynamic schema queue",
+      RWSCHED_DISPATCH_QUEUE_SERIAL);
+
+  app_data->load_queue = queue;
+
   rwsched_dispatch_async_f(app_data->dts_handle->tasklet,
-                           rwsched_dispatch_get_main_queue(app_data->dts_handle->sched),
+                           queue,
                            (void *)app_data,
                            rwdynschema_load_all_schema);
 

@@ -862,11 +862,11 @@ class PrettyPrinter(object):
     @staticmethod
     def wrap_xml_with_root_node(xml_str):
         """This function wraps the xml string under a root node
-        (<root></root>). This is helpful when the original xml string
+        (<data></data>). This is helpful when the original xml string
         has multiple nodes, but not enclosed in a top level node"""
         match = re.match(r'(.*version.*?>)(.*)', xml_str, re.M|re.I|re.S)
         if match:
-            return match.group(1) + "<root>" + match.group(2) + "</root>"
+            return match.group(1) + "<data>" + match.group(2) + "</data>"
         else:
             return xml_str
 

@@ -170,5 +170,6 @@ module mangle-base
   container top {
     leaf a-little-bit { type string; }
   }
+
 }
 

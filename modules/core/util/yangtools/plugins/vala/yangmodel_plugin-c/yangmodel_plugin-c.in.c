@@ -158,6 +158,10 @@ static rw_yang_stmt_type_t yangmodel_plugin__node__stmt_type(YangmodelPluginNode
     return (rw_yang_stmt_type_t)rw_yang_node_get_stmt_type((rw_yang_node_t *)node);
 }
 
+static rw_yang_node_t * yangmodel_plugin__node__leafref_ref(YangmodelPluginNode * n, guint64 node) {
+    return (rw_yang_node_t *)rw_yang_node_get_leafref_ref((rw_yang_node_t *)node);
+}
+
 static gboolean yangmodel_plugin__node__is_config(YangmodelPluginNode * n, guint64 node) {
     return (gboolean)rw_yang_node_is_config((rw_yang_node_t *)node);
 }
@@ -246,8 +250,8 @@ static gboolean yangmodel_plugin__node__is_rpc_input(YangmodelPluginNode * n, gu
     return (gboolean)rw_yang_node_is_rpc_input((rw_yang_node_t *)node);
 }
 
-static void yangmodel_plugin__node__to_json(YangmodelPluginNode * n, guint64 node, gchar ** str, gboolean pretty_print) {
-    rw_yang_node_to_json((rw_yang_node_t *)node, (char **)str, (bool)pretty_print);
+static void yangmodel_plugin__node__to_json_schema(YangmodelPluginNode * n, guint64 node, gchar ** str, gboolean pretty_print) {
+    rw_yang_node_to_json_schema((rw_yang_node_t *)node, (char **)str, (bool)pretty_print);
 }
 
 /* Key interface */

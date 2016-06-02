@@ -3533,6 +3533,7 @@ ParseLineResult::ParseLineResult(BaseCli& cli,
   parse_options_(options),
   line_ends_with_space_(false),
   success_(false),
+  error_(""),
   cli_print_hook_string_(NULL),
   cb_ (NULL)
 {
@@ -3552,6 +3553,7 @@ ParseLineResult::ParseLineResult(BaseCli& cli,
   parse_options_(options),
   line_ends_with_space_(false),
   success_(false),
+  error_(""),
   cli_print_hook_string_(NULL),
   cb_ (NULL)
 {
@@ -3572,6 +3574,7 @@ ParseLineResult::ParseLineResult(BaseCli& cli,
   parse_options_(options),
   line_ends_with_space_(false),
   success_(false),
+  error_(""),
   cli_print_hook_string_(NULL),
   cb_ (NULL)
 {
@@ -3602,10 +3605,19 @@ void ParseLineResult::parse_line()
 
 void ParseLineResult::parse_line_words()
 {
+  bool override_cli_print_hook = true;
   parse_node_->app_data_clear();
   result_node_->app_data_clear();
   parse_node_->fill_children();
   parse_node_->next(this);
+
+  // Set the CLI Print hook from the most recent ancestor if any
+  for (ParseNode* pn = parse_node_; pn; pn = pn->parent_) {
+    if (pn->is_cli_print_hook()) {
+      cli_print_hook_string_ = pn->get_cli_print_hook_string();
+      break;
+    }
+  }
 
   // Iterate through each word
   std::string word;
@@ -3670,6 +3682,7 @@ void ParseLineResult::parse_line_words()
     }
 
     if (nullptr == parse_found) {
+      error_ = "Did not find completion.";
       success_ = false;
       return;
     }
@@ -3678,6 +3691,7 @@ void ParseLineResult::parse_line_words()
     if ((parse_options_ & NO_COMPLETE) && word != completed_value) {
       completions_.clear();
       success_ = false;
+      error_ = "Could not auto-complete word.";
       return;
     }
 
@@ -3704,6 +3718,7 @@ void ParseLineResult::parse_line_words()
       bool keep_going = handle_app_data();
       if (!keep_going) {
         success_ = false;
+        error_ = "Could not handle app data.";
         return;
       }
     }
@@ -3714,8 +3729,13 @@ void ParseLineResult::parse_line_words()
     RW_ASSERT(result_node_);
     RW_ASSERT(parse_node_->is_clone(*result_node_));
 
-    if (parse_node_->is_cli_print_hook()) {
+    if (override_cli_print_hook &&
+        parse_node_->is_cli_print_hook()) {
       cli_print_hook_string_ = parse_node_->get_cli_print_hook_string();
+      if (parse_node_->flags_.is_set(ParseFlags::PRINT_HOOK_STICKY)) {
+        // Print Hook is sticky, can't be overriden by other nodes
+        override_cli_print_hook = false;
+      }
     }
 
     if (parse_node_->get_callback()) {

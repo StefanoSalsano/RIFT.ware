@@ -170,7 +170,7 @@ static void kill_process(
   if (status != RW_STATUS_SUCCESS)
     return;
 
-  r = kill(ci->proc_info->pid, SIGTERM);
+  r = kill(ci->proc_info->pid, SIGABRT);
   if (r != -1) {
     for (size_t i = 0; i < 1000; ++i) {
       r = kill(ci->proc_info->pid, 0);

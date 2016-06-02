@@ -15,11 +15,13 @@
 #include <unistd.h>
 
 #include "rwyangutil.h"
+#include "rwyangutil_file_proto_ops.hpp"
 
 #include "rw_file_update.h"
 
 using namespace rw_dyn_schema;
 using namespace rw_yang;
+using namespace rwyangutil;
 namespace fs = boost::filesystem;
 
 #define CREATE_STATE(S1, S2, Func)                                      \
@@ -42,25 +44,20 @@ void rw_run_file_update_protocol(rwsched_instance_ptr_t sched,
 
 
 
-bool rw_create_runtime_schema_dir(char const * northbound_schema_listing)
+bool rw_create_runtime_schema_dir(char const *const * northbound_schema_listing,
+                                  int n_northbound_listing)
 {
-  std::string rift_root = getenv("RIFT_INSTALL");
-  if (!rift_root.length()) {
-    rift_root = "/";
+  bool acquired_lock = rwyangutil::create_lock_file();
+  if (!acquired_lock) {
+    return acquired_lock;
   }
 
-  std::string cmd;
-  cmd = rift_root + FILE_PROTO_OPS_EXE;
-
-  cmd = cmd + " --lock-file-create --create-schema-dir "
-        + northbound_schema_listing
-        + " --lock-file-delete";
-
-  auto ret = std::system(cmd.c_str());
-  if (ret != EXIT_SUCCESS) {
-    return false;
+  std::vector<std::string> listings;
+  for (int i = 0; i < n_northbound_listing; ++i) {
+    listings.emplace_back(northbound_schema_listing[i]);
   }
-  return true;
+
+  return rwyangutil::create_schema_directory( listings );
 }
 
 // Generates a random number from 1 to 5
@@ -96,9 +93,13 @@ static void update_lck_timestamp_cb(rwsched_CFRunLoopTimerRef cftimer,
   }
 }
 
-static bool check_version_staleness(std::string const rift_root)
+static bool check_version_staleness(std::string const rift_install)
 {
-  auto curr_ver = ConfdUpgradeMgr().get_max_version_unlinked();
+  unsigned curr_ver= 0;
+  unsigned count = 0;
+
+  // ATTN:- This is a temp hack. Will change when merged with master.
+  std::tie (curr_ver, count) = rwyangutil::get_max_version_number_and_count();
   if (curr_ver == 0) {
     // No version directory created yet
     return true;
@@ -106,7 +107,7 @@ static bool check_version_staleness(std::string const rift_root)
   std::ostringstream strm;
   strm << std::setfill('0') << std::setw(8) << std::hex << curr_ver;
 
-  std::string const version_directory = rift_root + SCHEMA_VER_DIR + ("/" + strm.str());
+  std::string const version_directory = rift_install + "/" + RW_SCHEMA_VER_PATH + ("/" + strm.str());
   auto last_write_timer = fs::last_write_time(version_directory);
   auto now = std::time(nullptr);
 
@@ -121,15 +122,16 @@ static void rerun_state_machine(void* ctxt)
 
 bool FileUpdateProtocol::create_new_version_dir()
 {
-  auto ret = execute_cmd("--version-dir-create");
-  if (!ret) {
-    RW_LOG(this, Error, "Error while creating new version directory");
-    return false;
-  }
-  RW_LOG(this, Info, "Created version directory successfully");
-  return true;
-}
+  bool status = rwyangutil::update_version_directory();
 
+  if (!status) {
+    RW_LOG(this, Error, "Error while creating new version directory");
+  } else {
+    RW_LOG(this, Info, "Created version directory successfully");
+  }
+
+  return status;
+}
 
 inline
 FileUpdateProtocol::FileUpdateProtocol(rwsched_instance_ptr_t sched,
@@ -145,11 +147,10 @@ FileUpdateProtocol::FileUpdateProtocol(rwsched_instance_ptr_t sched,
 {
   initialize_state_mc();
 
-  rift_root_ = getenv("RIFT_INSTALL");
+  rift_install_ = getenv("RIFT_INSTALL");
 
-  lock_file_ = rift_root_ + SCHEMA_LOCK_FILE;
+  lock_file_ = rift_install_ + RW_SCHEMA_LOCK_PATH + "/" + RW_SCHEMA_LOCK_FILENAME;
 
-  cmd_ = rift_root_ + "/usr/bin/rwyangutil ";
 }
 
 void FileUpdateProtocol::initialize_state_mc()
@@ -172,16 +173,6 @@ void FileUpdateProtocol::run(rwsched_instance_ptr_t sched,
 
 }
 
-bool FileUpdateProtocol::execute_cmd(const std::string& cmd_opt)
-{
-  const auto& cmd = cmd_ + cmd_opt;
-  auto ret = std::system(cmd.c_str());
-  if (ret != EXIT_SUCCESS) {
-    return false;
-  }
-  return true;
-}
-
 void FileUpdateProtocol::run_state_machine()
 {
   while (state_ != std::make_pair(INVALID, INVALID)) {
@@ -191,7 +182,7 @@ void FileUpdateProtocol::run_state_machine()
 
   if (!owner_.get())
   {
-    // If the current process could not own the lock 
+    // If the current process could not own the lock
     // file, start watching it for liveness and
     // hook up for receiving notification when lock file
     // gets deleted.
@@ -249,7 +240,7 @@ void FileUpdateProtocol::try_create_lock_file()
   // then bail out of this state machine.
   RW_LOG(this, Debug, "try_create_lock_file")
 
-  if (!check_version_staleness(rift_root_)) {
+  if (!check_version_staleness(rift_install_)) {
     RW_LOG(this, Info, "Version directory found is new, nothing to be done");
     set_state(INVALID, INVALID);
     // create a dummy owner so as to not rerun
@@ -258,8 +249,9 @@ void FileUpdateProtocol::try_create_lock_file()
     return;
   }
 
-  auto ret = execute_cmd("--lock-file-create");
-  if (!ret) {
+  bool status = rwyangutil::create_lock_file();
+
+  if (!status) {
     RW_LOG(this, Info, "Did not get to create lock file");
     set_state(INVALID, INVALID);
     return;
@@ -275,7 +267,7 @@ void FileUpdateProtocol::try_create_lock_file()
 }
 
 
-void FileUpdateProtocol::copy_files_to_local_tmp_dir() 
+void FileUpdateProtocol::copy_files_to_local_tmp_dir()
 {
   RW_LOG(this, Debug, "copy_files_to_local_tmp_dir");
 
@@ -289,8 +281,8 @@ void FileUpdateProtocol::copy_files_to_local_tmp_dir()
   // copied over NFS link and NFS _will_ give
   // trouble!
 
-  fs::path const all_tmp_path = rift_root_ + "/" + SCHEMA_TMP_ALL_LOC;
-  fs::path const northbound_tmp_path = rift_root_ + "/" + SCHEMA_TMP_NORTHBOUND_LOC;
+  fs::path const all_tmp_path = rift_install_ + "/" + RW_SCHEMA_TMP_ALL_PATH;
+  fs::path const northbound_tmp_path = rift_install_ + "/" + RW_SCHEMA_TMP_NB_PATH;
 
   try {
     for (int i = 0; i < app_data_->batch_size; ++i) {
@@ -300,7 +292,7 @@ void FileUpdateProtocol::copy_files_to_local_tmp_dir()
       fs::path const all_so_path = all_tmp_path / lib_name;
       fs::path const all_fxs_path = all_tmp_path / ("/fxs/" + module_name + ".fxs");
       fs::path const all_yang_path = all_tmp_path / ("/yang/" + module_name + ".yang");
-      fs::path const all_meta_path = all_tmp_path / ("/meta/" + module_name + META_INFO_FILE_PREFIX);
+      fs::path const all_meta_path = all_tmp_path / ("/meta/" + module_name + RW_SCHEMA_META_FILE_SUFFIX);
 
       // bug in boost::filesystem::path when constructed from a char *
       fs::path const inbound_fxs_path(std::string(app_data_->modules[i].fxs_filename));
@@ -310,18 +302,18 @@ void FileUpdateProtocol::copy_files_to_local_tmp_dir()
 
       fs::copy_file(inbound_fxs_path,  all_fxs_path,  fs::copy_option::overwrite_if_exists);
       fs::copy_file(inbound_so_path,   all_so_path,   fs::copy_option::overwrite_if_exists);
-      fs::copy_file(inbound_yang_path, all_yang_path, fs::copy_option::overwrite_if_exists);      
+      fs::copy_file(inbound_yang_path, all_yang_path, fs::copy_option::overwrite_if_exists);
       fs::copy_file(inbound_meta_path, all_meta_path, fs::copy_option::overwrite_if_exists);
 
       if (app_data_->modules[i].exported) {
         fs::path const northbound_so_path = northbound_tmp_path / lib_name;
         fs::path const northbound_fxs_path = northbound_tmp_path / ("/fxs/" + module_name + ".fxs");
         fs::path const northbound_yang_path = northbound_tmp_path / ("/yang/" + module_name + ".yang");
-        fs::path const northbound_meta_path = northbound_tmp_path / ("/meta/" + module_name + META_INFO_FILE_PREFIX);
+        fs::path const northbound_meta_path = northbound_tmp_path / ("/meta/" + module_name + RW_SCHEMA_META_FILE_SUFFIX);
 
         fs::copy_file(inbound_fxs_path,  northbound_fxs_path,  fs::copy_option::overwrite_if_exists);
         fs::copy_file(inbound_so_path,   northbound_so_path,   fs::copy_option::overwrite_if_exists);
-        fs::copy_file(inbound_yang_path, northbound_yang_path, fs::copy_option::overwrite_if_exists);      
+        fs::copy_file(inbound_yang_path, northbound_yang_path, fs::copy_option::overwrite_if_exists);
         fs::copy_file(inbound_meta_path, northbound_meta_path, fs::copy_option::overwrite_if_exists);
       }
 
@@ -404,10 +396,11 @@ const char* watcher_app_info::lock_file() const noexcept {
 void FileUpdateProtocol::app_callback()
 {
   RW_LOG(this, Debug, "Calling application callback");
-      app_data_->app_sub_cb(app_data_->app_instance,
-                            app_data_->batch_size,
-                            app_data_->modules);
+  app_data_->app_sub_cb(app_data_->app_instance,
+                        app_data_->batch_size,
+                        app_data_->modules);
   fini_state();
+  app_data_->batch_size = 0;
 }
 
 // -------------------------------------------------------------
@@ -432,7 +425,7 @@ bool watcher_app_info::start_watching_lock_file()
   }
 
   fcntl(ifd_, F_SETFL, O_NONBLOCK);
-  
+
   if (!create_source()) {
     return false;
   }
@@ -448,7 +441,7 @@ void watcher_app_info::handle_inotify_read(void *ctxt)
   self->parent_->reset_state_machine();
 }
 
-static void monitor_lock_file(rwsched_CFRunLoopTimerRef cftimer, 
+static void monitor_lock_file(rwsched_CFRunLoopTimerRef cftimer,
                               void *ctxt)
 {
   auto* self = reinterpret_cast<watcher_app_info*>(ctxt);
@@ -471,7 +464,7 @@ bool watcher_app_info::monitor_lck_timestamp()
   auto now = std::time(nullptr);
 
   if ((now - last_write_timer) >= LIVENESS_THRESH) {
-    parent_->execute_cmd("--lock-file-delete");
+    rwyangutil::remove_lock_file();
     return false;
   }
 
@@ -540,7 +533,7 @@ watcher_app_info::~watcher_app_info()
   inotify_rm_watch(ifd_, wfd_);
   close(ifd_);
 
-  if (monitor_timer_ && 
+  if (monitor_timer_ &&
       rwsched_tasklet_CFRunLoopTimerIsValid(parent_->tasklet(), monitor_timer_)) {
     rwsched_tasklet_CFRunLoopTimerRelease(parent_->tasklet(), monitor_timer_);
   }
@@ -556,12 +549,12 @@ bool owning_app_info::check_lck_file_validity()
 
 bool owning_app_info::delete_lock_file()
 {
-  return parent_->execute_cmd("--lock-file-delete");
+  return rwyangutil::remove_lock_file();
 }
 
 owning_app_info::~owning_app_info()
 {
-  if (update_timer_ && 
+  if (update_timer_ &&
       rwsched_tasklet_CFRunLoopTimerIsValid(parent_->tasklet(), update_timer_)) {
     rwsched_tasklet_CFRunLoopTimerRelease(parent_->tasklet(), update_timer_);
   }

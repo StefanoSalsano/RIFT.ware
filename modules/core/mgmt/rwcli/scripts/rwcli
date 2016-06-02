@@ -13,7 +13,7 @@ while [[ $# > 0 ]]
 do
   arg=$1
   case $arg in
-    --trace_level | --netconf_host | --netconf_port | --username | --passwd | --vm_instance)
+    --trace_level | --netconf_host | --netconf_port | --username | --passwd)
       zsh_cmd="${zsh_cmd} $1 $2"
       shift 2
     ;;
@@ -29,6 +29,14 @@ do
       schema_listing=$2
       zsh_cmd="${zsh_cmd} $1 $2"
       shift 2
+      while [[ $# > 0 ]]
+      do
+        if [[ $1 == "--"* ]]; then
+           break 
+        fi 
+        schema_listing="${schema_listing} $1"
+        shift 1
+      done
     ;;
     --rwmsg)
       if [ -n "${netconf}" ]; then
@@ -42,6 +50,10 @@ do
     --help)
       show_help=1
       shift
+    ;;
+    -c)
+      quoted_cmd=$2
+      shift 2
     ;;
     *)
      echo "Error Unknown option $arg to rwcli"
@@ -59,7 +71,7 @@ file_proto_yutil="${rift_install}/usr/bin/rwyangutil"
 
 # Check if the dynamic schema directory exists, if not create it
 if [ ! -d ${schema_dir} ]; then
-   echo "Creating ${schema_dir} directory.."
+   echo "Creating ${schema_dir} directory..nb schema listing ${schema_listing}"
    ${file_proto_yutil} --lock-file-create --create-schema-dir ${schema_listing} --lock-file-delete
    estat=$?
    if [[ $estat != 0 ]]; then
@@ -68,5 +80,10 @@ if [ ! -d ${schema_dir} ]; then
    fi
 fi
 
-echo ${zsh_cmd}
-exec ${zsh_cmd}
+if [ -z "${quoted_cmd}" ]; then
+  echo ${zsh_cmd}
+  exec ${zsh_cmd}
+else
+  echo ${zsh_cmd} -c \"${quoted_cmd}\"
+  exec ${zsh_cmd} -c "${quoted_cmd}"
+fi

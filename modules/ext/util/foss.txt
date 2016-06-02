@@ -28,3 +28,4 @@ RIFT.core, xerces-c, XML Parser, APLv2.0, http://xerces.apache.org/xerces-c/
 RIFT.core, fm10k/fm10k-0.15.2, Linux* Base Driver README for Intel(R) FM10XXX Ethernet Host Interface, GPL, Intel Provided (pre-pre-alpha)
 RIFT.core, ovs, OVS is not built with riftware. This repo is used to track all the changes that were done for riftware., Multi, RIFT modified http://openvswitch.org Source ???
 RIFT.core, coredumper, google-coredumper, BSD 3-Clause, https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/google-coredumper/coredumper-1.2.1.tar.gz
+RIFT.ext, sipp, SIP load tester, GPLv2, https://github.com/SIPp/sipp.git

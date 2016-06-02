@@ -1,0 +1,177 @@
+tosca_definitions_version:      tosca_simple_profile_for_nfv_1_0_0
+tosca_default_namespace :    # Optional. default namespace (schema, types version)
+
+description: >
+  This TOSCA simple profile deploys ping and pong each on a separate server. Uses the openstack NFV definitions.
+
+metadata:
+  ID: ping_pong_nsd
+  vendor: RIFT.io
+  version: 1.0
+
+imports:
+  - riftio_custom_types.yaml
+
+topology_template:
+  inputs:
+    vendor:
+       type: string
+       description: Vendor information for the NSD.
+
+  node_templates:
+    ping_vnfd:
+      type: tosca.nodes.riftio.VNF1
+      properties:
+        version: 1.0
+        vendor: RIFT.io
+        id: 1
+        #vdu_ref: [ping_vdu]
+        vnf_configuration:
+          config_type: script
+          config_priority: 2
+          config_details: { script_type: bash }
+          config_template: "\n#!/usr/bin/bash\n\n# Rest API config\nping_mgmt_ip='<rw_mgmt_ip>'\nping_mgmt_port=18888\n\n# VNF specific configuration\npong_server_ip='<rw_connection_point_name pong_vnfd/cp0>'\nping_rate=5\nserver_port=5555\n\n# Make rest API calls to configure VNF\ncurl -D /dev/stdout \\\n    -H \"Accept: application/vnd.yang.data+xml\" \\\n    -H \"Content-Type: application/vnd.yang.data+json\" \\\n    -X POST \\\n    -d \"{\\\"ip\\\":\\\"$pong_server_ip\\\", \\\"port\\\":$server_port}\" \\\n    http://${ping_mgmt_ip}:${ping_mgmt_port}/api/v1/ping/server\nrc=$?\nif [ $rc -ne 0 ]\nthen\n    echo \"Failed to set server info for ping!\"\n    exit $rc\nfi\n\ncurl -D /dev/stdout \\\n    -H \"Accept: application/vnd.yang.data+xml\" \\\n    -H \"Content-Type: application/vnd.yang.data+json\" \\\n    -X POST \\\n    -d \"{\\\"rate\\\":$ping_rate}\" \\\n    http://${ping_mgmt_ip}:${ping_mgmt_port}/api/v1/ping/rate\nrc=$?\nif [ $rc -ne 0 ]\nthen\n    echo \"Failed to set ping rate!\"\n    exit $rc\nfi\n\noutput=$(curl -D /dev/stdout \\\n    -H \"Accept: application/vnd.yang.data+xml\" \\\n    -H \"Content-Type: application/vnd.yang.data+json\" \\\n    -X POST \\\n    -d \"{\\\"enable\\\":true}\" \\\n    http://${ping_mgmt_ip}:${ping_mgmt_port}/api/v1/ping/adminstatus/state)\nif [[ $output == *\"Internal Server Error\"* ]]\nthen\n    echo $output\n    exit 3\nelse\n    echo $output\nfi\n\n\nexit 0\n        "
+        port: 18888
+      capabilities:
+        http_endpoint:
+          properties:
+            protocol: http
+            port: { get_property: [ SELF, port ] }
+            path: "api/v1/ping/stats"
+            polling_interval: 2
+        mgmt_interface:
+          properties:
+            protocol: tcp
+            port: { get_property: [ SELF, port ] }
+            dashboard_params: { path: "/api/v1/ping/stats",
+                                port: 18888 }
+        monitoring_param_0:
+          properties:
+            id: 1
+            name: ping-request-tx-count
+            units: packets
+            description: "Number of ping requests"
+            http_endpoint_ref: "api/v1/ping/stats"
+        monitoring_param_1:
+          properties:
+            id: 2
+            name: ping-response-rx-count
+            units: packets
+            description: "Number of ping responses"
+            http_endpoint_ref: "api/v1/ping/stats"
+      requirements:
+        - vdus:
+            node: ping_vdu
+
+    pong_vnfd:
+      type: tosca.nodes.riftio.VNF1
+      properties:
+        version: 1.0
+        vendor: RIFT.io
+        id: 2
+        #vdu_ref: [pong_vdu]
+        vnf_configuration:
+          config_type: script
+          config_delay: 60
+          config_priority: 1
+          config_details: { script_type: bash }
+          config_template: "\n#!/usr/bin/bash\n\n# Rest API configuration\npong_mgmt_ip='<rw_mgmt_ip>'\npong_mgmt_port=18889\n# username=<rw_username>\n# password=<rw_password>\n\n# VNF specific configuration\npong_server_ip='<rw_connection_point_name pong_vnfd/cp0>'\nserver_port=5555\n\n# Make Rest API calls to configure VNF\ncurl -D /dev/stdout \\\n    -H \"Accept: application/vnd.yang.data+xml\" \\\n    -H \"Content-Type: application/vnd.yang.data+json\" \\\n    -X POST \\\n    -d \"{\\\"ip\\\":\\\"$pong_server_ip\\\", \\\"port\\\":$server_port}\" \\\n    http://${pong_mgmt_ip}:${pong_mgmt_port}/api/v1/pong/server\nrc=$?\nif [ $rc -ne 0 ]\nthen\n    echo \"Failed to set server(own) info for pong!\"\n    exit $rc\nfi\n\ncurl -D /dev/stdout \\\n    -H \"Accept: application/vnd.yang.data+xml\" \\\n    -H \"Content-Type: application/vnd.yang.data+json\" \\\n    -X POST \\\n    -d \"{\\\"enable\\\":true}\" \\\n    http://${pong_mgmt_ip}:${pong_mgmt_port}/api/v1/pong/adminstatus/state\nrc=$?\nif [ $rc -ne 0 ]\nthen\n    echo \"Failed to enable pong service!\"\n    exit $rc\nfi\n\nexit 0\n        "
+        port: 18889
+      capabilities:
+        http_endpoint:
+          properties:
+            protocol: http
+            port: { get_property: [ SELF, port ] }
+            path: "api/v1/pong/stats"
+            polling_interval: 2
+        mgmt_interface:
+          properties:
+            protocol: tcp
+            port: { get_property: [ SELF, port ] }
+            dashboard_params: { path: "/api/v1/pong/stats",
+                                port: 18889 }
+        monitoring_param_0:
+          properties:
+            id: 1
+            name: ping-request-rx-count
+            units: packets
+            description: "Number of ping requests"
+            http_endpoint_ref: "api/v1/pong/stats"
+        monitoring_param_1:
+          properties:
+            id: 2
+            name: ping-response-tx-count
+            units: packets
+            description: "Number of ping responses"
+            http_endpoint_ref: "api/v1/pong/stats"
+      requirements:
+        - vdus:
+            node: pong_vdu
+
+    ping_vdu:
+      type: tosca.nodes.riftio.VDU1
+      properties:
+        cloud_init : "#cloud-config\npassword: fedora\nchpasswd: { expire: False }\nssh_pwauth: True\nruncmd:\n  - [ systemctl, daemon-reload ]\n  - [ systemctl, enable, ping.service ]\n  - [ systemctl, start, --no-block, ping.service ]\n  - [ ifup, eth1 ]\n"
+      capabilities:
+        host:
+          properties:
+            num_cpus: 1
+            mem_size: 512 MB
+            disk_size: 4 GB
+      artifacts:
+        ping_vm_image:
+          file: ../images/Fedora-x86_64-20-20131211.1-sda-ping.qcow2
+          type: tosca.artifacts.Deployment.Image.VM.QCOW2
+      interfaces:
+        Standard:
+          create: ping_vm_image
+
+    ping_cp0:
+      type: tosca.nodes.riftio.CP1
+      properties:
+        cp_type: VPORT
+        name: ping_vnfd/cp0
+        vdu_intf_name: eth0
+        vdu_intf_type: VIRTIO
+      requirements:
+        - virtualBinding:
+            node: ping_vdu
+        - virtualLink:
+            node: ping_pong_vld
+
+    pong_vdu:
+      type: tosca.nodes.riftio.VDU1
+      properties:
+        cloud_init : "#cloud-config\npassword: fedora\nchpasswd: { expire: False }\nssh_pwauth: True\nruncmd:\n  - [ systemctl, daemon-reload ]\n  - [ systemctl, enable, pong.service ]\n  - [ systemctl, start, --no-block, pong.service ]\n  - [ ifup, eth1 ]\n"
+      capabilities:
+        host:
+          properties:
+            num_cpus: 1
+            mem_size: 512 MB
+            disk_size: 4 GB
+      artifacts:
+        pong_vm_image:
+          file: ../images/Fedora-x86_64-20-20131211.1-sda-pong.qcow2
+          type: tosca.artifacts.Deployment.Image.VM.QCOW2
+      interfaces:
+        Standard:
+          create: pong_vm_image
+
+    pong_cp0:
+      type: tosca.nodes.riftio.CP1
+      properties:
+        cp_type: VPORT
+        name: pong_vnfd/cp0
+        vdu_intf_name: eth0
+        vdu_intf_type: VIRTIO
+      requirements:
+        - virtualBinding:
+            node: pong_vdu
+        - virtualLink:
+            node: ping_pong_vld
+
+    ping_pong_vld:
+      type: tosca.nodes.riftio.VL1
+      properties:
+        vendor: RIFT.io
+        description: "Toy VL"

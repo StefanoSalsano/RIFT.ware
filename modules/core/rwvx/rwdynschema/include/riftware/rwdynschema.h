@@ -68,8 +68,10 @@ extern "C" {
     rwdynschema_module_t * modules;
 
     RwdynschemaAppType app_type;
-    char * northbound_listing;
+    char ** northbound_listing;
+    int n_northbound_listing;
 
+    rwsched_dispatch_queue_t load_queue;
 
     rwmemlog_instance_t * memlog_instance;
     rwmemlog_buffer_t * memlog_buffer;
@@ -85,7 +87,8 @@ extern "C" {
                                               void * app_instance,
                                               rwdynschema_app_sub_cb app_sub_cb,
                                               RwdynschemaAppType app_type,
-                                              char * northbound_listing);
+                                              char ** northbound_listing,
+                                              int n_northbound_listing);
 #endif // __GI_SCANNER__
 
   GType rwdynschema_dynamic_schema_registration_get_type(void);
@@ -120,7 +123,8 @@ extern "C" {
                                    rwsched_tasklet_ptr_t tasklet,
                                    rwdynschema_dynamic_schema_registration_t* app_data);
 
-  bool rw_create_runtime_schema_dir(char const * northbound_schema_listing);
+  bool rw_create_runtime_schema_dir(char const *const * northbound_schema_listing,
+                                    int n_northbound_listing);
 
   void rwdynschema_add_module_to_batch(rwdynschema_dynamic_schema_registration_t * reg,
                                        const rwdynschema_module_t* module_info);

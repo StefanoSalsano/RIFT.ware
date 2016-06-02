@@ -12,6 +12,22 @@ import requests
 import time
 import ncclient.manager
 
+import xml.dom.minidom as xml_minidom
+
+# from rift.auto.xml_utils import pretty_xml
+def pretty_xml(xml_str):
+    """Creates a more human readable XML string by using
+    new lines and indentation where appropriate.
+
+    Arguments:
+        xml_str - An ugly, but valid XML string.
+    """
+    try:
+        return xml_minidom.parseString(xml_str).toprettyxml('  ')
+    except Exception:
+        return xml_str
+
+
 from rift.rwlib.util import certs
 import rift.gi_utils
 
@@ -52,7 +68,6 @@ def requests_exception_wrapper(func):
             raise ProxyHttpError(e)
 
     return func_wrapper
-
 
 class ProxyError(Exception):
     pass
@@ -103,7 +118,7 @@ class Proxy(object):
     '''
     XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>\n'
     RE_CAPTURE_KEY_VALUE = re.compile(r'\[[^=]*?\=[\"\']?([^\'\"\]]*?)[\'\"]?\]')
-    RE_CAPTURE_RPC_REPLY_DATA = re.compile(r'.*?<rpc-reply.*?<data>(.*)<\/data></rpc-reply>', re.MULTILINE|re.DOTALL)
+    RE_CAPTURE_RPC_REPLY_DATA = re.compile(r'.*?rpc-reply.*?<data>(.*)<\/data></rpc-reply>', re.MULTILINE|re.DOTALL)
     OPERATION_TIMEOUT_SECS = 70
 
     @staticmethod
@@ -223,7 +238,7 @@ class Proxy(object):
         return etree.tostring(rpc_response_element).decode()
 
     @staticmethod
-    def _unroot_xml(xpath, xml, preserve_root=False, preserve_namespace=True):
+    def _unroot_xml(xpath, xml, preserve_root=False, preserve_namespace=True, wrap_tag=None):
         '''Unroot rooted xml that is generated from GI objects
 
         Workaround for RIFT-9034
@@ -267,6 +282,9 @@ class Proxy(object):
 
         if unrooted_xml is None:
             raise ProxyParseError('Failed to modify root of xml document')
+
+        if wrap_tag is not None:
+            unrooted_xml = "<%s>%s</%s>" % (wrap_tag, unrooted_xml, wrap_tag)
 
         if preserve_namespace:
             prefixes = set(re.findall(r'[\<\ ]\/?([^:\<\>]*?):', unrooted_xml, re.MULTILINE|re.DOTALL))
@@ -421,7 +439,7 @@ class Proxy(object):
         return response
 
     def wait_for_interval(self, xpath, compare, timeout, interval=5, fail_on=None, list_obj=False):
-        '''Wait for the comparison of the sample collected at the start of 
+        '''Wait for the comparison of the sample collected at the start of
         the interval with the sample collected at the end of the interval to
         return True
 
@@ -676,9 +694,9 @@ class NetconfProxy(Proxy):
 
 
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request GET %s - Response contains errors' % xpath
             raise ProxyRequestError(msg)
 
@@ -721,9 +739,9 @@ class NetconfProxy(Proxy):
             response_xml = response.data_xml.decode()
 
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request GET CONFIG %s - Response contains errors' % xpath
             raise ProxyRequestError(msg)
 
@@ -778,7 +796,7 @@ class NetconfProxy(Proxy):
         xml = '<config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0">{}</config>'.format(xml)
 
         logger.debug("Request EDIT CONFIG %s %s %s", operation, target, xpath)
-        logger.debug("Request Content: %s", xml)
+        logger.debug("Request Content: %s", pretty_xml(xml))
         response = self.session.ncclient_manager.edit_config(
                 target=target,
                 config=xml,
@@ -790,9 +808,9 @@ class NetconfProxy(Proxy):
             response_xml = response.data_xml.decode()
 
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request EDIT CONFIG %s %s %s - Response contains errors' % (
                     operation,
                     target,
@@ -807,12 +825,12 @@ class NetconfProxy(Proxy):
             else:
                 commit_response_xml = commit_response.data_xml.decode()
 
-            if '<rpc-error>' in commit_response_xml:
+            if 'rpc-error>' in commit_response_xml:
                 msg = 'Request COMMIT EDIT CONFIG %s %s %s - Response contains errors' % (
                         operation,
                         target,
                         xpath)
-                logger.debug("Commit Error Response: %s", commit_response_xml)
+                logger.debug("Commit Error Response: %s", pretty_xml(commit_response_xml))
                 raise ProxyRequestError(msg)
 
         return Proxy._xml_strip_rpc_reply(response_xml)
@@ -880,7 +898,7 @@ class NetconfProxy(Proxy):
 
     def _rpc_xml(self, xpath, xml):
         logger.debug("Request RPC %s", xpath)
-        logger.debug("Request Content: %s", xml)
+        logger.debug("Request Content: %s", pretty_xml(xml))
         response = self.session.ncclient_manager.dispatch(
                 etree.fromstring(xml)
                 )
@@ -891,9 +909,9 @@ class NetconfProxy(Proxy):
             response_xml = response.data_xml.decode()
 
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request RPC %s - Response contains errors' % xpath
             raise ProxyRequestError(msg)
 
@@ -923,6 +941,9 @@ class NetconfProxy(Proxy):
         elif '<ok/>' in response_xml:
             logger.debug('RPC replied with ACK instead of output container.')
             output_obj = None
+        elif '<ok xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0"/>' in response_xml:
+            logger.debug('RPC replied with ACK instead of output container.')
+            output_obj = None
         else:
             output_obj.from_xml_v2(
                     self.model,
@@ -948,9 +969,13 @@ class RestconfProxy(Proxy):
             A restconf path to the resource described by the
             supplied xpath
         '''
+
+        def keyval_to_rcpath(match_obj):
+            return '/' + requests.utils.quote(match_obj.group(1), safe='')
+
         rcpath = xpath.lstrip('/')
         rcpath = re.sub(r'\]\[', '],[', rcpath)
-        rcpath = re.sub(Proxy.RE_CAPTURE_KEY_VALUE, r'/\1', rcpath)
+        rcpath = re.sub(Proxy.RE_CAPTURE_KEY_VALUE, keyval_to_rcpath, rcpath)
         rcpath = re.sub(',/', ',', rcpath)
         return rcpath
 
@@ -972,9 +997,9 @@ class RestconfProxy(Proxy):
         response_xml = response.text
 
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request GET %s - Response contains errors' % xpath
             raise ProxyRequestError(msg)
 
@@ -1015,9 +1040,9 @@ class RestconfProxy(Proxy):
         response_xml = response.text
 
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request GET CONFIG %s %s - Response contains errors' % (source, xpath)
             raise ProxyRequestError(msg)
 
@@ -1060,13 +1085,13 @@ class RestconfProxy(Proxy):
                 self._xpath_to_rcpath(xpath))
 
         logger.debug("Request EDIT CONFIG create %s %s", rctarget, xpath)
-        logger.debug("Request Content: %s", xml)
+        logger.debug("Request Content: %s", pretty_xml(xml))
         response = self.session.request("POST", uri, data=xml)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request EDIT CONFIG %s %s - Response contains errors' % (rctarget, xpath)
             raise ProxyRequestError(msg)
 
@@ -1084,13 +1109,13 @@ class RestconfProxy(Proxy):
                 rctarget,
                 self._xpath_to_rcpath(xpath))
         logger.debug("Request EDIT CONFIG merge %s %s", rctarget, xpath)
-        logger.debug("Request Content: %s", xml)
+        logger.debug("Request Content: %s", pretty_xml(xml))
         response = self.session.request("PATCH", uri, data=xml)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request EDIT CONFIG %s %s - Response contains errors' % (rctarget, xpath)
             raise ProxyRequestError(msg)
 
@@ -1108,13 +1133,13 @@ class RestconfProxy(Proxy):
                 rctarget,
                 self._xpath_to_rcpath(xpath))
         logger.debug("Request EDIT CONFIG replace %s %s", rctarget, xpath)
-        logger.debug("Request Content: %s", xml)
+        logger.debug("Request Content: %s", pretty_xml(xml))
         response = self.session.request("PUT", uri, data=xml)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request EDIT CONFIG %s %s - Response contains errors' % (rctarget, xpath)
             raise ProxyRequestError(msg)
 
@@ -1133,9 +1158,9 @@ class RestconfProxy(Proxy):
         response = self.session.request("DELETE", uri)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request EDIT CONFIG %s %s - Response contains errors' % (rctarget, xpath)
             raise ProxyRequestError(msg)
 
@@ -1179,20 +1204,19 @@ class RestconfProxy(Proxy):
             output_obj = create_object()
 
         xml = input_obj.to_xml_v2(self.model)
-        xml = Proxy._unroot_xml(xpath, xml, preserve_root=False)
-        xml = "<input>%s</input>" % xml
+        xml = Proxy._unroot_xml(xpath, xml, preserve_root=False, wrap_tag='input')
         uri = self.session.uri_format.format(
                 'operations',
                 self._xpath_to_rcpath(xpath))
 
         logger.debug("Request RPC %s", xpath)
-        logger.debug("Request Content: %s", xml)
+        logger.debug("Request Content: %s", pretty_xml(xml))
         response = self.session.request("POST", uri, data=xml)
         response_xml = response.text
         logger.debug("Response: (len: %s)", len(response_xml))
-        logger.debug("Response Content: %s", response_xml)
+        logger.debug("Response Content: %s", pretty_xml(response_xml))
 
-        if '<rpc-error>' in response_xml:
+        if 'rpc-error>' in response_xml:
             msg = 'Request RPC %s - Response contains errors' % xpath
             raise ProxyRequestError(msg)
 
@@ -1211,6 +1235,9 @@ class RestconfProxy(Proxy):
         elif '<ok/>' in response_xml:
             logger.debug('RPC replied with ACK instead of output container.')
             output_obj = None
+        elif '<ok xmlns="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0"/>' in response_xml:
+            logger.debug('RPC replied with ACK instead of output container.')
+            output_obj = None
         else:
             output_obj.from_xml_v2(
                     self.model,
@@ -1218,14 +1245,72 @@ class RestconfProxy(Proxy):
 
         return output_obj
 
-class NetconfSession(object):
-    '''Class representing a Netconf Session'''
 
+class Session(object):
+    '''Class that represents the interface to a session implementation
+
+    Currently there are two flavors of session implemented. NetconfSession and
+    RestconfSession. This class provides a single interfce that can be used
+    regardless of the underlying implementation
+    '''
+
+    DEFAULT_CONNECTION_TIMEOUT = 360
+    DEFAULT_ONBOARD_TIMEOUT = 600
+    DEFAULT_ONBOARD_RETRY_INTERVAL = 10
+
+    @property
+    def host(self):
+        return self.session_impl.host
+
+    @property
+    def port(self):
+        return self.session_impl.port
+
+    def __init__(self, session_impl):
+        '''Initialize an instance of the Session class
+
+        Arguments:
+            session_impl - An instance of a session class providing the
+                    underlying implementation.
+
+        Returns:
+            New Instance of Session
+        '''
+        self.session_impl = session_impl
+
+    def connect(self, timeout=DEFAULT_CONNECTION_TIMEOUT):
+        '''Establish session connection
+
+        Arguments:
+            timeout - maximum time allowed before connect fails
+        '''
+        self.session_impl.connect(timeout=timeout)
+
+    def close(self):
+        '''Close session connection
+        '''
+        self.session_impl.close()
+
+    def proxy(self, module):
+        """ Get a proxy interface to the supplied module
+
+        This proxy can be used to access resources defined by the
+        supplied module's schema
+
+        Arguments:
+            module - module that defines resources to be accessed
+
+        Returns:
+            A proxy instance
+        """
+        return self.session_impl.proxy(module=module)
+
+
+class NetconfSession(Session):
     DEFAULT_CONNECTION_TIMEOUT = 360
     DEFAULT_PORT = 2022
     DEFAULT_USERNAME = 'admin'
     DEFAULT_PASSWORD = 'admin'
-    OPERATION_TIMEOUT_SECS = Proxy.OPERATION_TIMEOUT_SECS
 
     def __init__(
             self,
@@ -1233,6 +1318,63 @@ class NetconfSession(object):
             port=DEFAULT_PORT,
             username=DEFAULT_USERNAME,
             password=DEFAULT_PASSWORD):
+        ''' Class representing a Netconf based session
+
+        Arguments:
+            host - address of Netconf host
+            port - port of Netconf host
+            username - username credential
+            password - password credential
+        '''
+        super(NetconfSession, self).__init__(
+                NetconfSessionImpl(
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+        ))
+
+    @property
+    def ncmgr(self):
+        return self.session_impl._nc_mgr
+
+
+class RestconfSession(Session):
+    DEFAULT_CONNECTION_TIMEOUT = 360
+    DEFAULT_PORT = 8008
+    DEFAULT_USERNAME = 'admin'
+    DEFAULT_PASSWORD = 'admin'
+
+    def __init__(
+            self,
+            host='127.0.0.1',
+            port=DEFAULT_PORT,
+            username=DEFAULT_USERNAME,
+            password=DEFAULT_PASSWORD):
+        ''' Class representing a Restconf based session
+
+        Arguments:
+            host - address of Restconf host
+            port - port of Restconf host
+            username - username credential
+            password - password credential
+        '''
+        super(RestconfSession, self).__init__(
+                RestconfSessionImpl(
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+        ))
+
+
+
+class NetconfSessionImpl(object):
+    '''Class representing a Netconf Session'''
+
+    OPERATION_TIMEOUT_SECS = Proxy.OPERATION_TIMEOUT_SECS
+
+    def __init__(self, host, port, username, password):
         '''Initialize a new Netconf Session instance
 
         Arguments:
@@ -1249,7 +1391,7 @@ class NetconfSession(object):
         self.username = username
         self.password = password
 
-    def connect(self, timeout=DEFAULT_CONNECTION_TIMEOUT):
+    def connect(self, timeout):
         '''Connect Netconf Session
 
         Arguments:
@@ -1272,7 +1414,7 @@ class NetconfSession(object):
                     hostkey_verify=False)
 
                 logger.info("Successfully connected to confd (%s) SSH port (%s)", self.host, self.port)
-                self._nc_mgr.timeout = self.OPERATION_TIMEOUT_SECS
+                self._nc_mgr.timeout = NetconfSessionImpl.OPERATION_TIMEOUT_SECS
                 return
 
             except ncclient.NCClientError as e:
@@ -1341,13 +1483,9 @@ class NetconfSession(object):
         return Proxy(NetconfProxy(self, module))
 
 
-class RestconfSession(object):
+class RestconfSessionImpl(object):
     '''Class representing a Restconf Session'''
 
-    DEFAULT_CONNECTION_TIMEOUT = 120
-    DEFAULT_PORT = 8008
-    DEFAULT_USERNAME = 'admin'
-    DEFAULT_PASSWORD = 'admin'
     URI_FORMAT = '{}://{}:{}/api/{}/{}'
     OPERATION_TIMEOUT_SECS = Proxy.OPERATION_TIMEOUT_SECS
     RESTCONF_HEADERS = {
@@ -1355,14 +1493,7 @@ class RestconfSession(object):
         'Content-Type':'application/vnd.yang.data+xml',
     }
 
-    def __init__(
-            self,
-            host='127.0.0.1',
-            port=DEFAULT_PORT,
-            username=DEFAULT_USERNAME,
-            password=DEFAULT_PASSWORD,
-            use_https=None,
-            cert=None):
+    def __init__(self, host, port, username, password):
         '''Initialize a new Restconf Session instance
 
         Arguments:
@@ -1370,10 +1501,6 @@ class RestconfSession(object):
             port - host port
             username - credentials for accessing the host, username
             password - credentials for accessing the host, password
-            use_https - If set, https scheme will be used.
-            cert - (Optional) if set, this cert will be used for https requests.
-                    Defaults to the certificate & key provided by
-                    rift.rwlib.util.certs library.
 
         Returns:
             A newly initialized Restconf session instance
@@ -1383,18 +1510,18 @@ class RestconfSession(object):
         self.username = username
         self.password = password
         self.auth = (self.username, self.password)
-        https = False
-        if use_https is None:
-            https = True if os.environ['RIFT_BOOT_WITH_HTTPS'] else False
+        https = certs.USE_SSL
+
         scheme = "https" if https else "http"
         self.uri_format = self.URI_FORMAT.format(scheme, self.host, self.port, '{}', '{}')
 
         self.session = requests.Session()
         self.session.auth = self.auth
-        self.session.timeout = self.OPERATION_TIMEOUT_SECS
+        self.session.timeout = RestconfSessionImpl.OPERATION_TIMEOUT_SECS
         self.session.headers = self.RESTCONF_HEADERS
 
-        if https and cert is None:
+        if https:
+
             # If no certifcate is available, then get the certificates used in
             # the manifest using the certs lib.
             self.session.verify = False
@@ -1403,6 +1530,7 @@ class RestconfSession(object):
             _, cert, key = certs.get_bootstrap_cert_and_key()
             self.session.cert = (cert, key)
 
+    @requests_exception_wrapper
     def request(self, method, url, **kwargs):
         """Trigger the http/https request
 
@@ -1418,7 +1546,7 @@ class RestconfSession(object):
 
         return response
 
-    def connect(self, timeout=DEFAULT_CONNECTION_TIMEOUT):
+    def connect(self, timeout):
         '''Connect Restconf Session
 
         This is a noop, because restconf session does not maintain a persistent connection

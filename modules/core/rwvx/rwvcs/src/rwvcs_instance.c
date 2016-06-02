@@ -300,7 +300,8 @@ static rw_status_t initialize_zookeeper(rwvcs_instance_ptr_t rwvcs)
 {
   rw_status_t status;
 
-  if (rwvcs->rwvx->rwsched_tasklet) {
+  if (rwvcs->rwvx->rwsched_tasklet &&
+      !rwvcs->zk_rwq) {
     char zk_rwq_name[256] = {0};
     snprintf(zk_rwq_name, 256, "rwzkq-%d",rwvcs->identity.rwvm_instance_id);
     rwvcs->zk_rwq = rwsched_dispatch_queue_create(rwvcs->rwvx->rwsched_tasklet,

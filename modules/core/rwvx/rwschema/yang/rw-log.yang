@@ -120,24 +120,31 @@ module rw-log
                  for pointers to be displayed differently by netconf clients";
     type uint64;
   }
-  
+
   // Event Log ID namespace Conventions:
   // Leaving adequate gaps for expansion or allocation to newer apps
-  // rw-log           : 00000000 - 00000099 
-  // rw-fpath         : 00001000 - 00001999 
-  // rw-vcs           : 00010000 - 00010999 
-  // rw-appmgr        : 00020000 - 00020999
-  // rw-dts-api       : 00030000 - 00030999
-  // rw-dts-rtr       : 00040000 - 00040999
-  // rwvm-heartbeat   : 00050000 - 00050999
-  // rw-generic       : 00060000 - 00060099
-  // rw-netns-log     : 00061000 - 00061099
-  // rw-mgmt*         : 00070000 - 00079999
-  // rw-mgmtagent     : 00080000 - 00089999
-  // rw-ncmgr-log     : 00090000 - 00099999
-  // rw-ifmgr-log     : 00100000 - 00109999
-  // rw-fpctrl-log    : 00110000 - 00110999
-  // rw-mc            : 00120000 - 00120999
+  // rw-log              : 00000000 - 00000099
+  // rw-fpath            : 00001000 - 00001999
+  // rw-vcs              : 00010000 - 00010999
+  // rw-appmgr           : 00020000 - 00020999
+  // rw-dts-api          : 00030000 - 00030999
+  // rw-dts-rtr          : 00040000 - 00040999
+  // rwvm-heartbeat      : 00050000 - 00050999
+  // rw-logtest-log      : 00051000 - 00051999
+  // rw-generic          : 00060000 - 00060099
+  // rw-netns-log        : 00061000 - 00061099
+  // rw-cal-log          : 00063000 - 00063099
+  // rw-monitor-log      : 00064000 - 00064099
+  // rw-mano-log         : 00065000 - 00065099
+  // rw-conman-log       : 00066000 - 00066099
+  // rw-mon-params-log   : 00067000 - 00067099
+  // rw-restconf-log     : 00068000 - 00068099
+  // rw-resource-mgr-log : 00069000 - 00069099
+  // rw-mgmt*            : 00070000 - 00079999
+  // rw-mgmtagent        : 00080000 - 00089999
+  // rw-ncmgr-log        : 00090000 - 00099999
+  // rw-ifmgr-log        : 00100000 - 00109999
+  // rw-fpctrl-log       : 00110000 - 00110999
 
   grouping session-grp-params {
     container session-params {
@@ -667,7 +674,7 @@ module rw-log
     leaf event-Id {
       description "event Id";
       type uint64;
-    } 
+    }
   }
 
   grouping event-rate {

@@ -26,5 +26,7 @@ END
 #find ${CACHE_FILE_FIND_LIST} -type f -print0 | sort -z | xargs -0 -i sh -c 'git show HEAD:{} | sha1sum -' | sha1sum - | cut -f 1 -d " "
 
 # Create a combined sha1hash using the sha1hash's of the files listed above
+# Sort is locale-dependent (Tom found this out the hard way).  Force the locale to produce consistent results across locales.
+export LC_ALL="en_US.UTF-8"
 find ${CACHE_FILE_FIND_LIST} -type f -print0 | sort -z | xargs -0 -i sh -c 'echo $(git show HEAD:{} | sha1sum - | cut -d" " -f1)" " {}' | sha1sum - | cut -f 1 -d " "
 

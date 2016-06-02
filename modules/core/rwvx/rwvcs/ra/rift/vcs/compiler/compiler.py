@@ -55,7 +55,6 @@ from .constraints import (
         CheckNumberOfDtsRouters,
         CheckNumberOfDtsPerfMgr,
         CheckNumberOfLogd,
-        NoMoreThanOneConfd,
         UniqueInstanceIds,
         UniqueUAgent,
         )
@@ -79,6 +78,7 @@ from .transforms import (
         EnforceMessageBrokerPolicy,
         WebServersConfdHost,
         AssignNetconfHostToRiftCli,
+        UseMockCli
         )
 
 logger = logging.getLogger(__name__)
@@ -165,7 +165,9 @@ class ManifestCompiler(object):
             a manifest object
 
         """
-        manifest = rift.vcs.manifest.RaManifest(northbound_listing=sysinfo.northbound_listing)
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=sysinfo.northbound_listing,
+                                                netconf_trace=sysinfo.netconf_trace,
+                                                agent_mode=sysinfo.agent_mode)
         for colony in sysinfo.colonies:
             manifest.add_component(self.create(colony))
 
@@ -220,7 +222,6 @@ class LegacyManifestCompiler(ManifestCompiler):
             tasklet_ctor(rift.vcs.MockCliTasklet, rift.vcs.manifest.RaMockCli),
             native_ctor(rift.vcs.RedisCluster, rift.vcs.manifest.RaRedisCluster),
             native_ctor(rift.vcs.RedisServer, rift.vcs.manifest.RaRedisServer),
-            native_ctor(rift.vcs.Confd, rift.vcs.manifest.RaConfd),
             native_ctor(rift.vcs.Webserver, rift.vcs.manifest.RaWebServer),
             native_ctor(rift.vcs.RiftCli, rift.vcs.manifest.RaCliProc),
             ])
@@ -233,7 +234,6 @@ class LegacyManifestCompiler(ManifestCompiler):
         # Add system constraints and transforms
         self.add_system_constraint(CheckFastpathInducedUniqueNames())
         self.add_system_constraint(UniqueUAgent())
-        self.add_system_constraint(NoMoreThanOneConfd())
         self.add_system_constraint(AdjacentAgentRestconfTasklets())
         self.add_system_transform(AssignWebserversConfdHost())
         self.add_system_transform(WebServersConfdHost())
@@ -247,6 +247,7 @@ class LegacyManifestCompiler(ManifestCompiler):
         self.add_system_transform(EnforceDtsRouterPolicy())
         self.add_system_transform(AddLogd())
         self.add_system_transform(AssignNetconfHostToRiftCli())
+        self.add_system_transform(UseMockCli())
 
         # Add manifest constraints and transforms
         self.add_manifest_constraint(UniqueInstanceIds())

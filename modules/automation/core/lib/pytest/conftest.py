@@ -6,6 +6,7 @@
 import _pytest.mark
 import _pytest.runner
 
+import argparse
 import itertools
 import os
 import pytest
@@ -18,13 +19,14 @@ from collections import OrderedDict
 from rift.rwlib.util import certs
 import rift.auto.log
 import rift.auto.session
+import rift.auto.mano
 import rift.vcs.vcs
 import logging
+import logging.handlers
 
 from gi import require_version
 require_version('RwMcYang', '1.0')
 
-from gi.repository import RwMcYang
 
 def pytest_addoption(parser):
     """pytest hook
@@ -99,22 +101,86 @@ def pytest_addoption(parser):
     #   Indicates the location the host rift instance is logging stderr to
     parser.addoption("--log-stderr", action="store", default="%s/.artifacts/systemtest_stderr.log" % (rift_root))
 
+    # --network-service
+    #   The network service to be on-boarded
+    choices = ["pingpong", "haproxy"]
+    parser.addoption("--network-service", type="choice", action="store", default="pingpong", choices=choices)
+
+    # --no-update <addr>
+    #   If specified don't run the descriptors with update APIs
+    parser.addoption("--no-update", dest="disabled_features", action="append_const", const='update-api', default=[])
+
+    # --recovery
+    #   If specified run tests specific to recovery
+    parser.addoption("--recovery", dest="enabled_features", action="append_const", const='recovery', default=[])
+
+    # --no-upload-image
+    #   If specified don't upload images needed for the network service
+    parser.addoption("--no-upload-image", dest="disabled_features", action="append_const", const='upload-image', default=[])
+
+    # --tenants
+    #   List of tenants to run the test on in the cloud-host.
+    parser.addoption("--tenants", type=rift.auto.mano.Openstack.parse_tenants)
+
+    # --tenant
+    #   List of tenants attached to test run
+    parser.addoption("--tenant", action="append", default=[])
+
+    # --user
+    #   User to use when creating cloud accounts
+    parser.addoption("--user", action="store", default=os.getenv('USER', 'pluto'))
+
+    # --use-xml-mode
+    #   System is running using xml agent
+    parser.addoption("--use-xml-mode", action="store_true")
+
 @pytest.fixture(autouse=True)
-def skip_disabled_features(request):
+def skip_disabled_features(request, logger):
     """Fixture to skip any tests that rely on a disabled feature
     """
     item_features = request.node.get_marker('feature')
+    DEFAULT_DISABLED_FEATURES = ["recovery"]
+
+
+    disabled_features = set(request.config.option.disabled_features).union(
+                        set(DEFAULT_DISABLED_FEATURES))
+
+    disabled_features = disabled_features.difference(
+                        set(request.config.option.enabled_features))
 
     if item_features:
         feature_disabled = set(item_features.args).intersection(
-                           set(request.config.option.disabled_features))
+                           disabled_features)
+
         if feature_disabled:
-            pytest.skip('Test relies on disabled feature ({})'.format(feature_disabled))
+            msg = 'Test relies on disabled feature ({})'.format(feature_disabled)
+            logger.info("SKIPPED - %s", msg)
+            pytest.skip(msg)
+
+@pytest.fixture(scope='session', autouse=True)
+def xml_mode(request):
+    """Fixture that returns --use-xml-mode option value"""
+    return request.config.getoption("--use-xml-mode")
 
 @pytest.fixture(scope='session', autouse=True)
 def cloud_host(request):
     """Fixture that returns --cloud-host option value"""
     return request.config.getoption("--cloud-host")
+
+@pytest.fixture(scope='session', autouse=True)
+def cloud_tenants(request):
+    """Fixture that returns the list of tenants from the --tenant option value"""
+    return request.config.getoption("--tenant") or [os.getenv('PROJECT_NAME')] or [os.geteven('AUTO_USER')] or [os.getenv('USER', 'demo')]
+
+@pytest.fixture(scope='session', autouse=True)
+def cloud_tenant(cloud_tenants):
+    """Fixture that returns a tenant on which to create a cloud account"""
+    return cloud_tenants[0]
+
+@pytest.fixture(scope='session', autouse=True)
+def cloud_user(request):
+    """Fixture that returns the user from the --user option value"""
+    return request.config.getoption("--user") or os.getenv('AUTO_USER') or os.getenv('USER', 'demo')
 
 @pytest.fixture(scope='session', autouse=True)
 def confd_host(request):
@@ -125,6 +191,21 @@ def confd_host(request):
 def launchpad_vm_id(request):
     """Fixture that returns --launchpad-vm-id option value"""
     return request.config.getoption("--launchpad-vm-id")
+
+@pytest.fixture(scope='session')
+def rsyslog_dir():
+    return os.getenv('RW_AUTO_RSYSLOG_DIR', None)
+
+@pytest.fixture(scope='session')
+def rsyslog_host():
+    return os.getenv('RW_AUTO_RSYSLOG_HOST', None)
+
+@pytest.fixture(scope='session')
+def rsyslog_port():
+    port = os.getenv('RW_AUTO_RSYSLOG_PORT', None)
+    if port:
+        port = int(port)
+    return port
 
 @pytest.fixture(scope='session')
 def standalone_launchpad(request):
@@ -140,11 +221,20 @@ def standalone_launchpad(request):
     return 'mission-control' in request.config.option.disabled_features
 
 @pytest.fixture(scope='session', autouse=True)
-def logger(request):
+def logger(request, rsyslog_host, rsyslog_port):
     """Fixture that returns a logger"""
-    logging.basicConfig(format='%(asctime)-15s %(levelname)s %(message)s')
-    logging.getLogger().setLevel(logging.DEBUG if request.config.option.verbose else logging.INFO)
+    logging.basicConfig(
+        format='%(asctime)-15s|%(module)s|%(levelname)s|%(message)s',
+        level=logging.INFO,
+        handlers=[
+            logging.StreamHandler(),
+        ]
+    )
+
     logger = logging.getLogger()
+    if rsyslog_host and rsyslog_port:
+        logger.addHandler(logging.handlers.SysLogHandler(address=(rsyslog_host, rsyslog_port)))
+    logger.setLevel(logging.DEBUG if request.config.option.verbose else logging.INFO)
     return logger
 
 
@@ -173,7 +263,7 @@ def cert(request):
 
 
 @pytest.fixture(scope='session', autouse=True)
-def mgmt_session(request, confd_host, session_type, cloud_type, use_https):
+def mgmt_session(request, confd_host, session_type, cloud_type):
     """Fixture that returns mgmt_session to be used
 
     # Note: cloud_type's exists in this fixture to ensure it appears in test item's _genid
@@ -186,11 +276,19 @@ def mgmt_session(request, confd_host, session_type, cloud_type, use_https):
     if session_type == 'netconf':
         mgmt_session = rift.auto.session.NetconfSession(host=confd_host)
     elif session_type == 'restconf':
-        mgmt_session = rift.auto.session.RestconfSession(host=confd_host, use_https=use_https)
+        mgmt_session = rift.auto.session.RestconfSession(host=confd_host)
 
     mgmt_session.connect()
     rift.vcs.vcs.wait_until_system_started(mgmt_session)
     return mgmt_session
+
+@pytest.fixture(scope='session')
+def package_gen_script():
+    install_dir = os.path.join(
+        os.environ["RIFT_INSTALL"],
+        "usr/rift/mano/common/rw_gen_package.py"
+        )
+    return install_dir
 
 @pytest.fixture(scope='session', autouse=True)
 def log_manager():
@@ -209,8 +307,25 @@ def log_sink(log_manager):
 
 
 @pytest.fixture(scope='function', autouse=True)
+def log_test_name(request, logger):
+    '''Log the name of test being executed at the start of each test'''
+    logger.info('BEGIN [%s]', request._pyfuncitem.name)
+
+@pytest.fixture(scope='function', autouse=True)
+def finally_log_test_result(request, logger):
+    '''Log the result of test execution at the end of each test
+    '''
+    def log_test_result(result):
+        status = 'FAILED'
+        if result:
+            status = 'SUCCESS'
+        logger.info('FINISH [%s]: %s', request._pyfuncitem.name, status)
+
+    return log_test_result
+
+@pytest.fixture(scope='function', autouse=True)
 def _log_set_test_name(request, log_manager):
-    ''' Fixture which sets the current test name in the log manager to 
+    ''' Fixture which sets the current test name in the log manager to
     the value of the currently executed test item
 
     Arguments:
@@ -221,7 +336,7 @@ def _log_set_test_name(request, log_manager):
 
 @pytest.fixture(scope='session', autouse=True)
 def log_recent(log_manager):
-    '''Fixture which returns an instance of rift.auto.log.Sink which retains recently 
+    '''Fixture which returns an instance of rift.auto.log.Sink which retains recently
     collected logs
     '''
     buffer_sink = rift.auto.log.MemorySink()
@@ -235,21 +350,39 @@ def _truncate_log_recent(log_recent):
     Arguments
         log_recent - sink containing recently collected logs
     '''
-    log_recent.truncate(generations=1)
+    log_recent.truncate(generations=0)
 
 @pytest.fixture(scope='session', autouse=True)
-def _logger_scraper_session(logger, log_manager):
+def _syslog_scraper_session(request, log_manager, rsyslog_dir):
+    '''Fixture which returns an instance of rift.auto.log.FileSource which scrapes
+    the output of syslog (rsyslog)
+
+    Arguments:
+        request - pytest request item
+        log_manager - manager of logging sources and sinks
+        rsyslog_dir - directory rsyslog is logging to
+    '''
+    if not rsyslog_dir:
+        return None
+    scraper = rift.auto.log.FileSource(host='localhost', path="{rsyslog_dir}/log/syslog".format(rsyslog_dir=rsyslog_dir))
+    log_manager.source(source=scraper)
+    return scraper
+
+@pytest.fixture(scope='session', autouse=True)
+def _logger_scraper_session(logger, log_manager, rsyslog_dir):
     '''Fixture which returns an instance of rift.auto.log.LoggerSource to scrape logger
 
     Arguments:
         log_manager - manager of logging sources and sinks
     '''
+    if rsyslog_dir:
+        return None
     scraper = rift.auto.log.LoggerSource(logger)
     log_manager.source(source=scraper)
     return scraper
 
 @pytest.fixture(scope='session', autouse=True)
-def _stdout_scraper_session(request, log_manager, confd_host):
+def _stdout_scraper_session(request, log_manager, confd_host, rsyslog_dir):
     '''Fixture which returns an instance of rift.auto.log.FileSource to scrape
     stdout of the host rift process (mission control or launchpad)
 
@@ -258,12 +391,13 @@ def _stdout_scraper_session(request, log_manager, confd_host):
         log_manager - manager of logging sources and sinks
         confd_host -  host on which confd is running
     '''
+    if rsyslog_dir:
+        return None
     scraper = rift.auto.log.FileSource(host=confd_host, path=request.config.getoption("--log-stdout"))
     log_manager.source(source=scraper)
     return scraper
 
-@pytest.fixture(scope='session', autouse=True)
-def _stderr_scraper_session(request, log_manager, confd_host):
+def _stderr_scraper_session(request, log_manager, confd_host, rsyslog_dir):
     '''Fixture which returns an instance of rift.auto.log.FileSource to scrape
     stderr of the host rift process (mission control or launchpad)
 
@@ -272,6 +406,8 @@ def _stderr_scraper_session(request, log_manager, confd_host):
         log_manager - manager of logging sources and sinks
         confd_host -  host on which confd is running
     '''
+    if rsyslog_dir:
+        return None
     scraper = rift.auto.log.FileSource(host=confd_host, path=request.config.getoption("--log-stderr"))
     log_manager.source(source=scraper)
     return scraper
@@ -287,7 +423,10 @@ def finally_handle_logs(log_manager):
     Arguments:
         log_manager - handler of logging events
     '''
-    return log_manager.dispatch
+    def dispatch_logs(result):
+        log_manager.dispatch()
+
+    return dispatch_logs
 
 @pytest.fixture(scope='function', autouse=True)
 def splat_log(log_recent):
@@ -323,10 +462,9 @@ def pytest_generate_tests(metafunc):
                     metafunc.config.option.session_type,
                     scope="session")
         else:
-            # Default to use netconf because it is currently more stable
             metafunc.parametrize(
                     "session_type",
-                    ['netconf'],
+                    ['restconf'],
                     scope="session")
 
     if 'cloud_type' in metafunc.fixturenames:
@@ -346,6 +484,25 @@ def pytest_generate_tests(metafunc):
         iterations = range(int(metafunc.config.option.repeat))
         metafunc.parametrize("iteration", iterations, scope="session")
 
+    if 'tenant' in metafunc.fixturenames:
+        metafunc.parametrize(
+            "tenant",
+            metafunc.config.option.tenants,
+            ids=lambda val: val[0],
+            scope="session")
+
+    fixture_name = 'recover_tasklet'
+    if fixture_name in metafunc.fixturenames:
+        if "recovery" in metafunc.config.option.enabled_features:
+            TASKLETS = ["nfvi-metrics-monitor",
+                        "Resource-Manager",
+                        "virtual-network-function-manager",
+                        "virtual-network-service",
+                        "network-services-manager"]
+            metafunc.parametrize(fixture_name, TASKLETS)
+        else:
+            metafunc.parametrize(fixture_name, [""])
+
 @pytest.mark.hookwrapper
 def pytest_pyfunc_call(pyfuncitem):
     """pytest hook
@@ -357,6 +514,7 @@ def pytest_pyfunc_call(pyfuncitem):
     test_outcome = yield
 
     splat = False
+    result = None
     try:
         result = test_outcome.get_result()
     except:
@@ -365,7 +523,7 @@ def pytest_pyfunc_call(pyfuncitem):
     for funcarg in pyfuncitem.funcargs:
         # run all 'finally_' methods attached to the test
         if funcarg.startswith('finally_'):
-            pyfuncitem.funcargs[funcarg]()
+            pyfuncitem.funcargs[funcarg](result)
 
     if splat:
         # Test threw an exception (i.e. failed)
@@ -410,6 +568,16 @@ class TestDependencyError(Exception):
     """ Exception raised when test case dependencies cannot be
     resolved"""
     pass
+
+def pytest_configure(config):
+    """ Define a marker used for tests are designated to run
+    as root only"""
+    config.addinivalue_line("markers",
+           "rootonly: Run only if system is running as root")
+    pytest.mark.rootonly = pytest.mark.skipif(
+         os.getuid() != 0,
+         reason="Test wouldn't run unless system is running as root"
+    )
 
 def pytest_collection_modifyitems(session, config, items):
     """ pytest hook
@@ -506,7 +674,7 @@ def pytest_collection_modifyitems(session, config, items):
             if item.get_marker("slow") and not item.config.option.include_slow:
                 continue
 
-            if filter_value in item._genid:
+            if item._genid.find(filter_value) != -1:
                 filtered_items.append(item)
         return filtered_items
 
@@ -524,7 +692,7 @@ def pytest_collection_modifyitems(session, config, items):
 
         if not keywordexpr and not matchexpr:
             return []
-            
+
         if keywordexpr.startswith("-"):
             keywordexpr = "not " + keywordexpr[1:]
 
@@ -535,7 +703,7 @@ def pytest_collection_modifyitems(session, config, items):
 
         remaining = []
         for colitem in items:
-        
+
             try:
                 if keywordexpr and not _pytest.mark.matchkeyword(colitem, keywordexpr):
                     continue
@@ -549,7 +717,7 @@ def pytest_collection_modifyitems(session, config, items):
             if matchexpr:
                 if not _pytest.mark.matchmark(colitem, matchexpr):
                     continue
-                    
+
             remaining.append(colitem)
 
         return remaining
@@ -568,7 +736,7 @@ def pytest_collection_modifyitems(session, config, items):
               repeat_items - setup
               repeat_items
               repeat_items - teardown
-          
+
           one_shot_items - teardown
 
         Arguments:

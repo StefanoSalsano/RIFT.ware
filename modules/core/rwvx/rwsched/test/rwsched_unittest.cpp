@@ -1361,7 +1361,7 @@ TEST(RwSchedUnittest, NativeLibDispatchSThreadTest01)
   dispatch_sync_f(queue, (void*)"---SYNC---06-10d\n", rw_sthread_dispatch_func);
 
   for (i=0; i<10; i++) {
-    dispatch_release(queues[i]);
+//  dispatch_release(queues[i]);
   }
   usleep(200*1000);
 }
@@ -1446,7 +1446,7 @@ TEST(RwSchedUnittest, NativeLibDispatchSThreadTest)
   usleep(3*1000);
 
   for (i=0; i<10; i++) {
-    dispatch_release(queues[i]);
+//  dispatch_release(queues[i]);
   }
   usleep(200*1000);
 }
