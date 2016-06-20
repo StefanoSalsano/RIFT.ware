@@ -59,6 +59,7 @@ set(test_libs
   rwdts_api
   rwdts_router
   rwyang
+  rwyangutil_lib
   rwdtsproto
   rwmsg
   rwyang
@@ -93,6 +94,7 @@ set(test_deps
 
 rift_gtest(rwuagent_utest
   TEST_SRCS
+    async_file_writer_test.cpp
     rwuagent_gtest.cc
     rw_xml_dom_merger_test.cpp
     rw_xml_validation_test.cpp

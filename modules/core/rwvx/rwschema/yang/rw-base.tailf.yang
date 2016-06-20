@@ -21,31 +21,31 @@ module rw-base-annotation
 
 
   tailf:annotate "/rwbase:vcs/rwbase:info" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwbase:vcs/rwbase:instances" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwbase:version" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwbase:uptime" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwbase:vcs/rwbase:resource/rwbase:utilization" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwbase:tracing" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 
   tailf:annotate "/rwbase:tracing" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 
 }

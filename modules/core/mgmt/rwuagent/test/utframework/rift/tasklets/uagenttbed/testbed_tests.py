@@ -19,6 +19,10 @@ from string import ascii_lowercase
 
 import lxml.etree as etree
 
+import websockets
+import ssl
+from rift.rwlib.util import certs
+
 from rift.auto.session import NetconfProxy
 from rift.auto.session import Proxy
 
@@ -32,10 +36,12 @@ gi.require_version('UtCompositeYang', '1.0')
 gi.require_version('RwAgentTestbedYang', '1.0')
 gi.require_version('RwDts', '1.0')
 gi.require_version('RwMgmtagtYang', '1.0')
+gi.require_version('RwMgmtagtDtsYang', '1.0')
 gi.require_version('DnsYang', '1.0')
 gi.require_version('NotifYang', '1.0')
 
 from gi.repository import UtCompositeYang, RwAgentTestbedYang, InterfacesYang, RoutesYang, RwMgmtagtYang, DnsYang, NotifYang
+from gi.repository import RwMgmtagtDtsYang
 from gi.repository import ProtobufC
 from gi.repository import RwKeyspec
 from gi.repository import RwDts as rwdts
@@ -206,10 +212,11 @@ class TestBase(object):
    Test base class which all tests must inherit
    """
 
-   def __init__(self, dtsh, logh):
+   def __init__(self, dtsh, logh, loop):
        self._dtsh = dtsh
        self._logh = logh
        self._name = "NA"
+       self._loop = loop
 
    def run_test(self):
        return True 
@@ -237,8 +244,8 @@ class TestEditConf(TestBase):
    Test Netconf edit conf request
    """
  
-   def __init__(self, dtsh, logh, nc_proxy):
-       TestBase.__init__(self, dtsh, logh)
+   def __init__(self, dtsh, logh, nc_proxy, loop):
+       TestBase.__init__(self, dtsh, logh, loop)
        self._nc_proxy = nc_proxy
        self._name = "TEST_EDIT_CONFIG"
 
@@ -271,12 +278,12 @@ class TestEditConf(TestBase):
        def on_edit_config(xact_info, action, ks_path, msg):
            result = yield from self.run_test()
            ro = self.create_test_response(result)
-           xpath = "O,/rw-agent-testbed:agent-tests"
+           xpath = "O,/agt-tb:agent-tests"
            xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ro)
 
        # Self register with the DTS
        yield from self._dtsh.register(
-                xpath = "I,/rw-agent-testbed:agent-tests/rw-agent-testbed:edit-config",
+                xpath = "I,/agt-tb:agent-tests/agt-tb:netconf-tests/agt-tb:edit-config",
                 flags = rwdts.Flag.PUBLISHER,
                 handler = rift.tasklets.DTS.RegistrationHandler(on_prepare=on_edit_config))
 
@@ -285,8 +292,8 @@ class TestLargeBinaryBlob(TestBase):
    Test large binary blob
    """
  
-   def __init__(self, dtsh, logh, nc_proxy):
-       TestBase.__init__(self, dtsh, logh)
+   def __init__(self, dtsh, logh, nc_proxy, loop):
+       TestBase.__init__(self, dtsh, logh, loop)
        self._nc_proxy = nc_proxy
        self._name = "TEST_LARGE_BINARY_BLOB"
 
@@ -314,66 +321,96 @@ class TestLargeBinaryBlob(TestBase):
        def on_large_binary_blob(xact_info, action, ks_path, msg):
            result = yield from self.run_test()
            ro = self.create_test_response(result)
-           xpath = "O,/rw-agent-testbed:agent-tests"
+           xpath = "O,/agt-tb:agent-tests"
            xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ro)
 
        # Self register with the DTS
        yield from self._dtsh.register(
-                xpath = "I,/rw-agent-testbed:agent-tests/rw-agent-testbed:large-binary-blob",
+                xpath = "I,/agt-tb:agent-tests/agt-tb:netconf-tests/agt-tb:large-binary-blob",
                 flags = rwdts.Flag.PUBLISHER,
                 handler = rift.tasklets.DTS.RegistrationHandler(on_prepare=on_large_binary_blob))
 
-
-class TestPBRequest(TestBase):
+class TestPBRQECMerge(TestBase):
    """
-   Test PB Requests int
+   Test PB Requests EC Merge
    """
  
-   def __init__(self, dtsh, logh, nc_proxy):
-       TestBase.__init__(self, dtsh, logh)
+   def __init__(self, dtsh, logh, nc_proxy, loop):
+       TestBase.__init__(self, dtsh, logh, loop)
        self._nc_proxy = nc_proxy
-       self._name = "TEST_PB_REQUEST"
+       self._name = "TEST_PB_REQUEST_EC_MERGE"
 
    @asyncio.coroutine
    def get_agent_dom(self):
        a_rpc = RwMgmtagtYang.YangInput_RwMgmtagt_MgmtAgent()
        a_rpc.show_agent_dom = True
-
        res_obj = yield from self._nc_proxy.rpc(a_rpc, RwMgmtagtYang)
        return res_obj
 
    @asyncio.coroutine
    def run_test(self): 
-       res = yield from self.test_pbreq_ec_merge()
-       if res is True:
-          res = yield from self.test_pbreq_ec_del()
-          if res is False:
-             self._logh.error("PB_REQUEST EC Delete Failed")
-       else:
-          self._logh.error("PB_REQUEST EC Merge failed")
+        res = yield from self.test_pbreq_ec_merge()
+        if res is False:
+           self._logh.error("PB_REQUEST EC Merge Failed")
+           return False
 
-       return res
+        res = yield from self.test_pbreq_ec_container()
+        if res is False:
+           self._logh.error("PB_REQUEST EC Container Merge Failed")
+
+        return res
+
+   @asyncio.coroutine
+   def test_pbreq_ec_container(self):
+       ec_rpc = RwMgmtagtDtsYang.YangInput_RwMgmtagtDts_MgmtAgentDts()
+       ec_rpc.pb_request.xpath = "C,/dns:dns/dns:options"
+       op_pb = DnsYang.DnsOptions()
+       op_pb.ndots = 10
+       op_pb.timeout = 5
+       op_pb.attempts = 10
+       ec_rpc.pb_request.data = op_pb.to_pbuf()
+       ec_rpc.pb_request.request_type = "edit_config"
+       ec_rpc.pb_request.edit_type = "merge"
+
+       query_iter = yield from self._dtsh.query_rpc(
+                        xpath="I,/rw-mgmtagt-dts:mgmt-agent-dts",
+                        flags=0,
+                        msg=ec_rpc)
+
+       for fut_resp in query_iter:
+           query_resp = yield from fut_resp
+           result = query_resp.result
+           if result.pb_request.error is not None:
+              return False
+           #Verify the config in agent dom
+           agent_dom_pb = yield from self.get_agent_dom()
+           if agent_dom_pb is not None:
+              dop_pb = DnsYang.DnsOptions()
+              dop_pb.from_xml_v2(self._nc_proxy.model, agent_dom_pb.agent_dom)
+              my_pb = DnsYang.DnsOptions()
+              my_pb.from_pbuf(ec_rpc.pb_request.data)
+              if ProtobufC.Message.is_equal_deep(None, my_pb.to_pbcm(), dop_pb.to_pbcm()) is not 0:
+                 return True
+           break # the uAgent sends only a single response
+
+       return False
 
    @asyncio.coroutine
    def test_pbreq_ec_merge(self):
 
        def create_ec_pb_req():
-           ec_rpc = RwMgmtagtYang.YangInput_RwMgmtagt_MgmtAgent()
+           ec_rpc = RwMgmtagtDtsYang.YangInput_RwMgmtagtDts_MgmtAgentDts()
            ec_rpc.pb_request.xpath = "C,/dns:dns"
            dnspb = DnsYang.Dns()
-           s1 = dnspb.search.add()
-           s1.name = 100
-           s1.domain = "abc.com"
-           serv1 = dnspb.server.add()
-           serv1.address = "10.0.1.9"
-           dnspb.options.ndots = 2
-           dnspb.options.timeout = 30
-           dnspb.options.attempts = 5
-           serv2 = dnspb.server.add()
-           serv2.address = "10.0.1.10"
-           dnspb.options.ndots = 3
-           dnspb.options.timeout = 40
-           dnspb.options.attempts = 5
+           for i in range(10):
+             s1 = dnspb.search.add()
+             s1.name = 100
+             s1.domain = "abc.com"
+
+           for i in range(11):
+             serv1 = dnspb.server.add()
+             serv1.address = "10.0.1." + str(i)
+             serv1.ttl = 254
 
            ec_rpc.pb_request.data = dnspb.to_pbuf()
            ec_rpc.pb_request.request_type = "edit_config"
@@ -382,36 +419,26 @@ class TestPBRequest(TestBase):
            return ec_rpc
 
        ec_rpc = create_ec_pb_req()
-       res_obj = yield from self._nc_proxy.rpc(ec_rpc, RwMgmtagtYang)
-       if res_obj is not None:
-          #Verify the config in agent dom
-          agent_dom_pb = yield from self.get_agent_dom()
-          if agent_dom_pb is not None:
-             dns_pb = DnsYang.Dns()
-             dns_pb.from_xml_v2(self._nc_proxy.model, agent_dom_pb.agent_dom)
-             my_pb = DnsYang.Dns()
-             my_pb.from_pbuf(ec_rpc.pb_request.data) 
-             if ProtobufC.Message.is_equal_deep(None, my_pb.to_pbcm(), dns_pb.to_pbcm()) is not 0:
-                return True
+       query_iter = yield from self._dtsh.query_rpc(
+                        xpath="I,/rw-mgmtagt-dts:mgmt-agent-dts",
+                        flags=0,
+                        msg=ec_rpc)
 
-       return False
-
-   @asyncio.coroutine
-   def test_pbreq_ec_del(self):
-       dc_rpc = RwMgmtagtYang.YangInput_RwMgmtagt_MgmtAgent()
-       dc_rpc.pb_request.xpath = "C,/dns:dns/dns:server[dns:address='10.0.1.10']"
-       dc_rpc.pb_request.request_type = "edit_config"
-       dc_rpc.pb_request.edit_type = "delete"
-       
-       res_obj = yield from self._nc_proxy.rpc(dc_rpc, RwMgmtagtYang)
-       if res_obj is not None:
-          #Verify the deletion in agent dom
-          agent_dom_pb = yield from self.get_agent_dom()
-          if agent_dom_pb is not None:
-             dns_pb = DnsYang.Dns()
-             dns_pb.from_xml_v2(self._nc_proxy.model, agent_dom_pb.agent_dom)
-             if len(dns_pb.server) is 1 and dns_pb.server[0].address == '10.0.1.9':
-                return True
+       for fut_resp in query_iter:
+           query_resp = yield from fut_resp
+           result = query_resp.result
+           if result.pb_request.error is not None:
+              return False
+           #Verify the config in agent dom
+           agent_dom_pb = yield from self.get_agent_dom()
+           if agent_dom_pb is not None:
+              dns_pb = DnsYang.Dns()
+              dns_pb.from_xml_v2(self._nc_proxy.model, agent_dom_pb.agent_dom)
+              my_pb = DnsYang.Dns()
+              my_pb.from_pbuf(ec_rpc.pb_request.data)
+              if ProtobufC.Message.is_equal_deep(None, my_pb.to_pbcm(), dns_pb.to_pbcm()) is not 0:
+                 return True
+           break # the uAgent sends only a single response
 
        return False
 
@@ -422,27 +449,222 @@ class TestPBRequest(TestBase):
        def on_pb_request(xact_info, action, ks_path, msg):
            result = yield from self.run_test()
            ro = self.create_test_response(result)
-           xpath = "O,/rw-agent-testbed:agent-tests"
+           xpath = "O,/agt-tb:agent-tests"
            xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ro)
 
        # Self register with the DTS
        yield from self._dtsh.register(
-                xpath = "I,/rw-agent-testbed:agent-tests/rw-agent-testbed:pb-request",
+                xpath = "I,/agt-tb:agent-tests/agt-tb:pb-request-tests/agt-tb:ec-merge",
                 flags = rwdts.Flag.PUBLISHER,
                 handler = rift.tasklets.DTS.RegistrationHandler(on_prepare=on_pb_request))
+
+class TestPBRQECDelete(TestBase):
+   """
+   Test PB Requests edit-conf delete
+   """
+   def __init__(self, dtsh, logh, nc_proxy, loop):
+       TestBase.__init__(self, dtsh, logh, loop)
+       self._nc_proxy = nc_proxy
+       self._name = "TEST_PB_REQUEST_EC_DEL"
+
+   @asyncio.coroutine
+   def get_agent_dom(self):
+       a_rpc = RwMgmtagtYang.YangInput_RwMgmtagt_MgmtAgent()
+       a_rpc.show_agent_dom = True
+       res_obj = yield from self._nc_proxy.rpc(a_rpc, RwMgmtagtYang)
+       return res_obj
+
+   @asyncio.coroutine
+   def run_test(self): 
+       res = yield from self.test_pbreq_ec_del()
+       if res is False:
+          self._logh.error("PB_REQUEST EC Delete Failed")
+          return False
+
+       res = yield from self.test_pbreq_ec_del_cont()
+       if res is False:
+          self._logh.error("PB_REQUEST EC Delete Container Failed")
+          return False
+
+       res = yield from self.test_pbreq_ec_del_leaf()
+       if res is False:
+          self._logh.error("PB_REQUEST EC Delete leaf Failed")
+
+       return res
+
+   @asyncio.coroutine
+   def test_pbreq_ec_del_leaf(self):
+       dc_rpc = RwMgmtagtDtsYang.YangInput_RwMgmtagtDts_MgmtAgentDts()
+       dc_rpc.pb_request.xpath = "C,/dns:dns/dns:server[dns:address='10.0.1.0']/dns:ttl"
+       dc_rpc.pb_request.request_type = "edit_config"
+       dc_rpc.pb_request.edit_type = "delete"
+       
+       query_iter = yield from self._dtsh.query_rpc(
+                        xpath="I,/rw-mgmtagt-dts:mgmt-agent-dts",
+                        flags=0,
+                        msg=dc_rpc)
+
+       for fut_resp in query_iter:
+           query_resp = yield from fut_resp
+           result = query_resp.result
+           if result.pb_request.error is not None:
+              return False
+           #Verify the deletion in agent dom
+           agent_dom_pb = yield from self.get_agent_dom()
+           if agent_dom_pb is not None:
+              dns_pb = DnsYang.Dns()
+              dns_pb.from_xml_v2(self._nc_proxy.model, agent_dom_pb.agent_dom)
+              if dns_pb.server[0].ttl is 0:
+                 return True;
+           break # the uAgent sends only a single response
+
+       return False
+
+   @asyncio.coroutine
+   def test_pbreq_ec_del_cont(self):
+       dc_rpc = RwMgmtagtDtsYang.YangInput_RwMgmtagtDts_MgmtAgentDts()
+       dc_rpc.pb_request.xpath = "C,/dns:dns/dns:options"
+       dc_rpc.pb_request.request_type = "edit_config"
+       dc_rpc.pb_request.edit_type = "delete"
+       
+       query_iter = yield from self._dtsh.query_rpc(
+                        xpath="I,/rw-mgmtagt-dts:mgmt-agent-dts",
+                        flags=0,
+                        msg=dc_rpc)
+
+       for fut_resp in query_iter:
+           query_resp = yield from fut_resp
+           result = query_resp.result
+           if result.pb_request.error is not None:
+              return False
+           #Verify the deletion in agent dom
+           agent_dom_pb = yield from self.get_agent_dom()
+           if agent_dom_pb is not None:
+              dns_pb = DnsYang.Dns()
+              dns_pb.from_xml_v2(self._nc_proxy.model, agent_dom_pb.agent_dom)
+              if dns_pb.options.ndots is 0:
+                 return True;
+           break # the uAgent sends only a single response
+
+       return False
+
+   def test_pbreq_ec_del(self):
+       dc_rpc = RwMgmtagtDtsYang.YangInput_RwMgmtagtDts_MgmtAgentDts()
+       dc_rpc.pb_request.xpath = "C,/dns:dns/dns:server[dns:address='10.0.1.10']"
+       dc_rpc.pb_request.request_type = "edit_config"
+       dc_rpc.pb_request.edit_type = "delete"
+       
+       query_iter = yield from self._dtsh.query_rpc(
+                        xpath="I,/rw-mgmtagt-dts:mgmt-agent-dts",
+                        flags=0,
+                        msg=dc_rpc)
+
+       for fut_resp in query_iter:
+           query_resp = yield from fut_resp
+           result = query_resp.result
+           if result.pb_request.error is not None:
+              return False
+           #Verify the deletion in agent dom
+           agent_dom_pb = yield from self.get_agent_dom()
+           if agent_dom_pb is not None:
+              dns_pb = DnsYang.Dns()
+              dns_pb.from_xml_v2(self._nc_proxy.model, agent_dom_pb.agent_dom)
+              if len(dns_pb.server) is 10:
+                 return True;
+           break # the uAgent sends only a single response
+
+       return False
+
+   @asyncio.coroutine
+   def dts_self_register(self):
+
+       @asyncio.coroutine
+       def on_pb_request(xact_info, action, ks_path, msg):
+           result = yield from self.run_test()
+           ro = self.create_test_response(result)
+           xpath = "O,/agt-tb:agent-tests"
+           xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ro)
+
+       # Self register with the DTS
+       yield from self._dtsh.register(
+                  xpath = "I,/agt-tb:agent-tests/agt-tb:pb-request-tests/agt-tb:ec-delete",
+                  flags = rwdts.Flag.PUBLISHER,
+                  handler = rift.tasklets.DTS.RegistrationHandler(on_prepare=on_pb_request))
 
 class TestNotification(TestBase):
    """
    Test Netconf notifications
    """
  
-   def __init__(self, dtsh, logh, nc_proxy):
-       TestBase.__init__(self, dtsh, logh)
+   def __init__(self, dtsh, logh, nc_proxy, loop):
+       TestBase.__init__(self, dtsh, logh, loop)
        self._nc_proxy = nc_proxy
        self._name = "TEST_NOTIFICATIONS"
+       use_ssl, cert, key = certs.get_bootstrap_cert_and_key()
+       if use_ssl:
+          self.prefix = "wss"
+          self.ssl_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+          self.ssl_context.verify_mode = ssl.CERT_NONE
+       else:
+          self.prefix = "ws"
+          self.ssl_context = None
+
+   @asyncio.coroutine
+   def uagent_stream_client(self):
+      """Asyncio Task that listens to uagent_notification events.
+
+      Connects to the uagent stream using websocket and then receives 4 events.
+      """
+      ws = yield from websockets.connect(
+                  "{}://127.0.0.1:8888/ws_streams/uagent_notification-JSON".format(self.prefix),
+                  loop=self._loop,
+                  ssl=self.ssl_context)
+      self.uagent_client_started.set()
+      for i in range(0,4):
+         msg = yield from ws.recv()
+         print('Uagent Stream Received:', msg)
+      self.uagent_success.set()
+      yield from ws.close()
+
+   @asyncio.coroutine
+   def ha_stream_client(self):
+      """Asyncio Task that listens to ha_notification events.
+
+      Connects to the ha stream and expects 1 event.
+      """
+      ws = yield from websockets.connect(
+                  "{}://127.0.0.1:8888/ws_streams/ha_notification-JSON".format(self.prefix),
+                  loop=self._loop,
+                  ssl=self.ssl_context)
+      self.ha_client_started.set()
+
+      msg = yield from ws.recv()
+      print("HA Stream Received:", msg)
+      self.ha_success.set()
+      yield from ws.close()
 
    @asyncio.coroutine
    def run_test(self):
+       # These events are required to sync with the uagent_stream and ha_stream
+       # tasks
+       self.uagent_client_started = asyncio.Event(loop=self._loop)
+       self.ha_client_started = asyncio.Event(loop=self._loop)
+       self.uagent_success = asyncio.Event(loop=self._loop)
+       self.ha_success = asyncio.Event(loop=self._loop)
+
+       # Launch the uagent_stream and ha_stream tasks that listen on respective
+       # streams using websockets
+       asyncio.async(self.uagent_stream_client(), loop=self._loop)
+       asyncio.async(self.ha_stream_client(), loop=self._loop)
+
+       # Wait till the streams are connected. Also wait for 2 seconds to ensure
+       # that the events are not missed
+       await_tasks = [ self.uagent_client_started.wait(),
+                       self.ha_client_started.wait(),
+                       asyncio.sleep(2, loop=self._loop) ]
+       yield from asyncio.wait(await_tasks, timeout=5, loop=self._loop)
+
+       # Raise 2 NewRoute alarm and 2 Temp alarm and 1 TaskletFailed alarm 
        xpath = "N,/notif:new-route"
        notif = NotifYang.YangNotif_Notif_NewRoute()
        notif.name = "New Route 1/2WX Added"
@@ -457,7 +679,17 @@ class TestNotification(TestBase):
        alarm.thresh_temp = 80
 
        yield from self._dtsh.query_create(xpath, rwdts.XactFlag.ADVISE, alarm)
-       yield from self._dtsh.query_create(xpath, rwdts.XactFlag.ADVISE, alarm)       
+       yield from self._dtsh.query_create(xpath, rwdts.XactFlag.ADVISE, alarm)
+
+       xpath = "N,/notif:test-tasklet-failed"
+       failed = NotifYang.YangNotif_Notif_TestTaskletFailed()
+       failed.message = "Test Tasklet Failed"
+       yield from self._dtsh.query_create(xpath, rwdts.XactFlag.ADVISE, failed)
+
+       # Wait till the stream tasks received the notifications or a timeout
+       await_tasks = [ self.uagent_success.wait(),
+                       self.ha_success.wait() ]
+       yield from asyncio.wait(await_tasks, timeout=5, loop=self._loop)
 
        return True
 
@@ -468,11 +700,11 @@ class TestNotification(TestBase):
        def on_notif(xact_info, action, ks_path, msg):
            result = yield from self.run_test()
            ro = self.create_test_response(result)
-           xpath = "O,/rw-agent-testbed:agent-tests"
+           xpath = "O,/agt-tb:agent-tests"
            xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ro)
 
        # Self register with the DTS
        yield from self._dtsh.register(
-                xpath = "I,/rw-agent-testbed:agent-tests/rw-agent-testbed:notif",
+                xpath = "I,/agt-tb:agent-tests/agt-tb:netconf-tests/agt-tb:notif",
                 flags = rwdts.Flag.PUBLISHER,
                 handler = rift.tasklets.DTS.RegistrationHandler(on_prepare=on_notif))

@@ -25,9 +25,6 @@ std::string get_rift_root()
   return std::string(rift_root);
 }
 
-
-
-
 TEST(Validation, xml_validation_negative_simple_leafref)
 {
   TEST_DESCRIPTION("");

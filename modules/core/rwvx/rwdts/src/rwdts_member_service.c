@@ -705,7 +705,7 @@ rwdts_member_find_matches(rwdts_api_t* apih,
 
   rwdts_member_registration_t *entry = NULL;
   rwdts_shard_chunk_info_t **chunks = NULL; 
-  uint32_t isadvise = (query->flags & RWDTS_XACT_FLAG_ADVISE);
+  uint32_t isadvise = ((query->flags & RWDTS_XACT_FLAG_ADVISE) || (query->flags & RWDTS_XACT_FLAG_SUB_READ));
   rwdts_shard_t *head = apih->rootshard;
   int j;
   uint32_t n_chunks = 0;
@@ -810,6 +810,12 @@ static void rwdts_member_msg_prepare_f(void *arg)
 
   rwdts_xact_t *xact = rwdts_member_xact_init(apih, input);
   RW_ASSERT(xact);
+
+  rwmsg_request_memlog_hdr (&xact->rwml_buffer, 
+                            rwreq, 
+                            __PRETTY_FUNCTION__,
+                            __LINE__,
+                            "(Prepare)");
 
   if (input->dbg && (input->dbg->dbgopts1&RWDTS_DEBUG_TRACEROUTE)) {
     if (!xact->tr) {
@@ -999,6 +1005,12 @@ static void rwdts_member_msg_pre_commit_f(void *args)
 
   RW_FREE(msg_req);
 
+  rwmsg_request_memlog_hdr (&xact->rwml_buffer, 
+                            rwreq, 
+                            __PRETTY_FUNCTION__,
+                            __LINE__,
+                            "(Precommit)");
+
   RWDTS_API_LOG_XACT_DEBUG_EVENT(apih, xact, PRECOMMIT_RCVD, "Member received pre-commit");
   rwdts_member_xact_run(xact, RWDTS_MEMB_XACT_EVT_PRECOMMIT, xact);
 
@@ -1063,6 +1075,12 @@ static void rwdts_member_msg_abort_f(void *args)
   
   RW_FREE(msg_req);
 
+  rwmsg_request_memlog_hdr (&xact->rwml_buffer, 
+                            rwreq, 
+                            __PRETTY_FUNCTION__,
+                            __LINE__,
+                            "(Abort)");
+
   RWDTS_API_LOG_XACT_DEBUG_EVENT(apih, xact, ABORT_RCVD, "Member received abort");
   rwdts_member_xact_run(xact, RWDTS_MEMB_XACT_EVT_ABORT, xact);
 
@@ -1125,6 +1143,12 @@ static void rwdts_member_msg_commit_f(void *args)
   rwmsg_request_t *rwreq = msg_req->rwreq;
 
   RW_FREE(msg_req);
+
+  rwmsg_request_memlog_hdr (&xact->rwml_buffer, 
+                            rwreq, 
+                            __PRETTY_FUNCTION__,
+                            __LINE__,
+                            "(Commit)");
 
   RWDTS_API_LOG_XACT_DEBUG_EVENT(apih, xact, COMMIT_RCVD, "Member received commit");
   rwdts_member_xact_run(xact, RWDTS_MEMB_XACT_EVT_COMMIT, xact);
@@ -1236,6 +1260,8 @@ rwdts_member_match_read(rwdts_member_registration_t *entry, RWDtsQuery*  query,
   }
 
   if (depth_i >= depth_o){
+    rs = rw_keyspec_path_trunc_suffix_n(ks_query, NULL, depth_o);
+    RW_ASSERT(rs == RW_STATUS_SUCCESS);
     matchmsg = RW_KEYSPEC_PATH_SCHEMA_REROOT (ks_query, NULL, ks_schema, entry->keyspec, NULL);
   }else{
     if (query->payload) {
@@ -1478,12 +1504,17 @@ rwdts_member_match_keyspecs(rwdts_api_t* apih, rwdts_member_registration_t *entr
     goto done;
   }
 
-  if (!(((entry->flags & RWDTS_FLAG_SUBSCRIBER) && (query->flags & RWDTS_XACT_FLAG_ADVISE)) ||
-        ((entry->flags & RWDTS_FLAG_PUBLISHER) && !(query->flags & RWDTS_XACT_FLAG_ADVISE)))) {
-    goto done;
+  if (entry->flags & RWDTS_FLAG_SUBSCRIBER) {
+    if (!(query->flags & RWDTS_XACT_FLAG_ADVISE)
+        && !(query->flags & RWDTS_XACT_FLAG_SUB_READ)) {
+      goto done;
+    }
+    if ((query->flags & RWDTS_XACT_FLAG_SUB_READ)
+        && (query->action != RWDTS_QUERY_READ)) {
+      goto done;
+    }
   }
-
-  if (!(entry->flags & RWDTS_FLAG_PUBLISHER) && (query->action == RWDTS_QUERY_READ)) {
+  if ((entry->flags & RWDTS_FLAG_PUBLISHER) && (query->flags & RWDTS_XACT_FLAG_ADVISE)) {
     goto done;
   }
 
@@ -1500,6 +1531,7 @@ rwdts_member_match_keyspecs(rwdts_api_t* apih, rwdts_member_registration_t *entr
   // ATTN -- Thes are needed for debugging an understandable keyspec
   rw_keyspec_path_get_new_print_buffer(entry->keyspec,
                                        NULL, ks_schema, &reg_ks_str);
+
   // For READS  and DELETES do not need not have any payload
   if (query->action == RWDTS_QUERY_READ) {
     rwdts_member_match_read(entry, query, ks_query, ks_schema, matches, matchid);
@@ -1517,3 +1549,4 @@ done:
   }
   return;
 }
+

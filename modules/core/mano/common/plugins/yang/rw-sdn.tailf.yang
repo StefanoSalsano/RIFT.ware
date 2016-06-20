@@ -19,10 +19,10 @@ module rw-sdn-annotation
   }
 
   tailf:annotate "/rw-sdn:sdn-account/rw-sdn:connection-status" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rw-sdn:update-sdn-status" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 }

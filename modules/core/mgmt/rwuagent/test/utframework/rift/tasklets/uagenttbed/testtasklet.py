@@ -126,7 +126,7 @@ class TestTasklet(rift.tasklets.Tasklet):
         """
 
         @asyncio.coroutine
-        def interface_prepare_config(dts, acg, xact, xact_info, ksp, msg):
+        def interface_prepare_config(dts, acg, xact, xact_info, ksp, msg, scratch):
             """Prepare for application configuration.
             """
             self.log.debug("Prepare Callback")
@@ -135,14 +135,14 @@ class TestTasklet(rift.tasklets.Tasklet):
             acg.handle.prepare_complete_ok(xact_info.handle)
 
         @asyncio.coroutine
-        def routes_prepare_config(dts, acg, xact, xact_info, ksp, msg):
+        def routes_prepare_config(dts, acg, xact, xact_info, ksp, msg, scratch):
             """Prepare for application configuration.
             """
             self.log.debug("Prepare Callback")
             acg.handle.prepare_complete_ok(xact_info.handle)
 
         @asyncio.coroutine
-        def dns_prepare_config(dts, acg, xact, xact_info, ksp, msg):
+        def dns_prepare_config(dts, acg, xact, xact_info, ksp, msg, scratch):
             """Prepare for application configuration.
             """
             self.log.debug("Prepare Callback")

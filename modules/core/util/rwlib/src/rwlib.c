@@ -158,6 +158,7 @@ int g_malloc_intercepted;
 int g_callstack_depth;
 int g_heap_track_nth;
 int g_heap_track_bigger_than;
+int g_heap_decode_using;
 
 static void __attribute__((constructor)) _rw_res_track_init(void)
 {

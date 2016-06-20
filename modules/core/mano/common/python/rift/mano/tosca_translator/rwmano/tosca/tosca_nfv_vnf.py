@@ -135,6 +135,10 @@ class ToscaNfvVnf(ManoResource):
         if 'description' not in vnf_props:
             vnf_props['description'] = self.description
 
+        if 'start_by_default' in vnf_props:
+            self._const_vnfd['start-by-default'] = \
+                                        vnf_props.pop('start_by_default')
+
         self.log.debug(_("VNF {0} with constituent vnf: {1}").
                        format(self.name, self._const_vnfd))
         self.log.debug(_("VNF {0} with properties: {1}").
@@ -199,6 +203,9 @@ class ToscaNfvVnf(ManoResource):
                         if 'mgmt-interface' in self.properties:
                             self.properties['mgmt-interface']['vdu-id'] = \
                                             node.id
+                            if 'vdu' in self.properties['mgmt-interface']:
+                                # Older yang
+                                self.properties['mgmt-interface'].pop('vdu')
                     else:
                         err_msg = _("VNF {0}, VDU {1} specified not found"). \
                                   format(self.name, target)
@@ -282,3 +289,12 @@ class ToscaNfvVnf(ManoResource):
 
     def get_member_vnf_index(self):
         return self._const_vnfd['member-vnf-index']
+
+    def get_supporting_files(self, files, desc_id=None):
+        files[self.id] = []
+        for vdu in self._vdus:
+            if vdu.image:
+                files[self.id].append({
+                    'type': 'image',
+                    'name': vdu.image,
+                },)

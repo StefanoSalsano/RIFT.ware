@@ -164,16 +164,16 @@ extern void rwdts_redis_run_script(rwdts_redis_instance_t *instance,
 
 extern int rwdts_redis_run_get_next_script(rwdts_redis_instance_t *instance,
                                            const char *sha_script, int db_num,
-                                           uint32_t *scan_list, int shard_num,
+                                           uint32_t *scan_list, char *shard_num,
                                            rwdts_trans_callback callback,
                                            void *userdata);
 
-extern void rwdts_redis_run_set_script(rwdts_redis_instance_t *instance,
-                                       const char *sha_script, char *key,
-                                       int key_len, int db_num, int serial_num,
-                                       int shard_num,  char *value, int val_len,
-                                       rwdts_trans_callback callback,
-                                       void *userdata);
+extern rw_status_t rwdts_redis_run_set_script(rwdts_redis_instance_t *instance,
+                                              const char *sha_script, char *key,
+                                              int key_len, int db_num, int serial_num,
+                                              char *shard_num,  char *value, int val_len,
+                                              rwdts_trans_callback callback,
+                                              void *userdata);
 
 extern void rwdts_redis_run_del_script(rwdts_redis_instance_t *instance,
                                        const char *sha_script, char *key,
@@ -188,17 +188,35 @@ extern int rwdts_redis_run_get_script(rwdts_redis_instance_t *instance,
 
 extern int rwdts_redis_run_del_shard_script(rwdts_redis_instance_t *instance,
                                             const char *sha_script, int db_num,
-                                            int shard_num, rwdts_trans_callback callback,
+                                            char *shard_num, rwdts_trans_callback callback,
                                             void *userdata);
 
 extern void rwdts_redis_run_set_pend_commit_abort_script(rwdts_redis_instance_t *instance,
                                                          const char *sha_script, char *key,
                                                          int key_len, int db_num, int serial_num,
-                                                         int shard_num, rwdts_trans_callback callback,
+                                                         char *shard_num, rwdts_trans_callback callback,
                                                          void *userdata);
 
 extern int rwdts_redis_del_table(rwdts_redis_instance_t *instance, int db_num,
                                  rwdts_trans_callback callback, void *userdata);
+
+extern int rwdts_redis_run_get_all_shash_script(rwdts_redis_instance_t *instance,
+                                                const char *sha_script, int db_num,
+                                                char *shard_num, rwdts_trans_callback callback,
+                                                void *userdata);
+
+extern int rwdts_redis_run_del_shash_script(rwdts_redis_instance_t *instance,
+                                            const char *sha_script, int db_num,
+                                            char *shard_num, char *key, int key_len,
+                                            rwdts_trans_callback callback, void *userdata);
+extern void rwdts_redis_slave_to_master(rwdts_redis_instance_t *instance,
+                                        rwdts_trans_callback callback,
+                                        void *userdata);
+
+extern void rwdts_redis_master_to_slave(rwdts_redis_instance_t *instance,
+                                        char *hostname, uint16_t port,
+                                        rwdts_trans_callback callback,
+                                        void *userdata);
 
 #define rwdts_redis_set_key_value(inst, db_num, key, key_len, val, val_len, cb,\
                                   ud)\

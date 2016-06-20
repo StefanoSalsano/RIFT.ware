@@ -44,23 +44,36 @@ class ZookeeperPlugin(GObject.Object, RwCal.Zookeeper):
       self._cli = None
 
     @rwstatus
-    def do_create_server_config(self, zkid, unique_ports, server_names):
-        rift.cal.rwzk.create_server_config(zkid, unique_ports, server_names)
+    def do_create_server_config(self, zkid, client_port, unique_ports, server_details):
+        rift.cal.rwzk.create_server_config(zkid, client_port, unique_ports, server_details)
 
-    @rwstatus
     def do_server_start(self, zkid):
-        rift.cal.rwzk.server_start(zkid)
+        return rift.cal.rwzk.server_start(zkid)
 
     @rwstatus
-    def do_kazoo_init(self, unique_ports, server_names):
+    def do_kazoo_init(self, server_details):
         if self._cli is not None:
-            if isinstance(rift.cal.rwzk.Kazoo, self._cli):
+            if isinstance(self._cli, rift.cal.rwzk.Kazoo):
                 return
             else:
                 raise AttributeError('Zookeeper client was already initialized')
 
         self._cli = rift.cal.rwzk.Kazoo()
-        self._cli.client_init(unique_ports, server_names)
+        self._cli.client_init(server_details)
+
+    @rwstatus
+    def do_kazoo_start(self):
+        if self._cli is not None:
+            if not isinstance(self._cli, rift.cal.rwzk.Kazoo):
+                raise AttributeError('No OR Bad client')
+        self._cli.start(timeout=120)
+
+    @rwstatus
+    def do_kazoo_stop(self):
+        if self._cli is not None:
+            if not isinstance(self._cli, rift.cal.rwzk.Kazoo):
+                raise AttributeError('No OR Bad client')
+        self._cli.stop()
 
     @rwstatus
     def do_zake_init(self):
@@ -71,7 +84,7 @@ class ZookeeperPlugin(GObject.Object, RwCal.Zookeeper):
                 raise AttributeError('Zookeeper client was already initialized')
 
         self._cli = rift.cal.rwzk.Zake()
-        self._cli.client_init('', '')
+        self._cli.client_init('')
 
     @rwstatus
     def do_lock(self, path, timeout):
@@ -140,6 +153,13 @@ class ZookeeperPlugin(GObject.Object, RwCal.Zookeeper):
     def do_unregister_watcher(self, path, closure):
         self._cli.unregister_watcher(path, closure.callback)
 
+    def do_get_client_state(self):
+        mapping = {
+            kazoo.client.KazooState.LOST:RwCal.KazooClientStateEnum.LOST,
+            kazoo.client.KazooState.SUSPENDED:RwCal.KazooClientStateEnum.SUSPENDED,
+            kazoo.client.KazooState.CONNECTED:RwCal.KazooClientStateEnum.CONNECTED,
+        }
+        return mapping[self._cli.client_state]
 
 
 

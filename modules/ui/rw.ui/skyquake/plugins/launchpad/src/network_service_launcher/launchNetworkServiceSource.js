@@ -4,16 +4,16 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
-import NS_ACTIONS from './launchNetworkServiceActions.js';
 import $ from 'jquery';
 let Utils = require('utils/utils.js');
 let rw = require('utils/rw.js');
 const API_SERVER = require('utils/rw.js').getSearchParams(window.location).api_server;
 const API_PORT = require('utils/rw.js').getSearchParams(window.location).api_port;
 const NODE_PORT = API_PORT || 3000;
-export default {
-  getCatalog() {
-    return {
+export default function(Alt){
+  const Actions = Alt.actions.global;
+  return {
+  getCatalog: {
       remote (state) {
         return new Promise((resolve,reject) => {
           $.ajax({
@@ -32,12 +32,10 @@ export default {
           });
         });
       },
-      success: NS_ACTIONS.getCatalogSuccess,
-      error: NS_ACTIONS.getCatalogError
-    }
+      success: Alt.actions.global.getCatalogSuccess,
+      error: Alt.actions.global.getCatalogError
   },
-  getCloudAccount() {
-    return {
+  getCloudAccount:{
       remote (state, cb) {
         return new Promise((resolve, reject) => {
           $.ajax({
@@ -55,12 +53,10 @@ export default {
           })
         })
       },
-      success: NS_ACTIONS.getCloudAccountSuccess,
-      error: NS_ACTIONS.getCloudAccountError
-    }
+      success: Alt.actions.global.getLaunchCloudAccountSuccess,
+      error: Alt.actions.global.getLaunchCloudAccountError
   },
-  getDataCenters() {
-    return {
+  getDataCenters:{
       remote () {
         return new Promise((resolve, reject) => {
           $.ajax({
@@ -75,12 +71,10 @@ export default {
           })
         })
       },
-      success: NS_ACTIONS.getDataCentersSuccess,
-      error: NS_ACTIONS.getDataCentersError
-    }
+      success: Alt.actions.global.getDataCentersSuccess,
+      error: Alt.actions.global.getDataCentersError
   },
-  getVDU() {
-    return {
+  getVDU: {
       remote (state, VNFDid) {
         return new Promise((resolve,reject) => {
           $.ajax({
@@ -99,12 +93,10 @@ export default {
           })
         });
       },
-      success: NS_ACTIONS.getVDUSuccess,
-      error: NS_ACTIONS.getVDUError
-    }
+      success: Alt.actions.global.getVDUSuccess,
+      error: Alt.actions.global.getVDUError
   },
-  launchNSR() {
-    return {
+  launchNSR: {
       remote (state, NSR) {
         return new Promise((resolve, reject) => {
           console.log('Attempting to instantiate NSR:', NSR)
@@ -122,18 +114,20 @@ export default {
                       );
             },
             error: function (err) {
-              reject({});
+              console.log('There was an error launching')
             }
-          })
+          }).fail(function(xhr){
+            //Authentication and the handling of fail states should be wrapped up into a connection class.
+            Utils.checkAuthentication(xhr.status);
+            reject();
+          });
         })
       },
-      loading: NS_ACTIONS.launchNSRLoading,
-      success: NS_ACTIONS.launchNSRSuccess,
-      error: NS_ACTIONS.launchNSRError
-    }
+      loading: Alt.actions.global.launchNSRLoading,
+      success: Alt.actions.global.launchNSRSuccess,
+      error: Alt.actions.global.launchNSRError
   },
-  getInputParams() {
-    return {
+  getInputParams:{
       remote(state, NSDId) {
         return new Promise((resolve, reject) => {
           $.ajax({
@@ -146,10 +140,8 @@ export default {
           });
         });
       }
-    }
   },
-  getLaunchpadConfig: function() {
-    return {
+  getLaunchpadConfig: {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -162,26 +154,8 @@ export default {
           });
         });
       },
-      success: NS_ACTIONS.getLaunchpadConfigSuccess,
-      error: NS_ACTIONS.getLaunchpadConfigError
-    };
+      success: Alt.actions.global.getLaunchpadConfigSuccess,
+      error: Alt.actions.global.getLaunchpadConfigError
   }
-  // getCatalog() {
-  //   return {
-  //     remote (state) {
-  //       return new Promise((resolve,reject) => {
-  //         $.ajax({
-  //           url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/catalog?api_server=' + API_SERVER,
-  //           success: function (data) {
-  //             resolve(
-  //                     typeof(data) == "string" ? JSON.parse(data):data
-  //                     );
-  //           }
-  //         })
-  //       });
-  //     },
-  //     success: NS_ACTIONS.getCatalogSuccess,
-  //     error: NS_ACTIONS.getCatalogError
-  //   }
-  // }
+}
 }

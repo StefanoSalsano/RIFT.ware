@@ -44,14 +44,15 @@ add_library(rwlib SHARED
   rw_types.c)
 target_link_libraries(rwlib PRIVATE
   pthread
-  ${UNWIND_LIBRARIES}
+  unwind unwind-x86_64 unwind-ptrace unwind-coredump
   ${GLIB_LIBRARIES}
   ${GOBJECT_LIBRARIES}
+  libpython3.3m.so 
 
   # RIFT-5092 - this should be using pkg_config
   ${CMAKE_INSTALL_PREFIX}/usr/lib/libprotobuf-c.so)
   #  ${PROTOBUF_C_LIBRARIES})
-add_dependencies(rwlib rwtypes_gi)
+add_dependencies(rwlib rwtypes_gi libunwind.a libunwind-x86_64.a libunwind-ptrace.a libunwind-coredump.a)
 
 rift_make_pc(rwlib
   LIBS -lrwlib
@@ -76,6 +77,19 @@ target_link_libraries(rw_vx_plugin PRIVATE
   #${PEAS_LIBRARIES}
 
   ${GOBJECT_IS_LIBRARIES})
+
+##
+# Add rwcoredump executable target
+##
+set(RW_COREDUMP_SOURCES rw_coredump.c)
+set(RW_COREDUMP_LIBS unwind unwind-x86_64 unwind-coredump libpython3.3m.so)
+add_executable(rwcoredump ${RW_COREDUMP_SOURCES})
+# Specify the link libraries for rwcoredump
+target_link_libraries(rwcoredump  ${RW_COREDUMP_LIBS})
+# Specificy the targets that the rwcoredump depends on
+add_dependencies(rwcoredump libunwind.a libunwind-x86_64.a libunwind-coredump.a )
+
+install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/rwcoredump DESTINATION usr/bin COMPONENT rwcoredump)
 
 ##
 # install the rwlib and rw_vx library

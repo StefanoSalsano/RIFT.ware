@@ -116,8 +116,8 @@ rw_status_t ConfdWorkspaceMgr::generate_config_file()
 
   set_directory_path("logs/netconfTraceLog", "filename", confd_log_path + "netconf.trace");
   set_directory_path("datastores/candidate", "filename", confd_dir + "/var/confd/candidate/candidate.db");
-  set_notif_directory_path(
-      "notifications/eventStreams/stream/builtinReplayStore/maxSize", "dir", confd_dir);
+
+  add_netconf_notification_streams(instance_->netconf_streams_);
 
   return confd_conf_dom_->to_file((confd_dir + "/rw_confd.conf").c_str());
 }
@@ -174,32 +174,6 @@ void ConfdWorkspaceMgr::set_directory_path(
 
   XMLNode* child_node = node->add_child(elem_name.c_str(), elem_value.c_str());
   RW_ASSERT (child_node);
-}
-
-void ConfdWorkspaceMgr::set_notif_directory_path(
-    const std::string& node_path,
-    const std::string& elem_name,
-    const std::string& elem_value)
-{
-  RWMEMLOG(memlog_buf_, RWMEMLOG_MEM2, "set notif directory path");
-
-  std::vector<std::string> path_vec;
-
-  if (node_path.length()) {
-    boost::split(path_vec, node_path, boost::is_any_of("/"));
-  }
-
-  XMLNode* root_node = confd_conf_dom_->get_root_node();
-  RW_ASSERT (root_node);
-
-  XMLNode* node = root_node;
-  for (auto& path : path_vec) {
-    node = node->find(path.c_str());
-    RW_ASSERT (node);
-  }
-
-  XMLNode* sib_node = node->insert_before(elem_name.c_str(), elem_value.c_str());
-  RW_ASSERT (sib_node);
 }
 
 void ConfdWorkspaceMgr::set_feature(const std::string& conf_node, bool value)
@@ -334,3 +308,34 @@ rw_status_t ConfdWorkspaceMgr::create_mgmt_directory()
 
   return RW_STATUS_SUCCESS;
 }
+
+void ConfdWorkspaceMgr::add_netconf_notification_streams(
+                const std::vector<netconf_stream_info_t>& streams)
+{
+  XMLNode* root_node = confd_conf_dom_->get_root_node();
+  RW_ASSERT (root_node);
+  
+  XMLNode* node = root_node->find("notifications");
+  RW_ASSERT (node);
+
+  node = node->find("eventStreams");
+  RW_ASSERT (node);
+
+  for (const auto& info: streams) {
+    XMLNode* xml_stream = node->add_child("stream");
+    xml_stream->add_child("name", info.name.c_str());
+    xml_stream->add_child("description", info.description.c_str());
+
+    if (info.replay_support) {
+      xml_stream->add_child("replaySupport", "true");
+      XMLNode* replay_info = xml_stream->add_child("builtinReplayStore");
+      replay_info->add_child("enabled", "true");
+      replay_info->add_child("dir", mgmt_->mgmt_dir().c_str());
+      replay_info->add_child("maxSize", "S1M");
+      replay_info->add_child("maxFiles", "5");
+    } else {
+      xml_stream->add_child("replaySupport", "false");
+    }
+  }
+}
+

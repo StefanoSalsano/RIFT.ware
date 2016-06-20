@@ -590,12 +590,38 @@ rwvcs_rwzk_watcher_stop(
     rwcal_closure_ptr_t *closure);
 
 /*
- * start the zookeeper client or zake client
+ * init and start the zookeeper client or zake client
+ *
+ * @param rwvcvs  - rwvcs instance.
+ * @return        - RW_STATUS_SUCCESS.
+ */
+rw_status_t rwvcs_rwzk_client_init(rwvcs_instance_ptr_t rwvcs);
+
+/*
+ * start the zookeeper client
  *
  * @param rwvcvs  - rwvcs instance.
  * @return        - RW_STATUS_SUCCESS.
  */
 rw_status_t rwvcs_rwzk_client_start(rwvcs_instance_ptr_t rwvcs);
+
+
+/*
+ * stop the zookeeper client
+ *
+ * @param rwvcvs  - rwvcs instance.
+ * @return        - RW_STATUS_SUCCESS.
+ */
+rw_status_t rwvcs_rwzk_client_stop(rwvcs_instance_ptr_t rwvcs);
+
+/*
+ * zookeeper client state. current version of kazoo does not store client state
+ * this shall be supported once kazoo does give the client_state
+ *
+ * @param rwvcvs  - rwvcs instance.
+ * @return        - client state relevant in expanded mode
+ */
+rwcal_kazoo_client_state_t rwvcs_rwzk_client_state(rwvcs_instance_ptr_t rwvcs);
 
 __END_DECLS
 

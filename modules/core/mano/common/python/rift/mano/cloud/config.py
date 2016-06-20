@@ -167,7 +167,7 @@ class CloudAccountConfigSubscriber(object):
                 self.update_account(cfg)
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ Prepare callback from DTS for Cloud Account """
 
             action = xact_info.query_action

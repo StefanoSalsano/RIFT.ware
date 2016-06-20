@@ -21,10 +21,10 @@ module rw-resource-mgr-annotation
   }
 
   tailf:annotate "/rw-resource-mgr:resource-pool-records" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rw-resource-mgr:resource-mgmt" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

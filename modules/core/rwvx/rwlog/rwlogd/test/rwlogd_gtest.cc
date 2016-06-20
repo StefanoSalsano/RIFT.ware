@@ -90,7 +90,7 @@ rwlogd_instance_ptr_t rwlogd_gtest_allocate_instance_internal(int instance_id, b
    * rwsched instance and reopen with new filename */
   if(rwsched->rwlog_instance) 
   {
-    rwlog_close(rwsched->rwlog_instance,TRUE);
+    rwlog_close_internal(rwsched->rwlog_instance,TRUE);
     rwsched->rwlog_instance = rwlog_init_internal("RW.Sched",rwlog_filename,filter_shm_name,NULL);
   }
 
@@ -479,7 +479,7 @@ TEST(RwLogdGroup1, TaskletStart)
   rwlog_ctx_t *ctxt = rwlog_gtest_source_init("google-test1.1");
   log_something(ctxt, 10);
   rwsched_dispatch_main_until(inst->rwtasklet_info->rwsched_tasklet_info, 0.2, NULL);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -513,7 +513,7 @@ TEST(RwLogdGroup1, TaskletFileRotation)
   rwsched_dispatch_main_until(inst->rwtasklet_info->rwsched_tasklet_info, 0.2, NULL);
 
   EXPECT_LOG_TRUE(start_ctrl!=shmctl->rotation_serial);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -540,7 +540,7 @@ TEST(RwLogdGroup1, CliSinkAdd)
   rwlogd_sink *sink = obj->lookup_sink("Gtest");
   EXPECT_EQ(sink->matched_log_count(),14);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   rwlogd_delete_sink(rwlogd_cli_sink, inst, "Gtest", "RW.Cli", 1);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
@@ -629,7 +629,7 @@ TEST(RwLogdGroup1, SyslogSinkAdd)
 
   status = rwlogd_delete_sink(rwlogd_syslog_sink, inst, "Syslog", "localhost", port);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   rwlogd_gtest_free_instance(inst);
 }
 TEST(RwLogdGroup2, SyslogSinkMultipeOperations)
@@ -685,7 +685,7 @@ TEST(RwLogdGroup2, SyslogSinkMultipeOperations)
   status = rwlogd_delete_sink(rwlogd_syslog_sink, inst, "Gtest", "Rw.syslog", port);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
 
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
@@ -715,7 +715,7 @@ TEST(RwLogdGroup2, CliPrint)
 
   EXPECT_EQ(sink->matched_log_count(),14);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   rwlogd_delete_sink(rwlogd_cli_sink, inst, "Gtest", "RW.Cli", 1);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
@@ -761,7 +761,7 @@ TEST(RwLogdGroup2, PacketPrint)
   rwlogd_sink *sink = obj->lookup_sink("Gtest");
   EXPECT_EQ(sink->matched_log_count(),100);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   obj->set_dup_events_flag(TRUE);
   rwlogd_delete_sink(rwlogd_cli_sink, inst, "Gtest", "RW.Cli", 1);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
@@ -802,7 +802,7 @@ TEST(RwLogdGroup2, CliShowAll)
   }
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs,14);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -856,7 +856,7 @@ TEST(RwLogdGroup2, CliShowPktV3)
     }
   }
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs,10);
   protobuf_free(log_output);
@@ -917,7 +917,7 @@ TEST(RwLogdGroup3, CliShowPktV5)
     }
   }
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_TRUE(log_output->n_logs==10);
   protobuf_free(log_output);
@@ -1016,7 +1016,7 @@ TEST(RwLogdGroup3, CliShowCallId)
   EXPECT_EQ(log_output->n_logs,0);
   log_output->n_logs = 0;
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -1116,7 +1116,7 @@ TEST(RwLogdGroup3, CliShowCallGroupId)
     }
   }
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(category_p);
   protobuf_free(log_output);
@@ -1329,7 +1329,7 @@ TEST(RwLogdGroup3, RwLogAttributeFilter)
   }
   log_output->n_logs = 0;
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -1418,7 +1418,7 @@ TEST(RwLogdGroup3, CliShowFilterCategoryAllStartTimeEndTime)
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs,14);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
 
   protobuf_free(category_p); // As category is set to null
@@ -1487,7 +1487,7 @@ TEST(RwLogdGroup4, CliShowCallIdCategory)
   protobuf_free(category_p); // As category is set to null
   protobuf_free(log_output);
   protobuf_free(log_input);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   rwlogd_gtest_free_instance(inst);
 }
 
@@ -1647,7 +1647,7 @@ TEST(RwLogdGroup4, CliShowFilterCategoryMsgId)
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs,0);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -1726,7 +1726,7 @@ TEST(RwLogdGroup4, CircularBufferEnd)
   EXPECT_EQ(stats.inserts,stats.removal_success);
 
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -1794,7 +1794,7 @@ TEST(RwLogdGroup4, FetchCircularBufferEnd)
 
   protobuf_free(log_output);
   protobuf_free(log_input);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
 
   rwlogd_gtest_free_instance(inst);
@@ -1873,7 +1873,7 @@ TEST(RwLogdGroup5, CliShowCallIdTime)
   }
   protobuf_free(log_output);
   protobuf_free(log_input);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   rwlogd_gtest_free_instance(inst);
 }
 TEST(RwLogdGroup5, DISABLED_CliShowCallIdTimeUserFile)
@@ -2024,7 +2024,7 @@ TEST(RwLogdGroup5, CliShowAllUnprintable)
   }
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs,14);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -2065,7 +2065,7 @@ TEST(RwLogdGroup5, CliCacheWrapAroundPrintStats)
   }
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs,5);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -2298,7 +2298,7 @@ TEST(RwLogdGroup6, RwLogSessionParamFilter)
   EXPECT_FALSE(delta_size);
   current_size = file_stats.st_size;
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(session_param_config_filter);
   rwlogd_gtest_free_instance(inst);
@@ -2377,7 +2377,7 @@ TEST(RwLogdGroup6, RwLogValidateLogFields)
   
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs,1);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -2474,7 +2474,7 @@ TEST(RwLogdGroup6, SpeculativeCallEntryCleanup)
   delta_size = file_stats.st_size - current_size;
   EXPECT_LOG_TRUE(delta_size == 0);
   
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -2519,7 +2519,7 @@ TEST(RwLogdGroup6, SrcDenyEventIdTest)
   delta_size = file_stats.st_size - current_size;
   EXPECT_LOG_TRUE(delta_size == 0);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -2654,7 +2654,7 @@ TEST(RwLogdGroup6, RwLogNextCallFilter)
   EXPECT_LOG_TRUE(delta_size==0);
   current_size = file_stats.st_size;
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -2808,7 +2808,7 @@ TEST(RwLogdGroup7, RwLogNextCallSessionParamFilter)
   EXPECT_FALSE(delta_size);
   current_size = file_stats.st_size;
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -2967,7 +2967,7 @@ TEST(RwLogdGroup7, RwLogNextFailedCallFilter)
   EXPECT_FALSE(delta_size);
   current_size = file_stats.st_size;
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -3161,7 +3161,7 @@ TEST(RwLogdGroup7, RwLogFailedCallFilter)
   delta_size = file_stats.st_size - current_size;
   EXPECT_FALSE(delta_size);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -3206,7 +3206,7 @@ TEST(RwLogdGroup7, L2ExactFilterCallId)
     EXPECT_LOG_TRUE(!obj->l2_exact_uint64_match((uint32_t)cat, callid_field, 112233));
   }
 
-  EXPECT_LOG_TRUE(RW_STATUS_SUCCESS == rwlog_close(ctxt,TRUE));
+  EXPECT_LOG_TRUE(RW_STATUS_SUCCESS == rwlog_close_internal(ctxt,TRUE));
   rwlogd_gtest_free_instance(inst);
 }
 
@@ -3412,7 +3412,7 @@ TEST(RwLogdGroup7, SeverityFilterCheck)
   EXPECT_EQ(log_output->n_logs,0);
   log_output->n_logs = 0;
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -3542,7 +3542,7 @@ TEST(RwLogdGroup8, ShowLogTrailingTimestampFilter)
 
   EXPECT_EQ(log_output->n_log_summary,1);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -3627,7 +3627,7 @@ TEST(RwLogdGroup8, SprintfAttrCheck)
     printf("%s\n", log_output->logs[i]->msg);
   }
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -3672,7 +3672,7 @@ TEST(RwLogdGroup9, RwLogDRxLoopTest)
   rwlogd_dump_task_info(inst->rwlogd_info,1,1);
 
   EXPECT_LOG_TRUE(start_ctrl!=shmctl->rotation_serial);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -3741,7 +3741,7 @@ TEST(RwLogdGroup9, FileSinkAdd)
   free(log_filename);
   free(filename);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   rwlogd_gtest_free_instance(inst);
 }
 
@@ -3826,7 +3826,7 @@ TEST(RwLogdGroup9, RwLogDMultiThreadTest)
   printf("Sink matched log count is %lu\n",sink->matched_log_count());
 #endif
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -3865,7 +3865,7 @@ TEST(RwLogdGroup9, RwLogStaticShm)
   rwsched_dispatch_main_until(inst->rwtasklet_info->rwsched_tasklet_info, 0.2, NULL);
   EXPECT_TRUE(0 == log_something(ctxt, 1));
   EXPECT_FALSE(ctxt->local_shm);
-  EXPECT_EQ(rwlog_close(ctxt,TRUE), RW_STATUS_SUCCESS);
+  EXPECT_EQ(rwlog_close_internal(ctxt,TRUE), RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
 
@@ -3894,7 +3894,7 @@ TEST(RwLogdGroup9, BootstrapSyslogSink)
   status = stop_bootstrap_syslog_sink(inst);
   EXPECT_TRUE(status == RW_STATUS_SUCCESS);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   rwlogd_gtest_free_instance(inst);
 }
 
@@ -4153,7 +4153,7 @@ TEST(RwLogdGroup10, LogCheckPoint)
   protobuf_free(log_input);
 
   rwlogd_gtest_free_instance(inst);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
 }
 
 static void rwlogd_gtest_tmr_cb(stw_tmr_t *tmr, void *param)
@@ -4186,7 +4186,7 @@ TEST(RwLogdGroup11, RwLogTmr)
   EXPECT_TRUE(flag >= 2);
   EXPECT_TRUE(RW_STATUS_SUCCESS == rwtimer_stop(inst->rwlogd_info->stw_system_handle,&tmr));
 
-  EXPECT_EQ(rwlog_close(ctxt,TRUE), RW_STATUS_SUCCESS);
+  EXPECT_EQ(rwlog_close_internal(ctxt,TRUE), RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
 
@@ -4363,7 +4363,7 @@ TEST(RwLogdGroup11, DISABLED_CallidSharding)
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   EXPECT_EQ(log_output->n_logs,0);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -4457,7 +4457,7 @@ TEST(RwLogdGroup11, DupEvtSuppress)
 
   rwlog_ctxt_dump(ctxt);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -4605,7 +4605,7 @@ TEST(RwLogdGroup12, ProtocolFilter)
 
 
   EXPECT_TRUE(status == RW_STATUS_SUCCESS);
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -4673,7 +4673,7 @@ TEST(RwLogdGroup12, PcapSinkAdd)
   remove(filename);
   free(filename);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   rwlogd_gtest_free_instance(inst);
 }
 
@@ -4692,7 +4692,7 @@ TEST(RwLogdGroup12, DefaultSevCheck)
   status = rwlogd_sink_severity(inst,(char *)"Gtest",category_str1,RW_LOG_LOG_SEVERITY_DEBUG,RW_LOG_ON_OFF_TYPE_ON);
   EXPECT_TRUE(status == RW_STATUS_SUCCESS);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -4764,7 +4764,7 @@ TEST(RwLogdGroup12, L1FilterCheckTest)
   EXPECT_EQ(ctxt->stats.l1_filter_passed,18);
   EXPECT_EQ(ctxt->stats.sent_events,12);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   rwlogd_gtest_free_instance(inst);
 }
@@ -4888,7 +4888,7 @@ TEST(RwLogdGroup12, SeverityCritInfoFilterCheck)
 
   EXPECT_EQ(sink->matched_log_count(),10);
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -5034,7 +5034,7 @@ TEST(RwLogdGroup13, VNFIDLogTest)
 
   log_input->start_time = NULL;
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);
@@ -5115,7 +5115,7 @@ TEST(RwLogdGroup13, DynSchemaTest)
     }
   }
 
-  status = rwlog_close(ctxt,TRUE);
+  status = rwlog_close_internal(ctxt,TRUE);
   EXPECT_LOG_TRUE(status == RW_STATUS_SUCCESS);
   protobuf_free(log_output);
   protobuf_free(log_input);

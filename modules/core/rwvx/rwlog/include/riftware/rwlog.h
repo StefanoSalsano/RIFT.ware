@@ -617,6 +617,8 @@ rw_status_t rwlog_set_attribute_filter(rwlog_ctx_t *ctx,
  */
 rw_status_t rwlog_close(rwlog_ctx_t *ctx,bool remove_logfile);
 
+rw_status_t rwlog_close_internal(rwlog_ctx_t *ctx,bool remove_logfile);
+
 /*!
  * Execute all source filtering on the given event.
  *

@@ -155,7 +155,7 @@ StartStatus ShowSysInfo::execute()
     child_read_src_ = rwsched_dispatch_source_create(
         tasklet, RWSCHED_DISPATCH_SOURCE_TYPE_READ, parent_read_fd_,
         0/*mask*/,
-        instance_->serial_q() );
+        instance_->get_queue(QueueType::DefaultSerial));
 
     rwsched_dispatch_set_context( tasklet, child_read_src_, this );
     rwsched_dispatch_source_set_event_handler_f(
@@ -168,7 +168,7 @@ StartStatus ShowSysInfo::execute()
   // because we want the callback to be in queue-context.
   // The libdispatch signal source also doesn't seem to work.
   child_status_poll_timer_  = rwsched_dispatch_source_create(
-      tasklet, RWSCHED_DISPATCH_SOURCE_TYPE_TIMER, 0, 0, instance_->serial_q());
+      tasklet, RWSCHED_DISPATCH_SOURCE_TYPE_TIMER, 0, 0, instance_->get_queue(QueueType::DefaultSerial));
 
   rwsched_dispatch_source_set_event_handler_f(
       tasklet, child_status_poll_timer_, poll_for_child_status);
@@ -447,7 +447,7 @@ void ShowSysInfo::try_reap_child()
       auto when = dispatch_time(DISPATCH_TIME_NOW, 0.01 * NSEC_PER_SEC); // after 100 ms. ok?
       rwsched_dispatch_after_f(tasklet,
                                when,
-                               instance_->serial_q(),
+                               instance_->get_queue(QueueType::DefaultSerial),
                                this,
                                async_self_delete);
     } else {

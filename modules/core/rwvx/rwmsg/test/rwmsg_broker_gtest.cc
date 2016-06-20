@@ -5139,7 +5139,7 @@ static void sctest1_reqsend(void *ctx_in) {
   struct sctest1_context *ctx = (struct sctest1_context*)ctx_in;
   rwmsg_request_t *req;
 
-#if 1
+#if 0
   static unsigned long long tids[100] = {0};
   static int l_tid=0;
   int i;

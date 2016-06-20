@@ -61,9 +61,7 @@ def dyn_schema_callback(instance, numel, modules):
         instance._pending_modules[module.module_name] = module.so_filename
 
     if not instance._initialized:
-        instance._initialized = True
         instance._initialize_composite()
-        instance.loop.create_task(instance.start_server())
 
 def _load_schema(schema_name):
     yang_model = RwYang.Model.create_libncx()
@@ -121,16 +119,26 @@ class RestconfTasklet(rift.tasklets.Tasklet):
 
     @asyncio.coroutine
     def start_server(self):
+
         timeo = float(self._agent_wait_timeout_secs)
         while timeo > 0:
-            if self._agent_is_ready:
+            if self._agent_is_ready and self._initialized:
                 self._log.info("Starting restconf server")
                 self._start_server()
-                break
+                return
             else:
                 step = 0.1
                 timeo = timeo - step
                 yield from asyncio.sleep(step, loop = self.loop)
+
+        # log error and and try again 
+        if not self._initialized:
+            self._log.error("Rwrest didn't load schema after %d seconds", self._agent_wait_timeout_secs)
+        if not self._agent_is_ready:
+            self._log.error("Rwrest didn't connect to agent after %d seconds", self._agent_wait_timeout_secs)
+
+        self._agent_wait_timeout_secs = 15 # we've already waited a long time, start complaining more
+        self.loop.create_task(self.start_server())
 
     @asyncio.coroutine
     def on_dts_state_change(self, state):
@@ -171,7 +179,7 @@ class RestconfTasklet(rift.tasklets.Tasklet):
         self._agent_wait_timeout_secs = 360
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+        def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
             self._messages[xact.id] = msg
             acg.handle.prepare_complete_ok(xact_info.handle)
 
@@ -223,7 +231,6 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                 else:
                     self._agent_is_ready = False
                 break
-            
         with self._dts.appconf_group_create(
                 handler=rift.tasklets.AppConfGroup.Handler(
                     on_apply=on_apply)) as acg:
@@ -250,6 +257,9 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                       self)
             
         self._ready_for_schema = False
+
+        #start waiting for the agent
+        self.loop.create_task(self.start_server())
 
         @asyncio.coroutine
         def dynamic_schema_state(xact_info, action, ks_path, msg):
@@ -347,6 +357,9 @@ class RestconfTasklet(rift.tasklets.Tasklet):
             """
             xpath = "D,/rcmon:restconf-state"
             if self._state_provider is None:
+              self._log.error("restconf-state provider not initialized")
+              xact_info.send_error_xpath(rwtypes.RwStatus.FAILURE,
+                          xpath, "RW.RESTCONF not ready")
               xact_info.respond_xpath(RwDts.XactRspCode.NACK, xpath)
               return
 
@@ -354,6 +367,9 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                 restconf_state = yield from self._state_provider.get_state()
                 xact_info.respond_xpath(RwDts.XactRspCode.ACK, xpath, restconf_state)
             except:
+                self._log.exception("Fetching state failed")
+                xact_info.send_error_xpath(rwtypes.RwStatus.FAILURE,
+                          xpath, "RW.RESTCONF internal error")
                 xact_info.respond_xpath(RwDts.XactRspCode.NACK, xpath)
 
         reg = yield from self._dts.register(
@@ -369,7 +385,7 @@ class RestconfTasklet(rift.tasklets.Tasklet):
                         flags=RwDts.Flag.PUBLISHER,
                         xpath="D,/rcmon:restconf-state",
                         handler=rift.tasklets.DTS.RegistrationHandler(
-                        on_prepare=get_restconf_state))         
+                        on_prepare=get_restconf_state))
        
         self._schema = RwRestconfYang.get_schema()
 
@@ -393,6 +409,7 @@ class RestconfTasklet(rift.tasklets.Tasklet):
         yang_model = RwYang.Model.create_libncx()
         yang_model.load_schema_ypbc(self._schema)    
         self._schema_root = yang_model.get_root_node()
+        self._initialized = True
 
     def _start_server(self):
         if self._server is not None:

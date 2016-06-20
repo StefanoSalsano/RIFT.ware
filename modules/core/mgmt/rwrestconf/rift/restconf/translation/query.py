@@ -158,7 +158,7 @@ class JsonToXmlTranslator(object):
         if len(schema_children) == 0:
             xml.append('')
         if len(json_node.keys()) > 0:
-            raise ValueError("extra fields given")
+            raise ValueError("extra fields given %s" % json_node.keys())
         
         return ''.join(xml)
 

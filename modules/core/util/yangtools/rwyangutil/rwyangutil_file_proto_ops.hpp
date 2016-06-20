@@ -30,18 +30,9 @@ class FileProtoOps
  private:
 
   // exposed via cli arguments
-  bool remove_mgmt_workspace(const char*);
-  bool archive_mgmt_persist_workspace(const char*);
-
-#ifdef CONFD_ENABLED
-  bool archive_confd_persist_workspace(std::vector<std::string> const & params);
-  bool remove_persist_confd_workspace(std::vector<std::string> const & params);
-  bool remove_unique_confd_workspace(std::vector<std::string> const & params);
-#endif
-
-  bool archive_xml_persist_workspace(std::vector<std::string> const & params);
-  bool remove_persist_xml_workspace(std::vector<std::string> const & params);
-  bool remove_unique_xml_workspace(std::vector<std::string> const & params);
+  bool archive_mgmt_persist_workspace(std::vector<std::string> const & params);
+  bool remove_persist_mgmt_workspace(std::vector<std::string> const & params);
+  bool remove_unique_mgmt_workspace(std::vector<std::string> const & params);
 
   bool create_lock_file(std::vector<std::string> const & params);
   bool delete_lock_file(std::vector<std::string> const & params);

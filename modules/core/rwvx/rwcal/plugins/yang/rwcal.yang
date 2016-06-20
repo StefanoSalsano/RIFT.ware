@@ -388,6 +388,13 @@ module rwcal
       type string;
     }
 
+    leaf allocate-public-address {
+      rwpb:field-inline "true";
+      description "If this VM should allocate a floating public IP address";
+      type boolean;
+      default false;
+    }
+
     list private-ip-list {
       key "ip-address";
 

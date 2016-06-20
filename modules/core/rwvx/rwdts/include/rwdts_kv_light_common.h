@@ -18,7 +18,7 @@ typedef struct rwdts_kv_handle_s rwdts_kv_handle_t;
 struct rwdts_kv_handle_s {
   uint32_t db_type;
   void *kv_conn_instance;
-  char file_name[255];
+  char file_name_shard[255];
   char set_field_sha[41];
   char next_fields_sha[41];
   char del_field_sha[41];
@@ -30,6 +30,9 @@ struct rwdts_kv_handle_s {
   char del_pend_sha[41];
   char del_pend_commit_sha[41];
   char del_pend_abort_sha[41];
+  char set_shash_sha[41];
+  char del_shash_sha[41];
+  char get_shash_all_sha[41];
   int  get_index;
 };
 
@@ -178,7 +181,7 @@ typedef rwdts_kv_light_reply_status_t (*rwdts_kv_client_get_snum_cbk_fn)(void *r
  *
  * Callback API to the KV connection function.
  */
-typedef void (*rwdts_kv_client_conn_callbk_fn)(void *callbk_data);
+typedef void (*rwdts_kv_client_conn_callbk_fn)(void *callbk_data, rw_status_t status);
 
 /*
  * rwdts_kv_client_del_xact_callbk_fn

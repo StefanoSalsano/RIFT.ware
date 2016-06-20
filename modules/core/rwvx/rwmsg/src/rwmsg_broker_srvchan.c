@@ -773,6 +773,14 @@ static int rwmsg_broker_srvchan_do_writes_cli(rwmsg_broker_srvchan_t *sc,
     rwmsg_request_message_load_header((req->hdr.isreq ? &req->req : &req->rsp), &req->hdr);
     //rs = rwmsg_sockset_send(sc->ch.ss, pri, &req->req.msg);
     RWMSG_REQ_TRACK(req);
+    if (req->rwml_buffer) {
+      rwmsg_request_memlog_hdr (&req->rwml_buffer, 
+                                req, 
+                                __PRETTY_FUNCTION__, 
+                                __LINE__, 
+                                "(Req Sockset Send)");
+    }
+
     rs = rwmsg_sockset_send_copy(sc->ch.ss, pri, &req->req.msg);
 
     if (rs == RW_STATUS_SUCCESS) {
@@ -1299,6 +1307,7 @@ rw_status_t rwmsg_broker_srvchan_recv_buf(rwmsg_broker_srvchan_t *sc,
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
   rwmsg_request_t *req = NULL;
   int hashreq = TRUE;
+  rwmsg_broker_t *bro = sc->bch.bro;
   HASH_FIND(hh, sc->req_hash, &hdr.id, sizeof(hdr.id), req);
   if (!req) {
     hashreq = FALSE;
@@ -1306,9 +1315,27 @@ rw_status_t rwmsg_broker_srvchan_recv_buf(rwmsg_broker_srvchan_t *sc,
     req->brosrvchan = sc;
     _RWMSG_CH_DEBUG_(&sc->ch, "++");
     ck_pr_inc_32(&sc->ch.refct);
+
+    if(bro->rwmemlog) {
+      ck_pr_inc_int(&bro->rwmemlog_id);
+      req->rwml_buffer = rwmemlog_instance_get_buffer(bro->rwmemlog, "Req", -bro->rwmemlog_id);
+      rwmsg_request_memlog_hdr (&req->rwml_buffer, 
+                                req, 
+                                __PRETTY_FUNCTION__, 
+                                __LINE__, 
+                                "(Req Created)");
+    }
+
   } else {
     RW_ASSERT(req->inhash);
     RW_ASSERT_TYPE(req->brosrvcli, rwmsg_broker_srvchan_cli_t); // CORRECT ??
+    if (req->rwml_buffer) {
+      rwmsg_request_memlog_hdr (&req->rwml_buffer, 
+                                req, 
+                                __PRETTY_FUNCTION__, 
+                                __LINE__, 
+                                "(Req in Hash)");
+    }
   }
   req->hdr = hdr;
   if (hdr.isreq) {

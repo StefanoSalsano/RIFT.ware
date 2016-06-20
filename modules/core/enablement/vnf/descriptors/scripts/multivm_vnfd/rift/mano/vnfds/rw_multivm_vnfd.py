@@ -614,7 +614,6 @@ write_files:
         MASTERIP=
 runcmd:
   - [ systemctl, daemon-reload ]
-  - [ yum, install, qat_guest, -y ]
   - [ systemctl, enable, multivmvnf.service ]
   - [ systemctl, start, --no-block, multivmvnf.service ]
 ''' % vnfd.name
@@ -631,7 +630,6 @@ write_files:
         MASTERIP={{ vdu[%s].mgmt.ip }}
 runcmd:
   - [ systemctl, daemon-reload ]
-  - [ yum, install, qat_guest, -y ]
   - [ systemctl, enable, multivmvnf.service ]
   - [ systemctl, start, --no-block, multivmvnf.service ]
 ''' % (vnfd.name, master_vdu_id)
@@ -720,7 +718,7 @@ runcmd:
             # specify PCI passthru devices
             pcie_dev = vdu.guest_epa.pcie_device.add()
             pcie_dev.device_id = vdu_info['epa_pci']
-            pcie_dev.count = 16
+            pcie_dev.count = 32
 
         print(vdu)
         return vdu

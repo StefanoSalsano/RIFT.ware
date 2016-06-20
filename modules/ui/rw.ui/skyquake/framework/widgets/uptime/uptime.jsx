@@ -115,6 +115,7 @@ export default class UpTime extends React.Component {
         if (self.props.noisySeconds || unitsRendered.length == 0
             || unitsRendered.indexOf('m') == 0)
         {
+            // console.log(" -> toString adding seconds: ", self.state.time.seconds);
             ret += self.state.time.seconds + "s";
         }
 

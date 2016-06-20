@@ -13,19 +13,15 @@ module ietf-network-annotation
     prefix tailf;
   }
 
-  import rw-base {
-    prefix rwbase;
-  }
-
   import ietf-network {
     prefix nd;
   }
 
   tailf:annotate "/nd:network" {
-      tailf:callpoint base_show;
+      tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/nd:network/nd:server-provided" {
-      tailf:callpoint base_show;
+      tailf:callpoint rw_callpoint;
   }
 }

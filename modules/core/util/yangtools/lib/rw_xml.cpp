@@ -3799,7 +3799,10 @@ rw_xml_next_action_t XMLBuilder::mark_child_for_deletion (const char *local_name
 
   ncrs = child->to_keyspec (&ks);
 
-  RW_ASSERT(RW_YANG_NETCONF_OP_STATUS_OK == ncrs);
+  if (ncrs != RW_YANG_NETCONF_OP_STATUS_OK) {
+    RW_XML_NODE_ERROR_STRING (child, "to_keyspec failed");
+    return RW_XML_ACTION_ABORT;
+  }
 
   bool ok;
   ok = current_node_->remove_child(child);

@@ -50,4 +50,11 @@ module notif {
     }
   }
 
+  notification test-tasklet-failed {
+    description "Tasklet failed";
+    leaf message {
+      type string;
+    }
+  }
+
 }

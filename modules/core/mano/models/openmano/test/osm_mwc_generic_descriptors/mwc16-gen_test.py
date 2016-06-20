@@ -54,8 +54,8 @@ class Rift2OpenmanoTest(unittest.TestCase):
         return openmano_ns
 
     def rift_vnf(self, rift_vnf_path):
-        with open(rift_vnf_path, 'r') as xml_hdl:
-            rift_vnf = rift2openmano.RiftVNFD.from_xml_file_hdl(xml_hdl)
+        with open(rift_vnf_path, 'r') as yaml_hdl:
+            rift_vnf = rift2openmano.RiftVNFD.from_yaml_file_hdl(yaml_hdl)
             return rift_vnf
 
     def rift2openmano_vnf(self, rift_vnf_path):
@@ -70,10 +70,10 @@ class Rift2OpenmanoTest(unittest.TestCase):
 
     def rift2openmano_ns(self, rift_ns_path, rift_vnf_paths):
         rift_vnf_hdls = [open(path, 'r') for path in rift_vnf_paths]
-        vnf_dict = rift2openmano.create_vnfd_from_xml_files(rift_vnf_hdls)
+        vnf_dict = rift2openmano.create_vnfd_from_yaml_files(rift_vnf_hdls)
 
-        with open(rift_ns_path, 'r') as xml_hdl:
-            rift_ns = rift2openmano.RiftNSD.from_xml_file_hdl(xml_hdl)
+        with open(rift_ns_path, 'r') as yaml_hdl:
+            rift_ns = rift2openmano.RiftNSD.from_yaml_file_hdl(yaml_hdl)
 
         openmano_nsd = rift2openmano.rift2openmano_nsd(rift_ns, vnf_dict)
         logger.debug(
@@ -100,77 +100,77 @@ class Mwc16GenTest(Rift2OpenmanoTest):
             THIS_DIR, "openmano_vnfs/6WindTR1.1.2.yaml"
             )
     RIFT_6WIND_VNF_PATH = os.path.join(
-            THIS_DIR, "rift_vnfs/6WindTR1.1.2.xml"
+            THIS_DIR, "rift_vnfs/6WindTR1.1.2.yaml"
             )
 
     OPENMANO_CORPA_PE1_VNF_PATH = os.path.join(
             THIS_DIR, "openmano_vnfs/gw_corpA_PE1.yaml"
             )
     RIFT_CORPA_PE1_VNF_PATH = os.path.join(
-            THIS_DIR, "rift_vnfs/gw-corpa-pe1.xml"
+            THIS_DIR, "rift_vnfs/gw-corpa-pe1.yaml"
             )
 
     OPENMANO_CORPA_PE2_VNF_PATH = os.path.join(
             THIS_DIR, "openmano_vnfs/gw_corpA_PE2.yaml"
             )
     RIFT_CORPA_PE2_VNF_PATH = os.path.join(
-            THIS_DIR, "rift_vnfs/gw-corpa-pe2.xml"
+            THIS_DIR, "rift_vnfs/gw-corpa-pe2.yaml"
             )
 
     OPENMANO_IMS_VNF_PATH = os.path.join(
             THIS_DIR, "openmano_vnfs/IMS-ALLin1.yaml"
             )
     RIFT_IMS_VNF_PATH = os.path.join(THIS_DIR,
-            "rift_vnfs/IMS-ALLIN1.xml"
+            "rift_vnfs/IMS-ALLIN1.yaml"
             )
 
     OPENMANO_GEN1_VNF_PATH = os.path.join(
             THIS_DIR, "openmano_vnfs/mwc16-gen1.yaml"
             )
     RIFT_GEN1_VNF_PATH = os.path.join(
-            THIS_DIR, "rift_vnfs/mwc16gen1.xml"
+            THIS_DIR, "rift_vnfs/mwc16gen1.yaml"
             )
 
     OPENMANO_GEN2_VNF_PATH = os.path.join(
             THIS_DIR, "openmano_vnfs/mwc16-gen2.yaml"
             )
     RIFT_GEN2_VNF_PATH = os.path.join(
-            THIS_DIR, "rift_vnfs/mwc16gen2.xml"
+            THIS_DIR, "rift_vnfs/mwc16gen2.yaml"
             )
 
     OPENMANO_MWC16_GEN_NS_PATH = os.path.join(
             THIS_DIR, "openmano_scenarios/mwc16-gen.yaml"
             )
     RIFT_MWC16_GEN_NS_PATH = os.path.join(
-            THIS_DIR, "rift_scenarios/mwc16-gen.xml"
+            THIS_DIR, "rift_scenarios/mwc16-gen.yaml"
             )
 
     OPENMANO_MWC16_PE_NS_PATH = os.path.join(
             THIS_DIR, "openmano_scenarios/mwc16-pe.yaml"
             )
     RIFT_MWC16_PE_NS_PATH = os.path.join(
-            THIS_DIR, "rift_scenarios/mwc16-pe.xml"
+            THIS_DIR, "rift_scenarios/mwc16-pe.yaml"
             )
 
     OPENMANO_IMS_CORPA_NS_PATH = os.path.join(
             THIS_DIR, "openmano_scenarios/IMS-allin1-corpA.yaml"
             )
     RIFT_IMS_CORPA_NS_PATH = os.path.join(
-            THIS_DIR, "rift_scenarios/IMS-corpA.xml"
+            THIS_DIR, "rift_scenarios/IMS-corpA.yaml"
             )
 
     OPENMANO_GW_CORPA_NS_PATH = os.path.join(
             THIS_DIR, "openmano_scenarios/gwcorpA.yaml"
             )
     RIFT_GW_CORPA_NS_PATH = os.path.join(
-            THIS_DIR, "rift_scenarios/gwcorpA.xml"
+            THIS_DIR, "rift_scenarios/gwcorpA.yaml"
             )
 
     OPENMANO_IMS_CORPB_NS_PATH = os.path.join(
             THIS_DIR, "openmano_scenarios/IMS-allin1-corpB.yaml"
             )
     RIFT_IMS_CORPB_NS_PATH = os.path.join(
-            THIS_DIR, "rift_scenarios/IMS-corpB.xml"
+            THIS_DIR, "rift_scenarios/IMS-corpB.yaml"
             )
 
     def test_6wind_vnf(self):

@@ -109,6 +109,8 @@ add_library(kv_light_api SHARED ${KV_API_SOURCES})
 target_link_libraries(kv_light_api PRIVATE
   rwdts_redis
   rwlib
+  rwsched
+  dispatch
   talloc
   db
   glib-2.0

@@ -70,8 +70,21 @@ module rw-manifest
           description "Select the RW.MgmtAgent northbound interface.";
           type rwmgmt-agent-mode;
         }
+
+        leaf persist-dir-name {
+          description "The configuration persistence directory name";
+          type string;
+        }
       }
 
+      list ip-addrs-list {
+        description "IP Address list for pacemaker/zookeeper/redis etc";
+        key ip-addr;
+        leaf ip-addr {
+          description "";
+          type string;
+        }
+      }
       container rwtasklet {
         description "";
         rwpb:msg-new InitTasklet;
@@ -243,6 +256,17 @@ module rw-manifest
             description "Define recovery action if this component fail";
             type rwvcstypes:recovery-type;
           }
+
+          leaf data-storetype {
+            description "Define data-store type to store and recover on restart";
+            type rwvcstypes:data-store;
+          }
+
+          leaf mode-active {
+            description "Define active mnode setting";
+            type boolean;
+            default true;
+          }
         }
       }
 
@@ -275,6 +299,18 @@ module rw-manifest
             description "Define recovery action if this component fail";
             type rwvcstypes:recovery-type;
           }
+
+          leaf data-storetype {
+            description "Define data-store type to store and recover on
+                restart";
+            type rwvcstypes:data-store;
+          }
+
+          leaf mode-active {
+            description "Define active mnode setting";
+            type boolean;
+            default true;
+          }
         }
       }
 
@@ -296,6 +332,44 @@ module rw-manifest
 
     } // container bootstrap-phase
   } // grouping bootstrap-phase
+  grouping mgmt-component {
+    uses rwvcstypes:rwvcs-variable-list;
+
+    leaf component-name {
+      description "String which will evaluate to the first component to be
+        started by RWInit.  Similar to action/component-name but cannot be
+        static.";
+      type string;
+    }
+
+    leaf component-type {
+      description "String which will evaluate to the instance-id of the
+        first component to be started by rwmain.  Similar to
+        action/instance-id but cannot be static.";
+      type string;
+    }
+
+    leaf instance-id {
+      description "String which will evaluate to the instance-id of the
+        first component to be started by RWInit.  Similar to
+        action/instance-id but cannot be static.";
+      type string;
+    }
+
+    leaf parent-id {
+      description "String which will evaluate to the parent-id of the
+        component to be started by RWInit.  Similar to
+        action/instance-id but cannot be static.";
+      type string;
+    }
+
+    leaf vm_instance-id {
+      description "String which will evaluate to the vminstance-id of the
+        component to be started by RWInit.  Similar to
+        action/instance-id but cannot be static.";
+      type string;
+    }
+  }
 
   grouping init-phase {
     container init-phase {
@@ -306,41 +380,14 @@ module rw-manifest
         description "This section contains all of the manifest environment variables";
         rwpb:msg-new Environment;
 
-        uses rwvcstypes:rwvcs-variable-list;
+        uses mgmt-component;
 
-        leaf component-name {
-          description "String which will evaluate to the first component to be
-            started by RWInit.  Similar to action/component-name but cannot be
-            static.";
-          type string;
+        container active-component {
+          uses mgmt-component;
         }
 
-        leaf instance-id {
-          description "String which will evaluate to the instance-id of the
-            first component to be started by RWInit.  Similar to
-            action/instance-id but cannot be static.";
-          type string;
-        }
-
-        leaf component-type {
-          description "String which will evaluate to the instance-id of the
-            first component to be started by rwmain.  Similar to
-            action/instance-id but cannot be static.";
-          type string;
-        }
-
-        leaf parent-id {
-          description "String which will evaluate to the parent-id of the
-            component to be started by RWInit.  Similar to
-            action/instance-id but cannot be static.";
-          type string;
-        }
-
-        leaf vm_instance-id {
-          description "String which will evaluate to the vminstance-id of the
-            component to be started by RWInit.  Similar to
-            action/instance-id but cannot be static.";
-          type string;
+        container standby-component {
+          uses mgmt-component;
         }
       }
 

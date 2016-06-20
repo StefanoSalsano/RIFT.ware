@@ -38,15 +38,22 @@ install(
   COMPONENT ${PKG_LONG_NAME}
   )
 
-
-rift_py3test(rwmano_utest
-  TEST_ARGS
-  ${CMAKE_CURRENT_SOURCE_DIR}/mano_ut.py
+install(
+  PROGRAMS
+    launchpad_recovery
+  DESTINATION
+    usr/rift/systemtest/launchpad
+  COMPONENT ${PKG_LONG_NAME}
   )
+
+#rift_py3test(rwmano_utest
+#  TEST_ARGS
+#  ${CMAKE_CURRENT_SOURCE_DIR}/mano_ut.py
+#  )
 
 #rift_py3test(launchpad_recovery
 # TEST_ARGS
-# ${CMAKE_CURRENT_SOURCE_DIR}/launchpad_recovery.py
+# ${CMAKE_CURRENT_SOURCE_DIR}/launchpad_recovery
 # )
 
 rift_py3test(utest_rwmonitor
@@ -57,4 +64,9 @@ rift_py3test(utest_rwmonitor
 rift_py3test(utest_rwnsm
   TEST_ARGS
   ${CMAKE_CURRENT_SOURCE_DIR}/utest_rwnsm.py
+  )
+
+rift_py3test(tosca_ut
+  TEST_ARGS
+  ${CMAKE_CURRENT_SOURCE_DIR}/tosca_ut.py
   )

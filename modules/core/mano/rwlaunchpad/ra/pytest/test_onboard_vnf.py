@@ -4,11 +4,9 @@
 # (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
 #
 
-@file lp_test.py
-@author Austin Cormier (Austin.Cormier@riftio.com)
-@author Paul Laidler (Paul.Laidler@riftio.com)
-@date 11/03/2015
-@brief Launchpad System Test
+@file test_onboard_vnf.py
+@author Varun Prasad (varun.prasad@riftio.com)
+@brief Onboard descriptors
 """
 
 import json
@@ -33,6 +31,7 @@ gi.require_version('RwLaunchpadYang', '1.0')
 gi.require_version('RwBaseYang', '1.0')
 
 from gi.repository import (
+    RwcalYang,
     RwMcYang,
     NsdYang,
     RwNsrYang,
@@ -74,11 +73,14 @@ def nsd_proxy(request, launchpad_session):
 def rwnsr_proxy(request, launchpad_session):
     return launchpad_session.proxy(RwNsrYang)
 
-
 @pytest.fixture(scope='module')
 def base_proxy(request, launchpad_session):
     return launchpad_session.proxy(RwBaseYang)
 
+
+@pytest.fixture(scope="module")
+def endpoint():
+    return "upload"
 
 def create_nsr(nsd_id, input_param_list, cloud_account_name):
     """
@@ -230,6 +232,7 @@ def terminate_nsr(rwvnfr_proxy, rwnsr_proxy, logger):
     # assert len(nsrs.nsr) == 0
 
 
+
 @pytest.mark.setup('nsr')
 @pytest.mark.depends('launchpad')
 @pytest.mark.incremental
@@ -273,111 +276,32 @@ class TestNsrStart(object):
         actual_nsds = catalog.nsd
         assert len(actual_nsds) == 1, "There should only be a single nsd"
 
-    def test_instantiate_nsr(self, logger, nsd_proxy, rwnsr_proxy, base_proxy, cloud_account_name):
+    @pytest.mark.feature("upload-image")
+    def test_upload_images(self, descriptor_images, cloud_host, cloud_user, cloud_tenants):
 
-        def verify_input_parameters(running_config, config_param):
-            """
-            Verify the configured parameter set against the running configuration
-            """
-            for run_input_param in running_config.input_parameter:
-                if (run_input_param.xpath == config_param.xpath and
-                    run_input_param.value == config_param.value):
-                    return True
+        openstack = rift.auto.mano.OpenstackManoSetup(
+                cloud_host,
+                cloud_user,
+                [(tenant, "private") for tenant in cloud_tenants])
 
-            assert False, ("Verification of configured input parameters: { xpath:%s, value:%s} "
-                          "is unsuccessful.\nRunning configuration: %s" % (config_param.xpath,
-                                                                           config_param.value,
-                                                                           running_config.input_parameter))
+        for image_location in descriptor_images:
+            image = RwcalYang.ImageInfoItem.from_dict({
+                    'name': os.path.basename(image_location),
+                    'location': image_location,
+                    'disk_format': 'qcow2',
+                    'container_format': 'bare'})
+            openstack.create_image(image)
 
-        catalog = nsd_proxy.get_config('/nsd-catalog')
-        nsd = catalog.nsd[0]
 
-        input_parameters = []
-        descr_xpath = "/nsd:nsd-catalog/nsd:nsd[nsd:id='%s']/nsd:description" % nsd.id
-        descr_value = "New NSD Description"
-        in_param_id = str(uuid.uuid4())
+    def test_set_scaling_params(self, nsd_proxy):
+        nsds = nsd_proxy.get('/nsd-catalog')
+        nsd = nsds.nsd[0]
+        for scaling_group in nsd.scaling_group_descriptor:
+            scaling_group.max_instance_count = 2
 
-        input_param_1 = NsrYang.YangData_Nsr_NsInstanceConfig_Nsr_InputParameter(
-                                                                xpath=descr_xpath,
-                                                                value=descr_value)
+        nsd_proxy.replace_config('/nsd-catalog/nsd[id="{}"]'.format(
+            nsd.id), nsd)
 
-        input_parameters.append(input_param_1)
-
-        nsr = create_nsr(nsd.id, input_parameters, cloud_account_name)
-
-        logger.info("Instantiating the Network Service")
-        rwnsr_proxy.create_config('/ns-instance-config/nsr', nsr)
-
-        nsr_opdata = rwnsr_proxy.get('/ns-instance-opdata/nsr[ns-instance-config-ref="{}"]'.format(nsr.id))
-        assert nsr_opdata is not None
-
-        # Verify the input parameter configuration
-        running_config = rwnsr_proxy.get_config("/ns-instance-config/nsr[id='%s']" % nsr.id)
-        for input_param in input_parameters:
-            verify_input_parameters(running_config, input_param)
-
-    def test_wait_for_nsr_started(self, rwnsr_proxy):
-        nsr_opdata = rwnsr_proxy.get('/ns-instance-opdata')
-        nsrs = nsr_opdata.nsr
-
-        for nsr in nsrs:
-            xpath = "/ns-instance-opdata/nsr[ns-instance-config-ref='{}']/operational-status".format(nsr.ns_instance_config_ref)
-            rwnsr_proxy.wait_for(xpath, "running", fail_on=['failed'], timeout=240)
-
-    def test_wait_for_nsr_configured(self, rwnsr_proxy):
-        nsr_opdata = rwnsr_proxy.get('/ns-instance-opdata')
-        nsrs = nsr_opdata.nsr
-
-        for nsr in nsrs:
-            xpath = "/ns-instance-opdata/nsr[ns-instance-config-ref='{}']/config-status".format(
-                    nsr.ns_instance_config_ref)
-            rwnsr_proxy.wait_for(xpath, "configured", fail_on=['failed'], timeout=300)
-
-@pytest.mark.depends('launchpad')
-@pytest.mark.depends('nsr')
-@pytest.mark.incremental
-class TestNsrUpdate(object):
-    """A brief overview of the steps performed.
-    1. stop the currently running NSR
-    2. Update the existing descriptor files 
-    3. Start the NSR.
-    """
-
-    def test_stop_nsr(self, rwvnfr_proxy, rwnsr_proxy, logger):
-        terminate_nsr(rwvnfr_proxy, rwnsr_proxy, logger)
-
-    def test_update_descriptors(
-            self,
-            logger,
-            vnfd_proxy,
-            nsd_proxy,
-            launchpad_session,
-            scheme,
-            cert,
-            descriptors
-        ):
-
-        endpoint = "update"
-
-        for file_name in descriptors:
-            onboard_descriptor(
-                    launchpad_session.host,
-                    file_name,
-                    logger,
-                    endpoint,
-                    scheme,
-                    cert)
-
-        descriptor_vnfds, descriptor_nsd = descriptors[:-1], descriptors[-1]
-
-        catalog = vnfd_proxy.get_config('/vnfd-catalog')
-        actual_vnfds = catalog.vnfd
-        assert len(actual_vnfds) == len(descriptor_vnfds), \
-                "There should {} vnfds".format(len(descriptor_vnfds))
-
-        catalog = nsd_proxy.get_config('/nsd-catalog')
-        actual_nsds = catalog.nsd
-        assert len(actual_nsds) == 1, "There should only be a single nsd"
 
     def test_instantiate_nsr(self, logger, nsd_proxy, rwnsr_proxy, base_proxy, cloud_account_name):
 
@@ -438,6 +362,7 @@ class TestNsrUpdate(object):
             xpath = "/ns-instance-opdata/nsr[ns-instance-config-ref='{}']/config-status".format(
                     nsr.ns_instance_config_ref)
             rwnsr_proxy.wait_for(xpath, "configured", fail_on=['failed'], timeout=300)
+
 
 @pytest.mark.teardown('nsr')
 @pytest.mark.depends('launchpad')

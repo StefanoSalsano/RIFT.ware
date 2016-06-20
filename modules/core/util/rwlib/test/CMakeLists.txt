@@ -33,6 +33,7 @@ include_directories(BEFORE
 
 set (rwlib_utest_lib
   rwlib
+  unwind unwind-x86_64 unwind-ptrace unwind-coredump
   python_plugin-1.0
   rw_vx_plugin
   rwplugin-1.0

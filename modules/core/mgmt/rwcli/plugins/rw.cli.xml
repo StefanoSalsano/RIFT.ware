@@ -8,6 +8,7 @@
     <configPrintHook hook="rwcli_plugin:config_writer"/>
     <configPrintToFileHook hook="rwcli_plugin:config_writer_file"/>
     <prettyPrintXmlHook hook=".:pretty_print_xml"/>
+    <prettyPrintXmlToFileHook hook=".:pretty_print_xml_file"/>
   </defaults>
   
 </cli>

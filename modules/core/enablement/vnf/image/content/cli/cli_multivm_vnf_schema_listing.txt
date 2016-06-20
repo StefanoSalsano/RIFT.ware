@@ -1,5 +1,4 @@
 ietf-l2-topology
-ietf-netconf-acm
 ietf-network
 ietf-network-topology
 mano-base

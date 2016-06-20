@@ -32,4 +32,3 @@ def collect_siblings(xml_node):
 
         grouping[tag].append(child)
     return grouping
-

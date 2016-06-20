@@ -97,7 +97,7 @@ export default class RecordView extends React.Component {
       recordDetails = <RecordDetails isLoading={this.state.detailLoading} data={this.state.rawData} />
     }
     html = (
-      <div className="app-body">
+      <div className="app-body recordView">
       {nav}
         <div className="recordViewer">
           <i className="corner-accent top left"></i>

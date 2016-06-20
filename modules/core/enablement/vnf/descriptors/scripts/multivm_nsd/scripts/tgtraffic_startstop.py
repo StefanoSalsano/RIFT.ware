@@ -7,6 +7,8 @@ import subprocess
 import sys
 import time
 import yaml
+import requests
+from requests.auth import HTTPBasicAuth
 
 '''
 Input YAML cfg: {
@@ -25,10 +27,37 @@ Input YAML cfg: {
 class ConfigurationError(Exception):
     pass
 
+def get_trafgen_port_data(logger, tg_mgmt_ip):
+    headers={'Content-type':'application/vnd.yang.data+json',
+                'Accept':'json'}
+
+    try:
+       url = 'https://{tg_mgmt_ip}:8008/api/operational/vnf-opdata/vnf/trafgen,0/port-state'.format(tg_mgmt_ip=tg_mgmt_ip)
+       resp = requests.get(
+                       url, timeout=10, auth=HTTPBasicAuth('admin', 'admin'),
+                    headers=headers, verify=False
+                    )
+       resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+       msg = "Got HTTP error when request {}".format( str(e))
+       logger.debug(msg)
+
+    data = resp.json()
+    return data
+
+def parse_trafgen_port_data(logger, port_data):
+    port_list = []
+    for port_info in port_data["rw-vnf-base-opdata:port-state"]:
+       if port_info["info"]["virtual-fabric"] == "No":
+          port_list.append(port_info["portname"])
+
+    return port_list
+     
+
 '''
 start/stop vnf trafgen-traffic vnf-name trafgen vnf-instance 0
 '''
-def startstop_trafgen(logger, run_dir, mgmt_ip, trigger):
+def startstop_trafgen(logger, run_dir, mgmt_ip, port_list, trigger, pkt_size, tx_rate):
     sh_file = "{}/trafgen_startstop-traffic-{}.sh".format(run_dir, time.strftime("%Y%m%d%H%M%S"))
     logger.debug("Creating script file %s", sh_file)
     with open(sh_file, "w") as f:
@@ -39,6 +68,16 @@ set success 0
 spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $login@{trafgen_mgmt_ip}
 set spid $spawn_id
 set timeout 60
+
+if {{[llength $argv] <= 2}} {{
+    send_user "Usage: trafgen_startstop.exp <trigger> <port-list> \n"
+    send_user "      Trigger values: start/stop \n"
+    exit 1
+}}
+  
+foreach {{trigger}} $argv break
+set portnames [lrange $argv 1 end]
+
 
 expect -i $spid \
                   "*?assword:"      {{
@@ -59,13 +98,50 @@ expect -i $spid \
 send "riftcli\r"
 expect "rift# "
 sleep 2
-send "{trigger} vnf trafgen-traffic vnf-name trafgen vnf-instance 0\r"
+
+if {{ $trigger eq "start" }} {{
+
+   foreach portname $portnames {{
+      # your existing code goes here
+      send "conf\r"
+      expect "# "
+      send "vnf-config vnf trafgen 0\r"
+      expect "# "
+      send "port $portname\r"
+      expect "# "
+      send "trafgen\r"
+      expect "# "
+      send "range-template\r"
+      expect "# "
+      send "packet-size start {pkt_size} minimum {pkt_size} maximum {pkt_size} increment 1\r"
+      expect "# "
+      send "exit\r"
+      expect "# "
+      send "transmit-params\r"
+      expect "# "
+      send "tx-rate {tx_rate}\r"
+      expect "# "
+      send "end\r"
+      expect "# "
+   }}
+}}
+
+if {{ $trigger eq "start" }} {{
+  send "start vnf trafgen-traffic vnf-name trafgen vnf-instance 0\r"
+}} else {{
+  send "stop vnf trafgen-traffic vnf-name trafgen vnf-instance 0\r"
+}}
+
 expect "rift# "
 exp_close -i $spid
-'''.format(trafgen_mgmt_ip=mgmt_ip, trigger=trigger))
+'''.format(trafgen_mgmt_ip=mgmt_ip, pkt_size=pkt_size, tx_rate=tx_rate))
 
     os.chmod(sh_file, stat.S_IRWXU)
-    rc = subprocess.call(sh_file, shell=True)
+    cmd = "{sh_file} {arg1} ".format(sh_file=sh_file, arg1=trigger)
+    for port in port_list:
+      cmd += " " + port
+    logger.debug("Executing shell cmd : %s", cmd)
+    rc = subprocess.call(cmd, shell=True)
     if rc != 0:
         raise ConfigurationError("Trafgen NS start/stop failed: {}".format(rc))
 
@@ -129,14 +205,23 @@ def main(argv=sys.argv[1:]):
                if item['name'] == input_param:
                   return item['value']
 
-            raise ValueError("Could not find input param  %s", input_param)
-
         tg_vnfr = find_vnfr(yaml_cfg['vnfr_data_map'], 1)
         tg_mgmt_ip = find_mgmt_ip(tg_vnfr)
         # parameter': [{'name': 'Trigger', 'value': 'start'}]
         trigger = find_param_value(yaml_cfg['rpc_ip']['parameter'], 'Trigger')
+        pkt_size = find_param_value(yaml_cfg['rpc_ip']['parameter'], 'Packet size')
+        tx_rate = find_param_value(yaml_cfg['rpc_ip']['parameter'], 'Tx rate')
 
-        startstop_trafgen(logger, run_dir, tg_mgmt_ip, trigger)
+        if pkt_size is None:
+           pkt_size = 512
+        if tx_rate is None:
+           tx_rate = 5
+
+        port_data = get_trafgen_port_data(logger,tg_mgmt_ip)
+        logger.debug("Received port data is %s", port_data)
+        port_list = parse_trafgen_port_data(logger, port_data)
+        logger.debug("Generated port list is %s", port_list)
+        startstop_trafgen(logger, run_dir, tg_mgmt_ip, port_list, trigger, pkt_size, tx_rate)
 
     except Exception as e:
         logger.exception(e)

@@ -32,6 +32,11 @@ class RecoveryType(Enum):
    IGNORE = 3
    CUSTOM = 4
 
+class DataStore(Enum):
+   NONE = 0
+   NOSTORE = 1
+   REDIS = 2
+   BDB = 3
 
 class Collection(object):
     """
@@ -52,7 +57,8 @@ class Collection(object):
             subcomponents=None,
             config_ready=True,
             recovery_action=RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=DataStore.NOSTORE.value,
             ):
         """Create a Collection object
 
@@ -71,6 +77,7 @@ class Collection(object):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start         - Flag denotes whether to initially start this collection
+            data_storetype - Type of data-store used for HA
         """
         self.uid = uid
         self.type = type
@@ -80,6 +87,7 @@ class Collection(object):
         self.config_ready = config_ready
         self.recovery_action = recovery_action
         self.start = start
+        self.data_storetype = data_storetype
 
     @property
     def subcomponents(self):
@@ -134,7 +142,8 @@ class Collection(object):
             "subcomponents": self.subcomponents,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
-            "start": self.start
+            "start": self.start,
+            "data_storetype":self.data_storetype,
             })
 
 
@@ -145,7 +154,8 @@ class Colony(Collection):
     """
 
     def __init__(self, clusters=None, uid=None, name='rw.colony', config_ready=True,
-                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True
+                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True,
+                 data_storetype=DataStore.NOSTORE.value,
                 ):
         """Creates a Colony object.
 
@@ -156,6 +166,7 @@ class Colony(Collection):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this collection
+            data_storetype - Type of data-store used for HA
         """
         super(Colony, self).__init__(
                 uid=uid,
@@ -164,7 +175,8 @@ class Colony(Collection):
                 subcomponents=clusters,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
-                start=start
+                start=start,
+                data_storetype=data_storetype,
                 )
 
     @property
@@ -190,7 +202,8 @@ class Colony(Collection):
             "uid": self.uid,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
-            "start": self.start
+            "start": self.start,
+            "data_storetype": self.data_storetype,
             })
 
 
@@ -201,7 +214,8 @@ class Cluster(Collection):
     """
 
     def __init__(self, virtual_machines=None, uid=None, name='rw.cluster', config_ready=True,
-                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True
+                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True,
+                 data_storetype=DataStore.NOSTORE.value,
                  ):
         """Creates a Cluster object.
 
@@ -220,7 +234,8 @@ class Cluster(Collection):
                 subcomponents=virtual_machines,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
-                start=start
+                start=start,
+                data_storetype=data_storetype,
                 )
 
     @property
@@ -246,7 +261,8 @@ class Cluster(Collection):
             "uid": self.uid,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
-            "start": self.start
+            "start": self.start,
+            "data_storetype": self.data_storetype,
             })
 
 
@@ -260,12 +276,14 @@ class VirtualMachine(object):
             tasklets=None,
             procs=None,
             restart_procs=None,
+            standby_procs=None,
             leader=False,
             valgrind=None,
             valgrind_procs=None,
             config_ready=True,
             recovery_action=RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=DataStore.NOSTORE.value,
             ):
         """Creates a VirtualMachine object.
 
@@ -283,6 +301,7 @@ class VirtualMachine(object):
             config_ready   - config readiness check enable
             recovery_action - recovery action mode
             start          - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
         """
         self.subcomponents = []
         self.leader = leader
@@ -293,6 +312,7 @@ class VirtualMachine(object):
         self.config_ready = config_ready
         self.recovery_action = recovery_action
         self.start =  start
+        self.data_storetype = data_storetype
 
         if procs is not None:
             for proc in procs:
@@ -302,6 +322,15 @@ class VirtualMachine(object):
             for proc in restart_procs:
                 self.add_proc(proc,
                               recovery_action=RecoveryType.RESTART.value,
+                              data_storetype=proc.data_storetype,
+                             )
+
+        if standby_procs is not None:
+            for proc in standby_procs:
+                self.add_proc(proc,
+                              recovery_action=RecoveryType.RESTART.value,
+                              data_storetype=proc.data_storetype,
+                              mode_active=False,
                              )
 
         if valgrind_procs is not None:
@@ -310,7 +339,7 @@ class VirtualMachine(object):
 
         if tasklets is not None:
             for tasklet in tasklets:
-                self.add_tasklet(tasklet)
+                self.add_tasklet(tasklet, mode_active=tasklet.mode_active)
 
     @property
     def tasklets(self):
@@ -328,7 +357,9 @@ class VirtualMachine(object):
         return [c for c in self.subcomponents if isinstance(c, NativeProcess)]
 
     def add_proc(self, proc, valgrind=False,
-                 recovery_action=RecoveryType.FAILCRITICAL.value
+                 recovery_action=RecoveryType.FAILCRITICAL.value,
+                 data_storetype=DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Add a proc to the list of procs
 
@@ -340,18 +371,29 @@ class VirtualMachine(object):
 
         """
         proc.config_ready = proc.config_ready and self.start
+
         if isinstance(proc, Tasklet):
+            proc.mode_active=mode_active
             self.subcomponents.append(Proc(tasklets=[proc], valgrind=valgrind,
                                       recovery_action=recovery_action,
+                                      data_storetype=data_storetype,
                                      ))
         elif isinstance(proc, (Proc, NativeProcess)):
             if valgrind:
                 proc.valgrind = valgrind
+            proc.recovery_action = recovery_action
+            proc.data_storetype = data_storetype
+            if isinstance(proc, NativeProcess):
+                proc.mode_active = mode_active
             self.subcomponents.append(proc)
         else:
             raise ValueError('Unrecognized proc object passed to VirtualMachine')
 
-    def add_tasklet(self, tasklet):
+    def add_tasklet(self, tasklet,
+                    recovery_action=RecoveryType.FAILCRITICAL.value,
+                    data_storetype=DataStore.NOSTORE.value,
+                    mode_active=True,
+                   ):
         """Add a tasklet directly to the virtual machine.
 
         The tasklet is added directly to the virtual machine, i.e. it is not
@@ -362,6 +404,9 @@ class VirtualMachine(object):
 
         """
         tasklet.config_ready = tasklet.config_ready and self.start
+        tasklet.recovery_action = recovery_action
+        tasklet.data_storetype = data_storetype
+        tasklet.mode_active = mode_active
         self.subcomponents.append(tasklet)
 
     def __repr__(self):
@@ -376,7 +421,8 @@ class VirtualMachine(object):
             "ip": self.ip,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
-            "start": self.start
+            "start": self.start,
+            "data_storetype": self.data_storetype,
             })
 
 
@@ -384,7 +430,9 @@ class Tasklet(object):
     """Represents a tasklet."""
 
     def __init__(self, name='rw.tasklet', uid=None, config_ready=True,
-                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True
+                 recovery_action=RecoveryType.FAILCRITICAL.value, start=True,
+                 data_storetype=DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a Tasklet object.
 
@@ -394,12 +442,16 @@ class Tasklet(object):
             config_ready     - config readiness check enable
             recovery_action  - recovery action mode
             start            - Flag denotes whether to initially start this component
+            data_storetype   - Type of data-store used for HA
+            mode_active      - active mode setting
         """
         self.name = name
         self.uid = uid
         self.config_ready = config_ready
         self.recovery_action = recovery_action
         self.start = start
+        self.data_storetype = data_storetype
+        self.mode_active = mode_active
 
     def __repr__(self):
         """Returns a representation of the object."""
@@ -411,7 +463,9 @@ class Tasklet(object):
             "uid": self.uid,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
-            "start": self.start
+            "start": self.start,
+            "data_storetype":self.data_storetype,
+            "mode_active":self.mode_active,
             })
 
     # Each tasklet represents a plugin and has a name associated with the
@@ -436,7 +490,9 @@ class NativeProcess(object):
             interactive=False,
             config_ready=True,
             recovery_action=RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=DataStore.NOSTORE.value,
+            mode_active=True,
             ):
         """Creates a NativeProcess object.
 
@@ -451,6 +507,8 @@ class NativeProcess(object):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active - active mode setting
         """
         self.uid = uid
         self.name = name
@@ -462,6 +520,8 @@ class NativeProcess(object):
         self.config_ready = config_ready
         self.recovery_action = recovery_action
         self.start = start
+        self.data_storetype = data_storetype
+        self.mode_active = mode_active
 
     def __repr__(self):
         """Returns a representation of the object."""
@@ -475,7 +535,9 @@ class NativeProcess(object):
             "interactive": self.interactive,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
-            "start": self.start
+            "start": self.start,
+            "data_storetype": self.data_storetype,
+            "mode_active": self.mode_active,
             })
 
     @property
@@ -506,7 +568,8 @@ class Proc(object):
             valgrind=None,
             config_ready=True,
             recovery_action=RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=DataStore.NOSTORE.value,
             ):
         """Creates a Tasklet object.
 
@@ -518,7 +581,7 @@ class Proc(object):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
-
+            data_storetype - Type of data-store used for HA
         """
         self.uid = uid
         self.name = name
@@ -528,6 +591,7 @@ class Proc(object):
         self.config_ready = config_ready
         self.recovery_action = recovery_action
         self.start = start
+        self.data_storetype = data_storetype
 
     @property
     def tasklets(self):
@@ -555,7 +619,8 @@ class Proc(object):
             "uid": self.uid,
             "config_ready": self.config_ready,
             "recovery_action": self.recovery_action,
-            "start": self.start
+            "start": self.start,
+            "data_storetype": self.data_storetype,
             })
 
 
@@ -576,7 +641,9 @@ class SystemInfo(object):
             proc_bootstrap=None,
             northbound_listing="rwbase_schema_listing.txt",
             netconf_trace=None,
+            mgmt_ip_list=[],
             agent_mode=RwmgmtAgentMode.AUTOMODE,
+            persist_dir_name="persist.riftware",
             ):
         """Creates a SystemInfo object.
 
@@ -599,6 +666,8 @@ class SystemInfo(object):
             agent-mode         - Management Agent mode; RwmgmtAgentMode.CONFD or RwmgmtAgentMode.RWXML
             netconf_trace      - Knob to enable/disable netconf trace generation.
                                   Valid values - ENABLE / DISABLE / AUTO
+            mgmt_ip_list       - list of management ip addresses
+            persist_dir_name   - The configuration persistence directory name.
 
         """
         assert agent_mode in [RwmgmtAgentMode.CONFD, RwmgmtAgentMode.RWXML, RwmgmtAgentMode.AUTOMODE]
@@ -617,6 +686,8 @@ class SystemInfo(object):
         self.mock_cli = False
         self.agent_mode = agent_mode
         self.netconf_trace = netconf_trace
+        self.mgmt_ip_list = mgmt_ip_list
+        self.persist_dir_name = persist_dir_name
 
         def add_to_subcomponents(components):
             for component in components:

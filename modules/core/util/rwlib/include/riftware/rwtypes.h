@@ -30,7 +30,7 @@ __BEGIN_DECLS
 // DEFINITION OF rw_ip_addr_t
 typedef uint8_t rw_ip_version_t;
 
-
+#define RW_IP_VERSION(_addr_) (_addr_)->ip_v
 #define RW_IS_ADDR_IPV4(_addr_) (((_addr_)->ip_v == RW_IPV4)? TRUE:FALSE)
 #define RW_IS_ADDR_IPV6(_addr_) (((_addr_)->ip_v == RW_IPV6)? TRUE:FALSE)
 #define RW_IP_ADDR_FAMILY(addr_p)  ((addr_p)->ip_v)

@@ -48,6 +48,11 @@ class ToscaCompute(ManoResource):
         self._image_cksum = None
         self._vnf = None
         self._yang = None
+        self._id = self.name
+
+    @property
+    def image(self):
+        return self._image
 
     @property
     def vnf(self):
@@ -141,6 +146,8 @@ class ToscaCompute(ManoResource):
                             raise ValidationError(message=err_msg)
                     elif name == 'file':
                         details['file'] = value
+                    elif name == 'image_checksum':
+                        details['image_checksum'] = value
                     else:
                         self.log.warn(_("VDU {0}, unsuported attribute {1}").
                                       format(self.name, name))
@@ -175,6 +182,7 @@ class ToscaCompute(ManoResource):
 
     def update_image_checksum(self, in_file):
         # Create image checksum
+        # in_file is the TOSCA yaml file location
         if self._image is None:
             return
         self.log.debug("Update image: {}".format(in_file))
@@ -190,7 +198,13 @@ class ToscaCompute(ManoResource):
                 self.log.debug(_("Image path: {0}").
                                format(img_path))
                 if os.path.exists(img_path):
-                    self._image_cksum = ChecksumUtils.get_md5(img_path, log=self.log)
+                    # TODO (pjoseph): To be fixed when we can retrieve
+                    # the VNF image in Launchpad.
+                    # Check if the file is not size 0
+                    # else it is a dummy file and to be ignored
+                    if os.path.getsize(img_path) != 0:
+                        self._image_cksum = ChecksumUtils.get_md5(img_path,
+                                                                  log=self.log)
 
     def get_mano_attribute(self, attribute, args):
         attr = {}

@@ -121,6 +121,8 @@ typedef RWPB_T_MSG(RwVcs_input_Vsnap)     vcs_rpc_snap_input;
 #define protobuf_free_stack(x)  protobuf_c_message_free_unpacked_usebody(NULL, &(x).base)
 
 typedef RwvcsTypes__YangEnum__RecoveryType__E vcs_recovery_type;
+typedef RwvcsTypes__YangEnum__DataStore__E data_store_type;
+typedef RwvcsTypes__YangEnum__VmState__E vcs_vm_state;
 #define RWVCS_RWZK_TIMEOUT_S 90
 
 __END_DECLS

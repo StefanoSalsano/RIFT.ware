@@ -11,7 +11,7 @@
 
 def pytest_addoption(parser):
     # Openstack related options
-    parser.addoption("--os-host", action="store", default="10.66.4.15")
+    parser.addoption("--os-host", action="store", default="10.66.4.102")
     parser.addoption("--os-user", action="store", default="pluto")
     parser.addoption("--os-password", action="store", default="mypasswd")
     parser.addoption("--os-tenant", action="store", default="demo")

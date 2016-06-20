@@ -24,7 +24,9 @@ class Fastpath(core.Tasklet):
             lcore_workers=None,
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=core.DataStore.NOSTORE.value,
+            mode_active=True,
             ):
         """Creates a Fastpath object.
 
@@ -39,10 +41,14 @@ class Fastpath(core.Tasklet):
             config_ready   - config readiness check enable
             recovery_action - recovery action mode
             start          - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         name = 'RW.Fpath' if name is None else name
         super(Fastpath, self).__init__(name=name, uid=uid, config_ready=config_ready,
-                                       recovery_action=recovery_action, start=start
+                                       recovery_action=recovery_action, start=start,
+                                       data_storetype=data_storetype,
+                                       mode_active=mode_active,
                                        )
 
         self.cmdargs = CommandLineArguments()

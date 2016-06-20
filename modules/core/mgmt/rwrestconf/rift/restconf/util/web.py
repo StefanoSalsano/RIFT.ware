@@ -17,6 +17,10 @@ from .util import (
     NetconfOperation,
 )
 
+from .schema import (
+    find_target_node,
+)
+
 ERROR_MAP = {
     Result.Data_Exists : 409,
     Result.Operation_Failed : 405,
@@ -169,4 +173,29 @@ def map_request_to_netconf_operation(request):
         return NetconfOperation.REPLACE
     else:
         raise ValueError("unknown request type %s" % request.method)
+    
+def get_json_schema(schema_root, url):
+    actual_url = urllib.parse.urlsplit(url)[2];
+    url_parts = actual_url.split('/');
+    if url_parts[-1] == '':
+        del(url_parts[-1])
+
+    if len(url_parts) == 3:
+        # Convert the entire schema
+        target_node = schema_root.get_first_child()
+        resp_node = []
+        while target_node is not None:
+            resp = target_node.to_json_schema(True)
+            if len(resp) > 0:
+              resp_node.append(resp[1:len(resp)-1])
+            target_node = target_node.get_next_sibling()
+
+        json_resp = ','.join(resp_node)
+        return "{" + json_resp + "}"
+    else:
+        target_node = find_target_node(schema_root, url_parts[3:])
+        if target_node is None:
+            return ValueError("Conversion failed")
+
+        return target_node.to_json_schema(True)
     

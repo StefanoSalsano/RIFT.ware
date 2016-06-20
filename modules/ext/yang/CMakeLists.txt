@@ -40,7 +40,6 @@ set(subdirs
   pyang
   protobuf-c
   yuma
-  libnetconf
   ncclient
   zsh
   )

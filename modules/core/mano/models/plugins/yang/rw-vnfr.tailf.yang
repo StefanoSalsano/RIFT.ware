@@ -15,10 +15,6 @@ module rw-vnfr-annotation
     prefix tailf;
   }
 
-  import rw-base {
-    prefix rwbase;
-  }
-
   import rw-vnfr {
     prefix rw-vnfr;
   }
@@ -28,10 +24,10 @@ module rw-vnfr-annotation
   }
 
   tailf:annotate "/vnfr:vnfr-catalog/rw-vnfr:vnfd-ref-count" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/vnfr:vnfr-catalog/vnfr:vnfr/rw-vnfr:operational-events" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

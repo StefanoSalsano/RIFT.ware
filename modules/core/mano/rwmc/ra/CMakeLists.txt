@@ -41,6 +41,7 @@ install(
     racfg/mission_control_systest_cloudsim_negative.racfg
     racfg/mission_control_systest_cloudsim_negative_xml.racfg
     racfg/mission_control_systest_openstack_negative.racfg
+    racfg/multi_tenant_systest_openstack.racfg
   DESTINATION
     usr/rift/systemtest/mission_control
     COMPONENT ${PKG_LONG_NAME})

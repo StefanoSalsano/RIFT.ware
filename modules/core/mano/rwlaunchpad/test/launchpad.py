@@ -12,6 +12,7 @@ import socket
 import sys
 import subprocess
 import shlex
+import shutil
 import netifaces
 
 from rift.rwlib.util import certs
@@ -38,6 +39,7 @@ class NsmTasklet(rift.vcs.core.Tasklet):
     def __init__(self, name='network-services-manager', uid=None,
                  config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 data_storetype=core.DataStore.NOSTORE.value,
                  ):
         """
         Creates a NsmTasklet object.
@@ -49,6 +51,7 @@ class NsmTasklet(rift.vcs.core.Tasklet):
         super(NsmTasklet, self).__init__(name=name, uid=uid,
                                          config_ready=config_ready,
                                          recovery_action=recovery_action,
+                                         data_storetype=data_storetype,
                                         )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwnsmtasklet')
@@ -63,6 +66,7 @@ class VnsTasklet(rift.vcs.core.Tasklet):
     def __init__(self, name='virtual-network-service', uid=None,
                  config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 data_storetype=core.DataStore.NOSTORE.value,
                  ):
         """
         Creates a VnsTasklet object.
@@ -74,6 +78,7 @@ class VnsTasklet(rift.vcs.core.Tasklet):
         super(VnsTasklet, self).__init__(name=name, uid=uid,
                                          config_ready=config_ready,
                                          recovery_action=recovery_action,
+                                         data_storetype=data_storetype,
                                         )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwvnstasklet')
@@ -88,6 +93,7 @@ class VnfmTasklet(rift.vcs.core.Tasklet):
     def __init__(self, name='virtual-network-function-manager', uid=None,
                  config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 data_storetype=core.DataStore.NOSTORE.value,
                  ):
         """
         Creates a VnfmTasklet object.
@@ -99,6 +105,7 @@ class VnfmTasklet(rift.vcs.core.Tasklet):
         super(VnfmTasklet, self).__init__(name=name, uid=uid,
                                           config_ready=config_ready,
                                           recovery_action=recovery_action,
+                                          data_storetype=data_storetype,
                                          )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwvnfmtasklet')
@@ -113,6 +120,7 @@ class ResMgrTasklet(rift.vcs.core.Tasklet):
     def __init__(self, name='Resource-Manager', uid=None,
                  config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 data_storetype=core.DataStore.NOSTORE.value,
                  ):
         """
         Creates a ResMgrTasklet object.
@@ -124,6 +132,7 @@ class ResMgrTasklet(rift.vcs.core.Tasklet):
         super(ResMgrTasklet, self).__init__(name=name, uid=uid,
                                             config_ready=config_ready,
                                             recovery_action=recovery_action,
+                                            data_storetype=data_storetype,
                                            )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwresmgrtasklet')
@@ -138,6 +147,7 @@ class MonitorTasklet(rift.vcs.core.Tasklet):
     def __init__(self, name='nfvi-metrics-monitor', uid=None,
                  config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 data_storetype=core.DataStore.NOSTORE.value,
                  ):
         """
         Creates a MonitorTasklet object.
@@ -150,6 +160,7 @@ class MonitorTasklet(rift.vcs.core.Tasklet):
         super(MonitorTasklet, self).__init__(name=name, uid=uid,
                                              config_ready=config_ready,
                                              recovery_action=recovery_action,
+                                             data_storetype=data_storetype,
                                             )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwmonitor')
@@ -176,18 +187,19 @@ class UIServer(rift.vcs.NativeProcess):
     def __init__(self, name="RW.MC.UI",
                  config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 data_storetype=core.DataStore.NOSTORE.value,
                  ):
         super(UIServer, self).__init__(
                 name=name,
                 exe="./usr/share/rw.ui/skyquake/scripts/launch_ui.sh",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
+                data_storetype=data_storetype,
                 )
 
     @property
     def args(self):
         return get_ui_ssl_args()
-
 
 class ConfigManagerTasklet(rift.vcs.core.Tasklet):
     """
@@ -197,6 +209,7 @@ class ConfigManagerTasklet(rift.vcs.core.Tasklet):
     def __init__(self, name='Configuration-Manager', uid=None,
                  config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
+                 data_storetype=core.DataStore.NOSTORE.value,
                  ):
         """
         Creates a ConfigManagerTasklet object.
@@ -208,6 +221,7 @@ class ConfigManagerTasklet(rift.vcs.core.Tasklet):
         super(ConfigManagerTasklet, self).__init__(name=name, uid=uid,
                                                    config_ready=config_ready,
                                                    recovery_action=recovery_action,
+                                                   data_storetype=data_storetype,
                                                   )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwconmantasklet')
@@ -226,15 +240,15 @@ class Demo(rift.vcs.demo.Demo):
             rift.vcs.RestconfTasklet(),
             rift.vcs.RiftCli(),
             rift.vcs.uAgentTasklet(),
-            NsmTasklet(),
-            VnsTasklet(),
-            MonitorTasklet(),
             rift.vcs.Launchpad(),
-            ResMgrTasklet(),
             ]
 
         restart_procs = [
-            VnfmTasklet(recovery_action=core.RecoveryType.RESTART.value,),
+            VnfmTasklet(recovery_action=core.RecoveryType.RESTART.value, data_storetype=core.DataStore.BDB.value),
+            VnsTasklet(recovery_action=core.RecoveryType.RESTART.value, data_storetype=core.DataStore.BDB.value),
+            MonitorTasklet(recovery_action=core.RecoveryType.RESTART.value, data_storetype=core.DataStore.BDB.value),
+            NsmTasklet(recovery_action=core.RecoveryType.RESTART.value, data_storetype=core.DataStore.BDB.value),
+            ResMgrTasklet(recovery_action=core.RecoveryType.RESTART.value, data_storetype=core.DataStore.BDB.value),
             ]
         super(Demo, self).__init__(
             # Construct the system. This system consists of 1 cluster in 1
@@ -288,6 +302,10 @@ def main(argv=sys.argv[1:]):
     for f in os.listdir(os.environ["INSTALLDIR"]):
         if f.endswith(".db"):
             os.remove(os.path.join(os.environ["INSTALLDIR"], f))
+    try:
+        shutil.rmtree(os.path.join(os.environ["INSTALLDIR"], "zk/server-1"))
+    except:
+        pass
 
     #load demo info and create Demo object
     demo = Demo()

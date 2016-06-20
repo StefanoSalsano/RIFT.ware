@@ -52,6 +52,11 @@ class FileProOpsTestsFixture : public ::testing::Test
                          + RW_INSTALL_MANIFEST_PATH
                          + "/"
                          + "test_northbound_listing.txt";
+    test_wide_listing_path_ = rift_install_
+                         + "/"
+                         + RW_INSTALL_MANIFEST_PATH
+                         + "/"
+                         + "test_northbound_widening_listing.txt";
   }
 
   void SetUp()
@@ -60,7 +65,7 @@ class FileProOpsTestsFixture : public ::testing::Test
       TearDown(); // Just for first test case.
     }
 
-    std::string cmd = "rwyangutil --create-schema-dir test_northbound_listing.txt";
+    std::string cmd = "rwyangutil --remove-schema-dir --create-schema-dir test_northbound_listing.txt";
 #ifdef CONFD_ENABLED
     cmd += " confd_nb_schema_list.txt";
 #endif
@@ -93,6 +98,7 @@ class FileProOpsTestsFixture : public ::testing::Test
   std::string schema_ver_dir_;
   std::string image_spath_;
   std::string test_listing_path_;
+  std::string test_wide_listing_path_;
 };
 
 unsigned get_file_type_count(const std::string& path, const std::string& fext)
@@ -366,7 +372,7 @@ TEST_F(FileProOpsTestsFixture, RemovePersistConfdWSTest)
   {
     if (!fs::is_directory(entry->path())) continue;
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(RW_SCHEMA_CONFD_PERSIST_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_MGMT_PERSIST_PREFIX);
 
     if (pos != std::string::npos) {
       present = true;
@@ -375,16 +381,16 @@ TEST_F(FileProOpsTestsFixture, RemovePersistConfdWSTest)
   }
 
   if (!present) {
-    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_CONFD_PERSIST_PREFIX) + "tmp1";
+    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_MGMT_PERSIST_PREFIX) + "tmp1";
     ASSERT_TRUE(fs::create_directory(dir));
   }
-  auto ret = std::system("rwyangutil --rm-persist-confd-ws");
+  auto ret = std::system("rwyangutil --rm-persist-mgmt-ws");
   EXPECT_EQ (ret, 0);
 
   std::for_each(fs::directory_iterator(rift_install_),
                 fs::directory_iterator(), [](const fs::directory_entry& et) {
                   auto name = et.path().filename().string();
-                  EXPECT_EQ (name.find(RW_SCHEMA_CONFD_PERSIST_PREFIX), std::string::npos);
+                  EXPECT_EQ (name.find(RW_SCHEMA_MGMT_PERSIST_PREFIX), std::string::npos);
                 });
 }
 
@@ -396,7 +402,7 @@ TEST_F(FileProOpsTestsFixture, RemoveUniqueConfdWSTest)
   {
     if (!fs::is_directory(entry->path())) continue;
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(RW_SCHEMA_CONFD_TEST_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_MGMT_TEST_PREFIX);
 
     if (pos != std::string::npos) {
       present = true;
@@ -405,26 +411,26 @@ TEST_F(FileProOpsTestsFixture, RemoveUniqueConfdWSTest)
   }
 
   if (!present) {
-    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_CONFD_TEST_PREFIX) + "tmp2";
+    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_MGMT_TEST_PREFIX) + "tmp2";
     ASSERT_TRUE(fs::create_directory(dir));
   }
 
-  auto ret = std::system("rwyangutil --rm-unique-confd-ws");
+  auto ret = std::system("rwyangutil --rm-unique-mgmt-ws");
   EXPECT_EQ (ret, 0);
 
   std::for_each(fs::directory_iterator(rift_install_),
                 fs::directory_iterator(), [](const fs::directory_entry& et) {
                   auto name = et.path().filename().string();
-                  EXPECT_EQ (name.find(RW_SCHEMA_CONFD_TEST_PREFIX), std::string::npos);
+                  EXPECT_EQ (name.find(RW_SCHEMA_MGMT_TEST_PREFIX), std::string::npos);
                 });
 }
 
 TEST_F(FileProOpsTestsFixture, ArchiveConfdPersistWS)
 {
-  auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_CONFD_PERSIST_PREFIX) + "tm35";
+  auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_MGMT_PERSIST_PREFIX) + "tm35";
   ASSERT_TRUE(fs::create_directory(dir));
 
-  auto ret = std::system("rwyangutil --archive-confd-persist-ws");
+  auto ret = std::system("rwyangutil --archive-mgmt-persist-ws");
   ASSERT_EQ(ret, 0);
 
   bool found = false;
@@ -435,7 +441,7 @@ TEST_F(FileProOpsTestsFixture, ArchiveConfdPersistWS)
     if (!fs::is_directory(entry->path())) continue;
 
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(RW_SCHEMA_CONFD_ARCHIVE_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_MGMT_ARCHIVE_PREFIX);
 
     if (pos != 0) continue;
     found = true;
@@ -659,31 +665,11 @@ TEST_F(FileProOpsTestsFixture, SchemaOnboardReload)
   ret = std::system(sb_so_b.c_str());
   ASSERT_EQ(ret, 0);
   ret = std::system(nb_so.c_str());
-  ASSERT_EQ(ret, 0);
+  ASSERT_EQ(ret, 0) << "executing " << nb_so << " failed" << std::endl;
 
   // do the update again
   ret = std::system("rwyangutil --version-dir-create");
   ASSERT_EQ(ret, 0);
-}
-
-TEST_F(FileProOpsTestsFixture, TestRebuildDirectoryAfterListingChange)
-{
-
-  // get initial timestamp
-  std::time_t const initial_directory_age = fs::last_write_time(schema_path_);
-
-  // touch listing
-  sleep(1); // wait a second to make sure the listing file is at least a second newer
-  fs::last_write_time(test_listing_path_, std::time(nullptr));
-
-  // try to rebuild
-  auto ret2 = std::system("rwyangutil --create-schema-dir test_northbound_listing.txt");
-  ASSERT_EQ (ret2, 0);
-
-  // get final timestamp
-  std::time_t const final_directory_age = fs::last_write_time(schema_path_);
-  EXPECT_LT (initial_directory_age, final_directory_age);
-
 }
 
 TEST(YangUtils, LoadSchemaValidation)
@@ -720,7 +706,7 @@ TEST_F(FileProOpsTestsFixture, RemovePersistXMLWSTest)
   {
     if (!fs::is_directory(entry->path())) continue;
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(RW_SCHEMA_XML_PERSIST_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_MGMT_PERSIST_PREFIX);
 
     if (pos != std::string::npos) {
       present = true;
@@ -729,16 +715,16 @@ TEST_F(FileProOpsTestsFixture, RemovePersistXMLWSTest)
   }
 
   if (!present) {
-    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_XML_PERSIST_PREFIX) + "tmp4";
+    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_MGMT_PERSIST_PREFIX) + "tmp4";
     ASSERT_TRUE(fs::create_directory(dir));
   }
-  auto ret = std::system("rwyangutil --rm-persist-xml-ws");
+  auto ret = std::system("rwyangutil --rm-persist-mgmt-ws");
   EXPECT_EQ (ret, 0);
 
   std::for_each(fs::directory_iterator(rift_install_),
                 fs::directory_iterator(), [](const fs::directory_entry& et) {
                   auto name = et.path().filename().string();
-                  EXPECT_EQ (name.find(RW_SCHEMA_XML_PERSIST_PREFIX), std::string::npos);
+                  EXPECT_EQ (name.find(RW_SCHEMA_MGMT_PERSIST_PREFIX), std::string::npos);
                 });
 }
 
@@ -750,7 +736,7 @@ TEST_F(FileProOpsTestsFixture, RemoveUniqueXMLWSTest)
   {
     if (!fs::is_directory(entry->path())) continue;
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(RW_SCHEMA_XML_TEST_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_MGMT_TEST_PREFIX);
 
     if (pos != std::string::npos) {
       present = true;
@@ -759,26 +745,26 @@ TEST_F(FileProOpsTestsFixture, RemoveUniqueXMLWSTest)
   }
 
   if (!present) {
-    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_XML_TEST_PREFIX) + "tmp5";
+    auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_MGMT_TEST_PREFIX) + "tmp5";
     ASSERT_TRUE(fs::create_directory(dir));
   }
 
-  auto ret = std::system("rwyangutil --rm-unique-xml-ws");
+  auto ret = std::system("rwyangutil --rm-unique-mgmt-ws");
   EXPECT_EQ (ret, 0);
 
   std::for_each(fs::directory_iterator(rift_install_),
                 fs::directory_iterator(), [](const fs::directory_entry& et) {
                   auto name = et.path().filename().string();
-                  EXPECT_EQ (name.find(RW_SCHEMA_XML_TEST_PREFIX), std::string::npos);
+                  EXPECT_EQ (name.find(RW_SCHEMA_MGMT_TEST_PREFIX), std::string::npos);
                 });
 }
 
 TEST_F(FileProOpsTestsFixture, ArchiveXMLPersistWS)
 {
-  auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_XML_PERSIST_PREFIX) + "tmp6";
+  auto dir = rift_install_ + "/" + std::string(RW_SCHEMA_MGMT_PERSIST_PREFIX) + "tmp6";
   ASSERT_TRUE(fs::create_directory(dir));
 
-  auto ret = std::system("rwyangutil --archive-xml-persist-ws");
+  auto ret = std::system("rwyangutil --archive-mgmt-persist-ws");
   ASSERT_EQ(ret, 0);
 
   bool found = false;
@@ -789,7 +775,7 @@ TEST_F(FileProOpsTestsFixture, ArchiveXMLPersistWS)
     if (!fs::is_directory(entry->path())) continue;
 
     auto dir_name = entry->path().filename().string();
-    auto pos = dir_name.find(RW_SCHEMA_XML_ARCHIVE_PREFIX);
+    auto pos = dir_name.find(RW_SCHEMA_MGMT_ARCHIVE_PREFIX);
 
     if (pos != 0) continue;
     found = true;
@@ -798,4 +784,57 @@ TEST_F(FileProOpsTestsFixture, ArchiveXMLPersistWS)
   }
 
   ASSERT_TRUE(found);
+}
+
+TEST_F(FileProOpsTestsFixture, WidenNorthboundSchema)
+{
+  // setup initial schema directory
+  std::string const cmd = "rwyangutil --remove-schema-dir --create-schema-dir test_northbound_listing.txt";
+
+  auto ret = std::system(cmd.c_str());
+  ASSERT_EQ (ret, 0);
+
+  std::vector<std::string> nb_list = {test_listing_path_};
+
+  size_t const nb_schema_count = get_nb_schema_count(nb_list);
+  fs::path nb_ypath = schema_ver_dir_ + "/latest/northbound/yang";
+
+  size_t initial_northbound_count = 0;
+  std::for_each(fs::directory_iterator(nb_ypath),
+                fs::directory_iterator(), // default constructor is end()
+                [&initial_northbound_count](const fs::directory_entry& /*unused*/)
+                {
+                  initial_northbound_count++;
+                });
+
+  EXPECT_EQ(initial_northbound_count, nb_schema_count);
+  
+  // widen the northbound schema
+  std::string const wide_cmd = "rwyangutil --create-schema-dir test_northbound_widening_listing.txt";
+
+  auto wide_ret = std::system(wide_cmd.c_str());
+  ASSERT_EQ (wide_ret, 0);
+
+  std::vector<std::string> wide_nb_list = {test_wide_listing_path_};
+
+  size_t const wide_nb_schema_count = get_nb_schema_count(wide_nb_list);
+  EXPECT_GT(wide_nb_schema_count, 0);
+
+  fs::path wide_nb_ypath = schema_ver_dir_ + "/latest/northbound/yang";
+
+  size_t wide_northbound_count = 0;
+  std::for_each(fs::directory_iterator(nb_ypath),
+                fs::directory_iterator(), // default constructor is end()
+                [&wide_northbound_count](const fs::directory_entry& /*unused*/)
+                {
+                  wide_northbound_count++;
+                });
+
+  EXPECT_EQ(wide_northbound_count, nb_schema_count + wide_nb_schema_count);
+
+  // cleanup schema directory
+  std::string const clean_cmd = "rwyangutil --remove-schema-dir --create-schema-dir test_northbound_listing.txt";
+  auto clean_ret = std::system(clean_cmd.c_str());
+  ASSERT_EQ (clean_ret, 0);
+
 }

@@ -143,6 +143,25 @@ int reaper_client_add_pid(int reaper_fd, pid_t pid) {
   return r;
 }
 
+int reaper_client_del_pid(int reaper_fd, pid_t pid) {
+  int r;
+  msgpack_sbuffer buf;
+  msgpack_packer packer;
+
+  msgpack_sbuffer_init(&buf);
+  msgpack_packer_init(&packer, &buf, msgpack_sbuffer_write);
+
+  msgpack_pack_map(&packer, 1);
+  msgpack_pack_str(&packer, 7);
+  msgpack_pack_str_body(&packer, "del_pid", 7);
+  msgpack_pack_int(&packer, pid);
+
+  r = send_msgpack_buffer(reaper_fd, &buf);
+  msgpack_sbuffer_destroy(&buf);
+
+  return r;
+}
+
 int reaper_client_add_path(int reaper_fd, const char * path)
 {
   int r;

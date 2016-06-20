@@ -38,6 +38,8 @@ extern "C" {
 #define RW_LOG(__instance__, evvtt, ...) \
   RW_DYNSCH_INST_LOG_Step1(__instance__, RW_DYNSCH_Paste3(RwDynschemaLog,notif,evvtt), __VA_ARGS__)
 
+static const int CREATE_SCHEMA_DIR_RETRY_SECS = 2;
+
 namespace fs = boost::filesystem;
 
 namespace rw_dyn_schema {

@@ -523,18 +523,11 @@ if cmdargs.scrub:
 
 
 try:
-    archive_cmd = '{rift_shell} -e -r -- rwyangutil --archive-confd-persist-ws --remove-schema-dir '.format(rift_shell=rift_shell)
-    print("===== driver archiviving confd perist directories - %s" % (archive_cmd))
+    archive_cmd = '{rift_shell} -e -r -- rwyangutil --archive-mgmt-persist-ws --remove-schema-dir '.format(rift_shell=rift_shell)
+    print("===== driver archiviving mgmt perist directories - %s" % (archive_cmd))
     subprocess.check_call(archive_cmd, shell=True)
 except:
-    logger.error("exception caught while archiving confd data", exc_info=True)
-
-try:
-    archive_cmd = '{rift_shell} -e -r -- rwyangutil --archive-xml-persist-ws --remove-schema-dir '.format(rift_shell=rift_shell)
-    print("===== driver archiving xml perist directories - %s" % (archive_cmd))
-    subprocess.check_call(archive_cmd, shell=True)
-except:
-    logger.error("exception caught while archiving xml data", exc_info=True)
+    logger.error("exception caught while archiving mgmt data", exc_info=True)
 
 sys_exit(rc)
 

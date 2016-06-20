@@ -26,6 +26,7 @@ rift_python_install_tree(
     rift/auto/session.py
     rift/auto/test_summary.py
     rift/auto/parse_utils.py
+    rift/auto/trafgen_utils.py
     rift/auto/vm_utils.py
     rift/auto/os_utils.py
     rift/auto/ip_utils.py

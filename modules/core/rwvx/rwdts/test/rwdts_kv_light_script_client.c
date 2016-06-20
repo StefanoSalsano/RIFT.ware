@@ -81,7 +81,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_delete_shard_cbk_fn(rwdts_kv
     fprintf(stderr, "Successfully deleted the data\n");
   }
   myUserData.my_shard_deleted = 1;
-  rwdts_kv_light_tab_get_all(tab_handle, rwdts_kv_light_get_all_callback, (void *)tab_handle);
+  rwdts_kv_handle_get_all(tab_handle->handle, tab_handle->db_num, rwdts_kv_light_get_all_callback, (void *)tab_handle);
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
@@ -103,7 +103,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_get_all_callback(void **key,
   }
 
   if (!myUserData.my_shard_deleted) {
-    rwdts_kv_light_delete_shard_entries(tab_handle, 260,
+    rwdts_kv_light_delete_shard_entries(tab_handle, "What",
                                         rwdts_kv_light_delete_shard_cbk_fn,
                                         (void *)tab_handle);
   }
@@ -130,7 +130,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_scr_run_callback(void **val,
     RW_FREE(val[i]);
     RW_FREE(key[i]);
   }
-  rwdts_kv_light_tab_get_all(tab_handle, rwdts_kv_light_get_all_callback, (void *)tab_handle);
+  rwdts_kv_handle_get_all(tab_handle->handle, tab_handle->db_num, rwdts_kv_light_get_all_callback, (void *)tab_handle);
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
@@ -144,24 +144,24 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_set_callback(rwdts_kv_light_
 
   myUserData.count++;
   if (myUserData.count == 19) {
-    rwdts_kv_light_get_next_fields(tab_handle, 250, rwdts_kv_light_scr_run_callback,
+    rwdts_kv_light_get_next_fields(tab_handle, "When", rwdts_kv_light_scr_run_callback,
                                    (void*)tab_handle, NULL);
   }
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
 
-void redis_initialized(void *userdata)
+void redis_initialized(void *userdata, rw_status_t status)
 {
   int i;
-  int shard_num = 250;
+  char shard_num[100] = "When";
   /* ok, redis client connection to databases are up */
   fprintf(stderr, "[%s]Riftdb is up\n", getTime());
-
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
   myUserData.tab_handle = rwdts_kv_light_register_table(myUserData.handle, 0);
   for (i = 0; i< 19; i++) {
     if (i > 13) {
-      shard_num = 260;
+      strcpy(shard_num, "What");
     }
     rwdts_kv_light_table_insert(myUserData.tab_handle, (i+1), shard_num, key_entry[i],
                                 strlen(key_entry[i]), tab_entry[i], strlen(tab_entry[i]),
@@ -187,8 +187,8 @@ int main(int argc, char **argv, char **envp) {
   tasklet = rwsched_tasklet_new(rwsched);
   RW_ASSERT(tasklet);
 
-  rwdts_kv_light_db_connect(myUserData.handle, rwsched, tasklet, "127.0.0.1:9997",
-                            redis_initialized, myUserData.handle);
+  rwdts_kv_handle_db_connect(myUserData.handle, rwsched, tasklet, "127.0.0.1:9997",
+                             "test", NULL, redis_initialized, myUserData.handle);
 
   myUserData.rwsched = rwsched;
   myUserData.tasklet = tasklet;

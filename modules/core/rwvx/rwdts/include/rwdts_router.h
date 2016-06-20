@@ -305,7 +305,9 @@ struct rwdts_router_member_node_s {
   uint32_t bnc:1;
   uint32_t abrt:1;
   uint32_t _pad:30;
+#ifdef SUB_XACT_SUPPRT
   UT_hash_handle hh_block;
+#endif
   UT_hash_handle hh_xact;
 };
 
@@ -499,12 +501,14 @@ struct rwdts_router_xact_s {
   uint32_t destset_ct;
   // end pre-sharding only
 
+#ifdef SUB_XACT_SUPPRT
   /* Union set of (downstream) participants for just the currently
      executing block.  Only needed if we are doing subtransactions and
      will therefore need to send out SUBCOMMIT or SUBABORT messages.
      We don't add members which returned N/A.  This is a UTHASH, elem
      hh_block */
   rwdts_router_member_node_t *block_union;
+#endif
 
   /* Total set of (downstream) participants.  This is updated after
      each block.  After PREPARE and SUBCOMMIT (if applicable),

@@ -11,6 +11,7 @@ import concurrent.futures
 import logging
 import os
 import sys
+import time
 import unittest
 import uuid
 import xmlrunner
@@ -38,17 +39,50 @@ from rift.tasklets.rwmonitor.core import (
         InstanceConfiguration,
         Monitor,
         NfviInterface,
+        NfviMetrics,
+        NfviMetricsCache,
         NfviMetricsPluginManager,
         PluginFactory,
         PluginNotSupportedError,
         PluginUnavailableError,
         UnknownAccountError,
-        VdurNfviMetrics,
         )
 import rw_peas
 
 
-logger = logging.getLogger(__name__)
+class wait_for_pending_tasks(object):
+    """
+    This class defines a decorator that can be used to ensure that any asyncio
+    tasks created as a side-effect of coroutine are allowed to come to
+    completion.
+    """
+
+    def __init__(self, loop, timeout=1):
+        self.loop = loop
+        self.timeout = timeout
+
+    def __call__(self, coro):
+        @asyncio.coroutine
+        def impl():
+            original = self.pending_tasks()
+            result = yield from coro()
+
+            current = self.pending_tasks()
+            remaining = current - original
+
+            if remaining:
+                yield from asyncio.wait(
+                        remaining,
+                        timeout=self.timeout,
+                        loop=self.loop,
+                        )
+
+            return result
+
+        return impl
+
+    def pending_tasks(self):
+        return {t for t in asyncio.Task.all_tasks(loop=self.loop) if not t.done()}
 
 
 class MockTasklet(object):
@@ -78,9 +112,186 @@ def make_vdur(id=str(uuid.uuid4()), vim_id=str(uuid.uuid4())):
     return vdur
 
 
-class TestNfviInterface(unittest.TestCase):
+class TestNfviMetricsCache(unittest.TestCase):
+    class Plugin(object):
+        def nfvi_metrics_available(self, cloud_account):
+            return True
+
+        def nfvi_metrics(self, account, vim_id):
+            metrics = RwmonYang.NfviMetrics()
+            metrics.vcpu.utilization = 0.5
+            return metrics
+
     def setUp(self):
-        self.loop = asyncio.get_event_loop()
+        self.loop = asyncio.new_event_loop()
+        self.logger = logging.getLogger('test-logger')
+
+        self.account = RwcalYang.CloudAccount(
+                name='test-cloud-account',
+                account_type="mock",
+                )
+
+        self.plugin_manager = NfviMetricsPluginManager(self.logger)
+        self.plugin_manager.register(self.account, "mock")
+
+        mock = self.plugin_manager.plugin(self.account.name)
+        mock.set_impl(TestNfviMetricsCache.Plugin())
+
+        self.vdur = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur()
+        self.vdur.id = "test-vdur-id"
+        self.vdur.vim_id = "test-vim-id"
+        self.vdur.vm_flavor.vcpu_count = 4
+        self.vdur.vm_flavor.memory_mb = 1
+        self.vdur.vm_flavor.storage_gb = 1
+
+    def test_create_destroy_entry(self):
+        cache = NfviMetricsCache(self.logger, self.loop, self.plugin_manager)
+        self.assertEqual(len(cache._nfvi_metrics), 0)
+
+        cache.create_entry(self.account, self.vdur)
+        self.assertEqual(len(cache._nfvi_metrics), 1)
+
+        cache.destroy_entry(self.vdur.id)
+        self.assertEqual(len(cache._nfvi_metrics), 0)
+
+    def test_retrieve(self):
+        NfviMetrics.SAMPLE_INTERVAL = 1
+
+        cache = NfviMetricsCache(self.logger, self.loop, self.plugin_manager)
+        cache.create_entry(self.account, self.vdur)
+
+        @wait_for_pending_tasks(self.loop)
+        @asyncio.coroutine
+        def retrieve_metrics():
+            metrics = cache.retrieve("test-vim-id")
+            self.assertEqual(metrics.vcpu.utilization, 0.0)
+
+            yield from asyncio.sleep(NfviMetrics.SAMPLE_INTERVAL, loop=self.loop)
+
+            metrics = cache.retrieve("test-vim-id")
+            self.assertEqual(metrics.vcpu.utilization, 0.5)
+
+        self.loop.run_until_complete(retrieve_metrics())
+
+    def test_id_mapping(self):
+        cache = NfviMetricsCache(self.logger, self.loop, self.plugin_manager)
+
+        cache.create_entry(self.account, self.vdur)
+
+        self.assertEqual(cache.to_vim_id(self.vdur.id), self.vdur.vim_id)
+        self.assertEqual(cache.to_vdur_id(self.vdur.vim_id), self.vdur.id)
+        self.assertTrue(cache.contains_vdur_id(self.vdur.id))
+        self.assertTrue(cache.contains_vim_id(self.vdur.vim_id))
+
+        cache.destroy_entry(self.vdur.id)
+
+        self.assertFalse(cache.contains_vdur_id(self.vdur.id))
+        self.assertFalse(cache.contains_vim_id(self.vdur.vim_id))
+
+
+class TestNfviMetrics(unittest.TestCase):
+    class Plugin(object):
+        def nfvi_metrics_available(self, cloud_account):
+            return True
+
+        def nfvi_metrics(self, account, vim_id):
+            metrics = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur_NfviMetrics()
+            metrics.vcpu.utilization = 0.5
+            return None, metrics
+
+    def setUp(self):
+        self.loop = asyncio.new_event_loop()
+        self.account = RwcalYang.CloudAccount(
+                name='test-cloud-account',
+                account_type="mock",
+                )
+
+        self.plugin = TestNfviMetrics.Plugin()
+        self.logger = logging.getLogger('test-logger')
+
+        self.vdur = make_vdur()
+        self.vdur.vm_flavor.vcpu_count = 4
+        self.vdur.vm_flavor.memory_mb = 100
+        self.vdur.vm_flavor.storage_gb = 2
+        self.vdur.vim_id = 'test-vim-id'
+
+    def test_update(self):
+        nfvi_metrics = NfviMetrics(
+                self.logger,
+                self.loop,
+                self.account,
+                self.plugin,
+                self.vdur,
+                )
+
+        # Reduce the SAMPLE_INTERVAL so that the test does not take a long time
+        nfvi_metrics.SAMPLE_INTERVAL = 1
+
+        # The metrics have never been retrieved so they should be updated
+        self.assertTrue(nfvi_metrics.should_update())
+
+        # The metrics return will be empty because the cache version is empty.
+        # However, this trigger an update to retrieve metrics from the plugin.
+        metrics = nfvi_metrics.retrieve()
+        self.assertEqual(metrics.vcpu.utilization, 0.0)
+
+        # An update has been trigger by the retrieve call so additional updates
+        # should not happen
+        self.assertFalse(nfvi_metrics.should_update())
+        self.assertFalse(nfvi_metrics._updating.done())
+
+        # Allow the event loop to run until the update is complete
+        @asyncio.coroutine
+        @wait_for_pending_tasks(self.loop)
+        def wait_for_update():
+            yield from asyncio.wait_for(
+                    nfvi_metrics._updating,
+                    timeout=2,
+                    loop=self.loop,
+                    )
+
+        self.loop.run_until_complete(wait_for_update())
+
+        # Check that we have a new metrics object
+        metrics = nfvi_metrics.retrieve()
+        self.assertEqual(metrics.vcpu.utilization, 0.5)
+
+        # We have just updated the metrics so it should be unnecessary to update
+        # right now
+        self.assertFalse(nfvi_metrics.should_update())
+        self.assertTrue(nfvi_metrics._updating.done())
+
+        # Wait an amount of time equal to the SAMPLE_INTERVAL. This ensures
+        # that the metrics that were just retrieved become stale...
+        time.sleep(NfviMetrics.SAMPLE_INTERVAL)
+
+        # ...now it is time to update again
+        self.assertTrue(nfvi_metrics.should_update())
+
+
+class TestNfviInterface(unittest.TestCase):
+    class NfviPluginImpl(object):
+        def __init__(self):
+            self._alarms = set()
+
+        def nfvi_metrics(self, account, vm_id):
+            return rwmon.NfviMetrics()
+
+        def nfvi_metrics_available(self, account):
+            return True
+
+        def alarm_create(self, account, vim_id, alarm):
+            alarm.alarm_id = str(uuid.uuid4())
+            self._alarms.add(alarm.alarm_id)
+            return RwTypes.RwStatus.SUCCESS
+
+        def alarm_delete(self, account, alarm_id):
+            self._alarms.remove(alarm_id)
+            return RwTypes.RwStatus.SUCCESS
+
+    def setUp(self):
+        self.loop = asyncio.new_event_loop()
+        self.logger = logging.getLogger('test-logger')
 
         self.account = RwcalYang.CloudAccount(
                 name='test-cloud-account',
@@ -94,33 +305,85 @@ class TestNfviInterface(unittest.TestCase):
         self.vdur.vm_flavor.storage_gb = 2
         self.vdur.vim_id = 'test-vim-id'
 
-        self.plugin_manager = NfviMetricsPluginManager(logger)
+        self.plugin_manager = NfviMetricsPluginManager(self.logger)
         self.plugin_manager.register(self.account, "mock")
 
-        self.metrics_manager = NfviInterface(
+        self.cache = NfviMetricsCache(
+                self.logger,
                 self.loop,
-                logger,
                 self.plugin_manager,
                 )
 
-    def test_add_remove_vdur(self):
-        """
-        This test simply tests that a VDUR is correctly registered and
-        unregistered from an NfviInterface.
-        """
-        # Register with the manager
-        self.metrics_manager.register_vdur(self.account, self.vdur)
-        self.assertIn(self.vdur.id, self.metrics_manager._metrics)
+        self.nfvi_interface = NfviInterface(
+                self.loop,
+                self.logger,
+                self.plugin_manager,
+                self.cache
+                )
 
-        # Unregister from the manager
-        self.metrics_manager.unregister_vdur(self.vdur.id)
-        self.assertNotIn(self.vdur.id, self.metrics_manager._metrics)
+    def test_nfvi_metrics_available(self):
+        self.assertTrue(self.nfvi_interface.nfvi_metrics_available(self.account))
+
+    def test_retrieve(self):
+        pass
+
+    def test_alarm_create_and_destroy(self):
+        alarm = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_Vdur_Alarms()
+        alarm.name = "test-alarm"
+        alarm.description = "test-description"
+        alarm.vdur_id = "test-vdur-id"
+        alarm.metric = "CPU_UTILIZATION"
+        alarm.statistic = "MINIMUM"
+        alarm.operation = "GT"
+        alarm.value = 0.1
+        alarm.period = 10
+        alarm.evaluations = 1
+
+        plugin_impl = TestNfviInterface.NfviPluginImpl()
+        plugin = self.plugin_manager.plugin(self.account.name)
+        plugin.set_impl(plugin_impl)
+
+        self.assertEqual(len(plugin_impl._alarms), 0)
+
+        @asyncio.coroutine
+        @wait_for_pending_tasks(self.loop)
+        def wait_for_create():
+            coro = self.nfvi_interface.alarm_create(
+                    self.account,
+                    "test-vim-id",
+                    alarm,
+                    )
+            yield from asyncio.wait_for(
+                    coro,
+                    timeout=2,
+                    loop=self.loop,
+                    )
+
+        self.loop.run_until_complete(wait_for_create())
+        self.assertEqual(len(plugin_impl._alarms), 1)
+        self.assertTrue(alarm.alarm_id is not None)
+
+        @asyncio.coroutine
+        @wait_for_pending_tasks(self.loop)
+        def wait_for_destroy():
+            coro = self.nfvi_interface.alarm_destroy(
+                    self.account,
+                    alarm.alarm_id,
+                    )
+            yield from asyncio.wait_for(
+                    coro,
+                    timeout=2,
+                    loop=self.loop,
+                    )
+
+        self.loop.run_until_complete(wait_for_destroy())
+        self.assertEqual(len(plugin_impl._alarms), 0)
 
 
 class TestVdurNfviMetrics(unittest.TestCase):
     def setUp(self):
         # Reduce the sample interval so that test run quickly
-        VdurNfviMetrics.SAMPLE_INTERVAL = 0.1
+        NfviMetrics.SAMPLE_INTERVAL = 0.1
 
         # Create a mock plugin to define the metrics retrieved. The plugin will
         # return a VCPU utilization of 0.5.
@@ -133,6 +396,7 @@ class TestVdurNfviMetrics(unittest.TestCase):
                 return self.metrics
 
         self.loop = asyncio.get_event_loop()
+        self.logger = logging.getLogger('test-logger')
 
         self.account = RwcalYang.CloudAccount(
                 name='test-cloud-account',
@@ -147,15 +411,28 @@ class TestVdurNfviMetrics(unittest.TestCase):
         vdur.vim_id = 'test-vim-id'
 
         # Instantiate the mock plugin
-        self.plugins = NfviMetricsPluginManager(logger)
-        self.plugins.register(self.account, "mock")
+        self.plugin_manager = NfviMetricsPluginManager(self.logger)
+        self.plugin_manager.register(self.account, "mock")
 
-        self.plugin = self.plugins.plugin(self.account.name)
+        self.plugin = self.plugin_manager.plugin(self.account.name)
         self.plugin.set_impl(MockPlugin())
 
-        self.manager = NfviInterface(self.loop, logger, self.plugins)
-        self.metrics = VdurNfviMetrics(
-                self.manager,
+        self.cache = NfviMetricsCache(
+                self.logger,
+                self.loop,
+                self.plugin_manager,
+                )
+
+        self.manager = NfviInterface(
+                self.loop,
+                self.logger,
+                self.plugin_manager,
+                self.cache,
+                )
+
+        self.metrics = NfviMetrics(
+                self.logger,
+                self.loop,
                 self.account,
                 self.plugin,
                 vdur,
@@ -194,7 +471,8 @@ class TestVdurNfviMetrics(unittest.TestCase):
 
 class TestNfviMetricsPluginManager(unittest.TestCase):
     def setUp(self):
-        self.plugins = NfviMetricsPluginManager(logger)
+        self.logger = logging.getLogger('test-logger')
+        self.plugins = NfviMetricsPluginManager(self.logger)
         self.account = RwcalYang.CloudAccount(
                 name='test-cloud-account',
                 account_type="mock",
@@ -259,11 +537,12 @@ class TestMonitor(unittest.TestCase):
 
     def setUp(self):
         # Reduce the sample interval so that test run quickly
-        VdurNfviMetrics.SAMPLE_INTERVAL = 0.1
+        NfviMetrics.SAMPLE_INTERVAL = 0.1
 
         self.loop = asyncio.get_event_loop()
+        self.logger = logging.getLogger('test-logger')
         self.config = InstanceConfiguration()
-        self.monitor = Monitor(self.loop, logger, self.config)
+        self.monitor = Monitor(self.loop, self.logger, self.config)
 
         self.account = RwcalYang.CloudAccount(
                 name='test-cloud-account',
@@ -368,9 +647,15 @@ class TestMonitor(unittest.TestCase):
         self.monitor.add_vdur(self.account, vdur)
         self.assertTrue(self.monitor.is_registered_vdur(vdur.id))
 
+        # Check that the VDUR has been added to the metrics cache
+        self.assertTrue(self.monitor.cache.contains_vdur_id(vdur.id))
+
         # Unregister the VDUR
         self.monitor.remove_vdur(vdur.id)
         self.assertFalse(self.monitor.is_registered_vdur(vdur.id))
+
+        # Check that the VDUR has been removed from the metrics cache
+        self.assertFalse(self.monitor.cache.contains_vdur_id(vdur.id))
 
     def test_vnfr_add_update_delete(self):
         """
@@ -486,8 +771,9 @@ class TestMonitor(unittest.TestCase):
         # Add the VNFR to the monitor.
         self.monitor.add_vnfr(vnfr)
 
+        @wait_for_pending_tasks(self.loop)
         @asyncio.coroutine
-        def process():
+        def call1():
             # call #1 (time = 0.00s)
             # The metrics for these VDURs have not been populated yet so a
             # default metrics object (all zeros) is returned, and a request is
@@ -498,46 +784,56 @@ class TestMonitor(unittest.TestCase):
             self.assertEqual(0, metrics1.memory.used)
             self.assertEqual(0, metrics2.memory.used)
 
-            yield from asyncio.sleep(0.05, loop=self.loop)
+        self.loop.run_until_complete(call1())
 
-            # call #2 (time = 0.05s)
+        @wait_for_pending_tasks(self.loop)
+        @asyncio.coroutine
+        def call2():
+            # call #2 (wait 0.05s)
             # The metrics have been populated with data from the data source
             # due to the request made during call #1.
+            yield from asyncio.sleep(0.05)
+
             metrics1 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-1')
             metrics2 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-2')
 
             self.assertEqual(1000, metrics1.memory.used)
             self.assertEqual(2000, metrics2.memory.used)
 
-            yield from asyncio.sleep(0.45, loop=self.loop)
+        self.loop.run_until_complete(call2())
 
-            # call #3 (time = 0.50s)
+        @wait_for_pending_tasks(self.loop)
+        @asyncio.coroutine
+        def call3():
+            # call #3 (wait 0.50s)
             # This call exceeds 0.1s (the sample interval of the plugin)
             # from when the data was retrieved. The cached metrics are
             # immediately returned, but a request is made to the data source to
             # refresh these metrics.
+            yield from asyncio.sleep(0.10)
+
             metrics1 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-1')
             metrics2 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-2')
 
             self.assertEqual(1000, metrics1.memory.used)
             self.assertEqual(2000, metrics2.memory.used)
 
-            yield from asyncio.sleep(0.5, loop=self.loop)
+        self.loop.run_until_complete(call3())
 
-            # call #4 (time = 1.00s)
+        @wait_for_pending_tasks(self.loop)
+        @asyncio.coroutine
+        def call4():
+            # call #4 (wait 1.00s)
             # The metrics retrieved differ from those in call #3 because the
             # cached metrics have been updated.
+            yield from asyncio.sleep(0.10)
             metrics1 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-1')
             metrics2 = self.monitor.retrieve_nfvi_metrics('test-vdur-id-2')
 
             self.assertEqual(2000, metrics1.memory.used)
             self.assertEqual(4000, metrics2.memory.used)
 
-        @asyncio.coroutine
-        def timeout(coro, duration):
-            yield from asyncio.wait_for(coro, timeout=duration)
-
-        self.loop.run_until_complete(timeout(process(), 2))
+        self.loop.run_until_complete(call4())
 
 
 def main(argv=sys.argv[1:]):
@@ -552,7 +848,7 @@ def main(argv=sys.argv[1:]):
     logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.ERROR)
 
     # Set the logger in this test to use a null handler
-    logger.addHandler(logging.NullHandler())
+    logging.getLogger('test-logger').addHandler(logging.NullHandler())
 
     # The unittest framework requires a program name, so use the name of this
     # file instead (we do not want to have to pass a fake program name to main

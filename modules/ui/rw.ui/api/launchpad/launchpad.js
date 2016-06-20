@@ -449,6 +449,7 @@ NSR.get = function(req) {
                 if (nsrData.constructor.name == "Object") {
                     nsrData = [nsrData];
                 }
+                nsrData.forEach(self.decorateWithScalingGroupDict);
                 nsrData.forEach(self.decorateAndTransformNFVI);
                 nsrData.forEach(self.decorateAndTransformWithControls);
                 nsrData.forEach(self.decorateAndTransformWithMonitoringParams);
@@ -487,7 +488,7 @@ NSR.get = function(req) {
 
                 if (scaling_group_descriptor) {
                     scaling_group_descriptor.map(function(sgd, sgdi) {
-                        sgd['vnfd-member'].map(function(vnfd, vnfdi) {
+                        sgd['vnfd-member'] && sgd['vnfd-member'].map(function(vnfd, vnfdi) {
                             var vnfrObj = _.findWhere(_.findWhere(resolves[2], {
                                     'ns-instance-config-ref': v.id
                                 }).vnfrs, {
@@ -544,6 +545,39 @@ NSR.get = function(req) {
 };
 // Static VNFR Cache bu VNFR ID
 var staticVNFRCache = {};
+
+/**
+ * [decorateWithScalingGroupDict description]
+ * @param  {[type]} nsr [description]
+ * @return {[type]}
+{vnfr-id} : {
+    "scaling-group-name-ref": "sg1",
+    "instance-id": 0,
+    "op-status": "running",
+    "is-default": "true",
+    "create-time": 1463593760,
+    "config-status": "configuring",
+    "vnfrs": [
+        "432154e3-164e-4c05-83ee-3b56e4c898e7"
+    ]
+}
+ */
+NSR.decorateWithScalingGroupDict = function(nsr) {
+    var sg = nsr["scaling-group-record"];
+    var dict = {};
+    if(sg) {
+        sg.map(function(s) {
+            var sgRef = s['scaling-group-name-ref'];
+            s.instance && s.instance.map(function(si) {
+                si.vnfrs && si.vnfrs.map(function(v) {
+                    dict[v] = si;
+                    dict[v]["scaling-group-name-ref"] = sgRef;
+                })
+            })
+        })
+    }
+    return nsr['vnfr-scaling-groups'] = dict;
+}
 NSR.addVnfrDataPromise = function(req, nsrs) {
     var api_server = req.query['api_server'];
     var promises = [];
@@ -611,7 +645,14 @@ NSR.addVnfrDataPromise = function(req, nsrs) {
             "name": vnfr['name'],
             "vdur": vnfr["vdur"]
         };
-        var vnfrNfviMetrics = buildNfviGraphs(vnfr.vdur, vnfr["short-name"]);
+        var vnfrSg = nsr['vnfr-scaling-groups'];
+        var vnfrName = vnfr["name"];
+        if(vnfrSg) {
+            if(vnfrSg[vnfr.id]) {
+                vnfrName = vnfrSg[vnfr.id]["scaling-group-name-ref"] + ':' + vnfrSg[vnfr.id][ "instance-id"] + ':' + vnfrName;
+            }
+        }
+        var vnfrNfviMetrics = buildNfviGraphs(vnfr.vdur, vnfrName);
         if (vnfr['vnf-configuration'] && vnfr['vnf-configuration']['config-primitive'] && vnfr['vnf-configuration']['config-primitive'].length > 0) {
             vnfrObj['config-primitives-present'] = true;
         } else {
@@ -642,7 +683,7 @@ NSR.create = function(req) {
             rejectUnauthorized: false,
             json: data
         }, function(error, response, body) {
-            if (utils.validateResponse('VNFR.get', error, response, body, resolve, reject)) {
+            if (utils.validateResponse('NSR.create', error, response, body, resolve, reject)) {
                 var nsr_id = null;
                 try {
                     nsr_id = data.nsr[0].id;
@@ -1038,7 +1079,7 @@ function filterVnfrByList(vnfrList, vnfrData) {
 RIFT.api = function(req) {
     var api_server = req.query["api_server"];
     var uri = utils.confdPort(api_server);
-    var url = req.originalUrl.split('?')[0];
+    var url = req.path;
     return new Promise(function(resolve, reject) {
         request({
             url: uri + url + '?deep',

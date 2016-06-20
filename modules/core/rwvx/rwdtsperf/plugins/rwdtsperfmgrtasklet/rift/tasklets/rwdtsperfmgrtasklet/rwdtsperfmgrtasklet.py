@@ -271,6 +271,9 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
         if msg.parallel_xact_limit is None or msg.parallel_xact_limit < 1:
             msg.parallel_xact_limit = 1
 
+        if msg.xact_max_with_outstanding is None or msg.xact_max_with_outstanding < 1:
+            msg.xact_max_with_outstanding = 50000
+
         if msg.xact_operation is None:
             msg.xact_operation = 'create'
 
@@ -298,6 +301,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
                 'publishers':msg.publishers,
                 'subscribers':msg.subscribers,
                 'parallel_xact_limit':msg.parallel_xact_limit,
+                'xact_max_with_outstanding':msg.xact_max_with_outstanding,
                 'test_state':"test_initializing",
                 'xact_operation':msg.xact_operation,
                 'tasklet_type':msg.tasklet_type,
@@ -622,7 +626,7 @@ class RwDtsPerfMgrTasklet(rift.tasklets.Tasklet):
                                     'xact_repeat':{
                                         'outstanding_and_repeat':{
                                             'num_xact_outstanding':test.parallel_xact_limit,
-                                            'xact_max_with_outstanding':10000
+                                            'xact_max_with_outstanding':test.xact_max_with_outstanding,
                                         }
                                     },
                                     'xact':[{

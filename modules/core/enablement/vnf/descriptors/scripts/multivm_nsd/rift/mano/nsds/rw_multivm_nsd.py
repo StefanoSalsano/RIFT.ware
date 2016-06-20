@@ -54,7 +54,7 @@ class NetworkService(ManoDescriptor):
     def add_scripts(self, srcfile):
         rift_root_dir = os.environ['RIFT_ROOT']
         scripts_dir = os.path.join(rift_root_dir, 'modules/core/enablement/vnf/descriptors/scripts/multivm_nsd/scripts/')
-        copy_dir = os.path.join(self.dirpath, 'libs', self.id, 'scripts')
+        copy_dir = os.path.join(self.dirpath, 'scripts')
         if not os.path.exists(copy_dir):
             os.makedirs(copy_dir)
         new_file = os.path.join(copy_dir, srcfile)
@@ -271,6 +271,16 @@ def generate_multivm_nsd_descriptors(fmt="json", write_to_file=False, out_dir=".
                           "name": "Trigger",
                           "default_value": "stop",
                           "mandatory": True
+                      },
+                      {
+                            "data_type": "STRING",
+                            "name": "Packet size",
+                            "default_value": "512",
+                      },
+                      {
+                            "data_type": "STRING",
+                            "name": "Tx rate",
+                            "default_value": "5",
                       }
                     ],
                     "name": "Traffic",

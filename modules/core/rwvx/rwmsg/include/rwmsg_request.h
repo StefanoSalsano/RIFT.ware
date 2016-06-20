@@ -241,6 +241,12 @@ rw_status_t rwmsg_request_send_response(rwmsg_request_t *req,
 rw_status_t rwmsg_request_send_response_pbapi(rwmsg_request_t *req,
 					      const ProtobufCMessage *rsp);
 
+typedef struct rwmemlog_buffer_t rwmemlog_buffer_t;
+void rwmsg_request_memlog_hdr(rwmemlog_buffer_t **rwml_buffer,
+                              rwmsg_request_t    *req,
+                              const char         *func_name,
+                              const int          line,
+                              const char         *string);
 __END_DECLS
 
 #endif // __RWMSG_REQUEST_H

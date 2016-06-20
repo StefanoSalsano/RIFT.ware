@@ -150,6 +150,7 @@ class CatalogDataStore {
 						const instance = _.cloneDeep(vnfd);
 						instance.uiState['member-vnf-index'] = d['member-vnf-index'];
 						instance['vnf-configuration'] = d['vnf-configuration'];
+						instance['start-by-default'] = d['start-by-default'];
 						return instance;
 					});
 				}

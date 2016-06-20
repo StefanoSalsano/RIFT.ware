@@ -87,6 +87,16 @@ int reaper_add_client(struct reaper * reaper, int socket);
 int reaper_add_client_pid(struct reaper * reaper, struct client * client, uint16_t pid);
 
 /**
+ * Del a pid(process) from the specified client.
+ *
+ * @param reaper  - reaper instance
+ * @param client  - client instance
+ * @param pid     - pid to del
+ * @return        - 0 on success.
+ */
+int reaper_del_client_pid(struct reaper * reaper, struct client * client, uint16_t pid);
+
+/**
  * Add a new path to be unlinked to the specified client.
  *
  * @param reaper  - reaper instance

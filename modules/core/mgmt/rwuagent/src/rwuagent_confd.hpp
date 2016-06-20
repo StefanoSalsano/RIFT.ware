@@ -357,6 +357,9 @@ class ConfdDaemon
     /// Setup a pool of worker sockets
   rw_status_t setup_confd_worker_pool();
 
+  /// Registers for the supported Netconf Notification streams with Confd
+  rw_status_t setup_notifications();
+
   /// assig a worker to a transaction
   int assign_confd_worker();
 
@@ -382,6 +385,12 @@ class ConfdDaemon
 
   rwdts_member_rsp_code_t handle_notification(const ProtobufCMessage * msg);
 
+  /// Utility routing that returns the notification context for the given
+  /// notification yang node.
+  confd_notification_ctx* get_notification_context(
+                            const std::string& node_name,
+                            const std::string& node_ns);
+
   // Called from SbReqGet
   rw_yang_netconf_op_status_t get_confd_daemon(XMLNode* node);
 
@@ -391,8 +400,12 @@ class ConfdDaemon
   /// Start Confd CDB upgrade
   void start_upgrade(size_t n_modules);
 
+  /// Sends the notification to Confd via the pre-established notification
+  /// context.
   rwdts_member_rsp_code_t send_notification_to_confd(
-           rw_yang::ConfdTLVBuilder& builder, struct xml_tag xtag);
+           confd_notification_ctx* notify_ctxt,
+           rw_yang::ConfdTLVBuilder& builder, 
+           struct xml_tag xtag);
 
   LogFileManager* confd_log() const noexcept {
     return confd_log_.get();
@@ -422,8 +435,8 @@ class ConfdDaemon
   /// confd "daemon" data
   struct confd_daemon_ctx *daemon_ctxt_ = nullptr;
 
-  /// context used for notification
-  struct confd_notification_ctx *notify_ctxt_ = nullptr;
+  /// Mapping the notification stream name to confd notification context
+  std::map<std::string, confd_notification_ctx*> notification_ctxt_map_;
 
   // List of data provider clients
   std::list<NbReqConfdDataProvider *> dp_clients_;

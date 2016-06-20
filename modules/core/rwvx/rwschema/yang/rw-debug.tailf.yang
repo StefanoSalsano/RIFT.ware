@@ -18,12 +18,11 @@ module rw-debug-annotation
     prefix tailf;
   }
 
-
   tailf:annotate "/rwdebug:rw-debug/rwdebug:resource" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwdebug:rw-debug/rwdebug:heap" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

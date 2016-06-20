@@ -261,7 +261,7 @@ class TestSystemTransforms(unittest.TestCase):
         self.assertEqual(1, len(sysinfo.vm_bootstrap))
 
     def test_assign_dtsrouter_vm(self):
-        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None, persist_dir_name='test')
         transform = rift.vcs.compiler.transforms.AssignDtsRouterVM()
 
         # A CompilationError is raised if the system does not contain a 
@@ -348,7 +348,7 @@ class TestSystemTransforms(unittest.TestCase):
         transform(sysinfo)
 
         # After the transform, the RiftCli netconf host is changed
-        self.assertEqual('127.0.0.2', cli_proc.netconf_host)
+        self.assertEqual('127.0.0.1', cli_proc.netconf_host)
 
 
 class TestManifestTransforms(unittest.TestCase):
@@ -362,7 +362,7 @@ class TestManifestTransforms(unittest.TestCase):
         colony = rift.vcs.manifest.RaColony(name='test.colony-1')
         colony.add_component(cluster)
 
-        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None, persist_dir_name='test')
         manifest.add_component(colony)
         manifest.init = cli
 
@@ -378,7 +378,7 @@ class TestManifestTransforms(unittest.TestCase):
         self.assertEqual(colony, manifest.init.startups[0])
 
     def test_assign_broker_vm(self):
-        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None, persist_dir_name='test')
         transform = rift.vcs.compiler.transforms.AssignBrokerVM()
 
         # A CompilationError is raised if the system does not contain a message
@@ -427,27 +427,28 @@ class TestManifestTransforms(unittest.TestCase):
         colony = rift.vcs.manifest.RaColony(name='test.colony')
         colony.add_component(cluster)
 
-        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None, persist_dir_name='test')
         manifest.add_component(colony)
+        manifest.mgmt_ip_list = []
 
         transform = rift.vcs.compiler.transforms.AssignInitVM()
 
         with self.assertRaises(rift.vcs.compiler.exc.CompilationError):
             transform(manifest, rift.vcs.SystemInfo())
 
-        cli = rift.vcs.manifest.RaCliProc(name='test.cli')
-        colony.add_component(cli)
+        uagent = rift.vcs.manifest.RaUagent(name='test.uagent', port=6578)
+        colony.add_component(uagent)
 
         with self.assertRaises(rift.vcs.compiler.exc.CompilationError):
             transform(manifest, rift.vcs.SystemInfo())
 
-        colony.subcomponents.remove(cli)
-        vm1.add_component(cli)
+        colony.subcomponents.remove(uagent)
+        vm1.add_component(uagent)
 
         transform(manifest, rift.vcs.SystemInfo())
 
     def test_assign_ip_addresses(self):
-        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None)
+        manifest = rift.vcs.manifest.RaManifest(northbound_listing=None, persist_dir_name='test')
         sysinfo = rift.vcs.SystemInfo(
                 colonies=[
                     rift.vcs.Collection(

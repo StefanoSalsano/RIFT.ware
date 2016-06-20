@@ -3,11 +3,6 @@ tosca_definitions_version:      tosca_simple_profile_for_nfv_1_0_0
 
 description: Define RIFT.io custom types
 
-#metadata:
-#  ID: riftio_types
-#  vendor: RIFT.io
-#  version: 1.0
-
 data_types:
   tosca.datatypes.network.riftio.vnf_configuration:
     properties:
@@ -28,29 +23,6 @@ data_types:
       config_template:
         type: string
         required: no
-
-  tosca.datatypes.network.riftio.monitoring_param:
-    properties:
-      id:
-        type: integer
-      value_type:
-        type: string
-        default: INT
-      group_tag:
-        type: string
-        default: Group1
-      units:
-        type: string
-      description:
-        type: string
-      json_query_method:
-        type: string
-        default: NAMEKEY
-      http_endpoint_ref:
-        type: string
-      widget_type:
-        type: string
-        default: COUNTER
 
 capability_types:
   tosca.capabilities.riftio.http_endpoint_type:

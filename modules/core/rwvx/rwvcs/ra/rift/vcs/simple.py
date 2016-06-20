@@ -11,43 +11,62 @@ import rift.vcs.manifest
 import rift.vcs.vms
 
 gdb_enabled = False
+class RedisServer(rift.vcs.NativeProcess):
+    def __init__(self, name="RW.Redis.Server",
+                 config_ready=True,
+                 recovery_action=rift.vcs.core.RecoveryType.FAILCRITICAL.value,
+                 data_storetype=rift.vcs.core.DataStore.NOSTORE.value,
+                 mode_active=True,
+                 ):
+        super(RedisServer, self).__init__(
+                name=name,
+                exe="./usr/bin/redis-server",
+                config_ready=config_ready,
+                recovery_action=recovery_action,
+                data_storetype=data_storetype,
+                mode_active=mode_active,
+                )
+
+    @property
+    def args(self):
+        return "./usr/bin/active_redis.conf --port 9999"
+
 class CliVM(rift.vcs.VirtualMachine):
     """
     This class represents a CLI VM.
     """
 
-    def __init__(self, netconf_username=None, netconf_password=None, name=None, *args, **kwargs):
+    def __init__(self, name=None, start=True, *args, **kwargs):
         """Creates a CliVM object.
 
         Arguments:
-            netconf_username - the netconf username
-            netconf_password - the netconf password
             name - the name of the tasklet
+
         """
-        name = "RW_VM_CLI" if name is None else name
-        super(CliVM, self).__init__(name=name, *args, **kwargs)
+        name = "VM_TEMPL_2" if name is None else name
+        super(CliVM, self).__init__(name=name, start=start, *args, **kwargs)
 
-        #self.add_proc(rift.vcs.DtsPerfTasklet())
-        #self.add_proc(rift.vcs.LogdTasklet())
+        self.add_proc(rift.vcs.DtsPerfTasklet(), mode_active=False)
+        self.add_proc(RedisServer(), mode_active=False) 
+        if not start:
+            self.add_tasklet(rift.vcs.uAgentTasklet(), mode_active=False)
 
-        self.add_tasklet(rift.vcs.uAgentTasklet())
-        self.add_proc(rift.vcs.procs.RiftCli(netconf_username, netconf_password));
-        self.add_proc(rift.vcs.DtsPerfTasklet())
+
 
 class MgmtVM(rift.vcs.VirtualMachine):
     """
     This class represents a management VM.
     """
 
-    def __init__(self, name=None, *args, **kwargs):
+    def __init__(self, name=None, start=True, *args, **kwargs):
         """Creates a MgmtVM object.
 
         Arguments:
             name          - the name of the tasklet
 
         """
-        name = "RW_VM_MGMT" if name is None else name
-        super(MgmtVM, self).__init__(name=name, *args, **kwargs)
+        name = "VM_TEMPL_1" if name is None else name
+        super(MgmtVM, self).__init__(name=name, start=start, *args, **kwargs)
 
         #self.add_proc(rift.vcs.MsgBrokerTasklet())
         self.add_proc(rift.vcs.DtsRouterTasklet())
@@ -55,8 +74,13 @@ class MgmtVM(rift.vcs.VirtualMachine):
         #self.add_proc(rift.vcs.LogdTasklet())
 
         self.add_proc(rift.vcs.procs.RiftCli());
-        self.add_tasklet(rift.vcs.uAgentTasklet())
+
+        #Confd would need RestConf present
+        self.add_proc(rift.vcs.uAgentTasklet())
+        #self.add_proc(rift.vcs.Confd())
         self.add_proc(rift.vcs.RestconfTasklet())
+        self.add_proc(rift.vcs.Watchdog())
+        self.add_proc(RedisServer())
 
         #self.add_proc(rift.vcs.Webserver())
         #self.add_proc(rift.vcs.RedisCluster())
@@ -100,14 +124,14 @@ class Gen2VM(rift.vcs.VirtualMachine):
 
 
 def main():
-    MASTER="10.0.23.169"
-    VM1="10.0.23.175"
-    VM2="10.0.23.143"
+    MASTER="10.0.202.246"
+    VM1="10.0.202.26"
+    VM2="10.0.106.26"
+    VM3="10.0.106.27"
     collapsed = False
-    MASTER='10.0.106.26'
-    VM1='10.0.106.13'
-    VM2='10.0.106.25'
-    VM3='10.0.106.27'
+    mgmt_ip_list=[VM2, VM3]
+    mgmt_ip_list=[MASTER, VM1]
+    start=False
 
     if '-l' in sys.argv:
         MASTER='127.0.0.1'
@@ -115,6 +139,8 @@ def main():
         VM2='127.0.0.1'
         VM3='127.0.0.2'
         collapsed = True
+        start=True
+        mgmt_ip_list=[MASTER]
 
     if '-g' in sys.argv:
         gdb_enabled = True
@@ -134,15 +160,15 @@ def main():
     #gen.add_virtual_machine(vm4)
 
 
-    mgmt = rift.vcs.core.Cluster(name='mgmt')
-    colony.add_cluster(mgmt)
+    #mgmt = rift.vcs.core.Cluster(name='mgmt')
+    #colony.add_cluster(mgmt)
 
-    vm2 = MgmtVM(ip=VM1)
+    vm2 = MgmtVM(ip=MASTER,start=start)
     vm2.leader = True
-    mgmt.add_virtual_machine(vm2)
+    #mgmt.add_virtual_machine(vm2)
+    colony.append(vm2)
 
-    lead = CliVM(ip=MASTER)
-    lead.leader = True
+    lead = CliVM(ip=VM1, start=start)
     colony.append(lead)
 
     multid=False
@@ -156,7 +182,8 @@ def main():
             zookeeper=rift.vcs.manifest.RaZookeeper(zake=collapsed, master_ip=MASTER),
             colonies=[colony],
             multi_broker=True,
-            multi_dtsrouter=multid,
+            multi_dtsrouter=True,
+            mgmt_ip_list=mgmt_ip_list,
 
     )
 

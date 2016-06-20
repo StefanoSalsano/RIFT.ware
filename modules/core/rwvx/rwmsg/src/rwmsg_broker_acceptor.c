@@ -103,61 +103,63 @@ static void rwmsg_broker_acceptor_update_peer(rwmsg_broker_channel_t *bch) {
     RWMSG_TRACE_CHAN(&bch->ch, INFO, "SENDING the methbinding to peer-broker that just CONNECTED bch=%p", bch);
   }
   RW_ASSERT(bch->bro);
-  //rwmsg_endpoint_t *ep = bch->ch.ep;
-#define DONT_USE_CK_HT_NEXT
-#ifndef DONT_USE_CK_HT_NEXT
-  ck_ht_iterator_t iterator = CK_HT_ITERATOR_INITIALIZER; 
-  ck_ht_entry_t *hentp;
-  while (ck_ht_next(&rwmsg_global.localdesttab, &iterator, &hentp)) {
-    struct rwmsg_methbinding_s *mb = (struct rwmsg_methbinding_s*)ck_ht_entry_value(hentp);
-#else
+
   rwmsg_broker_t *bro = bch->bro;
   rwmsg_broker_channel_t *i_bch=NULL;
   rwmsg_broker_channel_t *tmp=NULL;
-  struct rwmsg_methbinding_s *mb = NULL;
+  int ct_lock=0, ct_unlock=0;
+
+  /* We are in broker acceptor thread, so this hash is stable */
   HASH_ITER(hh, bro->acc.bch_hash, i_bch, tmp) {
-    if (i_bch->ch.chantype != RWMSG_CHAN_PEERSRV && i_bch->ch.chantype != RWMSG_CHAN_BROSRV)
+    if (i_bch->ch.chantype != RWMSG_CHAN_PEERSRV && i_bch->ch.chantype != RWMSG_CHAN_BROSRV) {
       continue;
-    if (i_bch->bro->bro_instid != bch->bro->bro_instid)
-      continue;
-  RWMSG_RG_LOCK();
-  while ((mb = (mb ? RW_DL_NEXT(mb, struct rwmsg_methbinding_s, elem) : RW_DL_HEAD(&((rwmsg_broker_srvchan_t *)i_bch)->methbindings, struct rwmsg_methbinding_s, elem)))) {
-  RWMSG_RG_UNLOCK();
-#endif
-    RW_ASSERT(mb);
-    RW_ASSERT(mb->meth);
-    RW_ASSERT(mb->meth->sig);
-    rw_status_t rs;
-    if (mb->k.bindtype != RWMSG_METHB_TYPE_BROSRVCHAN)
-      continue;
-    if (mb->k.bro_instid != bch->bro->bro_instid)
-      continue;
-    if (!mb->local_service)
-      continue;
-    RW_ASSERT(bch->bro->bro_instid != 0);
-
-    RWMSG_TRACE_CHAN(&bch->ch, INFO, "Sending the methbinding to peer-broker that just CONNECTED  path='%s' phash=0x%lx methno=%u payt=%d bro_instid=%d",
-		     mb->meth->path,
-		     mb->k.pathhash,
-		     mb->k.methno,
-		     mb->k.payt,
-		     mb->k.bro_instid);
-
-    rs = rwmsg_send_methbinding(&bch->ch, mb->meth->sig->pri, &mb->k, mb->meth->path);
-    if (rs != RW_STATUS_SUCCESS) {
-      rwmsg_sockset_pollout(bch->ch.ss, mb->meth->sig->pri, TRUE);
-      RWMSG_TRACE_CHAN(&bch->ch, WARN, "SEND FAILED SEND FAILED bch=%p", bch);
-      goto ret;
     }
-#ifdef DONT_USE_CK_HT_NEXT
-  RWMSG_RG_LOCK();
-#endif
+    if (i_bch->bro->bro_instid != bch->bro->bro_instid) {
+      continue;
+    }
+
+    /* Methbinding list is manipulated from arbitrary channel threads, we take the RG (global) lock */
+    RWMSG_RG_LOCK();
+    ct_lock++;
+    struct rwmsg_methbinding_s *mb = NULL;
+    for (mb = RW_DL_HEAD(&((rwmsg_broker_srvchan_t *)i_bch)->methbindings, struct rwmsg_methbinding_s, elem);
+         mb;
+         mb = RW_DL_NEXT(mb, struct rwmsg_methbinding_s, elem)) {
+      RW_ASSERT(mb);
+      RW_ASSERT(mb->meth);
+      RW_ASSERT(mb->meth->sig);
+      rw_status_t rs;
+      if (mb->k.bindtype != RWMSG_METHB_TYPE_BROSRVCHAN) {
+        continue;
+      }
+      if (mb->k.bro_instid != bch->bro->bro_instid) {
+        continue;
+      }
+      if (!mb->local_service) {
+        continue;
+      }
+      RW_ASSERT(bch->bro->bro_instid != 0);
+      
+      RWMSG_TRACE_CHAN(&bch->ch, INFO, "Sending the methbinding to peer-broker that just CONNECTED  path='%s' phash=0x%lx methno=%u payt=%d bro_instid=%d",
+                       mb->meth->path,
+                       mb->k.pathhash,
+                       mb->k.methno,
+                       mb->k.payt,
+                       mb->k.bro_instid);
+
+      /* It is a bit distressing to do this while holding the RG lock */
+      rs = rwmsg_send_methbinding(&bch->ch, mb->meth->sig->pri, &mb->k, mb->meth->path);
+      if (rs != RW_STATUS_SUCCESS) {
+        rwmsg_sockset_pollout(bch->ch.ss, mb->meth->sig->pri, TRUE);
+        RWMSG_TRACE_CHAN(&bch->ch, WARN, "SEND FAILED SEND FAILED bch=%p", bch);
+        break; // to UNLOCK
+      }
+    }
+    RWMSG_RG_UNLOCK();
+    ct_unlock++;
   }
-ret:
-#ifdef DONT_USE_CK_HT_NEXT
-  RWMSG_RG_UNLOCK();
-  }
-#endif
+
+  RW_ASSERT(ct_lock == ct_unlock);
 }
 
 

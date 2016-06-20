@@ -302,6 +302,22 @@ module rw-nsr
       default 4;
     }
   }
+
+  notification nsm-notification {
+    description "Notification for NSM Events.
+        The timestamp of this event is automatically expressed 
+        in human readble format - 1970-01-01T00:00:00Z";
+
+    leaf event {
+      description "Short description of the event";
+      type string;
+    }
+
+    leaf description {
+      description "The description of this event";
+      type string;
+    }
+  }
 }
 
 // vim: sw=2

@@ -17,6 +17,8 @@
  *
  */
 
+#define _GNU_SOURCE         /* See feature_test_macros(7) */
+#include <stdio.h>
 #include <unistd.h>
 #include <libgen.h>
 #include <execinfo.h>
@@ -27,8 +29,11 @@
 #include <libunwind.h>
 
 #include "rwlib.h"
-#define _GNU_SOURCE         /* See feature_test_macros(7) */
-#include <stdio.h>
+
+#include "python3.3m/Python.h"
+#include "python3.3m/frameobject.h"
+#include "python2.7/stringobject.h"
+#include "python3.3m/unicodeobject.h"
 
 extern char *program_invocation_name;
 
@@ -104,7 +109,7 @@ static int rw_get_file_and_line(unw_word_t addr,
   char pid_buf[30];
   sprintf(pid_buf, "%d", getpid());
   char name_buf[512];
-  name_buf[readlink("/proc/self/exe", name_buf, 511)]=0;
+  name_buf[readlink("/proc/self/exe", name_buf, 511)]=0;/* readlink wont return -1 ?? */
   int child_pid = fork();
   if (!child_pid) {
     dup2(2,1); // redirect output to stderr
@@ -114,6 +119,40 @@ static int rw_get_file_and_line(unw_word_t addr,
     abort(); /* If gdb failed to start */
   } else {
     waitpid(child_pid,NULL,0);
+  }
+}
+
+/**
+ * This function prints the python backtrace 
+ *
+ * @param[in] cursor - libunwind cursor  
+ * @param[in] out    - FILEP where to send output 
+ * @returns void
+ *
+ */
+void
+rw_unw_show_pybacktrace(unw_cursor_t cursor, FILE* out)
+{
+  unw_word_t bp; 
+  PyFrameObject *frame;
+  PyObject  *fileobj, *funcobj;
+  int depth = 0;
+
+  unw_get_reg(&cursor, UNW_X86_64_RBP, &bp);
+  frame = (PyFrameObject*)bp;
+
+  while (frame && (depth < MAX_STACK_DEPTH)) {
+    fileobj = PyUnicode_AsUTF8String(frame->f_code->co_filename);
+    funcobj = PyUnicode_AsUTF8String(frame->f_code->co_name);
+    fprintf(out, "%s(%d): %s\n",
+            fileobj?PyBytes_AsString(fileobj):"???",
+            PyFrame_GetLineNumber(frame),
+            funcobj?PyBytes_AsString(funcobj):"???");
+
+    if (fileobj) Py_DECREF(fileobj);
+    if (funcobj) Py_DECREF(funcobj);
+    frame = frame->f_back;
+    depth++;
   }
 }
 
@@ -131,6 +170,7 @@ void rw_show_unw_backtrace (FILE *out) {
   // unw_proc_info_t pi;
   int line;
   int depth = 0;
+  bool pybt_done = FALSE;
 
   UNUSED(out);
 
@@ -153,6 +193,12 @@ void rw_show_unw_backtrace (FILE *out) {
       } else {
         snprintf(buf, sizeof (buf), "<%s>", name);
       }
+    }
+    
+    /* Check for Python backtrace */
+    if (!strncmp(name,"PyEval_EvalFrameEx", 18) && !pybt_done) {
+      rw_unw_show_pybacktrace(cursor, out);
+      pybt_done = TRUE;
     }
     rw_get_file_and_line((long)ip, name, 256, &line);
     fprintf(out, "%016lx %s <%s:%d> (sp=%016lx)\n", 
@@ -234,6 +280,38 @@ char* rw_btrace_get_proc_name(void *addr)
 
   ret = strdup(strings[0]);
   free(strings);
+
+  return ret;
+}
+
+typedef struct my_unw_addr_space {
+  struct unw_accessors acc;
+} *my_unw_addr_space_t;
+
+/**
+ * This function gets the function-name for an address using libunwind APIs
+ *
+ * @param[in] addr - address to be decoded
+ *
+ * @returns char* - this memory need to be freed by the caller
+ */
+char* rw_unw_get_proc_name(void *addr)
+{
+  unw_cursor_t cursor; unw_context_t uc;
+  unw_getcontext(&uc);
+  unw_init_local(&cursor, &uc);
+  unw_word_t offset;
+  char fname[999];
+  char *ret = NULL;
+
+  my_unw_addr_space_t as = (my_unw_addr_space_t)unw_local_addr_space;
+  (as->acc.get_proc_name)(
+      unw_local_addr_space,
+      (unw_word_t)addr,
+      fname, sizeof(fname), &offset, NULL);
+  int r = asprintf(&ret, "%s+0x%lx", fname, offset);
+  RW_ASSERT(r != -1);
+  //ret = strdup(fname);
 
   return ret;
 }

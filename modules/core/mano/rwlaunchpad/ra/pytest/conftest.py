@@ -181,39 +181,58 @@ def path_pong_image(image_paths):
     '''
     return image_paths["Fedora-x86_64-20-20131211.1-sda-pong.qcow2"]
 
-# Setting scope to be module, so that we get a different UUID when called
-# by different files/modules.
-@pytest.fixture(scope='session')
-def ping_pong_records(path_ping_image, path_pong_image, rsyslog_host, rsyslog_port):
-    '''Fixture containing a set of generated ping and pong descriptors
-    '''
-    def md5sum(path):
-        with open(path, mode='rb') as fd:
-            md5 = hashlib.md5()
-            for buf in iter(functools.partial(fd.read, 4096), b''):
-                md5.update(buf)
-        return md5.hexdigest()
+class PingPongFactory:
+    def __init__(self, path_ping_image, path_pong_image, rsyslog_host, rsyslog_port):
+        self.path_ping_image = path_ping_image
+        self.path_pong_image = path_pong_image
+        self.rsyslog_host = rsyslog_host
+        self.rsyslog_port = rsyslog_port
 
-    ping_md5sum = md5sum(path_ping_image)
-    pong_md5sum = md5sum(path_pong_image)
+    def generate_descriptors(self):
+        '''Return a new set of ping and pong descriptors
+        '''
+        def md5sum(path):
+            with open(path, mode='rb') as fd:
+                md5 = hashlib.md5()
+                for buf in iter(functools.partial(fd.read, 4096), b''):
+                    md5.update(buf)
+            return md5.hexdigest()
 
-    ex_userdata = None
-    if rsyslog_host and rsyslog_port:
-        ex_userdata = '''
+        ping_md5sum = md5sum(self.path_ping_image)
+        pong_md5sum = md5sum(self.path_pong_image)
+
+        ex_userdata = None
+        if self.rsyslog_host and self.rsyslog_port:
+            ex_userdata = '''
 rsyslog:
   - "$ActionForwardDefaultTemplate RSYSLOG_ForwardFormat"
   - "*.* @{host}:{port}"
-        '''
+            '''.format(
+                host=self.rsyslog_host,
+                port=self.rsyslog_port,
+            )
 
-    descriptors = ping_pong.generate_ping_pong_descriptors(
-            pingcount=1,
-            ping_md5sum=ping_md5sum,
-            pong_md5sum=pong_md5sum,
-            ex_ping_userdata=ex_userdata,
-            ex_pong_userdata=ex_userdata,
-    )
+        descriptors = ping_pong.generate_ping_pong_descriptors(
+                pingcount=1,
+                ping_md5sum=ping_md5sum,
+                pong_md5sum=pong_md5sum,
+                ex_ping_userdata=ex_userdata,
+                ex_pong_userdata=ex_userdata,
+        )
 
-    return descriptors
+        return descriptors
+
+@pytest.fixture(scope='session')
+def ping_pong_factory(path_ping_image, path_pong_image, rsyslog_host, rsyslog_port):
+    '''Fixture returns a factory capable of generating ping and pong descriptors
+    '''
+    return PingPongFactory(path_ping_image, path_pong_image, rsyslog_host, rsyslog_port)
+
+@pytest.fixture(scope='session')
+def ping_pong_records(ping_pong_factory):
+    '''Fixture returns the default set of ping_pong descriptors
+    '''
+    return ping_pong_factory.generate_descriptors()
 
 
 @pytest.fixture(scope='session')
@@ -287,3 +306,19 @@ def descriptors(request, ping_pong_records):
         return haproxy_descriptors()
 
 
+@pytest.fixture(scope='session')
+def descriptor_images(request):
+    def haproxy_images():
+        """HAProxy images."""
+        images = [
+            os.path.join(os.getenv('RIFT_ROOT'), "images/haproxy-v03.qcow2"),
+            os.path.join(os.getenv('RIFT_ROOT'), "images/web-app-firewall-v02.qcow2"),
+            os.path.join(os.getenv('RIFT_ROOT'), "images/web-server-v02.qcow2")
+            ]
+
+        return images
+
+    if request.config.option.network_service == "haproxy":
+        return haproxy_images()
+
+    return []

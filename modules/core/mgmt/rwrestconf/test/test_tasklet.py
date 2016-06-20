@@ -690,7 +690,7 @@ class DtsTestCase(unittest.TestCase):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_ok(xact_info.handle)
                 results['on_prepare'] = str(msg)
 
@@ -1508,7 +1508,7 @@ class DtsTestCase(unittest.TestCase):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_ok(xact_info.handle)
 
             with dts.appconf_group_create(handler=handlers) as acg:

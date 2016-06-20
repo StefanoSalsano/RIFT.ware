@@ -962,7 +962,7 @@ rw_status_t rwdts_journal_update(rwdts_member_registration_t *reg,
   if (journal && RWDTS_JOURNAL_USED(journal->journal_mode)) {
     RW_ASSERT_TYPE(journal, rwdts_journal_t);
     RWDtsQuery *query = xquery->query;
-    if (!RWDTS_JOURNAL_IS_VALID_QUERY(query)) {
+    if (!RWDTS_JOURNAL_IS_VALID_QUERY(query) || 0) {
       return RW_STATUS_SUCCESS;
     }
 
@@ -1055,7 +1055,7 @@ void rwdts_journal_consume_xquery(rwdts_xact_query_t *xquery,
   rwdts_match_info_t *match;
   rw_status_t rs;
   for (match = RW_SKLIST_HEAD(&(xquery->reg_matches), rwdts_match_info_t);
-       match;
+       match && 0;
        match = RW_SKLIST_NEXT(match, rwdts_match_info_t, match_elt)) {
     if (((match->evtrsp == RWDTS_EVTRSP_ACK)
          || (match->evtrsp == RWDTS_EVTRSP_ASYNC))

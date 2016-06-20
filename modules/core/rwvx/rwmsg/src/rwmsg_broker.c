@@ -502,12 +502,14 @@ rwmsg_broker_t *rwmsg_broker_create(uint32_t sysid,
           RWMSG_TRACE(bro->ep, ERROR, "ERROR: Entry for this broker already exist in RWZK (zookeeper/zake) - /sys-%u/rwmsg/broker/inst-%u\n"
                           "ERROR: Check whether a previous instance of zookeeper is already running?\n",
                           bro->sysid, bro->bro_instid);
-          RW_ASSERT(!rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path));
+        //  RW_ASSERT(!rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path));
         }
+        else {
         RW_ASSERT(!rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path));
 
         rs = rwvcs_rwzk_create(ti->rwvcs, my_rwzk_path);
         RW_ASSERT(rs == RW_STATUS_SUCCESS);
+        }
 
         if (ext_ip_address) {
           sprintf(rwzk_set_data, ":%u:tcp://%s:%u", 0, ext_ip_address, port);

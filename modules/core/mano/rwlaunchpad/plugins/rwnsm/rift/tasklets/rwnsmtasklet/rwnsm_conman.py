@@ -4,10 +4,10 @@
 #
 
 import asyncio
-import time
 import ncclient
 import ncclient.asyncio_manager
 import re
+import time
 
 import gi
 gi.require_version('RwYang', '1.0')
@@ -15,13 +15,15 @@ gi.require_version('RwNsmYang', '1.0')
 gi.require_version('RwDts', '1.0')
 gi.require_version('RwTypes', '1.0')
 gi.require_version('RwConmanYang', '1.0')
+gi.require_version('NsrYang', '1.0')
+
 from gi.repository import (
+    NsrYang as nsrY,
     RwYang,
     RwNsmYang as nsmY,
-    NsrYang as nsrY,
     RwDts as rwdts,
     RwTypes,
-    RwConmanYang as conmanY
+    RwConmanYang as conmanY,
 )
 
 import rift.tasklets
@@ -41,25 +43,63 @@ class ROConfigManager(object):
     def cm_state_xpath(self):
         return ("/rw-conman:cm-state/rw-conman:cm-nsr")
 
+    @classmethod
+    def map_config_status(cls, status):
+        cfg_map = {
+            'init': nsrY.ConfigStates.INIT,
+            'received': nsrY.ConfigStates.CONFIGURING,
+            'cfg_delay': nsrY.ConfigStates.CONFIGURING,
+            'cfg_process': nsrY.ConfigStates.CONFIGURING,
+            'cfg_process-failed': nsrY.ConfigStates.CONFIGURING,
+            'cfg_sched': nsrY.ConfigStates.CONFIGURING,
+            'connecting': nsrY.ConfigStates.CONFIGURING,
+            'failed_connection': nsrY.ConfigStates.CONFIGURING,
+            'netconf_connected': nsrY.ConfigStates.CONFIGURING,
+            'netconf_ssh_connected': nsrY.ConfigStates.CONFIGURING,
+            'restconf_connected': nsrY.ConfigStates.CONFIGURING,
+            'cfg_send': nsrY.ConfigStates.CONFIGURING,
+            'cfg_failed': nsrY.ConfigStates.FAILED,
+            'ready_no_cfg': nsrY.ConfigStates.CONFIG_NOT_NEEDED,
+            'ready': nsrY.ConfigStates.CONFIGURED,
+        }
+
+        return cfg_map[status]
+
     @asyncio.coroutine
     def update_ns_cfg_state(self, cm_nsr):
-        try:
-            if (cm_nsr is None or 'cm_vnfr' not in cm_nsr):
-                return
+        if cm_nsr is None:
+            return
 
-            # Fill in new state to all vnfrs
-            gen = (vnfr for vnfr in cm_nsr['cm_vnfr'] if vnfr['id'] in self.nsm._vnfrs)
+        try:
+            nsrid = cm_nsr['id']
+
+            # Update the VNFRs' config status
+            gen = []
+            if 'cm_vnfr' in cm_nsr:
+                gen = (vnfr for vnfr in cm_nsr['cm_vnfr']
+                       if vnfr['id'] in self.nsm._vnfrs)
+
             for vnfr in gen:
                 vnfrid = vnfr['id']
-                # Need a consistent derivable way of checking state (hard coded for now)
-                if ((vnfr['state'] == 'ready' and
-                     self.nsm._vnfrs[vnfrid].is_configured() is False) or
-                     vnfr['state'] == 'ready_no_cfg') :
-                    yield from self.nsm._vnfrs[vnfrid].set_config_status(nsrY.ConfigStates.CONFIGURED)
+                new_status = ROConfigManager.map_config_status(vnfr['state'])
+                self._log.debug("Updating config status of VNFR {} " \
+                                "in NSR {} to {}({})".
+                                format(vnfrid, nsrid, new_status,
+                                       vnfr['state']))
+                yield from \
+                    self.nsm.vnfrs[vnfrid].set_config_status(new_status)
+
+            # Update the NSR's config status
+            new_status = ROConfigManager.map_config_status(cm_nsr['state'])
+            self._log.debug("Updating config status of NSR {} to {}({})".
+                                format(nsrid, new_status, cm_nsr['state']))
+            yield from self.nsm.nsrs[nsrid].set_config_status(new_status)
 
         except Exception as e:
-            self._log.error("Failed to process cm-state(nsr) e=%s", str(e))
-                
+            self._log.error("Failed to process cm-state for nsr {}: {}".
+                            format(nsrid, e))
+            self._log.exception(e)
+
     @asyncio.coroutine
     def register(self):
         """ Register for cm-state changes """

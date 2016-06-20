@@ -232,51 +232,6 @@ class TestRwDtsApi(unittest.TestCase):
       logger.info("Pstring  (%s)" %str1)
       self.assertEqual(len(str1),len(json_str))
 
-    def test_file_db(self):
-      key_entry = ['name1', 'name2', 'name3', 'name4', 'name5', 'name6', 'name7',
-                   'name8', 'name9', 'name10', 'name11', 'name12', 'name13',
-                   'name14', 'name15', 'name16', 'name17', 'name18', 'name19']
-
-      tab_entry = ['Fox', 'Sheldon', 'Leonard', 'Raj', 'Howard', 'Bernie',
-                   'Amy', 'Steve', 'Wilma', 'Fred', 'Charlie', 'Penny','What',
-                   'When', 'Why', 'Who', 'How', 'BBC', 'CNN']
-
-   
-      handle = RwDts.rwdts_kv_allocate_handle(RwDts.AvailDb.BK_DB)
-      handle.open_db('/tmp/Test_python.db', None, None)
-
-      status = handle.file_set_keyval(key_entry[0], len(key_entry[0]),
-                                      tab_entry[0], len(tab_entry[0]))
-      self.assertEqual(status, RwTypes.RwStatus.SUCCESS)
-      for index in range (len(key_entry)):
-        status = handle.file_set_keyval(key_entry[index], len(key_entry[index]),
-                                        tab_entry[index], len(tab_entry[index]))
-        self.assertEqual(status, RwTypes.RwStatus.SUCCESS)
-       
-      for index in range (len(key_entry)):
-        status, val, val_len = handle.file_get_keyval(key_entry[index], len(key_entry[index]))
-        self.assertEqual(status, RwTypes.RwStatus.SUCCESS)
-        #print(val) 
-
-      status = handle.file_del_keyval(key_entry[0], len(key_entry[0]))
-      self.assertEqual(status, RwTypes.RwStatus.SUCCESS)
-
-      status, val, val_len = handle.file_get_keyval(key_entry[0], len(key_entry[0]))
-      self.assertEqual(status, RwTypes.RwStatus.FAILURE)
-
-      cursor = handle.file_get_cursor()
-      status = RwTypes.RwStatus.SUCCESS
-
-      while(status == RwTypes.RwStatus.SUCCESS):
-        status, key, key_len, val, val_len, new_cursor = handle.file_getnext(cursor)
-        if (status == RwTypes.RwStatus.SUCCESS):
-          #print(key, val)
-          cursor = new_cursor
-
-      handle.file_close()
-
-      handle.file_remove()
-
 def main(argv=sys.argv[1:]):
     logging.basicConfig(format='TEST %(message)s')
     top_dir = __file__[:__file__.find('/modules/core/')]

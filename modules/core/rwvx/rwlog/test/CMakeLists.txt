@@ -43,8 +43,8 @@ rift_pytest(rwlog_pytest
   DEPENDS rwlog rwgeneric_yang
 )
 
-#rift_py3test(log_tasklet_test
-#  TEST_ARGS ${CMAKE_CURRENT_SOURCE_DIR}/log_tasklet_test.py
-#  DEPENDS rwlog rwgeneric_yang rw_logtest_yang
-#)
+rift_py3test(log_tasklet_test
+  TEST_ARGS ${CMAKE_CURRENT_SOURCE_DIR}/log_tasklet_test.py
+  DEPENDS rwlog rwgeneric_yang rw_logtest_yang
+)
 

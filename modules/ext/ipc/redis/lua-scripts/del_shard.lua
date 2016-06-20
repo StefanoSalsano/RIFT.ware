@@ -14,7 +14,7 @@
  --]]
 
 local db = tonumber(ARGV[1])
-local shard_num = tonumber(ARGV[2])
+local shard_num = ARGV[2] 
 local delimiter = ":"
 local i = 1
 local count = 1
@@ -34,7 +34,7 @@ while key_result[i] do
          result[j] = match
          j = j + 1
     end
-    if shard_num == tonumber(result[1]) then
+    if shard_num == (result[1]) then
       del_count = redis.call("DEL", key_result[i])
       total_del_count = total_del_count + del_count
     end

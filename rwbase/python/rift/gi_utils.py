@@ -80,7 +80,7 @@ class GIPBCMList(GIList):
     def __str__(self):
         return str(simplify(self))
 
-    def add(self):
+    def add(self, **kwargs):
         """
         Create a new element of the appropriate type for the list and append it.
 
@@ -88,6 +88,7 @@ class GIPBCMList(GIList):
         """
         createf = getattr(self.parent, '_create_' + self.property_name)
         element = createf()
+        element.from_dict(kwargs)
         self.append(element)
         return element
 

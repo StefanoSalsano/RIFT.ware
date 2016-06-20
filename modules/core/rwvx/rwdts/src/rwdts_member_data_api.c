@@ -158,6 +158,20 @@ rwdts_member_reg_handle_handle_create_update_element(rwdts_member_reg_handle_t  
 /*******************************************************************************
  *                      Static functions                                       *
  *******************************************************************************/
+
+static rwdts_kv_light_reply_status_t
+rwdts_member_data_cache_set_callback(rwdts_kv_light_set_status_t status,
+                                     int serial_num, void *userdata)
+{
+  //rwdts_kv_handle_t *handle = (rwdts_kv_handle_t *)userdata;
+
+  if (RWDTS_KV_LIGHT_SET_SUCCESS == status) {
+    /* DO Nothing */
+  }
+
+  return RWDTS_KV_LIGHT_REPLY_DONE;
+}
+
 static void 
 rwdts_member_data_finalize(rwdts_member_data_record_t*    mbr_data,
                            rwdts_member_data_object_t*    mobj,
@@ -197,14 +211,20 @@ rwdts_member_data_finalize(rwdts_member_data_record_t*    mbr_data,
                                           &mbr_data->rcvd_member_advise_cb,
                                           true);
 
-    if (!mbr_data->xact && (mbr_data->reg->flags & RWDTS_FLAG_FILE_DATASTORE)) {
+    if (!mbr_data->xact && (mbr_data->reg->apih->rwtasklet_info && 
+        ((mbr_data->reg->apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_BDB) ||
+        (mbr_data->reg->apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_REDIS)))) {
       if (mbr_data->reg->kv_handle) {
         uint8_t *payload;
         size_t  payload_len;
         payload = protobuf_c_message_serialize(NULL, mobj->msg, &payload_len);
-        rw_status_t rs = rwdts_kv_handle_file_set_keyval(mbr_data->reg->kv_handle, (char *)mobj->key, mobj->key_len,
-                                                         (char *)payload, (int)payload_len);
+        rw_status_t rs = rwdts_kv_handle_add_keyval(mbr_data->reg->kv_handle, 0, (char *)mobj->key, mobj->key_len,
+                                                   (char *)payload, (int)payload_len, rwdts_member_data_cache_set_callback, 
+                                                   (void *)mbr_data->reg->kv_handle);
         RW_ASSERT(rs == RW_STATUS_SUCCESS);
+        if (rs != RW_STATUS_SUCCESS) {
+          /* Fail the VM and switchover to STANDBY */
+        }
       }
     }
   }
@@ -737,7 +757,7 @@ rwdts_member_data_advice_query_action(rwdts_xact_t*             xact,
   }
 
   if (!xact) {
-    flags |= RWDTS_XACT_FLAG_NOTRAN;
+//  flags |= RWDTS_XACT_FLAG_NOTRAN;
     flags |= RWDTS_XACT_FLAG_END;
     rwdts_memer_data_adv_event_t* member_adv_event = rwdts_memer_data_adv_init(rcvd_advise_cb,
                                                                                reg,
@@ -2150,32 +2170,198 @@ rwdts_member_data_delete_list_element_w_key_f(rwdts_member_data_record_t *mbr_da
   size_t depth_i = rw_keyspec_path_get_depth(mbr_data->keyspec);
   size_t depth_o = rw_keyspec_path_get_depth(mbr_data->reg->keyspec);
 
-  if (depth_i == depth_o) {
-    if (rw_keyspec_path_has_wildcards(mbr_data->keyspec)) {
+  rw_status= rw_keyspec_path_create_dup(mbr_data->keyspec, NULL, &derived_ks);
+  RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
+  if (rw_status != RW_STATUS_SUCCESS) {
+    goto finish;
+  }
+  RW_ASSERT(derived_ks);
+
+  /* The basic assumption accepted here is that there will not be wildcard in the
+   * middle of the query-keyspec */
+
+  if (depth_i > depth_o) {
+    /* The duplicate of received keyspec is truncated at the registration point.
+     * This is done to fetch the stored-object based on the received key. The
+     * received query keyspec is intact in mbr_data->keyspec. This is later used
+     * to delete the photo field from the stored-object data.
+     */
+    rw_status = rw_keyspec_path_trunc_suffix_n(derived_ks, NULL, depth_o);
+    RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
+    if (rw_status != RW_STATUS_SUCCESS) {
+      goto finish;
+    }
+
+    if (mbr_data->xact == NULL) {
+      rw_status = RW_KEYSPEC_PATH_GET_BINPATH(derived_ks, NULL , (const uint8_t **)&key, &key_len, NULL);
+      RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
+      RW_ASSERT(key);
+      mobj = NULL;
+      /* Fetch the stored-object based on truncated query-keyspec */
+      HASH_FIND(hh_data, (*obj_list_p), key, key_len, mobj);
+      if (mobj) {
+        RW_ASSERT_TYPE(mobj, rwdts_member_data_object_t);
+        /* Delete the proto field from the stored-object based on received
+         * (non-truncated) query keyspec */
+        rw_status = RW_KEYSPEC_PATH_DELETE_PROTO_FIELD(NULL,
+                                                       mobj->keyspec,
+                                                       mbr_data->keyspec,
+                                                       mobj->msg,
+                                                       NULL);
+        if (rw_status != RW_STATUS_SUCCESS) {
+          char  *tmp_str = NULL;
+          rw_keyspec_path_get_new_print_buffer(mbr_data->keyspec, NULL ,
+                                               rwdts_api_get_ypbc_schema(apih),
+                                               &tmp_str);
+          RWDTS_API_LOG_XACT_DEBUG_EVENT(apih, xact, DeleteNonExistent, "Attempting to delete non existent data",
+                                         apih->client_path, mbr_data->reg->keystr, tmp_str);
+          if (tmp_str) {
+            free(tmp_str);
+          }
+          goto finish;
+        }
+        update_advice = true;
+      } else {
+        RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
+                                NULL, rw_status,
+                                "Delete list element failed; no such object");
+        goto finish;
+      }
+    } else {
+      rwdts_member_data_object_t *newobj = NULL;
+      /* If the query keyspec is deeper than the registered keyspec, it needs to
+         be truncated to find the object. Most of this code is temporary
+         and will be modified when protobuf delta is available */
+      if (rw_keyspec_path_has_wildcards(derived_ks)) {
+        RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
+                                NULL, RW_STATUS_FAILURE,
+                                RWDTS_ERRSTR_KEY_WILDCARDS);
+        goto finish;
+      }
+      rw_status = RW_KEYSPEC_PATH_GET_BINPATH(derived_ks, NULL , (const uint8_t **)&key, &key_len, NULL);
+      RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
+      RW_ASSERT(key);
+      mobj = NULL;
+
+      /* Find the stored data-object from the committed list */
+      HASH_FIND(hh_data, mbr_data->reg->obj_list, key, key_len, mobj);
+      if (mobj) {
+        RW_ASSERT_TYPE(mobj, rwdts_member_data_object_t);
+        newobj = rwdts_member_data_duplicate_obj(mobj);
+        /* Delete the proto field from the stored-object based on received
+         * (non-truncated) query keyspec */
+        rw_status = RW_KEYSPEC_PATH_DELETE_PROTO_FIELD(NULL,
+                                                       mobj->keyspec,
+                                                       mbr_data->keyspec,
+                                                       newobj->msg,
+                                                       NULL);
+        if (rw_status != RW_STATUS_SUCCESS) {
+          char  *tmp_str = NULL;
+          rw_keyspec_path_get_new_print_buffer(mbr_data->keyspec, NULL ,
+                                               rwdts_api_get_ypbc_schema(apih),
+                                               &tmp_str);
+          RWDTS_API_LOG_XACT_DEBUG_EVENT(apih, xact, DeleteNonExistent, "Attempting to delete non existent data",
+                                         apih->client_path, mbr_data->reg->keystr, tmp_str);
+          if (tmp_str) {
+            free(tmp_str);
+          }
+          goto finish;
+        }
+        newobj->replace_flag = 1;
+        newobj->update_flag = 1;
+        HASH_ADD_KEYPTR(hh_data, (*obj_list_p), newobj->key, newobj->key_len, newobj);
+        apih->stats.num_xact_update_objects++;
+        mbr_data->reg->stats.num_xact_update_objects++;
+      }
+
+      mobj = NULL;
+      /* Find the stored data-object from the non-committed list */
+      HASH_FIND(hh_data, mbr_data->xact->obj_list, key, key_len, mobj);
+      if (mobj) {
+        RW_ASSERT_TYPE(mobj, rwdts_member_data_object_t);
+        /* Delete the proto field from the temporarily stored data based on the
+         * received (non-truncated) query keyspec */
+        if (mobj->create_flag || mobj->update_flag) {
+          rw_status = RW_KEYSPEC_PATH_DELETE_PROTO_FIELD(NULL,
+                                                         mobj->keyspec,
+                                                         mbr_data->keyspec,
+                                                         mobj->msg,
+                                                         NULL);
+          if (rw_status != RW_STATUS_SUCCESS) {
+            char  *tmp_str = NULL;
+            rw_keyspec_path_get_new_print_buffer(mbr_data->keyspec, NULL ,
+                                                 rwdts_api_get_ypbc_schema(apih),
+                                                 &tmp_str);
+            RWDTS_API_LOG_XACT_DEBUG_EVENT(apih, xact, DeleteNonExistent, "Attempting to delete non existent data",
+                                           apih->client_path, mbr_data->reg->keystr, tmp_str);
+            if (tmp_str) {
+              free(tmp_str);
+            }
+            goto finish;
+          }
+          update_advice = true;
+        }
+      } 
+
+      if (update_advice != true) { 
+        RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
+                                NULL, rw_status,
+                                "Delete list element failed; no such object");
+        goto finish;
+      }
+    }
+    goto send_update;
+  }
+
+  if (((depth_i == depth_o) && rw_keyspec_path_has_wildcards(mbr_data->keyspec)) ||
+      (depth_i < depth_o)) {
+      /* Remove the stored-data objects from commited and non-commited list in
+       * this scenario when the query keyspec depth matches the reg keyspec
+       * depth and the query keyspec is wildcarded. Also the same functionality
+       * is needed when the query keyspec depth is less than the reg keyspec
+       * depth */
       if (mbr_data->xact == NULL) {
         rwdts_member_data_object_t *mobj, *tmp;
         HASH_ITER(hh_data, mbr_data->reg->obj_list, mobj, tmp) {
-          HASH_DELETE(hh_data, mbr_data->reg->obj_list, mobj);
-          rwdts_member_pub_del(mbr_data, mobj);
-          rw_status = rwdts_member_data_deinit(mobj);
-          RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
-          if (rw_status != RW_STATUS_SUCCESS) {
-            goto finish;
+          if (rw_keyspec_path_is_a_sub_keyspec(NULL, mbr_data->keyspec, mobj->keyspec)) {
+            HASH_DELETE(hh_data, mbr_data->reg->obj_list, mobj);
+            rwdts_member_pub_del(mbr_data, mobj);
+            rw_status = rwdts_member_data_deinit(mobj);
+            RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
+            if (rw_status != RW_STATUS_SUCCESS) {
+              goto finish;
+            }
           }
         }
       } else {
         rwdts_member_data_object_t *mobj, *tmp;
         HASH_ITER(hh_data, mbr_data->reg->obj_list, mobj, tmp) {
-          rwdts_member_data_object_t *newobj = NULL;
-          newobj = rwdts_member_data_duplicate_obj(mobj);
-          newobj->delete_mark = 1;
-          HASH_ADD_KEYPTR(hh_data, (*obj_list_p), newobj->key, newobj->key_len, newobj);
-          apih->stats.num_xact_delete_objects++;
-          mbr_data->reg->stats.num_xact_delete_objects++;
+          if (rw_keyspec_path_is_a_sub_keyspec(NULL, mbr_data->keyspec, mobj->keyspec)) {
+            rwdts_member_data_object_t *newobj = NULL;
+            newobj = rwdts_member_data_duplicate_obj(mobj);
+            newobj->delete_mark = 1;
+            HASH_ADD_KEYPTR(hh_data, (*obj_list_p), newobj->key, newobj->key_len, newobj);
+            apih->stats.num_xact_delete_objects++;
+            mbr_data->reg->stats.num_xact_delete_objects++;
+          }
+        }
+        /* Remove any uncommited data matching the same key */
+        HASH_ITER(hh_data, mbr_data->xact->obj_list, mobj, tmp) {
+          if ((mobj->create_flag || mobj->update_flag) &&
+              rw_keyspec_path_is_a_sub_keyspec(NULL, mbr_data->keyspec, mobj->keyspec)) {
+            HASH_DELETE(hh_data, mbr_data->xact->obj_list, mobj);
+            rw_status = rwdts_member_data_deinit(mobj);
+            RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
+            if (rw_status != RW_STATUS_SUCCESS) {
+              goto finish;
+            }
+          }
         }
       }
     } else {
-
+      /* This is a case where the depth_i and depth_o are same and the query
+       * keyspec is not wildcarded. In this case, the data is fred when there is
+       * an absolute key matching */
       rw_status = RW_KEYSPEC_PATH_GET_BINPATH(mbr_data->keyspec, NULL,
                                             (const uint8_t **)&key, &key_len, NULL);
       if (rw_status != RW_STATUS_SUCCESS) {
@@ -2243,164 +2429,7 @@ rwdts_member_data_delete_list_element_w_key_f(rwdts_member_data_record_t *mbr_da
       }
     }
 
-  } else { /* depth_i != depth_o */
-
-    rw_status= rw_keyspec_path_create_dup(mbr_data->keyspec, NULL, &derived_ks);
-    RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
-    if (rw_status != RW_STATUS_SUCCESS) {
-      goto finish;
-    }
-    RW_ASSERT(derived_ks);
-
-    if (depth_i > depth_o) {
-      /* When query key (i) is longer, we trim it to match the
-	 registration key length, then look up registration objects
-	 from the truncated query key's binpath.  
-
-	 BUG, this seems like it will miss wildcard queries which
-	 match.  I beleive this should be collapsed into a single
-	 iterate-and-compare code path like the i < o one below.
-	 Possibly the above case as well.  Needing four different
-	 vaguely similar ways to match can't be right.
-      */
-      rw_status = rw_keyspec_path_trunc_suffix_n(derived_ks, NULL, depth_o);
-      RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
-      if (rw_status != RW_STATUS_SUCCESS) {
-        goto finish;
-      }
-
-      if (mbr_data->xact == NULL) {
-        rw_status = RW_KEYSPEC_PATH_GET_BINPATH(derived_ks, NULL , (const uint8_t **)&key, &key_len, NULL);
-        RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
-        RW_ASSERT(key);
-        mobj = NULL;
-        HASH_FIND(hh_data, (*obj_list_p), key, key_len, mobj);
-        if (mobj) {
-          RW_ASSERT_TYPE(mobj, rwdts_member_data_object_t);
-          rw_status = RW_KEYSPEC_PATH_DELETE_PROTO_FIELD(NULL,
-                                                         mobj->keyspec,
-                                                         mbr_data->keyspec,
-                                                         mobj->msg,
-                                                         NULL);
-          if (rw_status != RW_STATUS_SUCCESS) {
-            char  *tmp_str = NULL;
-            rw_keyspec_path_get_new_print_buffer(mbr_data->keyspec, NULL ,
-                                                 rwdts_api_get_ypbc_schema(apih),
-                                                 &tmp_str);
-            RWDTS_API_LOG_XACT_DEBUG_EVENT(apih, xact, DeleteNonExistent, "Attempting to delete non existent data",
-                                           apih->client_path, mbr_data->reg->keystr, tmp_str);
-            if (tmp_str) {
-              free(tmp_str);
-            }
-            goto finish;
-          }
-          update_advice = true;
-        } else {
-          RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
-                                  NULL, rw_status,
-                                  "Delete list element failed; no such object");
-          goto finish;
-        }
-      } else {
-        rwdts_member_data_object_t *newobj = NULL;
-        /* If the query keyspec is deeper than the registered keyspec, it needs to
-           be truncated to find the object. Most of this code is temporary
-           and will be modified when protobuf delta is available */
-        if (rw_keyspec_path_has_wildcards(derived_ks)) {
-          RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
-                                  NULL, RW_STATUS_FAILURE,
-                                  RWDTS_ERRSTR_KEY_WILDCARDS);
-          goto finish;
-        }
-        rw_status = RW_KEYSPEC_PATH_GET_BINPATH(derived_ks, NULL , (const uint8_t **)&key, &key_len, NULL);
-        RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
-        RW_ASSERT(key);
-        mobj = NULL;
-
-        HASH_FIND(hh_data, mbr_data->reg->obj_list, key, key_len, mobj);
-        if (mobj) {
-          RW_ASSERT_TYPE(mobj, rwdts_member_data_object_t);
-          newobj = rwdts_member_data_duplicate_obj(mobj);
-          rw_status = RW_KEYSPEC_PATH_DELETE_PROTO_FIELD(NULL,
-                                                         mobj->keyspec,
-                                                         mbr_data->keyspec,
-                                                         newobj->msg,
-                                                         NULL);
-          if (rw_status != RW_STATUS_SUCCESS) {
-            char  *tmp_str = NULL;
-            rw_keyspec_path_get_new_print_buffer(mbr_data->keyspec, NULL ,
-                                                 rwdts_api_get_ypbc_schema(apih),
-                                                 &tmp_str);
-            RWDTS_API_LOG_XACT_DEBUG_EVENT(apih, xact, DeleteNonExistent, "Attempting to delete non existent data",
-                                           apih->client_path, mbr_data->reg->keystr, tmp_str);
-            if (tmp_str) {
-              free(tmp_str);
-            }
-            goto finish;
-          }
-          newobj->replace_flag = 1;
-          newobj->update_flag = 1;
-          HASH_ADD_KEYPTR(hh_data, (*obj_list_p), newobj->key, newobj->key_len, newobj);
-          apih->stats.num_xact_update_objects++;
-          mbr_data->reg->stats.num_xact_update_objects++;
-        } else {
-          RWDTS_MEMBER_SEND_ERROR(mbr_data->xact, mbr_data->keyspec, NULL, NULL,
-                                  NULL, rw_status,
-                                  "Delete list element failed; no such object");
-          goto finish;
-        }
-      }
-
-    } else { /* depth_i < depth_o */
-
-      /* Query (i) key is shorter than this (matching) registration
-	 keypath; we iterate over the registration's objects and
-	 compare the query's key to see if it is a prefix match.
-
-	 Even though we already know the query key matches this
-	 registration's key, an explicit per-object compare is needed
-	 for the case of query=DELETE /foo[1], reg=/foo[*]/bar,
-	 mobj=/foo[2]/bar.  It's the possibility of wildcards in the
-	 registration that makes the query-vs-registration key match
-	 insufficient. */
-
-      if (mbr_data->xact == NULL) {
-	rwdts_member_data_object_t *mobj, *tmp;
-        HASH_ITER(hh_data, mbr_data->reg->obj_list, mobj, tmp) {
-
-	  /* Compare derived_ks to first depth_i elements of mobj->keyspec */
-	  if (rw_keyspec_path_is_a_sub_keyspec(NULL, derived_ks, mobj->keyspec)) {
-	    HASH_DELETE(hh_data, mbr_data->reg->obj_list, mobj);
-	    rwdts_member_pub_del(mbr_data, mobj);
-	    rw_status = rwdts_member_data_deinit(mobj);
-	    RW_ASSERT(rw_status == RW_STATUS_SUCCESS);
-	    if (rw_status != RW_STATUS_SUCCESS) {
-	      goto finish;
-	    }
-	  }
-        }
-      } else {
-        rwdts_member_data_object_t *mobj, *tmp;
-        HASH_ITER(hh_data, mbr_data->reg->obj_list, mobj, tmp) {
-	  /* Compare derived_ks to first depth_i elements of mobj->keyspec */
-	  if (rw_keyspec_path_is_a_sub_keyspec(NULL, derived_ks, mobj->keyspec)) {
-	    rwdts_member_data_object_t *newobj = NULL;
-	    newobj = rwdts_member_data_duplicate_obj(mobj);
-	    newobj->delete_mark = 1;
-	    HASH_ADD_KEYPTR(hh_data, (*obj_list_p), newobj->key, newobj->key_len, newobj);
-	    apih->stats.num_xact_delete_objects++;
-	    mbr_data->reg->stats.num_xact_delete_objects++;
-	  }
-        }
-
-	/* BUG need to find and delete-mark any matching create
-	   item(s) in xact obj_list_p.  Journal-themed PbDelta based
-	   revamp will make this issue moot. */
-      }
-
-    } /* depth_i < depth_o */
-  }
-
+send_update:
   if (update_advice) {
     if ((mbr_data->reg->flags & RWDTS_FLAG_PUBLISHER) != 0) {
       uint32_t flags = RWDTS_XACT_FLAG_REPLACE;
@@ -2416,14 +2445,20 @@ rwdts_member_data_delete_list_element_w_key_f(rwdts_member_data_record_t *mbr_da
                                             &mbr_data->member_advise_cb,
                                             &mbr_data->rcvd_member_advise_cb,
                                             true);
-      if (!mbr_data->xact && (mbr_data->reg->flags & RWDTS_FLAG_FILE_DATASTORE)) {
+    if (!mbr_data->xact && (mbr_data->reg->apih->rwtasklet_info &&
+        ((mbr_data->reg->apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_BDB) ||
+        (mbr_data->reg->apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_REDIS)))) {
         if (mbr_data->reg->kv_handle) {
           uint8_t *payload;
           size_t  payload_len;
           payload = protobuf_c_message_serialize(NULL, mobj->msg, &payload_len);
-          rw_status_t rs = rwdts_kv_handle_file_set_keyval(mbr_data->reg->kv_handle, (char *)mobj->key, mobj->key_len,
-                                                           (char *)payload, (int)payload_len);
+          rw_status_t rs = rwdts_kv_handle_add_keyval(mbr_data->reg->kv_handle, 0, (char *)mobj->key, mobj->key_len,
+                                                     (char *)payload, (int)payload_len, rwdts_member_data_cache_set_callback, 
+                                                     (void *)mbr_data->reg->kv_handle);
           RW_ASSERT(rs == RW_STATUS_SUCCESS);
+          if (rs != RW_STATUS_SUCCESS) {
+            /* Fail the VM and switchover to STANDBY */
+          }
         }
       }
     }
@@ -2658,6 +2693,10 @@ rwdts_member_reg_handle_create_element_xpath(rwdts_member_reg_handle_t regh,
   if (rs  != RW_STATUS_SUCCESS) {
     RWDTS_MEMBER_SEND_ERROR(xact, NULL, NULL, NULL, NULL,
                             rs, "%s for %s", RWDTS_ERRSTR_KEY_XPATH, xpath);
+    if (!xact) {
+      RWDTS_API_LOG_EVENT(reg->apih, DataMemberApiError, 
+                          RWLOG_ATTR_SPRINTF("create list element failed - invalid xpath %s", xpath));
+    }
     return rs;
   }
 
@@ -2707,6 +2746,10 @@ rwdts_member_reg_handle_update_element_xpath(rwdts_member_reg_handle_t regh,
   if (rs  != RW_STATUS_SUCCESS) {
     RWDTS_MEMBER_SEND_ERROR(xact, NULL, NULL, NULL, NULL,
                             rs, "%s for %s", RWDTS_ERRSTR_KEY_XPATH, xpath);
+    if (!xact) {
+      RWDTS_API_LOG_EVENT(reg->apih, DataMemberApiError, 
+                          RWLOG_ATTR_SPRINTF("update list element failed - invalid xpath %s", xpath));
+    }
     return rs;
   }
 
@@ -2767,6 +2810,10 @@ rwdts_member_reg_handle_delete_element_xpath(rwdts_member_reg_handle_t regh,
   if (rs  != RW_STATUS_SUCCESS) {
     RWDTS_MEMBER_SEND_ERROR(xact, NULL, NULL, NULL, NULL,
                             rs, "%s for %s", RWDTS_ERRSTR_KEY_XPATH, xpath);
+    if (!xact) {
+      RWDTS_API_LOG_EVENT(reg->apih, DataMemberApiError, 
+                          RWLOG_ATTR_SPRINTF("delete list element failed - invalid xpath %s", xpath));
+    }
     return rs;
   }
 
@@ -2824,6 +2871,10 @@ rwdts_member_reg_handle_get_element_xpath(rwdts_member_reg_handle_t  regh,
   if (rs  != RW_STATUS_SUCCESS) {
     RWDTS_MEMBER_SEND_ERROR(xact, NULL, NULL, NULL, NULL,
                             rs, "%s for %s", RWDTS_ERRSTR_KEY_XPATH, xpath);
+    if (!xact) {
+      RWDTS_API_LOG_EVENT(((rwdts_member_registration_t*)regh)->apih, DataMemberApiError, 
+                          RWLOG_ATTR_SPRINTF("get list element failed - invalid xpath %s", xpath));
+    }
     return RW_STATUS_FAILURE;
   }
 
@@ -2959,10 +3010,16 @@ rwdts_member_pub_del(rwdts_member_data_record_t *mbr_data,
                                           &mbr_data->member_advise_cb,
                                           &mbr_data->rcvd_member_advise_cb,
                                           true);
-    if (!mbr_data->xact && (mbr_data->reg->flags & RWDTS_FLAG_FILE_DATASTORE)) {
+    if (!mbr_data->xact && (mbr_data->reg->apih->rwtasklet_info &&
+        ((mbr_data->reg->apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_BDB) ||
+        (mbr_data->reg->apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_REDIS)))) {
       if (mbr_data->reg->kv_handle) {
-        rw_status_t rs = rwdts_kv_handle_file_del_keyval(mbr_data->reg->kv_handle, (char *)mobj->key, mobj->key_len);
+        rw_status_t rs = rwdts_kv_handle_del_keyval(mbr_data->reg->kv_handle, 0, (char *)mobj->key, mobj->key_len,
+                                                    rwdts_member_data_cache_set_callback, (void *)mbr_data->reg->kv_handle);
         RW_ASSERT(rs == RW_STATUS_SUCCESS);
+        if (rs != RW_STATUS_SUCCESS) {
+          /* Fail the VM and switchover to STANDBY */
+        }
       }
     }
   }

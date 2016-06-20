@@ -117,7 +117,7 @@ void SbReqGet::start_dts_xact_int()
   xact_ = rwdts_api_query_ks(dts_->api(),
                              query_ks_.get(),
                              RWDTS_QUERY_READ,
-                             RWDTS_XACT_FLAG_NOTRAN|dts_flags_,
+                             dts_flags_,
                              dts_get_event_cb,
                              this,
                              0);

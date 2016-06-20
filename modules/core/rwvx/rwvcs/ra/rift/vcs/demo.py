@@ -157,6 +157,7 @@ class Demo(object):
                        multi_dtsrouter=True,
                        dtsperfmgr=False,
                        ip_list=None,
+                       mgmt_ip_list=[],
                        valgrind=None,
                        verbose=False,
                        use_gdb=False,
@@ -164,6 +165,7 @@ class Demo(object):
                        northbound_listing="rwbase_schema_listing.txt",
                        netconf_trace=NetconfTrace.AUTO,
                        agent_mode=RwmgmtAgentMode.AUTOMODE,
+                       persist_dir_name="persist.riftware",
                        ):
         """Returns a PreparedSystem object encapsulating the SystemInfo and PortNetwork objects
 
@@ -180,6 +182,7 @@ class Demo(object):
             dtsperfmgr      - a flag indicating whether the system is running the DTS
                               Performance Manager or not
             ip_list         - a list of ips to provision to VM instances
+            mgmt_ip_list    - a list of management ips
             valgrind        - a list of component names to execute under valgrind
             verbose         - enable debug logging
             use_gdb         - riftware launched under gdb
@@ -187,6 +190,7 @@ class Demo(object):
             northbound_listing - The northbound schema list.
             netconf_trace   - Knob to control netconf trace generation
             agent_mode      - Management Agent mode; RwmgmtAgentMode.CONFD or RwmgmtAgentMode.RWXML
+            persist_dir_name - The configuration persistence directory name
 
         Raises:
             An UnsupportedModeError is raised if the specified mode is not in
@@ -217,6 +221,7 @@ class Demo(object):
         sysinfo.northbound_listing = northbound_listing
         sysinfo.netconf_trace = netconf_trace
         sysinfo.agent_mode = agent_mode
+        sysinfo.persist_dir_name = persist_dir_name
         sysinfo.multi_broker = multi_broker
         sysinfo.multi_dtsrouter = multi_dtsrouter
         sysinfo.dtsperfmgr = dtsperfmgr
@@ -263,6 +268,8 @@ class Demo(object):
 
         if ip_list is not None:
             self.remap_ip_addresses(sysinfo, ip_list)
+
+        sysinfo.mgmt_ip_list = mgmt_ip_list
 
         return sysinfo, port_network
 
@@ -524,6 +531,10 @@ class PreparedSystem(object):
         ip_list = [vm.ip for vm in virtual_machines if vm.ip is not None]
 
         return ip_list
+
+    @property
+    def mgmt_ip_list(self):
+        return self.sysinfo.mgmt_ip_list
 
     @property
     def port_network(self):
@@ -905,13 +916,15 @@ def prepared_system_from_demo_and_args(demo, args,
             multi_broker=args.multi_broker,
             multi_dtsrouter=args.multi_dtsrouter,
             ip_list=args.ip_list,
+            mgmt_ip_list=args.mgmt_ip_list,
             valgrind=args.valgrind,
             verbose=args.verbose,
             use_gdb=args.gdb,
             track_memory=args.track_memory,
             northbound_listing=northbound_listing,
             netconf_trace=netconf_trace,
-            agent_mode=agent_mode)
+            agent_mode=agent_mode,
+            persist_dir_name=args.persist_dir_name)
 
     prepared_system_params = {"sysinfo": sysinfo,
                               "port_network": port_network}
@@ -997,6 +1010,12 @@ class DemoArgParser(argparse.ArgumentParser):
                                "if the user has a pool of VMs reserved. To do this, "
                                "simply pass the keyword 'auto' to this argument.")
 
+        self.add_argument('--mgmt-ip-list',
+                          type=DemoArgParser.parse_mgmt_ip_list,
+                          help="Specify a list of IP addresses used for management domain."
+                               "This be a comma or space delimited list, or follow the more "
+                               "concise notation defined ip_utils.")
+
         self.add_argument('--keep-netns',
                           action='store_true',
                           help="Do not clean up the existing network namespaces when "
@@ -1080,6 +1099,29 @@ class DemoArgParser(argparse.ArgumentParser):
                           action='store_true',
                           help="Logging is normally set to an INFO level. When this flag "
                                "is used logging is set to DEBUG. ")
+
+        self.add_argument('--persist-dir-name',
+                          dest='persist_dir_name',
+                          default='persist.riftware',
+                          help="The Configuration persistence directory name")
+
+    @staticmethod
+    def parse_mgmt_ip_list(mgmt_ip_list):
+        """Returns a sanitized list of IP addresses
+
+        Arguments:
+            mgmt_ip_list - this argument is string describing a list of management IP addresses
+
+        Returns:
+            A list of IP addresses.
+
+        """
+        mgmt_ip_list = rift.auto.ip_utils.ip_list_from_string(mgmt_ip_list)
+
+        if len(mgmt_ip_list) not in range(4):
+            raise argparse.ArgumentTypeError("Management IP list can have maximum 3 entries")
+
+        return mgmt_ip_list
 
     @staticmethod
     def parse_ip_list(ip_list):

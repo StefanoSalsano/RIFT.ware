@@ -21,8 +21,3 @@ cmd "rpm -qa | grep -i rift"
 #cmd "ls -all /home/rift/scripts/"
 #echo "2b) checking scripts"
 #ls -all $STAGING/home/rift/scripts/
-
-if [ ! -e /usr/rift/bin/ssh_root ]; then
-    ln -s /usr/rift/scripts/env/ssh_root /usr/rift/bin/
-fi
-

@@ -85,9 +85,6 @@ class StatusMessage(Message):
     def __init__(self, name, text):
         super().__init__(logging.INFO, name, text)
 
-    def log(self, logger):
-        pass
-
 
 class Logger(object):
     """
@@ -121,10 +118,6 @@ class Logger(object):
         return getattr(self._rift_logger, name)
 
 
-class OnboardStart(StatusMessage):
-    def __init__(self):
-        super().__init__("onboard-started", "onboarding process started")
-
 
 class OnboardError(ErrorMessage):
     def __init__(self, msg):
@@ -134,21 +127,6 @@ class OnboardError(ErrorMessage):
 class OnboardWarning(ErrorMessage):
     def __init__(self, msg):
         super().__init__("onboard-warning", msg)
-
-
-class OnboardPackageUpload(StatusMessage):
-    def __init__(self):
-        super().__init__("onboard-pkg-upload", "uploading package")
-
-
-class OnboardImageUpload(StatusMessage):
-    def __init__(self):
-        super().__init__("onboard-img-upload", "uploading image")
-
-
-class OnboardPackageValidation(StatusMessage):
-    def __init__(self):
-        super().__init__("onboard-pkg-validation", "package contents validation")
 
 
 class OnboardDescriptorValidation(StatusMessage):
@@ -169,21 +147,6 @@ class OnboardDescriptorError(OnboardError):
 class OnboardDescriptorFormatError(OnboardError):
     def __init__(self, filename):
         super().__init__("{} has unrecognized format".format(filename))
-
-
-class OnboardDescriptorOnboard(StatusMessage):
-    def __init__(self):
-        super().__init__("onboard-dsc-onboard", "onboarding descriptors")
-
-
-class OnboardSuccess(StatusMessage):
-    def __init__(self):
-        super().__init__("onboard-success", "onboarding process successfully completed")
-
-
-class OnboardFailure(StatusMessage):
-    def __init__(self):
-        super().__init__("onboard-failure", "onboarding process failed")
 
 
 class OnboardMissingContentType(OnboardError):
@@ -216,6 +179,16 @@ class OnboardUnreadablePackage(OnboardError):
         super().__init__("Unable to read package")
 
 
+class OnboardExtractionError(OnboardError):
+    def __init__(self):
+        super().__init__("Unable to extract package contents")
+
+
+class OnboardImageUploadError(OnboardError):
+    def __init__(self):
+        super().__init__("Unable to upload images")
+
+
 class OnboardMissingChecksumsFile(OnboardError):
     def __init__(self):
         super().__init__("Package does not contain checksums.txt")
@@ -226,35 +199,45 @@ class OnboardChecksumMismatch(OnboardError):
         super().__init__("checksum mismatch for {}".format(filename))
 
 
-class OnboardMissingAccount(OnboardError):
+class OnboardDescriptorExistsError(OnboardError):
+    def __init__(self, descriptor_id):
+        super().__init__("descriptor id {} already onboarded".format(descriptor_id))
+
+
+
+class OnboardStart(StatusMessage):
     def __init__(self):
-        super().__init__("no account information available")
+        super().__init__("onboard-started", "onboarding process started")
 
 
-class OnboardMissingFile(OnboardWarning):
-    def __init__(self, filename):
-        super().__init__("{} is not in the archive".format(filename))
-
-
-class OnboardInvalidPath(OnboardWarning):
-    def __init__(self, filename):
-        super().__init__("{} is not a valid package path".format(filename))
-
-
-class ExportStart(StatusMessage):
+class OnboardDescriptorOnboard(StatusMessage):
     def __init__(self):
-        super().__init__("export-started", "export process started")
+        super().__init__("onboard-dsc-onboard", "onboarding descriptors")
 
 
-class ExportSuccess(StatusMessage):
+class OnboardSuccess(StatusMessage):
     def __init__(self):
-        super().__init__("export-success", "export process successfully completed")
+        super().__init__("onboard-success", "onboarding process successfully completed")
 
 
-class ExportFailure(StatusMessage):
+class OnboardFailure(StatusMessage):
     def __init__(self):
-        super().__init__("export-failure", "export process failed")
+        super().__init__("onboard-failure", "onboarding process failed")
 
+
+class OnboardPackageUpload(StatusMessage):
+    def __init__(self):
+        super().__init__("onboard-pkg-upload", "uploading package")
+
+
+class OnboardImageUpload(StatusMessage):
+    def __init__(self):
+        super().__init__("onboard-img-upload", "uploading image")
+
+
+class OnboardPackageValidation(StatusMessage):
+    def __init__(self):
+        super().__init__("onboard-pkg-validation", "package contents validation")
 
 
 
@@ -262,10 +245,6 @@ class UpdateError(ErrorMessage):
     def __init__(self, msg):
         super().__init__("update-error", msg)
 
-
-class UpdateMissingAccount(UpdateError):
-    def __init__(self):
-        super().__init__("no account information available")
 
 class UpdateMissingContentType(UpdateError):
     def __init__(self):
@@ -282,29 +261,14 @@ class UpdateMissingContentBoundary(UpdateError):
         super().__init__("missing content boundary")
 
 
-class UpdateStart(StatusMessage):
-    def __init__(self):
-        super().__init__("update-started", "update process started")
-
-
-class UpdateSuccess(StatusMessage):
-    def __init__(self):
-        super().__init__("update-success", "updating process successfully completed")
-
-
-class UpdateFailure(StatusMessage):
-    def __init__(self):
-        super().__init__("update-failure", "updating process failed")
-
-
-class UpdatePackageUpload(StatusMessage):
-    def __init__(self):
-        super().__init__("update-pkg-upload", "uploading package")
-
-
 class UpdateDescriptorError(UpdateError):
     def __init__(self, filename):
         super().__init__("unable to update {}".format(filename))
+
+
+class UpdatePackageNotFoundError(UpdateError):
+    def __init__(self, descriptor_id):
+        super().__init__("package {} not found".format(descriptor_id))
 
 
 class UpdateDescriptorFormatError(UpdateError):
@@ -312,9 +276,9 @@ class UpdateDescriptorFormatError(UpdateError):
         super().__init__("{} has unrecognized format".format(filename))
 
 
-class UpdateDescriptorUpdated(StatusMessage):
+class UpdateExtractionError(UpdateError):
     def __init__(self):
-        super().__init__("update-dsc-updated", "updated descriptors")
+        super().__init__("Unable to extract package contents")
 
 
 class UpdateDescriptorTimeout(UpdateError):
@@ -337,6 +301,39 @@ class UpdateChecksumMismatch(UpdateError):
         super().__init__("checksum mismatch for {}".format(filename))
 
 
-class UpdateNewDescriptor(UpdateError):
-    def __init__(self, filename):
-        super().__init__("{} contains a new descriptor".format(filename))
+class UpdateImageUploadError(UpdateError):
+    def __init__(self):
+        super().__init__("Unable to upload images")
+
+
+class UpdateStart(StatusMessage):
+    def __init__(self):
+        super().__init__("update-started", "update process started")
+
+
+class UpdateSuccess(StatusMessage):
+    def __init__(self):
+        super().__init__("update-success", "updating process successfully completed")
+
+
+class UpdateFailure(StatusMessage):
+    def __init__(self):
+        super().__init__("update-failure", "updating process failed")
+
+
+class UpdatePackageUpload(StatusMessage):
+    def __init__(self):
+        super().__init__("update-pkg-upload", "uploading package")
+
+
+class UpdateDescriptorUpdate(StatusMessage):
+    def __init__(self):
+        super().__init__("update-dsc-onboard", "updating descriptors")
+
+
+class UpdateDescriptorUpdated(StatusMessage):
+    def __init__(self):
+        super().__init__("update-dsc-updated", "updated descriptors")
+
+
+

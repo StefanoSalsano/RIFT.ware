@@ -101,7 +101,6 @@ export default class LaunchpadApp extends React.Component {
     return (
       <div className="app-body">
         <div className="lp_dashboard">
-          <ScreenLoader show={self.state.isLoading}/>
           <NsListPanel nsrs={self.state.nsrs}
             openedNsrIDs={self.state.openedNsrIDs}
             isVisible={self.state.isNsListPanelVisible}

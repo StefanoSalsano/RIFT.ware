@@ -6,10 +6,12 @@
  *
  */
 
+#include <ifaddrs.h>
 #include <stdio.h>
 
 #include "rwvcs.h"
 #include "rwvcs_manifest.h"
+#include "rwcal_vars_api.h"
 
 #define RWTRACE_CATEGORY_RWVCS_MANIFEST RWTRACE_CATEGORY_RWTASKLET
 
@@ -148,7 +150,7 @@ bool rwvcs_manifest_have_component(rwvcs_instance_ptr_t rwvcs, const char * name
 }
 
 int
-rwmain_get_pb_rwmanifest_config_ready_count(rwvcs_instance_ptr_t rwvcs)
+rwvcs_manifest_config_ready_count(rwvcs_instance_ptr_t rwvcs)
 {
   rw_status_t status;
   int count = 0;
@@ -243,3 +245,249 @@ rwmain_get_pb_rwmanifest_config_ready_count(rwvcs_instance_ptr_t rwvcs)
 
 }
 
+static int rwvcs_manifest_append_vm_list (rwvcs_instance_ptr_t rwvcs,
+                                          char *lead_ip,
+                                          vcs_manifest_action_start *start,
+                                          rwvcs_manifest_vm_list_t **vm_list)
+{
+  vcs_manifest_component * mdef;
+  rw_status_t status = rwvcs_manifest_component_lookup(
+      rwvcs, 
+      start->component_name, 
+      &mdef);
+  if ((status != RW_STATUS_SUCCESS) ||
+      (mdef->component_type != RWVCS_TYPES_COMPONENT_TYPE_RWVM)) {
+    return 0;
+  }
+  bool lead_vm = false;
+  if (!strcmp(start->ip_address, lead_ip)) {
+    lead_vm = true;
+  }
+  RW_ASSERT(vm_list);
+  rwvcs_manifest_vm_list_t *vm_list_entry = NULL;
+  if (!(*vm_list)) {
+    (*vm_list) = RW_MALLOC0_TYPE(sizeof(rwvcs_manifest_vm_list_t), rwvcs_manifest_vm_list_t);
+    vm_list_entry = (*vm_list);
+  }
+  else {
+    vm_list_entry = RW_MALLOC0_TYPE(sizeof(rwvcs_manifest_vm_list_t), rwvcs_manifest_vm_list_t);
+    if (lead_vm) {
+      vm_list_entry->vm_list_next = (*vm_list);
+      (*vm_list) = vm_list_entry;
+      fprintf (stderr, "PRE -Appending %p \n", vm_list_entry);
+    }
+    else {
+      rwvcs_manifest_vm_list_t *find_last_entry = (*vm_list);
+      while (find_last_entry && find_last_entry->vm_list_next) find_last_entry = find_last_entry->vm_list_next;
+      RW_ASSERT(find_last_entry);
+      find_last_entry->vm_list_next = vm_list_entry;
+    }
+  }
+  snprintf(vm_list_entry->vm_name, sizeof(vm_list_entry->vm_name), "%s", start->component_name);
+  snprintf(vm_list_entry->vm_ip_address, sizeof(vm_list_entry->vm_ip_address), "%s", start->ip_address);
+  
+  return 1;
+}
+
+static int rwvcs_manifest_process_event_list (rwvcs_instance_ptr_t rwvcs,
+                                              char *lead_ip,
+                                              vcs_manifest_event_list *event_list,
+                                              rwvcs_manifest_vm_list_t **vm_list)
+{
+  int count = 0;
+  if (!event_list)
+    return count;
+
+  int e_idx;
+  for (e_idx = 0;e_idx < event_list->n_event; e_idx++) {
+    int a_idx;
+    for (a_idx = 0; a_idx < event_list->event[e_idx]->n_action; a_idx++) {
+      if (event_list->event[e_idx]->action[a_idx]->start) {
+        count += rwvcs_manifest_append_vm_list(
+            rwvcs, 
+            lead_ip,
+            event_list->event[e_idx]->action[a_idx]->start,
+            vm_list);
+      }
+    }
+  }
+  if (count) {
+    rwvcs_manifest_vm_list_t *p_list = (*vm_list);
+    while (p_list) {
+      fprintf (stderr, "final %p -- %s:%s\n",  p_list, p_list->vm_name, p_list->vm_ip_address);
+      p_list = p_list->vm_list_next;
+    }
+  }
+  return count;
+}
+
+int  rwvcs_manifest_rwvm_list(rwvcs_instance_ptr_t rwvcs,
+                              char                 *lead_ip,
+                              rwvcs_manifest_vm_list_t **vm_list)
+{
+  int count = 0;
+  vcs_manifest *rw_manifest = rwvcs->pb_rwmanifest;
+  
+  if (!rw_manifest) {
+    return count;
+  }
+
+  int idx;
+  vcs_manifest_inventory *inventory = rw_manifest->inventory;
+  if (inventory && inventory->n_component) {
+    vcs_manifest_component **component = inventory->component;
+    for (idx = 0; idx < inventory->n_component; idx++) {
+      RW_ASSERT(component[idx]->has_component_type);
+      switch (component[idx]->component_type) {
+        case RWVCS_TYPES_COMPONENT_TYPE_RWCOLLECTION: {
+          count += rwvcs_manifest_process_event_list (rwvcs,
+                                                      lead_ip,
+                                                      component[idx]->rwcollection->event_list,
+                                                      vm_list);
+        }
+        break;
+        case RWVCS_TYPES_COMPONENT_TYPE_RWVM: {
+          count += rwvcs_manifest_process_event_list (rwvcs,
+                                                      lead_ip,
+                                                      component[idx]->rwvm->event_list,
+                                                      vm_list);
+        }
+        break;
+        case RWVCS_TYPES_COMPONENT_TYPE_RWPROC: 
+        case RWVCS_TYPES_COMPONENT_TYPE_PROC:
+        case RWVCS_TYPES_COMPONENT_TYPE_RWTASKLET:
+        default:
+        break;
+      }
+    }
+  }
+
+  return count;
+}
+
+bool
+rwvcs_manifest_is_lss_mode(rwvcs_instance_ptr_t rwvcs)
+{
+  vcs_manifest_bootstrap * bootstrap = rwvcs->pb_rwmanifest->bootstrap_phase;
+  return(bootstrap->n_ip_addrs_list > 1);
+}
+
+char *
+rwvcs_manifest_get_local_mgmt_addr(vcs_manifest_bootstrap *bootstrap)
+{
+  struct ifaddrs *ifap;
+  int r = getifaddrs(&ifap);
+  RW_ASSERT(r == 0);
+
+  char *addrs_found = NULL;
+  for (struct ifaddrs * it = ifap; !addrs_found && it; it = it->ifa_next) {
+    struct sockaddr_in * addr = (struct sockaddr_in *)it->ifa_addr;
+    int indx;
+    for(indx = 0; indx < bootstrap->n_ip_addrs_list; indx++) {
+      if (!strncmp(bootstrap->ip_addrs_list[indx]->ip_addr, inet_ntoa(addr->sin_addr), 15)) {
+        addrs_found = bootstrap->ip_addrs_list[indx]->ip_addr;
+        break;
+      }
+    }
+  }
+  freeifaddrs(ifap);
+
+  return addrs_found;
+}
+
+bool
+rwvcs_manifest_is_mgmt_vm (rwvcs_instance_ptr_t rwvcs, char *component_name)
+{
+  if (!component_name) {
+    return true;
+  }
+  if (!rwvcs->pb_rwmanifest->init_phase->environment->active_component) {
+    return false;
+  }
+
+  rw_status_t status = rwvcs_variable_list_evaluate(
+      rwvcs,
+      rwvcs->pb_rwmanifest->init_phase->environment->active_component->n_python_variable,
+      rwvcs->pb_rwmanifest->init_phase->environment->active_component->python_variable);
+
+  char c_name[1024];
+  status = rwvcs_variable_evaluate_str(
+      rwvcs,
+      "$rw_component_name",
+      c_name,
+      sizeof(c_name));
+  if (status != RW_STATUS_SUCCESS) {
+    RW_CRASH();
+  }
+  if (!strcmp(component_name, c_name)) {
+    return true;
+  }
+  bzero(&c_name[0], sizeof(c_name));
+  if (rwvcs->pb_rwmanifest->bootstrap_phase->n_ip_addrs_list > 1) {
+    status = rwvcs_variable_list_evaluate(
+        rwvcs,
+        rwvcs->pb_rwmanifest->init_phase->environment->standby_component->n_python_variable,
+        rwvcs->pb_rwmanifest->init_phase->environment->standby_component->python_variable);
+
+    status = rwvcs_variable_evaluate_str(
+        rwvcs,
+        "$rw_component_name",
+        c_name,
+        sizeof(c_name));
+    if (status != RW_STATUS_SUCCESS) {
+      RW_CRASH();
+    }
+    if (!strcmp(component_name, c_name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void rwvcs_manifest_setup_mgmt_info (
+    rwvcs_instance_ptr_t rwvcs,
+    bool mgmt_vm,
+    const char           *ip_address)
+{
+  rwvcs_mgmt_info_t *mgmt_info = &rwvcs->mgmt_info;
+  mgmt_info->mgmt_vm = mgmt_vm;
+  mgmt_info->unique_ports = true;
+
+  vcs_manifest_bootstrap * bootstrap = rwvcs->pb_rwmanifest->bootstrap_phase;
+  if (!bootstrap)
+    return;
+  bootstrap->ip_addrs_list[bootstrap->n_ip_addrs_list] = NULL;
+  int indx, store_indx = 0;
+  for (indx = 0; (indx < RWVCS_ZK_SERVER_CLUSTER) && bootstrap->ip_addrs_list[store_indx]; indx++) {
+    char *zk_server_addr = NULL;
+    int zk_client_port = 0;
+    bool zk_server_start = false;
+    bool zk_client_connect = false;
+    zk_client_port = 2181 + indx;
+    RW_ASSERT(store_indx < bootstrap->n_ip_addrs_list);
+    zk_server_addr = bootstrap->ip_addrs_list[store_indx]->ip_addr;
+    if (mgmt_vm && !strcmp(ip_address, zk_server_addr)) {
+      zk_server_start = true;
+    }
+
+    char *local_addr = rwvcs_manifest_get_local_mgmt_addr(bootstrap);
+    if (local_addr) {
+      if (!strcmp(local_addr, zk_server_addr)) {
+        zk_client_connect = true;
+      }
+    }
+    else if (!mgmt_vm) {
+      zk_client_connect = true;
+    }
+    mgmt_info->zk_server_port_details[indx] = rwcal_zk_server_port_detail_alloc(
+        zk_server_addr,
+        zk_client_port,
+        indx+1,
+        zk_server_start,
+        zk_client_connect);
+    if (!((bootstrap->n_ip_addrs_list == 2) && !indx)) {
+      store_indx++;
+    }
+  }
+  mgmt_info->zk_server_port_details[indx] = NULL;
+}

@@ -20,19 +20,19 @@ module lpmocklet-annotation
     }
 
     tailf:annotate "/lpmocklet:lpmocklet-action-status" {
-        tailf:callpoint base_show;
+        tailf:callpoint rw_callpoint;
     }
 
     tailf:annotate "/lpmocklet:set-control-param" {
-        tailf:actionpoint rw_action;
+        tailf:actionpoint rw_actionpoint;
     }
 
     tailf:annotate "/lpmocklet:start-vnfr" {
-        tailf:actionpoint rw_action;
+        tailf:actionpoint rw_actionpoint;
     }
 
     tailf:annotate "/lpmocklet:stop-vnfr" {
-        tailf:actionpoint rw_action;
+        tailf:actionpoint rw_actionpoint;
     }
 }
 

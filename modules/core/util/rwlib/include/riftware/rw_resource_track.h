@@ -34,6 +34,7 @@ extern int g_malloc_intercepted;
 extern int g_callstack_depth;
 extern int g_heap_track_nth;
 extern int g_heap_track_bigger_than;
+extern int g_heap_decode_using;
 
 #if 1
 #define RW_RESOURCE_TRACK_LOCK()    pthread_mutex_lock(&g_rwresource_track_mutex)

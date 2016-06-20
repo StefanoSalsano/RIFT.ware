@@ -21,18 +21,18 @@ module rwshell-mgmt-annotation
   }
 
   tailf:annotate "/rwshellmgmt:profiler-start" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
   tailf:annotate "/rwshellmgmt:profiler-stop" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
   tailf:annotate "/rwshellmgmt:profiler-report" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
   tailf:annotate "/rwshellmgmt:crash" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
   tailf:annotate "/rwshellmgmt:profiler" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

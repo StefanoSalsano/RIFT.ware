@@ -46,7 +46,7 @@ export default function(config, context) {
         routes.push({
             path: '/login',
             name: 'Login',
-            component:  require('../../../plugins/login/src/login.jsx').default
+            component:  require('../login/login.jsx').default
         });
         routes.push({
             path:'*',

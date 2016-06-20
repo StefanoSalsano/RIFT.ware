@@ -47,9 +47,9 @@ void rw_run_file_update_protocol(rwsched_instance_ptr_t sched,
 bool rw_create_runtime_schema_dir(char const *const * northbound_schema_listing,
                                   int n_northbound_listing)
 {
-  bool acquired_lock = rwyangutil::create_lock_file();
-  if (!acquired_lock) {
-    return acquired_lock;
+  bool status = rwyangutil::create_lock_file();
+  if (!status) {
+    return false;
   }
 
   std::vector<std::string> listings;
@@ -57,7 +57,12 @@ bool rw_create_runtime_schema_dir(char const *const * northbound_schema_listing,
     listings.emplace_back(northbound_schema_listing[i]);
   }
 
-  return rwyangutil::create_schema_directory( listings );
+  status = rwyangutil::create_schema_directory( listings );
+  if (!status) {
+    return false;
+  }
+
+  return rwyangutil::remove_lock_file();
 }
 
 // Generates a random number from 1 to 5

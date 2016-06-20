@@ -24,7 +24,7 @@
 namespace fs = boost::filesystem;
 using namespace rw_yang;
 
-const std::string TEST_SCHEMA_PATH {"tmp/cli_test/var/schema"};
+const std::string TEST_SCHEMA_PATH {"var/rift/schema"};
 
 class SchemaTestFixture: public ::testing::Test
 {
@@ -58,8 +58,6 @@ public:
     schema_path_ = fs::path(getenv("RIFT_INSTALL")) / fs::path(TEST_SCHEMA_PATH);
     yang_path_   = schema_path_ / "yang";
     ver_path_    = schema_path_ / "version";
-    fs::create_directories(yang_path_);
-    fs::create_directories(ver_path_);
 
     test_yang_src_path_ = fs::path(getenv("RIFT_ROOT")) / 
                           "modules/core/mgmt/rwcli/test/yang_src";
@@ -71,9 +69,8 @@ public:
 
   virtual void SetUp() {
     // Setup the schema directory.
-    auto ret = std::system("rwyangutil --create-schema-dir test_northbound_listing.txt");
+    auto ret = std::system("rwyangutil --remove-schema-dir --create-schema-dir test_northbound_listing.txt");
     ASSERT_EQ (ret, 0);
-
   }
 
   virtual void TearDown(){
@@ -84,9 +81,9 @@ public:
   void copy_yang_file(const std::string& filename) {
     // The src files doesn't have yang extension. This is to prevent the
     // rift-shell from adding the src path to the YUMA_MOD_PATH
-    fs::path src_file = test_yang_src_path_ / filename;
-    fs::path dest_file = yang_path_ / filename;
-    dest_file.replace_extension("yang");
+    fs::path const dest_file = latest_path_ / "yang" / filename;
+    fs::path const src_file = test_yang_src_path_ / filename;
+
     fs::copy_file(src_file, dest_file, fs::copy_option::fail_if_exists);
   }
 
@@ -119,34 +116,23 @@ public:
   fs::path test_yang_src_path_;
 };
 
-TEST_F(SchemaTestFixture, CreateDestroy) {
-  TEST_DESCRIPTION("Test creation and destruction of SchemaManager");
-
-  SchemaManager mgr(TEST_SCHEMA_PATH);
-
-  ASSERT_NE(mgr.updater_, nullptr);
-
-  int fd = mgr.updater_->get_handle();
-  EXPECT_NE(fd, -1);
-}
-
 TEST_F(SchemaTestFixture, StartupSchema) {
-
   TEST_DESCRIPTION("Test the loading of all schemas during startup");
 
-  copy_yang_file("schema1");
-  copy_yang_file("schema2");
-  copy_yang_file("schema3");
+  SchemaManager mgr(latest_path_.string());
+  mgr.load_all_schemas();
+  size_t const initial_size = mgr.loaded_schema_.size();
 
-  SchemaManager mgr(TEST_SCHEMA_PATH);
-  EXPECT_EQ(3, mgr.schema_table_.size());
+  // widen the northbound schema
+  std::string const wide_cmd = "rwyangutil --create-schema-dir test_northbound_widening_listing.txt";
 
-  std::vector<std::string> test_schemas = { "schema1", "schema2", "schema3" };
-  for (auto schema: test_schemas) {
-    auto it = mgr.schema_table_.find(schema);
-    EXPECT_NE(it, mgr.schema_table_.end());
-    EXPECT_EQ(it->second.name_, schema);
-  }
+  auto wide_ret = std::system(wide_cmd.c_str());
+  ASSERT_EQ (wide_ret, 0);
+  bool const did_update = mgr.load_all_schemas();
+
+  EXPECT_TRUE(did_update) << "schema manager didn't do an update";
+
+  EXPECT_LT(initial_size, mgr.loaded_schema_.size());
 }
 
 TEST_F(SchemaTestFixture, LoadSchema) {
@@ -157,65 +143,7 @@ TEST_F(SchemaTestFixture, LoadSchema) {
   rw_status_t rc = mgr.load_schema(test_schema);
 
   ASSERT_EQ(RW_STATUS_SUCCESS, rc);
-  EXPECT_EQ(1, mgr.schema_table_.size());
+  EXPECT_EQ(1, mgr.loaded_schema_.size());
 
-  auto it = mgr.schema_table_.find(test_schema);
-  EXPECT_NE(it, mgr.schema_table_.end());
+  EXPECT_EQ(mgr.loaded_schema_.count(test_schema), 1);
 }
-
-TEST_F(SchemaTestFixture, ChangeSetAdd) {
-  TEST_DESCRIPTION("Test copying a schema file and see Changeset is updated");
-
-  SchemaManager mgr(TEST_SCHEMA_PATH);
-
-  copy_yang_to_path("schema1", latest_path_);
-
-  // Check if an event is present, poll and return immediately
-  struct pollfd fds[1] = {
-    {mgr.updater_->get_handle(), POLLIN, 0}
-  };
-  int poll_ret = poll(fds, 1, 0);
-  
-  ASSERT_EQ(poll_ret, 1);
-
-  mgr.updater_->check_for_updates();
-
-  InotifySchemaUpdater *updater = static_cast<InotifySchemaUpdater*>(
-                                      mgr.updater_.get());
-  ASSERT_EQ(1, updater->changeset_.schema_files_.size());
-
-  EXPECT_STREQ(updater->changeset_.schema_files_.front().filename_.c_str(),
-               "schema1.yang");
-}
-
-TEST_F(SchemaTestFixture, ChangeSetAddMultiple) {
-  TEST_DESCRIPTION("Test copying multiple schema files and see Changeset is updated");
-
-  SchemaManager mgr(TEST_SCHEMA_PATH);
-
-  copy_yang_to_path("schema1", latest_path_);
-  copy_yang_to_path("schema2", latest_path_);
-  copy_yang_to_path("schema3", latest_path_);
-
-  // Check if an event is present, poll and return immediately
-  struct pollfd fds[1] = {
-    {mgr.updater_->get_handle(), POLLIN, 0}
-  };
-  int poll_ret = poll(fds, 1, 0);
-  
-  ASSERT_EQ(poll_ret, 1);
-
-  mgr.updater_->check_for_updates();
-
-  InotifySchemaUpdater *updater = static_cast<InotifySchemaUpdater*>(
-                                      mgr.updater_.get());
-  ASSERT_EQ(3, updater->changeset_.schema_files_.size());
-
-  std::vector<std::string> expected= {"schema1.yang", "schema2.yang", "schema3.yang"};
-  unsigned count = 0;
-  for (auto sfile: updater->changeset_.schema_files_) {
-    EXPECT_STREQ(sfile.filename_.c_str(), expected[count].c_str());
-    count++;
-  }
-}
-

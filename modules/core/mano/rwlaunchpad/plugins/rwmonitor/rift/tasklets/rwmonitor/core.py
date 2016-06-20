@@ -6,6 +6,7 @@
 
 import abc
 import asyncio
+import collections
 import concurrent.futures
 import importlib
 import time
@@ -136,8 +137,7 @@ class MockPluginFactory(PluginFactory):
 
 
 class NfviMetricsPluginManager(object):
-    def __init__(self, log, log_handle=None):
-        self._log_handle = log_handle
+    def __init__(self, log):
         self._plugins = dict()
         self._log = log
         self._factories = dict()
@@ -187,9 +187,9 @@ class NfviMetricsPluginManager(object):
             del self._plugins[account_name]
 
 
-class VdurNfviMetrics(object):
+class NfviMetrics(object):
     """
-    The VdurNfviMetrics class contains the logic to retrieve NFVI metrics for a
+    The NfviMetrics class contains the logic to retrieve NFVI metrics for a
     particular VDUR. Of particular importance is that this object caches the
     metrics until the data become stale so that it does not create excessive
     load upon the underlying data-source.
@@ -204,8 +204,8 @@ class VdurNfviMetrics(object):
     # source to be completed
     TIMEOUT = 2
 
-    def __init__(self, manager, account, plugin, vdur):
-        """Creates an instance of VdurNfviMetrics
+    def __init__(self, log, loop, account, plugin, vdur):
+        """Creates an instance of NfviMetrics
 
         Arguments:
             manager - a NfviInterface instance
@@ -214,7 +214,8 @@ class VdurNfviMetrics(object):
             vdur    - a VDUR instance
 
         """
-        self._manager = manager
+        self._log = log
+        self._loop = loop
         self._account = account
         self._plugin = plugin
         self._timestamp = 0
@@ -225,18 +226,13 @@ class VdurNfviMetrics(object):
 
     @property
     def log(self):
-        """The logger used by VdurNfviMetrics"""
-        return self._manager.log
+        """The logger used by NfviMetrics"""
+        return self._log
 
     @property
     def loop(self):
         """The current asyncio loop"""
-        return self._manager.loop
-
-    @property
-    def executor(self):
-        """A thread pool executor"""
-        return self._manager._executor
+        return self._loop
 
     @property
     def vdur(self):
@@ -259,7 +255,7 @@ class VdurNfviMetrics(object):
     def should_update(self):
         """Return a boolean indicating whether an update should be performed"""
         running = self._updating is not None and not self._updating.done()
-        overdue = time.time() > self._timestamp + VdurNfviMetrics.SAMPLE_INTERVAL
+        overdue = time.time() > self._timestamp + NfviMetrics.SAMPLE_INTERVAL
 
         return overdue and not running
 
@@ -277,12 +273,12 @@ class VdurNfviMetrics(object):
                 # not exceed the timeout
                 _, metrics = yield from asyncio.wait_for(
                         self.loop.run_in_executor(
-                            self.executor,
+                            None,
                             self._plugin.nfvi_metrics,
                             self._account,
                             self._vim_id,
                             ),
-                        timeout=VdurNfviMetrics.TIMEOUT,
+                        timeout=NfviMetrics.TIMEOUT,
                         loop=self.loop,
                         )
 
@@ -343,25 +339,71 @@ class VdurNfviMetrics(object):
             self._timestamp = time.time()
 
 
+class NfviMetricsCache(object):
+    def __init__(self, log, loop, plugin_manager):
+        self._log = log
+        self._loop = loop
+        self._plugin_manager = plugin_manager
+        self._nfvi_metrics = dict()
+
+        self._vim_to_vdur = dict()
+        self._vdur_to_vim = dict()
+
+    def create_entry(self, account, vdur):
+        plugin = self._plugin_manager.plugin(account.name)
+        metrics = NfviMetrics(self._log, self._loop, account, plugin, vdur)
+        self._nfvi_metrics[vdur.vim_id] = metrics
+
+        self._vim_to_vdur[vdur.vim_id] = vdur.id
+        self._vdur_to_vim[vdur.id] = vdur.vim_id
+
+    def destroy_entry(self, vdur_id):
+        vim_id = self._vdur_to_vim[vdur_id]
+
+        del self._nfvi_metrics[vim_id]
+        del self._vdur_to_vim[vdur_id]
+        del self._vim_to_vdur[vim_id]
+
+    def retrieve(self, vim_id):
+        return self._nfvi_metrics[vim_id].retrieve()
+
+    def to_vim_id(self, vdur_id):
+        return self._vdur_to_vim[vdur_id]
+
+    def to_vdur_id(self, vim_id):
+        return self._vim_to_vdur[vim_id]
+
+    def contains_vdur_id(self, vdur_id):
+        return vdur_id in self._vdur_to_vim
+
+    def contains_vim_id(self, vim_id):
+        return vim_id in self._vim_to_vdur
+
+
 class NfviInterface(object):
     """
     The NfviInterface serves as an interface for communicating with the
     underlying infrastructure, i.e. retrieving metrics for VDURs that have been
     registered with it and managing alarms.
+
+    The NfviInterface should only need to be invoked using a cloud account and
+    optionally a VIM ID; It should not need to handle mapping from VDUR ID to
+    VIM ID.
     """
 
-    def __init__(self, loop, log, plugin_manager):
+    def __init__(self, loop, log, plugin_manager, cache):
         """Creates an NfviInterface instance
 
         Arguments:
             loop           - an event loop
             log            - a logger
             plugin_manager - an instance of NfviMetricsPluginManager
+            cache          - an instance of NfviMetricsCache
 
         """
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
         self._plugin_manager = plugin_manager
-        self._metrics = dict()
+        self._cache = cache
         self._loop = loop
         self._log = log
 
@@ -378,7 +420,7 @@ class NfviInterface(object):
     @property
     def metrics(self):
         """The list of metrics contained in this NfviInterface"""
-        return list(self._metrics.values())
+        return list(self._cache._nfvi_metrics.values())
 
     def nfvi_metrics_available(self, account):
         plugin = self._plugin_manager.plugin(account.name)
@@ -398,40 +440,7 @@ class NfviInterface(object):
             An NfviMetrics object for the specified VDUR
 
         """
-        return self._metrics[vdur_id].retrieve()
-
-    def register_vdur(self, account, vdur):
-        """Registers a VDUR with this manager
-
-        Arguments:
-            account - a cloud account
-            vdur    - a VDUR object
-
-        """
-        plugin = self._plugin_manager.plugin(account.name)
-        metrics = VdurNfviMetrics(self, account, plugin, vdur)
-        self._metrics[vdur.id] = metrics
-
-    def unregister_vdur(self, vdur_id):
-        """Unregisters a VDUR
-
-        Arguments:
-            vdur_id - the ID of the VDUR to unregister
-
-        """
-        del self._metrics[vdur_id]
-
-    def is_registered_vdur(self, vdur_id):
-        """Returns a boolean indicating whether the VDUR is registered
-
-        Arguments:
-            vdur_id - the ID of the VDUR to check
-
-        Returns:
-            A boolean indicating whether the VDUR is registered
-
-        """
-        return vdur_id in self._metrics
+        return self._cache.retrieve(self._cache.to_vim_id(vdur_id))
 
     @asyncio.coroutine
     def alarm_create(self, account, vim_id, alarm, timeout=5):
@@ -529,10 +538,12 @@ class Monitor(object):
 
         self._cloud_accounts = dict()
         self._nfvi_plugins = NfviMetricsPluginManager(log)
-        self._nfvi_interface = NfviInterface(loop, log, self._nfvi_plugins)
+        self._cache = NfviMetricsCache(log, loop, self._nfvi_plugins)
+        self._nfvi_interface = NfviInterface(loop, log, self._nfvi_plugins, self._cache)
         self._config = config
         self._vnfrs = dict()
-        self._vdurs = dict()
+        self._vnfr_to_vdurs = collections.defaultdict(set)
+        self._alarms = collections.defaultdict(list)
 
     @property
     def loop(self):
@@ -543,6 +554,11 @@ class Monitor(object):
     def log(self):
         """The event log used by this object"""
         return self._log
+
+    @property
+    def cache(self):
+        """The NFVI metrics cache"""
+        return self._cache
 
     @property
     def metrics(self):
@@ -606,6 +622,7 @@ class Monitor(object):
                 raise AccountInUseError()
 
         del self._cloud_accounts[account_name]
+        self._nfvi_plugins.unregister(account_name)
 
     def get_cloud_account(self, account_name):
         """Returns a cloud account by name
@@ -659,6 +676,7 @@ class Monitor(object):
         for vdur in vnfr.vdur:
             try:
                 self.add_vdur(account, vdur)
+                self._vnfr_to_vdurs[vnfr.id].add(vdur.id)
             except (VdurMissingVimIdError, VdurAlreadyRegisteredError):
                 pass
 
@@ -684,6 +702,7 @@ class Monitor(object):
         for vdur in vnfr.vdur:
             try:
                 self.add_vdur(account, vdur)
+                self._vnfr_to_vdurs[vnfr.id].add(vdur.id)
             except (VdurMissingVimIdError, VdurAlreadyRegisteredError):
                 pass
 
@@ -694,12 +713,13 @@ class Monitor(object):
             vnfr_id - the ID of the VNFR to remove
 
         """
-        vnfr = self._vnfrs[vnfr_id]
+        vdur_ids = self._vnfr_to_vdurs[vnfr_id]
 
-        for vdur in vnfr.vdur:
-            self.remove_vdur(vdur.id)
+        for vdur_id in vdur_ids:
+            self.remove_vdur(vdur_id)
 
         del self._vnfrs[vnfr_id]
+        del self._vnfr_to_vdurs[vnfr_id]
 
     def add_vdur(self, account, vdur):
         """Adds a VDUR to the monitor
@@ -725,8 +745,7 @@ class Monitor(object):
         if self.is_registered_vdur(vdur.id):
             raise VdurAlreadyRegisteredError(vdur.id)
 
-        self._nfvi_interface.register_vdur(account, vdur)
-        self._vdurs[vdur.id] = vdur
+        self.cache.create_entry(account, vdur)
 
     def remove_vdur(self, vdur_id):
         """Removes a VDUR from the monitor
@@ -735,8 +754,13 @@ class Monitor(object):
             vdur_id - the ID of the VDUR to remove
 
         """
-        self._nfvi_interface.unregister_vdur(vdur_id)
-        del self._vdurs[vdur_id]
+        self.cache.destroy_entry(vdur_id)
+
+        # Schedule any alarms associated with the VDUR for destruction
+        for account_name, alarm_id in self._alarms[vdur_id]:
+            self.loop.create_task(self.destroy_alarm(account_name, alarm_id))
+
+        del self._alarms[vdur_id]
 
     def list_vdur(self, vnfr_id):
         """Returns a list of VDURs
@@ -772,7 +796,7 @@ class Monitor(object):
             True if the VDUR is registered and False otherwise.
 
         """
-        return vdur_id in self._vdurs
+        return self.cache.contains_vdur_id(vdur_id)
 
     def retrieve_nfvi_metrics(self, vdur_id):
         """Retrieves the NFVI metrics associated with a VDUR
@@ -811,7 +835,7 @@ class Monitor(object):
 
         """
         account = self.get_cloud_account(account_name)
-        vim_id = self._vdurs[vdur_id].vim_id
+        vim_id = self.cache.to_vim_id(vdur_id)
 
         # If the launchpad has a public IP, augment the action webhooks to
         # include the launchpad so that the alarms can be broadcast as event
@@ -827,6 +851,9 @@ class Monitor(object):
             alarm.actions.alarm.add().url = url + "/insufficient_data"
 
         yield from self._nfvi_interface.alarm_create(account, vim_id, alarm)
+
+        # Associate the VDUR ID with the alarm ID
+        self._alarms[vdur_id].append((account_name, alarm.alarm_id))
 
     @asyncio.coroutine
     def destroy_alarm(self, account_name, alarm_id):

@@ -652,7 +652,7 @@ int rwdts_redis_load_script(rwdts_redis_instance_t *instance,
 
 int rwdts_redis_run_get_next_script(rwdts_redis_instance_t *instance,
                                     const char *sha_script, int db_num,
-                                    uint32_t *scan_list, int shard_num,
+                                    uint32_t *scan_list, char *shard_num,
                                     rwdts_trans_callback callback,
                                     void *userdata)
 {
@@ -679,7 +679,7 @@ int rwdts_redis_run_get_next_script(rwdts_redis_instance_t *instance,
      }
 
      RWDTS_CREATE_AND_ENQUEUE_HANDLE(node, callback, userdata);
-     val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %d %d %d %d", sha_script,
+     val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %d %d %s %d", sha_script,
                               0, db_num, scan, shard_num, node->node_idx);
 
      if (val != REDIS_OK) {
@@ -700,12 +700,12 @@ int rwdts_redis_run_get_next_script(rwdts_redis_instance_t *instance,
   return num_nodes;
 }
 
-void rwdts_redis_run_set_script(rwdts_redis_instance_t *instance,
-                                const char *sha_script, char *key,
-                                int key_len, int db_num, int serial_num,
-                                int shard_num,  char *value, int val_len,
-                                rwdts_trans_callback callback,
-                                void *userdata)
+rw_status_t rwdts_redis_run_set_script(rwdts_redis_instance_t *instance,
+                                       const char *sha_script, char *key, 
+                                       int key_len, int db_num, int serial_num,
+                                       char *shard_num,  char *value, int val_len,
+                                       rwdts_trans_callback callback,
+                                       void *userdata)
 {
    rwdts_redis_node_t *node = NULL;
    uint16_t hash = 0, val = 0;
@@ -724,24 +724,24 @@ void rwdts_redis_run_set_script(rwdts_redis_instance_t *instance,
    RW_ASSERT(node->ctxt);
 
    RWDTS_CREATE_AND_ENQUEUE_HANDLE(node, callback, userdata);
-   val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %b %d %d %d %b", sha_script,
+   val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %b %d %d %s %b", sha_script,
                             1, key, key_len, db_num, serial_num, shard_num, value, (size_t)val_len);
 
   if (val != REDIS_OK) {
      fprintf(stdout, "Failed to append %s command for node[%s:%d]\n",
               "run script", node->hostname, node->port);
-     return;
+     return RW_STATUS_FAILURE;
   }
 
   if (RWDTS_REDIS_CLIENT_STATE_CONNECTED == node->state) {
     int len = 0;
     do {
       val = redisBufferWrite(node->ctxt, &len);
-      if (REDIS_ERR == val) break;
+      if (REDIS_ERR == val) return RW_STATUS_FAILURE;
       RWDTS_REDIS_INCREMENT_STATS(node, tx);
     } while (!len);
   }
-  return;
+  return RW_STATUS_SUCCESS;
 }
 
 void rwdts_redis_run_del_script(rwdts_redis_instance_t *instance,
@@ -870,9 +870,103 @@ int rwdts_redis_run_get_script(rwdts_redis_instance_t *instance,
   return num_nodes;
 }
 
+int rwdts_redis_run_get_all_shash_script(rwdts_redis_instance_t *instance,
+                                         const char *sha_script, int db_num,
+                                         char *shard_num, rwdts_trans_callback callback,
+                                         void *userdata)
+{
+   rwdts_redis_node_t *node = NULL;
+   uint16_t val = 0;
+   int i = 0, num_nodes = 1, sent_count = 0;
+
+   if (!cinfo.not_cluster) {
+     num_nodes = instance->cluster.count;
+   }
+
+   RW_ASSERT(RWDTS_REDIS_STATE_CONNECTED == instance->state);
+
+   for (i = 0; i < num_nodes; i++) {
+     node = instance->cluster.nodes[i];
+     if (RWDTS_REDIS_CLIENT_STATE_INVALID == node->state) {
+       rwdts_connect_cluster_node(node);
+     }
+     RW_ASSERT(node->ctxt);
+
+     RWDTS_CREATE_AND_ENQUEUE_HANDLE(node, callback, userdata);
+     val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %d %s", sha_script,
+                              0, db_num, shard_num);
+
+     if (val != REDIS_OK) {
+       fprintf(stdout, "Failed to append %s command for node[%s:%d]\n",
+              "run script", node->hostname, node->port);
+       return 0;
+     }
+
+     if (RWDTS_REDIS_CLIENT_STATE_CONNECTED == node->state) {
+       int len = 0;
+       do {
+         val = redisBufferWrite(node->ctxt, &len);
+         if (REDIS_ERR == val) break;
+         RWDTS_REDIS_INCREMENT_STATS(node, tx);
+       } while (!len);
+       if (val != REDIS_ERR) {
+         sent_count++;
+       }
+     }
+   }
+  return sent_count;
+}
+
+int rwdts_redis_run_del_shash_script(rwdts_redis_instance_t *instance,
+                                     const char *sha_script, int db_num,
+                                     char *shard_num, char *key, int key_len, 
+                                     rwdts_trans_callback callback, void *userdata)
+{
+   rwdts_redis_node_t *node = NULL;
+   uint16_t val = 0;
+   int i = 0, num_nodes = 1, sent_count = 0;
+
+   if (!cinfo.not_cluster) {
+     num_nodes = instance->cluster.count;
+   }
+
+   RW_ASSERT(RWDTS_REDIS_STATE_CONNECTED == instance->state);
+
+   for (i = 0; i < num_nodes; i++) {
+     node = instance->cluster.nodes[i];
+     if (RWDTS_REDIS_CLIENT_STATE_INVALID == node->state) {
+       rwdts_connect_cluster_node(node);
+     }
+     RW_ASSERT(node->ctxt);
+
+     RWDTS_CREATE_AND_ENQUEUE_HANDLE(node, callback, userdata);
+     val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %b %d %s", sha_script,
+                              1, key, key_len, db_num, shard_num);
+
+     if (val != REDIS_OK) {
+       fprintf(stdout, "Failed to append %s command for node[%s:%d]\n",
+              "run script", node->hostname, node->port);
+       return 0;
+     }
+
+     if (RWDTS_REDIS_CLIENT_STATE_CONNECTED == node->state) {
+       int len = 0;
+       do {
+         val = redisBufferWrite(node->ctxt, &len);
+         if (REDIS_ERR == val) break;
+         RWDTS_REDIS_INCREMENT_STATS(node, tx);
+       } while (!len);
+       if (val != REDIS_ERR) {
+         sent_count++;
+       }
+     }
+   }
+  return sent_count;
+}
+
 int rwdts_redis_run_del_shard_script(rwdts_redis_instance_t *instance,
                                      const char *sha_script, int db_num,
-                                     int shard_num, rwdts_trans_callback callback,
+                                     char *shard_num, rwdts_trans_callback callback,
                                      void *userdata)
 {
    rwdts_redis_node_t *node = NULL;
@@ -893,7 +987,7 @@ int rwdts_redis_run_del_shard_script(rwdts_redis_instance_t *instance,
      RW_ASSERT(node->ctxt);
 
      RWDTS_CREATE_AND_ENQUEUE_HANDLE(node, callback, userdata);
-     val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %d %d", sha_script,
+     val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %d %s", sha_script,
                               0, db_num, shard_num);
 
      if (val != REDIS_OK) {
@@ -917,7 +1011,7 @@ int rwdts_redis_run_del_shard_script(rwdts_redis_instance_t *instance,
 void rwdts_redis_run_set_pend_commit_abort_script(rwdts_redis_instance_t *instance,
                                                   const char *sha_script, char *key,
                                                   int key_len, int db_num, int serial_num,
-                                                  int shard_num, rwdts_trans_callback callback,
+                                                  char *shard_num, rwdts_trans_callback callback,
                                                   void *userdata)
 {
    rwdts_redis_node_t *node = NULL;
@@ -937,7 +1031,7 @@ void rwdts_redis_run_set_pend_commit_abort_script(rwdts_redis_instance_t *instan
    RW_ASSERT(node->ctxt);
 
    RWDTS_CREATE_AND_ENQUEUE_HANDLE(node, callback, userdata);
-   val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %b %d %d %d", sha_script,
+   val = redisAppendCommand(node->ctxt, "EVALSHA %s %d %b %d %d %s", sha_script,
                             1, key, key_len, db_num, serial_num, shard_num);
 
   if (val != REDIS_OK) {
@@ -955,6 +1049,75 @@ void rwdts_redis_run_set_pend_commit_abort_script(rwdts_redis_instance_t *instan
     } while (!len);
   }
   return;
+}
+
+void rwdts_redis_slave_to_master(rwdts_redis_instance_t *instance,
+                                 rwdts_trans_callback callback,
+                                 void *userdata)
+{
+   rwdts_redis_node_t *node = NULL;
+
+   RW_ASSERT(RWDTS_REDIS_VALID_INSTANCE(instance));
+   node = instance->cluster.nodes[0];
+   int val = 0;
+
+   RW_ASSERT(RWDTS_REDIS_STATE_CONNECTED == instance->state);
+   if (RWDTS_REDIS_CLIENT_STATE_INVALID == node->state) {
+     rwdts_connect_cluster_node(node);
+   }
+   RW_ASSERT(node->ctxt);
+
+   RWDTS_CREATE_AND_ENQUEUE_HANDLE(node, callback, userdata);
+   val = redisAppendCommand(node->ctxt, "SLAVEOF NO ONE");
+
+   if (val != REDIS_OK) {
+     fprintf(stdout, "Failed to append %s command for node[%s:%d]\n",
+              "SLAVEOF NO ONE", node->hostname, node->port);
+     return;
+   }
+   if (RWDTS_REDIS_CLIENT_STATE_CONNECTED == node->state) {
+     int len = 0;
+     do {
+       val = redisBufferWrite(node->ctxt, &len);
+       if (REDIS_ERR == val) break;
+       RWDTS_REDIS_INCREMENT_STATS(node, tx);
+     } while (!len);
+   }
+}
+
+void rwdts_redis_master_to_slave(rwdts_redis_instance_t *instance,
+                                 char *hostname, uint16_t port,
+                                 rwdts_trans_callback callback,
+                                 void *userdata)
+{
+   rwdts_redis_node_t *node = NULL;
+
+   RW_ASSERT(RWDTS_REDIS_VALID_INSTANCE(instance));
+   node = instance->cluster.nodes[0];
+   int val = 0;
+        
+   RW_ASSERT(RWDTS_REDIS_STATE_CONNECTED == instance->state);
+   if (RWDTS_REDIS_CLIENT_STATE_INVALID == node->state) {
+     rwdts_connect_cluster_node(node);
+   }
+   RW_ASSERT(node->ctxt);
+
+   RWDTS_CREATE_AND_ENQUEUE_HANDLE(node, callback, userdata);
+   val = redisAppendCommand(node->ctxt, "SLAVEOF %s %d", hostname, (int)port);
+
+   if (val != REDIS_OK) {
+     fprintf(stdout, "Failed to append %s command for node[%s:%d]\n",
+              "SLAVEOF <master-ip-adress> <master-port>", node->hostname, node->port);
+     return;
+   }
+   if (RWDTS_REDIS_CLIENT_STATE_CONNECTED == node->state) {
+     int len = 0;
+     do {
+       val = redisBufferWrite(node->ctxt, &len);
+       if (REDIS_ERR == val) break;
+       RWDTS_REDIS_INCREMENT_STATS(node, tx);
+     } while (!len);
+   }
 }
 
 static const uint16_t crc16tab[256]= {

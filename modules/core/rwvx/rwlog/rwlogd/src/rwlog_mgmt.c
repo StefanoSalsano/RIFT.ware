@@ -756,6 +756,35 @@ rwlog_mgmt_config_console(rwlogd_instance_ptr_t instance,
   return status;
 }
 
+static rw_status_t
+rwlog_mgmt_delete_sink(rwlogd_instance_ptr_t instance, size_t n_sink, 
+                      RWPB_T_MSG(RwBase_ReturnStatus) *ret_status,
+                      RWPB_T_MSG(RwlogMgmt_data_Logging_Sink) **Sink)
+{
+  uint32_t index;
+  rw_status_t rw_status = RW_STATUS_FAILURE;
+    
+  for (index = 0; index < n_sink; index ++) {
+    ProtobufCFieldReference fref = PROTOBUF_C_FIELD_REF_INIT_VALUE;
+    protobuf_c_field_ref_goto_whole_message(&fref,(ProtobufCMessage*)Sink[index]);
+    if (protobuf_c_field_ref_is_field_deleted(&fref)){
+        rw_status = rwlogd_sink_delete(instance,Sink[index]->name);
+    }
+    if (rw_status != RW_STATUS_SUCCESS ) {
+      ret_status->has_error_number = TRUE;
+        ret_status->error_number = -1;
+        ret_status->has_error_string = TRUE;
+        snprintf(ret_status->error_string,
+                  sizeof(ret_status->error_string),
+                  "RWLOGD-%d:Sink configuration failed",
+                  instance->rwtasklet_info->identity.rwtasklet_instance_id);
+
+        return rw_status;
+      }
+    }
+    return RW_STATUS_SUCCESS;
+}
+
 
 static rw_status_t
 rwlog_mgmt_config_sink(rwlogd_instance_ptr_t instance, size_t n_sink, 
@@ -847,6 +876,14 @@ rwlog_mgmt_handle_colony_request_dts (const rwdts_xact_info_t* xact_info,
         }
       }
     
+      break;
+    case  RWDTS_QUERY_DELETE:
+      if (Config->n_sink) {
+        rw_status_t rs = rwlog_mgmt_delete_sink(instance, Config->n_sink, &ret_status, Config->sink);
+        if (rs != RW_STATUS_SUCCESS) {
+          return RWDTS_ACTION_NOT_OK;
+        }
+      }
       break;
     case RWDTS_QUERY_READ:
 //      rwlog_handle_show_request_dts(xact,queryh,evt,key,instance,Config);
@@ -1764,7 +1801,7 @@ static void rwlog_dts_registration_continue(rwlogd_instance_ptr_t instance) {
 
     DTS_TBL((*RWPB_G_PATHSPEC_VALUE(RwlogMgmt_data_Logging)),       \
             (*RWPB_G_MSG_PBCMD(RwlogMgmt_data_Logging)), \
-            rwlog_mgmt_handle_colony_request_dts, RWDTS_FLAG_SUBSCRIBER), /* config colony event */ 
+            rwlog_mgmt_handle_colony_request_dts, RWDTS_FLAG_SUBSCRIBER|RWDTS_FLAG_DELTA_READY), /* config colony event */ 
 
     DTS_TBL((*RWPB_G_PATHSPEC_VALUE(RwlogMgmt_data_Logging_Categories)),       \
             (*RWPB_G_MSG_PBCMD(RwlogMgmt_data_Logging_Categories)), \
@@ -1840,7 +1877,7 @@ static void rwlogd_dts_state_changed(rwdts_api_t *apih,
     rwdts_api_set_state(apih, RW_DTS_STATE_REGN_COMPLETE);
     break;
   case RW_DTS_STATE_CONFIG:
-    rwdts_api_set_state(apih, RW_DTS_STATE_RUN);
+    //rwdts_api_set_state(apih, RW_DTS_STATE_RUN);
     break;
   default:
     break;

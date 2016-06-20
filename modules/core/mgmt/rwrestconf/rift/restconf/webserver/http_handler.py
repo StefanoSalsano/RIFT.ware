@@ -41,6 +41,7 @@ from ..util import (
     naive_xml_to_json,    
     NetconfOperation,
     map_request_to_netconf_operation,
+    get_json_schema,
 )
 
 from .connection_manager import AuthenticationError
@@ -72,6 +73,7 @@ def exception_wrapper(method):
             raise e
     
     return _impl
+
 class HttpHandler(tornado.web.RequestHandler):
     def initialize(
             self,
@@ -114,29 +116,6 @@ class HttpHandler(tornado.web.RequestHandler):
 
         return auth_header[6:]
 
-    def _respond_with_json_schema(self, url, accept_type):
-        result = Result.OK
-        actual_url = urllib.parse.urlsplit(url)[2];
-        url_parts = actual_url.split('/');
-        if url_parts[-1] == '':
-            del(url_parts[-1])
-
-        if len(url_parts) == 3:
-            # Convert the entire schema
-            json_resp = ""
-            target_node = self._schema_root.get_first_child()
-            while target_node is not None:
-                json_resp += target_node.to_json_schema(True)
-                target_node = target_node.get_next_sibling()
-
-            return 200, accept_type, json_resp
-        else:
-            target_node = find_target_node(self._schema_root, url_parts[3:])
-            if target_node is None:
-                return 501, accept_type, "{\"Conversion failed\"}"
-
-            return 200, accept_type, target_node.to_json_schema(True)
-
     @asyncio.coroutine
     def connect(self):
         ''' must be called from inside a coroutine impl '''
@@ -164,6 +143,8 @@ class HttpHandler(tornado.web.RequestHandler):
             self._logger.debug("Unknown Accept type %s, defaulting to %s",
                                accept_type,
                                self._accept_type)
+
+        self._logger.debug("%s: %s %s" % (self.request.method, self.request.uri, self._accept_type))
 
     def on_finish(self):
         # bump the request statistics
@@ -238,15 +219,13 @@ class HttpHandler(tornado.web.RequestHandler):
         except ValueError as e:
             raise RestError(401, "must supply BasicAuth")
 
-        self._logger.debug("%s: %s %s" % (self.request.method, self.request.uri, self._accept_type))
-
         # ATTN: special checks for POST and PUT
         if self.request.method == "DELETE" and not is_config(self.request.uri):
             raise RestError(405, "can't delete operational data")
 
         # ATTN: make json it's own request handler
         if self.request.method == "GET" and is_schema_api(self.request.uri):
-            return self._respond_with_json_schema(self.request.uri, accept_type)
+            return 200, "application/vnd.yang.data+json", get_json_schema(self._schema_root, self.request.uri)
 
         # convert url and body into xml payload 
         body = self.request.body.decode("utf-8")
@@ -337,7 +316,7 @@ class HttpHandler(tornado.web.RequestHandler):
 class ReadOnlyHandler(HttpHandler):
     SUPPORTED_METHODS = ("GET")
     def prepare(self):
+        super(ReadOnlyHandler, self).prepare()
         # hack the url to work with everything else we know about
         self.request.uri = self.request.uri.replace("/readonly", "")
 
-        super(ReadOnlyHandler, self).prepare()

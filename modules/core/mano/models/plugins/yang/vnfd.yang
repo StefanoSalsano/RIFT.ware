@@ -40,7 +40,7 @@ module vnfd
       description "Name of the connection point";
       type string;
     }
-    
+
     leaf id {
       description "Identifier for the internal connection points";
       type string;
@@ -50,13 +50,13 @@ module vnfd
       description "Short name of the connection point";
       type string;
     }
-    
+
     leaf type {
       description "Type of the connection point.";
       type manotypes:connection-point-type;
     }
   }
-  
+
   grouping virtual-interface {
     container virtual-interface {
       description
@@ -147,7 +147,7 @@ module vnfd
             "Interface over which the VNF is managed.";
 
         uses manotypes:vnf-configuration;
-        
+
         choice endpoint-type {
           description
               "Indicates the type of management endpoint.";
@@ -461,10 +461,11 @@ module vnfd
         uses manotypes:placement-group-info;
         
         list member-vdus {
+
           description
               "List of VDUs that are part of this placement group";
           key "member-vdu-ref";
-        
+
           leaf member-vdu-ref {
             type leafref {
               path "../../../vdu/id";

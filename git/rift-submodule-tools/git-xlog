@@ -42,7 +42,7 @@ git submodule foreach --quiet '
     if [ $start == $end ]; then
             echo ================================================== NO changes in $path
     else
-            echo ================================================== Changes in $path;
+            echo ================================================== Changes in $path from $start to $end
             git log ${start}..${end};
     fi
 '

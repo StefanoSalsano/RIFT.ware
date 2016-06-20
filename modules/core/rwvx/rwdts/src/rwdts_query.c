@@ -263,9 +263,11 @@ static void rwdts_xact_query_cb(RWDtsXactResult* rsp_in,
                              xact, RwDtsApiLog_notif_XactRspRcvd,
                              RWLOG_ATTR_SPRINTF("%s rwdts_xact_query_cb rsp_in status=%d has_more=%d more=%d n_result=%d", apih->client_path, rsp_in->status, rsp_in->has_more, rsp_in->more, (int)rsp_in->n_result));
 
-    RWMEMLOG(&xact->rwml_buffer,
-	     RWMEMLOG_MEM0,
-	     "Got execute msg rsp");
+    rwmsg_request_memlog_hdr (&xact->rwml_buffer, 
+                              rwreq, 
+                              __PRETTY_FUNCTION__,
+                              __LINE__,
+                              "(Execute Rsp)");
   }
 
   int res_ct = 0;
@@ -531,6 +533,7 @@ static void rwdts_xact_query_cb(RWDtsXactResult* rsp_in,
   }
 
   if (xact_status->xact_done) {
+//    if (xact_status->status == RWDTS_XACT_FAILURE) return;
     rwdts_xact_unref(xact, __PRETTY_FUNCTION__, __LINE__);
   }
   rwdts_xact_unref(xact, __PRETTY_FUNCTION__, __LINE__);
@@ -1130,6 +1133,12 @@ rwdts_xact_block_add_query_int(rwdts_xact_block_t*          block,
   if (flags & RWDTS_XACT_FLAG_RETURN_PAYLOAD) {
     if ((action != RWDTS_QUERY_CREATE) &&
         (action != RWDTS_QUERY_UPDATE)) {
+      return RW_STATUS_FAILURE;
+    }
+  }
+
+  if (flags & RWDTS_XACT_FLAG_SUB_READ) {
+    if (action != RWDTS_QUERY_READ) {
       return RW_STATUS_FAILURE;
     }
   }
@@ -2395,7 +2404,8 @@ rwdts_xact_block_execute(rwdts_xact_block_t* block,
 
 /* Send all blocks.  TODO: Jettison payloads / queries on first send, the router keeps the first copy.  */
 static rw_status_t
-rwdts_xact_send(rwdts_xact_t *xact) {
+rwdts_xact_send(rwdts_xact_t *xact) 
+{
   rwdts_api_t * apih = xact->apih;
   rwmsg_request_t *req_out = NULL;
   rw_status_t rs;
@@ -2424,10 +2434,6 @@ rwdts_xact_send(rwdts_xact_t *xact) {
   rpc_xact.flags |= (xact->flags & RWDTS_XACT_FLAG_REG);
   rpc_xact.has_flags = TRUE;
 
-  RWMEMLOG(&xact->rwml_buffer,
-	   RWMEMLOG_MEM0,
-	   "Sending execute message");
-
   rwmsg_closure_t clo = {.pbrsp = (rwmsg_pbapi_cb)rwdts_xact_query_cb, .ud = xact};
 
   if (xact->flags & RWDTS_XACT_FLAG_IMM_BOUNCE) {
@@ -2445,6 +2451,12 @@ rwdts_xact_send(rwdts_xact_t *xact) {
   if (xact->flags & RWDTS_XACT_FLAG_IMM_BOUNCE) {
     rwmsg_destination_unset_noconndontq(apih->client.dest);
   }
+  rwmsg_request_memlog_hdr (&xact->rwml_buffer, 
+                            req_out, 
+                            __PRETTY_FUNCTION__,
+                            __LINE__,
+                            "(Execute Req)");
+
   if (rs == RW_STATUS_SUCCESS) {
     xact->req_out++;
     rwdts_xact_ref(xact, __PRETTY_FUNCTION__, __LINE__);

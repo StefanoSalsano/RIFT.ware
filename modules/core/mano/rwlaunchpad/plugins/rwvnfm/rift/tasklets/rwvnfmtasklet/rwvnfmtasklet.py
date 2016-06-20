@@ -453,28 +453,28 @@ class VirtualDeploymentUnitRecord(object):
                 raise VNFMPlacementGroupError("Can not launch VDU: {} in multiple Server Groups. Requsted Groups".format(self.name, server_groups))
             else:
                 vm_create_msg_dict['server_group'] = server_groups[0]
-                    
+
         if host_aggregates:
             vm_create_msg_dict['host_aggregate'] = host_aggregates
 
         return
-    
+
     def process_placement_groups(self, vm_create_msg_dict):
         """Process the placement_groups and fill resource-mgr request"""
         if not self._placement_groups:
             return
-        
+
         cloud_set  = set([group.cloud_type for group in self._placement_groups])
         assert len(cloud_set) == 1
         cloud_type = cloud_set.pop()
-        
+
         if cloud_type == 'openstack':
             self.process_openstack_placement_group_construct(vm_create_msg_dict)
-            
+
         else:
             self._log.info("Ignoring placement group with cloud construct for cloud-type: %s", cloud_type)
         return
-        
+
 
     def resmgr_msg(self, config=None):
         vdu_fields = ["vm_flavor",
@@ -531,7 +531,7 @@ class VirtualDeploymentUnitRecord(object):
         vm_create_msg_dict.update(vdu_copy_dict)
 
         self.process_placement_groups(vm_create_msg_dict)
-        
+
         msg = RwResourceMgrYang.VDUEventData()
         msg.event_id = self._request_id
         msg.cloud_account = self.cloud_account_name
@@ -1067,15 +1067,15 @@ class VirtualNetworkFunctionRecord(object):
                                                 self.vnfd_id)
         return self._inventory[mangled_name]
 
-    
-    
+
+
     @asyncio.coroutine
     def get_nsr_config(self):
         ### Need access to NS instance configuration for runtime resolution.
         ### This shall be replaced when deployment flavors are implemented
         xpath = "C,/nsr:ns-instance-config"
         results = yield from self._dts.query_read(xpath, rwdts.XactFlag.MERGE)
-        
+
         for result in results:
             entry = yield from result
             ns_instance_config = entry.result
@@ -1179,7 +1179,7 @@ class VirtualNetworkFunctionRecord(object):
             group_info = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_PlacementGroupsInfo()
             group_info.from_dict(group.as_dict())
             vnfr_msg.placement_groups_info.append(group_info)
-            
+
         return vnfr_msg
 
     @property
@@ -1311,7 +1311,7 @@ class VirtualNetworkFunctionRecord(object):
                                        self.vnf_name,
                                        self.member_vnf_index)
                         placement_groups.append(group_info)
-        
+
         return placement_groups
 
     @asyncio.coroutine
@@ -1332,11 +1332,11 @@ class VirtualNetworkFunctionRecord(object):
                     vdur = [vdur.id for vdur in vnfr._vnfr.vdur if vdur.vdu_id_ref == vdud.id]
                     vdur_id = vdur[0]
                 except IndexError:
-                    self._log.error("Unable to find a VDUR for VDUD {}", vdud)
+                    self._log.error("Unable to find a VDUR for VDUD {}".format(vdud))
 
             return vdur_id
 
-            
+
         self._log.info("Creating VDU's for vnfd id: %s", self.vnfd_id)
         for vdu in self.vnfd.msg.vdu:
             self._log.debug("Creating vdu: %s", vdu)
@@ -1549,8 +1549,7 @@ class VirtualNetworkFunctionRecord(object):
         self.set_state(VirtualNetworkFunctionRecordState.FAILED)
 
         # Update the VNFR with the changed status
-        with self._dts.transaction(flags=0) as xact:
-            yield from self.publish(xact)
+        yield from self.publish(None)
 
     @asyncio.coroutine
     def is_ready(self):
@@ -1568,8 +1567,7 @@ class VirtualNetworkFunctionRecord(object):
             self._log.debug("VNFR id %s ignoring state change", self.vnfr_id)
 
         # Update the VNFR with the changed status
-        with self._dts.transaction(flags=0) as xact:
-            yield from self.publish(xact)
+        yield from self.publish(None)
 
     def update_cp(self, cp_name, ip_address, cp_id):
         """Updated the connection point with ip address"""
@@ -1747,13 +1745,13 @@ class VnfdDtsHandler(object):
             # Create/Update a VNFD record
             for cfg in self._regh.get_xact_elements(xact):
                 # Only interested in those VNFD cfgs whose ID was received in prepare callback
-                if cfg.id in acg.scratch['vnfds'] or is_recovery:
+                if cfg.id in scratch.get('vnfds', []) or is_recovery:
                     self._vnfm.update_vnfd(cfg)
 
-            del acg._scratch['vnfds'][:]
+            scratch.pop('vnfds', None)
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ on prepare callback """
             self._log.debug("Got on prepare for VNFD (path: %s) (action: %s)",
                             ks_path.to_xpath(RwVnfmYang.get_schema()), msg)
@@ -1779,7 +1777,8 @@ class VnfdDtsHandler(object):
                     raise VirtualNetworkFunctionDescriptorRefCountExists(err)
 
                 # Add this VNFD to scratch to create/update in apply callback
-                acg._scratch['vnfds'].append(msg.id)
+                vnfds = scratch.setdefault('vnfds', [])
+                vnfds.append(msg.id)
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
@@ -1789,8 +1788,6 @@ class VnfdDtsHandler(object):
             )
         acg_hdl = rift.tasklets.AppConfGroup.Handler(on_apply=on_apply)
         with self._dts.appconf_group_create(handler=acg_hdl) as acg:
-            # Need a list in scratch to store VNFDs to create/update later
-            acg._scratch['vnfds'] = list()
             self._regh = acg.register(
                 xpath=VnfdDtsHandler.XPATH,
                 flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
@@ -1828,7 +1825,7 @@ class VcsComponentDtsHandler(object):
                                         handler=hdl,
                                         flags=(rwdts.Flag.PUBLISHER |
                                                rwdts.Flag.NO_PREP_READ |
-                                               rwdts.Flag.FILE_DATASTORE),)
+                                               rwdts.Flag.DATASTORE),)
 
     @asyncio.coroutine
     def publish(self, xact, path, msg):
@@ -1886,8 +1883,7 @@ class VnfrDtsHandler(object):
 
                 """
 
-                with self._dts.transaction(flags=0) as xact:
-                    yield from vnfr.instantiate(xact, restart_mode=True)
+                yield from vnfr.instantiate(None, restart_mode=True)
 
             if xact_event == rwdts.MemberEvent.INSTALL:
                 curr_cfg = self.regh.elements
@@ -1917,14 +1913,12 @@ class VnfrDtsHandler(object):
                 try:
                     # RIFT-9105: Unable to add a READ query under an existing transaction
                     # xact = xact_info.xact
-                    with self._dts.transaction(flags=0) as xact:
-                        yield from vnfr.instantiate(xact)
+                    yield from vnfr.instantiate(None)
                 except Exception as e:
                     self._log.exception(e)
                     self._log.error("Error while instantiating vnfr:%s", vnfr.vnfr_id)
                     vnfr.set_state(VirtualNetworkFunctionRecordState.FAILED)
-                    with self._dts.transaction(flags=0) as xact:
-                        yield from vnfr.publish(xact)
+                    yield from vnfr.publish(None)
             elif action == rwdts.QueryAction.DELETE:
                 schema = RwVnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr.schema()
                 path_entry = schema.keyspec_to_entry(ks_path)
@@ -1962,11 +1956,9 @@ class VnfrDtsHandler(object):
 
                 self._log.debug("VNFR {} update config status {} (current {})".
                                 format(vnfr.name, msg.config_status, vnfr.config_status))
-                if vnfr.config_status != msg.config_status:
-                    # Update the config status and publish
-                    vnfr._config_status = msg.config_status
-                    with self._dts.transaction(flags=0) as xact:
-                        yield from vnfr.publish(xact)
+                # Update the config status and publish
+                vnfr._config_status = msg.config_status
+                yield from vnfr.publish(None)
 
             else:
                 raise NotImplementedError(
@@ -1987,7 +1979,7 @@ class VnfrDtsHandler(object):
                                         flags=(rwdts.Flag.PUBLISHER |
                                                rwdts.Flag.NO_PREP_READ |
                                                rwdts.Flag.CACHE |
-                                               rwdts.Flag.FILE_DATASTORE),)
+                                               rwdts.Flag.DATASTORE),)
 
     @asyncio.coroutine
     def create(self, xact, path, msg):
@@ -2090,14 +2082,28 @@ class VirtualNetworkFunctionDescriptor(object):
     def update(self, vnfd):
         """ Update the Virtual Network Function Descriptor """
         if self.in_use():
-            self._log.error("Cannot update descriptor %s in use", self.id)
+            self._log.error("Cannot update descriptor %s in use refcnt=%d",
+                            self.id, self.ref_count)
+
+            # The following loop is  added to debug RIFT-13284
+            for vnf_rec in self._vnfm._vnfrs.values():
+                if vnf_rec.vnfd_id == self.id:
+                    self._log.error("descriptor %s in used by %s:%s",
+                                    self.id, vnf_rec.vnfr_id, vnf_rec.msg)
             raise VirtualNetworkFunctionDescriptorRefCountExists("Cannot update descriptor in use %s" % self.id)
         self._vnfd = vnfd
 
     def delete(self):
         """ Delete the Virtual Network Function Descriptor """
         if self.in_use():
-            self._log.error("Cannot delete descriptor %s in use", self.id)
+            self._log.error("Cannot delete descriptor %s in use refcnt=%d",
+                            self.id)
+
+            # The following loop is  added to debug RIFT-13284
+            for vnf_rec in self._vnfm._vnfrs.values():
+                if vnf_rec.vnfd_id == self.id:
+                    self._log.error("descriptor %s in used by %s:%s",
+                                    self.id, vnf_rec.vnfr_id, vnf_rec.msg)
             raise VirtualNetworkFunctionDescriptorRefCountExists("Cannot delete descriptor in use %s" % self.id)
         self._vnfm.delete_vnfd(self.id)
 

@@ -12,7 +12,7 @@ set(PKG_VERSION 1.0)
 set(PKG_RELEASE 1)
 set(PKG_LONG_NAME ${PKG_NAME}-${PKG_VERSION})
 
-set(subdirs client src plugins test)
+set(subdirs client src plugins test proxy-example)
 
 if(NOT RIFT_AGENT_BUILD STREQUAL "XML_ONLY")
   list(APPEND subdirs confd)

@@ -72,16 +72,9 @@ FileProtoOps::FileProtoOps()
   command_map["--remove-schema-dir"]        = &FileProtoOps::remove_schema_directory;
   command_map["--prune-schema-dir"]         = &FileProtoOps::prune_schema_directory;
 
-#ifdef CONFD_ENABLED
-  // ATTN: N0, these should not be new arguments.  The persist support
-  // should be the same name, and work on confd or XML regardless.
-  command_map["--rm-unique-confd-ws"]       = &FileProtoOps::remove_unique_confd_workspace;
-  command_map["--archive-confd-persist-ws"] = &FileProtoOps::archive_confd_persist_workspace;
-  command_map["--rm-persist-confd-ws"]      = &FileProtoOps::remove_persist_confd_workspace;
-#endif
-  command_map["--rm-persist-xml-ws"]        = &FileProtoOps::remove_persist_xml_workspace;
-  command_map["--rm-unique-xml-ws"]         = &FileProtoOps::remove_unique_xml_workspace;
-  command_map["--archive-xml-persist-ws"]   = &FileProtoOps::archive_xml_persist_workspace;
+  command_map["--rm-unique-mgmt-ws"]       = &FileProtoOps::remove_unique_mgmt_workspace;
+  command_map["--archive-mgmt-persist-ws"] = &FileProtoOps::archive_mgmt_persist_workspace;
+  command_map["--rm-persist-mgmt-ws"]      = &FileProtoOps::remove_persist_mgmt_workspace;
 }
 
 bool FileProtoOps::create_lock_file(std::vector<std::string> const & params)
@@ -113,38 +106,19 @@ bool FileProtoOps::create_schema_directory(std::vector<std::string> const & para
   return rwyangutil::create_schema_directory(params);
 }
 
-#ifdef CONFD_ENABLED
-
-bool FileProtoOps::remove_unique_confd_workspace(std::vector<std::string> const & params)
+bool FileProtoOps::remove_unique_mgmt_workspace(std::vector<std::string> const & params)
 {
-  return rwyangutil::remove_unique_confd_workspace();
+  return rwyangutil::remove_unique_mgmt_workspace();
 }
 
-bool FileProtoOps::remove_persist_confd_workspace(std::vector<std::string> const & params)
+bool FileProtoOps::remove_persist_mgmt_workspace(std::vector<std::string> const & params)
 {
-  return rwyangutil::remove_persist_confd_workspace();
+  return rwyangutil::remove_persist_mgmt_workspace();
 }
 
-bool FileProtoOps::archive_confd_persist_workspace(std::vector<std::string> const & params)
+bool FileProtoOps::archive_mgmt_persist_workspace(std::vector<std::string> const & params)
 {
-  return rwyangutil::archive_confd_persist_workspace();
-}
-
-#endif
-
-bool FileProtoOps::remove_unique_xml_workspace(std::vector<std::string> const & params)
-{
-  return rwyangutil::remove_unique_xml_workspace();
-}
-
-bool FileProtoOps::remove_persist_xml_workspace(std::vector<std::string> const & params)
-{
-  return rwyangutil::remove_persist_xml_workspace();
-}
-
-bool FileProtoOps::archive_xml_persist_workspace(std::vector<std::string> const & params)
-{
-  return rwyangutil::archive_xml_persist_workspace();
+  return rwyangutil::archive_mgmt_persist_workspace();
 }
 
 bool FileProtoOps::prune_schema_directory(std::vector<std::string> const & params)

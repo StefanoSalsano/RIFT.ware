@@ -102,11 +102,12 @@ rwdts_kv_update_db_xact_commit(rwdts_member_data_object_t *mobj, RWDtsQueryActio
     return RW_STATUS_FAILURE;
   }
 
+  RWDTS_CREATE_SHARD(reg->reg_id, apih->client_path, apih->router_path);
   /* Perform KV xact operation */
   if (apih->db_up && ((action == RWDTS_QUERY_CREATE) ||
       (RWDTS_QUERY_UPDATE == action))) {
     rwdts_kv_light_api_xact_insert_commit(mobj->kv_tab_handle, mobj->serial_num,
-                                          mobj->shard_id, (void *)mobj->key,
+                                          shard, (void *)mobj->key,
                                           mobj->key_len, (void *)rwdts_kv_light_insert_xact_commit_obj_cb,
                                           (void *)mobj);
   } else if (apih->db_up && (action == RWDTS_QUERY_DELETE)) {
@@ -127,7 +128,7 @@ rwdts_kv_update_db_update(rwdts_member_data_object_t *mobj, RWDtsQueryAction act
   ProtobufCMessage *msg;
   uint8_t *payload;
   size_t  payload_len;
-  uint32_t db_number, shard_id;
+  uint32_t db_number;
   rw_status_t status;
   rwdts_kv_table_handle_t *kv_tab_handle = NULL;
   rwdts_shard_info_detail_t *shard_key1;
@@ -164,7 +165,7 @@ rwdts_kv_update_db_update(rwdts_member_data_object_t *mobj, RWDtsQueryAction act
                                          shard_db_num_info);
   if (shard_db_num_info->shard_db_num_cnt > 0) {
     db_number = shard_db_num_info->shard_db_num[0].db_number;
-    shard_id = shard_db_num_info->shard_db_num[0].shard_chunk_id;
+    //shard_id = shard_db_num_info->shard_db_num[0].shard_chunk_id;
     /* Search for KV table handle */
     status = RW_SKLIST_LOOKUP_BY_KEY(&(apih->kv_table_handle_list), &db_number,
                                      (void *)&kv_tab_handle);
@@ -175,12 +176,13 @@ rwdts_kv_update_db_update(rwdts_member_data_object_t *mobj, RWDtsQueryAction act
       RW_ASSERT(status == RW_STATUS_SUCCESS);
     }
     mobj->kv_tab_handle = kv_tab_handle;
+    RWDTS_CREATE_SHARD(reg->reg_id, apih->client_path, apih->router_path);
     /* Perform KV xact operation */
     if (apih->db_up && ((action == RWDTS_QUERY_CREATE) ||
         (RWDTS_QUERY_UPDATE == action))) {
       RW_ASSERT(msg);
       payload = protobuf_c_message_serialize(NULL, msg, &payload_len);
-      rwdts_kv_light_table_insert(kv_tab_handle, 0, shard_id,
+      rwdts_kv_light_table_insert(kv_tab_handle, 0, shard,
                                   (void *)mobj->key,
                                   mobj->key_len,
                                   payload,
@@ -261,12 +263,13 @@ rwdts_kv_update_db_xact_precommit(rwdts_member_data_object_t *mobj, RWDtsQueryAc
       RW_ASSERT(status == RW_STATUS_SUCCESS);
     }
     mobj->kv_tab_handle = kv_tab_handle;
+    RWDTS_CREATE_SHARD(reg->reg_id, apih->client_path, apih->router_path);
     /* Perform KV xact operation */
     if (apih->db_up && ((action == RWDTS_QUERY_CREATE) ||
         (RWDTS_QUERY_UPDATE == action))) {
       RW_ASSERT(msg);
       payload = protobuf_c_message_serialize(NULL, msg, &payload_len);
-      rwdts_kv_light_table_xact_insert(kv_tab_handle, 0, mobj->shard_id,
+      rwdts_kv_light_table_xact_insert(kv_tab_handle, 0, shard,
                                        (void *)mobj->key,
                                        mobj->key_len,
                                        payload,

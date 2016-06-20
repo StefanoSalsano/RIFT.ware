@@ -123,6 +123,55 @@ TEST(RIFTBackTrace, BackTrace) {
               ContainsRegex(".*foo_f5.*foo_f4.*foo_f3.*foo_f2.*foo_f1.*"));
 }
 
+#include <libunwind.h>
+
+unw_context_t *contextp = NULL;
+void *callers[RW_RESOURCE_TRACK_MAX_CALLERS+2];
+void f6() {
+  unw_context_t context;
+  unw_getcontext(&context);
+  contextp = (unw_context_t*)malloc(sizeof(*contextp));
+  *contextp = context;
+  rw_btrace_backtrace(callers, RW_RESOURCE_TRACK_MAX_CALLERS);
+}
+void f5() { f6(); }
+void f4() { f5(); }
+void f3() { f4(); }
+void f2() { f3(); }
+void f1() { f2(); }
+
+void skip_func() {
+    unw_cursor_t cursor;
+    unw_context_t uc;
+
+    unw_getcontext(&uc);
+    unw_init_local(&cursor, &uc);
+    unw_step(&cursor);
+    unw_step(&cursor);
+    unw_resume(&cursor);            // restore the machine state
+    printf("will be skipped\n");    // won't be executed
+}
+
+void skipped_func() {
+    skip_func();
+    printf("will be skipped\n");    // won't be executed
+}
+
+TEST(RIFTBackTrace, BackTrace2) {
+  TEST_DESCRIPTION("This test valiadtes the RW_SHOW_BACKTRACE macro.");
+  f1();
+  int i; for (i=0; callers[i]; i++) {
+    char *fname = NULL;
+    fname = rw_unw_get_proc_name(callers[i]);
+    printf("unwind_fname[%d]= %s\n", i, fname);
+    free(fname);
+
+    fname = rw_btrace_get_proc_name(callers[i]);
+    printf("btrace_fname[%d]= %s\n", i, fname);
+    free(fname);
+  }
+}
+
 /**
  * Tests RW_STATIC_ASSERT
  * Since testing static assert requires compilation of code this is

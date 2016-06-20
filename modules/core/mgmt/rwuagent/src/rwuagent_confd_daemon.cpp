@@ -290,24 +290,10 @@ rw_status_t ConfdDaemon::setup()
   data.exists_optional = get_confd_exists;
 
   data.get_object = get_confd_object;
-  strcpy(data.callpoint, "fpath_show");
+  strcpy(data.callpoint, "rw_callpoint");
 
   if (confd_register_data_cb(daemon_ctxt_, &data) == CONFD_ERR) {
-    RW_MA_INST_LOG(instance_, InstanceError, "Registration of confd fpath_show failed. Exiting");
-    RW_ASSERT_NOT_REACHED();
-  }
-
-  strcpy(data.callpoint, "mgmt_agent_show");
-
-  if (confd_register_data_cb(daemon_ctxt_, &data) == CONFD_ERR) {
-    RW_MA_INST_LOG(instance_, InstanceError, " Registration of confd fpath_show failed. Exiting");
-    RW_ASSERT_NOT_REACHED();
-  }
-
-  strcpy(data.callpoint, "base_show");
-
-  if (confd_register_data_cb(daemon_ctxt_, &data) == CONFD_ERR) {
-    RW_MA_INST_LOG(instance_, InstanceError, "Registration of confd fpath_show failed. Exiting");
+    RW_MA_INST_LOG(instance_, InstanceError, "Registration of confd rw_callpoint failed. Exiting");
     RW_ASSERT_NOT_REACHED();
   }
 
@@ -315,7 +301,7 @@ rw_status_t ConfdDaemon::setup()
 
   struct confd_action_cbs action;
   memset (&action, 0, sizeof (action));
-  strcpy (action.actionpoint, "rw_action");
+  strcpy (action.actionpoint, "rw_actionpoint");
   action.init = init_confd_action;
   action.action = execute_confd_action;
 
@@ -324,30 +310,13 @@ rw_status_t ConfdDaemon::setup()
     RW_ASSERT_NOT_REACHED();
   }
 
-  strcpy (action.actionpoint, "mgmt_agent_rpc");
-
-  if (confd_register_action_cbs (daemon_ctxt_, &action) == CONFD_ERR) {
-    RW_MA_INST_LOG(instance_, InstanceError, "Registration of confd actions failed. Exiting");
-    RW_ASSERT_NOT_REACHED();
-  }
-
   RW_MA_INST_LOG(instance_, InstanceDebug, "Registration of confd actionpoints successfull.");
   rw_status_t rw_status = setup_confd_worker_pool();
 
   RW_ASSERT( RW_STATUS_SUCCESS == rw_status);
 
-  struct confd_notification_stream_cbs ncb;
-  // Register the notification streams
-
-  memset(&ncb, 0, sizeof(ncb));
-  ncb.fd = assign_confd_worker();
-
-  strcpy(ncb.streamname, "uagent_notification");
-
-  if (confd_register_notification_stream(daemon_ctxt_, &ncb, &notify_ctxt_) != CONFD_OK) {
-    RW_MA_INST_LOG(instance_, InstanceError, "Registration of notifications failed. Exiting");
-    RW_ASSERT_NOT_REACHED();
-  }
+  // Register for the known Notification streams
+  setup_notifications();
 
   if (confd_register_done(daemon_ctxt_) != CONFD_OK) {
     RW_MA_INST_LOG(instance_, InstanceError, "Registration done failed. Exiting");
@@ -378,6 +347,35 @@ rw_status_t ConfdDaemon::setup()
   return RW_STATUS_SUCCESS;
 }
 
+rw_status_t ConfdDaemon::setup_notifications()
+{
+  struct confd_notification_stream_cbs ncb;
+  int worker_fd = assign_confd_worker();
+
+  for (const auto& stream_info: instance_->netconf_streams_) {
+    confd_notification_ctx* notify_ctxt = nullptr;
+    // Register the notification streams
+    memset(&ncb, 0, sizeof(ncb));
+    ncb.fd = worker_fd;
+
+    strcpy(ncb.streamname, stream_info.name.c_str());
+
+    if (confd_register_notification_stream(daemon_ctxt_, &ncb, &notify_ctxt) 
+        != CONFD_OK) {
+      RW_MA_INST_LOG(instance_, InstanceError, 
+        "Registration of notifications failed. Exiting");
+      RW_ASSERT_NOT_REACHED();
+    }
+
+    notification_ctxt_map_[stream_info.name] = notify_ctxt;
+
+    RW_MA_INST_LOG(instance_, InstanceInfo, 
+      ("Registered for notification stream" + stream_info.name).c_str());
+  }
+
+  return RW_STATUS_SUCCESS;
+}
+
 rwdts_member_rsp_code_t
 ConfdDaemon::handle_notification(
     const ProtobufCMessage * msg)
@@ -403,8 +401,14 @@ ConfdDaemon::handle_notification(
   status = find_confd_hash_values(node->get_yang_node(), &tag);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-  auto *cs_node = confd_cs_node_cd(nullptr, "/%s", node->get_local_name().c_str());
+  std::string node_name = node->get_local_name();
+  std::string node_ns   = node->get_name_space();
+
+  auto *cs_node = confd_cs_node_cd(nullptr, "/%s", node_name.c_str());
   RW_ASSERT(cs_node);
+
+  confd_notification_ctx* notify_ctx = get_notification_context(node_name, node_ns);
+  RW_ASSERT(notify_ctx);
 
   ConfdTLVBuilder builder(cs_node, true);
   XMLTraverser traverser(&builder, node);
@@ -415,12 +419,33 @@ ConfdDaemon::handle_notification(
     return RWDTS_ACTION_NOT_OK;
   }
 
-  return send_notification_to_confd(builder, tag);
+  return send_notification_to_confd(notify_ctx, builder, tag);
+}
+
+confd_notification_ctx* ConfdDaemon::get_notification_context(
+                            const std::string& node_name,
+                            const std::string& node_ns)
+{
+  std::string stream = instance_->lookup_notification_stream(node_name, node_ns);
+  if (stream.empty()) {
+    // Default stream
+    stream.assign("uagent_notification");
+  }
+
+  auto it = notification_ctxt_map_.find(stream); 
+  if (it != notification_ctxt_map_.end()) {
+    return it->second;
+  }
+
+  return nullptr;
 }
 
 
 rwdts_member_rsp_code_t
-ConfdDaemon::send_notification_to_confd(ConfdTLVBuilder& builder, struct xml_tag xtag)
+ConfdDaemon::send_notification_to_confd(
+              confd_notification_ctx* notify_ctxt,
+              ConfdTLVBuilder& builder, 
+              struct xml_tag xtag)
 {
   struct confd_datetime now;
   rwdts_member_rsp_code_t rcode = RWDTS_ACTION_NOT_OK;
@@ -447,7 +472,7 @@ ConfdDaemon::send_notification_to_confd(ConfdTLVBuilder& builder, struct xml_tag
   CONFD_SET_TAG_XMLEND(&vals[nvals - 1], xtag.tag, xtag.ns);
 
   auto ret = confd_notification_send(
-              notify_ctxt_,
+              notify_ctxt,
               &now,
               vals,
               nvals);

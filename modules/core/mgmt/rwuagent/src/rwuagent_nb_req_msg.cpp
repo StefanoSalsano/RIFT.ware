@@ -40,7 +40,7 @@ NbReqMsg::~NbReqMsg()
 
 rwsched_dispatch_queue_t NbReqMsg::get_execution_q() const
 { 
-  return instance_->concurrent_q();
+  return instance_->get_queue(QueueType::DefaultConcurrent);
 }
 
 StartStatus NbReqMsg::execute()

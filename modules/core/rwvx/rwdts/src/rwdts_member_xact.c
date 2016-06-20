@@ -429,7 +429,8 @@ rwdts_member_process_query_action(rwdts_xact_t*                xact,
   // if this is a publisher registration and is a read and no prepare callback is registered
   // then respond with the data asscoiated with the registation
 
-  if ((reg->flags & RWDTS_FLAG_PUBLISHER) &&
+  if (((reg->flags & RWDTS_FLAG_PUBLISHER) ||
+       ((reg->flags & RWDTS_FLAG_SUBSCRIBER) && (xquery->query->flags & RWDTS_XACT_FLAG_SUB_READ))) &&
       (action == RWDTS_QUERY_READ) &&
       (reg->flags & RWDTS_FLAG_NO_PREP_READ ||
        (reg->cb.cb.prepare == NULL))) {
@@ -1381,7 +1382,8 @@ static void rwdts_member_prep_check_timer(void* hndl)
   rwsched_dispatch_release(apih->tasklet, match->prep_timer_cancel);
   match->prep_timer_cancel = NULL;
   RW_ZERO_VARIABLE(&rsp);
-  rsp.evtrsp = (xact->flags&RWDTS_XACT_FLAG_NOTRAN)?RWDTS_EVTRSP_NA:RWDTS_EVTRSP_NACK;
+
+  rsp.evtrsp = rwdts_is_transactional(xact)?RWDTS_EVTRSP_NACK:RWDTS_EVTRSP_NA;
   if (xact->tr) {
     RWDtsTracerouteEnt ent;
     char tmp_log_xact_id_str[128] = "";

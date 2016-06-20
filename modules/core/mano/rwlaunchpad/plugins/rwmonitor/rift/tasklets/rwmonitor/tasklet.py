@@ -56,6 +56,9 @@ import asyncio
 import concurrent.futures
 import time
 
+import tornado.web
+import tornado.httpserver
+
 import gi
 gi.require_version('RwDts', '1.0')
 gi.require_version('RwLog', '1.0')
@@ -63,6 +66,7 @@ gi.require_version('RwMonitorYang', '1.0')
 gi.require_version('RwLaunchpadYang', '1.0')
 gi.require_version('RwNsrYang', '1.0')
 gi.require_version('RwVnfrYang', '1.0')
+gi.require_version('RwLaunchpadYang', '1.0')
 from gi.repository import (
     RwDts as rwdts,
     RwLog as rwlog,
@@ -102,7 +106,6 @@ class DtsHandler(object):
     @property
     def classname(self):
         return self.__class__.__name__
-
 
 class VnfrCatalogSubscriber(DtsHandler):
     XPATH = "D,/vnfr:vnfr-catalog/vnfr:vnfr"
@@ -148,13 +151,6 @@ class NsInstanceConfigSubscriber(DtsHandler):
     @asyncio.coroutine
     def register(self):
         def on_apply(dts, acg, xact, action, _):
-            if xact.xact is None:
-                # When RIFT first comes up, an INSTALL is called with the current config
-                # Since confd doesn't actally persist data this never has any data so
-                # skip this for now.
-                self.log.debug("No xact handle. Skipping apply config")
-                return
-
             xact_config = list(self.reg.get_xact_elements(xact))
             for config in xact_config:
                 self.tasklet.on_ns_instance_config_update(config)
@@ -340,7 +336,7 @@ class CreateAlarmRPC(DtsHandler):
                 response = VnfrYang.YangOutput_Vnfr_CreateAlarm()
                 response.alarm_id = yield from self.tasklet.on_create_alarm(
                         msg.cloud_account,
-                        msg.vdu_id,
+                        msg.vdur_id,
                         msg.alarm,
                         )
 
@@ -437,108 +433,32 @@ class Delegate(object):
         self._listeners.append(listener)
 
 
-class WebhookAlarmServer(object):
-    """
-    The WebhookAlarmServer is a streaming server that is used to handle alarms
-    that are sent to the launchpad.
-    """
-
-    DEFAULT_WEBHOOK_HOST = "127.0.0.1"
-    DEFAULT_WEBHOOK_PORT = 4568
-
-    def __init__(self, log, loop, host=None, port=None):
-        """Create a WebhookAlarmServer
-
-        Arguments:
-            loop - an asyncio event loop
-            host - the address that this server should use
-            port - the port that the server will listen on
-
-        """
-        self._server = None
-        self._log = log
-        self._loop = loop
-        self._host = host if host is not None else WebhookAlarmServer.DEFAULT_WEBHOOK_HOST
-        self._port = port if port is not None else WebhookAlarmServer.DEFAULT_WEBHOOK_PORT
-
-        self.handle_ok = Delegate()
-        self.handle_alarm = Delegate()
-        self.handle_insufficient_data = Delegate()
-
+class WebhookHandler(tornado.web.RequestHandler):
     @property
     def log(self):
-        return self._log
+        return self.application.tasklet.log
 
-    @property
-    def loop(self):
-        """The event loop used by the server"""
-        return self._loop
+    def options(self, *args, **kargs):
+        pass
 
-    @asyncio.coroutine
-    def start(self, host):
-        """Starts the server to handle calls"""
-        if self._server is None:
-            self._host = host
-            self._server = yield from asyncio.start_server(
-                    self.on_alarm_webhook,
-                    self._host,
-                    self._port,
-                    reuse_address=True,
-                    loop=self.loop,
-                    )
+    def set_default_headers(self):
+        self.set_header('Access-Control-Allow-Origin', '*')
+        self.set_header('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Accept, X-Requested-With, Authorization')
+        self.set_header('Access-Control-Allow-Methods', 'POST')
 
-    @asyncio.coroutine
-    def stop(self):
-        """Stops the webhook server"""
-        if self._server is not None:
-            self._server.close()
-            yield from self._server.wait_closed()
-            self._server = None
+    def post(self, action, vim_id):
+        pass
 
-    @asyncio.coroutine
-    def on_alarm_webhook(self, reader, writer):
-        """Dispatches calls to the appropriate handlers
 
-        Argument:
-            reader - a StreamReader that provides the message content
-            writer - a StreamWriter that is used to send information but to the
-                     client
-        """
-        try:
-            # Read from the reader until a timeout occurs. Although there is an
-            # at_eof() function on the reader, that will not work with HTTP/TCP
-            # because an eof is not provided.
-            data = list()
-            try:
-                while True:
-                    chunk = yield from asyncio.wait_for(
-                            reader.read(4096),
-                            timeout=1,
-                            loop=self.loop,
-                            )
-                    data.append(chunk)
+class WebhookApplication(tornado.web.Application):
+    DEFAULT_WEBHOOK_PORT = 4568
 
-            except asyncio.TimeoutError:
-                pass
+    def __init__(self, tasklet):
+        self.tasklet = tasklet
 
-            msg = ''.join(d.decode() for d in data)
-
-            # TODO validate the message to ensure that it is syntactically correct.
-
-            # Return a simple message to the client to let it know that we received
-            # the message successfully.
-            writer.write(b"HTTP/1.1 200 alarm received\r\n")
-            writer.write_eof()
-
-        except Exception as e:
-            self.log.exception(e)
-
-            writer.write(b"HTTP/1.1 400 something went wrong :(\r\n")
-            writer.write_eof()
-
-        finally:
-            yield from writer.drain()
-            writer.close()
+        super().__init__([
+                (r"/([^/]+)/([^/]+)/?", WebhookHandler),
+                ])
 
 
 class MonitorTasklet(rift.tasklets.Tasklet):
@@ -566,7 +486,7 @@ class MonitorTasklet(rift.tasklets.Tasklet):
             self.monitor = core.Monitor(self.loop, self.log, self.config)
             self.vdur_handlers = dict()
 
-            self.webhooks = WebhookAlarmServer(self.log, self.loop)
+            self.webhooks = None
             self.create_alarm_rpc = CreateAlarmRPC(self)
             self.destroy_alarm_rpc = DestroyAlarmRPC(self)
 
@@ -623,6 +543,14 @@ class MonitorTasklet(rift.tasklets.Tasklet):
         self.log.debug("creating destroy-alarm rpc handler")
         yield from self.destroy_alarm_rpc.register()
 
+        self.log.debug("creating webhook server")
+        loop = rift.tasklets.tornado.TaskletAsyncIOLoop(asyncio_loop=self.loop)
+        self.webhooks = WebhookApplication(self)
+        self.server = tornado.httpserver.HTTPServer(
+            self.webhooks,
+            io_loop=loop,
+        )
+
     @asyncio.coroutine
     def on_public_ip(self, ip):
         """Store the public IP of the launchpad
@@ -631,13 +559,7 @@ class MonitorTasklet(rift.tasklets.Tasklet):
             ip - a string containing the public IP address of the launchpad
 
         """
-        try:
-            yield from self.webhooks.stop()
-            yield from self.webhooks.start(ip)
-            self.config.public_ip = ip
-
-        except Exception as e:
-            self.log.exception(e)
+        self.config.public_ip = ip
 
     def on_ns_instance_config_update(self, config):
         """Update configuration information
@@ -657,7 +579,7 @@ class MonitorTasklet(rift.tasklets.Tasklet):
 
     @asyncio.coroutine
     def run(self):
-        pass
+        self.webhooks.listen(WebhookApplication.DEFAULT_WEBHOOK_PORT)
 
     def on_instance_started(self):
         self.log.debug("Got instance started callback")
@@ -704,7 +626,7 @@ class MonitorTasklet(rift.tasklets.Tasklet):
         # Create NFVI handlers for VDURs
         for vdur in vnfr.vdur:
             if vdur.vim_id is not None:
-                coro = self.register_vdur_nfvi_handler(vnfr.id, vdur.id)
+                coro = self.register_vdur_nfvi_handler(vnfr, vdur)
                 self.loop.create_task(coro)
 
     def on_vnfr_update(self, vnfr):

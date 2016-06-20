@@ -325,6 +325,17 @@ class RwcalOpenstackPlugin(GObject.Object, RwCal.Cloud):
         kwargs['flavor_id'] = vminfo.flavor_id
         kwargs['image_id']  = vminfo.image_id
 
+        with self._use_driver(account) as drv:
+            ### If floating_ip is required and we don't have one, better fail before any further allocation
+            if vminfo.has_field('allocate_public_address') and vminfo.allocate_public_address:
+                if account.openstack.has_field('floating_ip_pool'):
+                    pool_name = account.openstack.floating_ip_pool
+                else:
+                    pool_name = None
+                floating_ip = self._allocate_floating_ip(drv, pool_name)
+            else:
+                floating_ip = None
+
         if vminfo.has_field('cloud_init') and vminfo.cloud_init.has_field('userdata'):
             kwargs['userdata']  = vminfo.cloud_init.userdata
         else:
@@ -365,6 +376,8 @@ class RwcalOpenstackPlugin(GObject.Object, RwCal.Cloud):
 
         with self._use_driver(account) as drv:
             vm_id = drv.nova_server_create(**kwargs)
+            if floating_ip:
+                self.prepare_vdu_on_boot(account, vm_id, floating_ip)
 
         return vm_id
 
@@ -444,6 +457,13 @@ class RwcalOpenstackPlugin(GObject.Object, RwCal.Cloud):
                     for interface in network_info:
                         addr = vm.private_ip_list.add()
                         addr.ip_address = interface['addr']
+
+        for network_name, network_info in vm_info['addresses'].items():
+            if network_info and network_name == mgmt_network and not vm.public_ip:
+                for interface in network_info:
+                    if 'OS-EXT-IPS:type' in interface and interface['OS-EXT-IPS:type'] == 'floating':
+                        vm.public_ip = interface['addr']
+
         # Look for any metadata
         for key, value in vm_info['metadata'].items():
             if key in vm.user_tags.fields:

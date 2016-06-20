@@ -154,23 +154,21 @@ static void rwmsg_audit_response_cb (rwdts_xact_t *xact, rwdts_xact_status_t* xa
       const RWPB_T_MSG(RwmsgData_data_Messaging_Info) *msg_info;
       msg_info = (RWPB_T_MSG(RwmsgData_data_Messaging_Info)*)rwdts_query_result_get_protobuf(res);
 
-      //const char *path = rwdts_query_result_get_xpath(res);
-
       rwmsg_broker_channel_t *bch=NULL, *tmp=NULL;
       int my_methbct = 0;
       HASH_ITER(hh, bro->acc.bch_hash, bch, tmp) {
         if (bch->ch.chantype != RWMSG_CHAN_PEERSRV && bch->ch.chantype != RWMSG_CHAN_BROSRV)
           continue;
         RWMSG_RG_LOCK();
-        //ck_ht_iterator_t iter = CK_HT_ITERATOR_INITIALIZER;
-        //ck_ht_entry_t *ent=NULL;
-        //while (ck_ht_next(&rwmsg_global.localdesttab, &iter, &ent)) 
-          //struct rwmsg_methbinding_s *mb = (struct rwmsg_methbinding_s *)ent->value;
         struct rwmsg_methbinding_s *mb = NULL;
-        while ((mb = (mb ? RW_DL_NEXT(mb, struct rwmsg_methbinding_s, elem) : RW_DL_HEAD(&((rwmsg_broker_srvchan_t *)bch)->methbindings, struct rwmsg_methbinding_s, elem)))) {
-          int i; for (i=0; i<mb->srvchans_ct; i++) {
-            if (mb->srvchans[i].ch == &bch->ch)
+        for (mb = RW_DL_HEAD(&((rwmsg_broker_srvchan_t *)bch)->methbindings, struct rwmsg_methbinding_s, elem);
+             mb;
+             mb = RW_DL_NEXT(mb, struct rwmsg_methbinding_s, elem)) {
+          int i; 
+          for (i=0; i<mb->srvchans_ct; i++) {
+            if (mb->srvchans[i].ch == &bch->ch) {
               my_methbct++;
+            }
           }
         }
         RWMSG_RG_UNLOCK();

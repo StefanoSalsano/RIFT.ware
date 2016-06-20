@@ -344,7 +344,7 @@ void SbReqRpc::dts_complete_cb(
 
       RW_ASSERT (xact == rpc->dts_xact());
       rwsched_dispatch_async_f(rpc->instance()->rwsched_tasklet(),
-                               rpc->instance()->concurrent_q(),
+                               rpc->instance()->get_queue(QueueType::DefaultConcurrent),
                                rpc,
                                dts_cb_async);
       break;

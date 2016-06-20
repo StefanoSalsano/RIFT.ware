@@ -32,7 +32,7 @@ TEST(RwCLI, PrintHook)
   bool status = false;
 
   TEST_DESCRIPTION("Test CLI print hooks");
-  RwCLI *rw_cli = new RwCLI(false, nullptr, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
+  RwCLI *rw_cli = new RwCLI(false, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
   rw_cli->initialize_plugin_framework();
   rw_cli->initialize(nullptr);
   rw_cli->module_names_.insert("rwcli_test");
@@ -53,7 +53,7 @@ TEST(RwCLI, NewMode)
   bool status = false;
 
   TEST_DESCRIPTION("Test modes");
-  RwCLI *rw_cli = new RwCLI(false, nullptr, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
+  RwCLI *rw_cli = new RwCLI(false, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
   rw_cli->initialize_plugin_framework();
   rw_cli->initialize(nullptr);
   rw_cli->module_names_.insert("rwcli_test");
@@ -82,7 +82,7 @@ TEST(RwCLI, ManifestDefaultsCheck)
   std::string base_manifest = getenv("RIFT_INSTALL");
   base_manifest += "/usr/data/yang/rw.cli.xml";
 
-  RwCLI *rw_cli = new RwCLI(false, nullptr, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
+  RwCLI *rw_cli = new RwCLI(false, RWCLI_TRANSPORT_MODE_RWMSG, RWCLI_USER_MODE_NONE);
   rw_cli->initialize_plugin_framework();
   rw_cli->initialize(base_manifest.c_str());
 

@@ -287,7 +287,7 @@ export default class NsListPanel extends React.Component {
                 <div className="button"
                     onClick={this.handleInstantiateNetworkService} >
                     <img src={plusButton}/>
-                    <span>Launch Service</span>
+                    <span>Instantiate Service</span>
                 </div>
             </div>
         );

@@ -9,12 +9,11 @@ import AppHeader from 'widgets/header/header.jsx';
 import SdnAccountStore from '../launchpad_sdn_account/sdnAccountStore.js';
 import CloudAccount from './cloudAccount.jsx';
 import CloudAccountStore from './cloudAccountStore';
-import CloudAccountActions from './cloudAccountActions';
 import AccountSidebar from '../account_sidebar/accountSidebar.jsx';
 import './cloud-account.css';
+import SkyquakeComponent from 'widgets/skyquake_container/skyquakeComponent.jsx';
 
-
-export default class LaunchpadCloudAccount extends React.Component {
+class LaunchpadCloudAccount extends React.Component {
     constructor(props) {
         super(props);
         this.cloudName = this.props.routeParams.name;
@@ -78,10 +77,10 @@ export default class LaunchpadCloudAccount extends React.Component {
         if (this.props.isDashboard) {
             body = (<div>Edit or Create New Accounts</div>);
         } else {
-             body = <CloudAccount {...this.props} store={CloudAccountStore} actions={CloudAccountActions} sdnAccounts={this.state.sdnAccounts} isEdit={this.state.isEdit} />
+             body = <CloudAccount {...this.props} store={CloudAccountStore} actions={this.props.actions} sdnAccounts={this.state.sdnAccounts} isEdit={this.state.isEdit} />
         }
-        html = (<div>
-                  <AppHeader title={title} isLoading={this.state.isLoading} />
+        html = (<div className="cloud-account-wrapper">
+                    <AppHeader title={title} isLoading={this.state.isLoading} />
                     <div className="flex">
                       <AccountSidebar/>
                       {body}
@@ -90,6 +89,4 @@ export default class LaunchpadCloudAccount extends React.Component {
         return html;
     }
 }
-LaunchpadCloudAccount.contextTypes = {
-    router: React.PropTypes.object
-};
+export default SkyquakeComponent(LaunchpadCloudAccount);

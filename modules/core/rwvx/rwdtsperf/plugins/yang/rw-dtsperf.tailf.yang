@@ -15,20 +15,15 @@ module rw-dtsperf-annotation
     prefix tailf;
   }
 
-  import rw-base {
-    prefix rwbase;
-  }
-
-
   import rw-dtsperf {
     prefix rwdtsperf;
   }
 
   tailf:annotate "/rwdtsperf:perf-statistics" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
   tailf:annotate "/rwdtsperf:start-xact" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 }
 

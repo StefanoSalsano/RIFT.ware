@@ -33,8 +33,10 @@ module dns {
       max-elements 3;
       ordered-by user;
       leaf address   { type inet:ip-address; }
+      leaf ttl       { type uint8; }
     }
     container options {
+      rwpb:msg-new "DnsOptions";
       leaf ndots    { type uint8; }
       leaf timeout  { type uint8; }
       leaf attempts { type uint8; }

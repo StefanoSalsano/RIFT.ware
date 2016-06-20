@@ -1114,6 +1114,19 @@ class Registration(object):
         ret = yield from done
         return ret
 
+    def _get_xact(self, xact):
+        """
+        Get the raw xact object from the python wrapper.
+        """
+        if xact is None:
+            return xact
+
+        if type(xact) is Transaction:
+            # Get the raw handle from the py wrapper
+            return xact.xact
+
+        return xact
+
     def create_element(self, xpath, msg, xact=None):
         """
         Create an element at this registration point
@@ -1123,6 +1136,8 @@ class Registration(object):
         @param flags  - RwDts.Flag
         @raises       - RegistrationElementError on failure
         """
+
+        xact = self._get_xact(xact)
         payload = msg if isinstance(msg, gi.repository.ProtobufC.Message) else msg.to_pbcm()
 
         status = self._reg_handle.create_element_xpath(xpath, payload, xact)
@@ -1139,6 +1154,7 @@ class Registration(object):
         @param xact   - 
         @raises       - RegistrationElementError on failure
         """
+        xact = self._get_xact(xact)
         payload = msg if isinstance(msg, gi.repository.ProtobufC.Message) else msg.to_pbcm()
 
         status = self._reg_handle.update_element_xpath(xpath, payload, flags, xact)
@@ -1171,6 +1187,7 @@ class Registration(object):
         @param xpath  - xpath at which to delete element
         @raises       - RegistrationElementError on failure
         """
+        xact = self._get_xact(xact)
         status = self._reg_handle.delete_element_xpath(xpath, None, xact)
         if status != rwtypes.RwStatus.SUCCESS:
             raise RegistrationElementError('Failed to delete element for xpath %s' % (xpath,))
@@ -1306,6 +1323,8 @@ class AppConfGroup(object):
 
                 msg = pbcm_to_gi(msg)
                 exp_clbk = ExceptionRule.send_nack(xact_info, None)
+
+                scratch = self.scratch.setdefault(xact.id, {})
                 self.scheduler.schedule_task(
                         f,
                         self._dts,
@@ -1314,6 +1333,7 @@ class AppConfGroup(object):
                         xact_info,
                         ks,
                         msg,
+                        scratch,
                         exception_callback=exp_clbk)
 
             return wrapper if f is not None else None
@@ -1332,7 +1352,6 @@ class AppConfGroup(object):
         self._regs.append(reg)
 
         return reg
-
 
 class ExceptionRule(object):
     """
@@ -1668,11 +1687,12 @@ class GroupEventAdapter(EventAdapter):
             # Here we set the scratch per transaction
             scratch = self.registration.scratch.setdefault(xact.id, {})
             if on_init is not None:
-                self.scheduler.exec_soon(
-                        on_init,
-                        self.registration,
-                        xact,
-                        scratch,
+                @asyncio.coroutine
+                def run_in_event_loop():
+                    on_init(self.registration, xact, scratch)
+ 
+                self.scheduler.exec_now(
+                        run_in_event_loop, 
                         exception_callback=ExceptionRule.abort_xact(xact))
 
         return wrapper
@@ -1694,12 +1714,12 @@ class GroupEventAdapter(EventAdapter):
                 print("GroupEventAdapter: on_deinit: self=", self, "scratch=", scratch, "**")
 
             if on_deinit is not None:
-                self.scheduler.exec_soon(
-                        on_deinit,
-                        self.registration,
-                        xact,
-                        scratch)
+                @asyncio.coroutine
+                def run_in_event_loop():
+                    on_deinit(self.registration, xact, scratch)
 
+                self.scheduler.exec_now(run_in_event_loop)
+                        
             # We want the scratch to be removed only after the deinit callback
             # is done. This ensures that the scratch is still available for
             # the client within the 'on_deinit' callback.
@@ -1784,7 +1804,12 @@ class AppConfEventAdapter(EventAdapter):
             # This provides the client app to stash any data during the on_init
             # callback.
             if on_init is not None:
-                self.scheduler.exec_soon(on_init, self.registration, xact, scratch,
+                @asyncio.coroutine
+                def run_in_event_loop():
+                    on_init(self.registration, xact, scratch)
+
+                self.scheduler.exec_now(
+                        run_in_event_loop,
                         exception_callback=ExceptionRule.abort_xact(xact))
 
         return wrapper
@@ -1803,11 +1828,11 @@ class AppConfEventAdapter(EventAdapter):
             if scratch is not None and scratch:
                 print("AppConfEventAdapter: on_deinit: self=", self, "scratch=", scratch, "**")
             if on_deinit is not None:
-                self.scheduler.exec_soon(
-                        on_deinit,
-                        self.registration,
-                        xact,
-                        scratch)
+                @asyncio.coroutine
+                def run_in_event_loop():
+                    on_deinit(self.registration, xact, scratch)
+
+                self.scheduler.exec_now(run_in_event_loop)
 
             # We want the scratch to be removed only after the deinit callback is
             # done. This ensures that the scratch is still available for
@@ -1830,12 +1855,12 @@ class AppConfEventAdapter(EventAdapter):
             xact = Transaction(xact_raw, self.dts.loop)
             scratch = self.registration.scratch.setdefault(xact.id, {})
 
-            self.scheduler.exec_soon(
-                    on_validate,
-                    self.dts,
-                    self.registration,
-                    xact,
-                    scratch,
+            @asyncio.coroutine
+            def run_in_event_loop():
+                on_validate(self.dts, self.registration, xact, scratch)
+
+            self.scheduler.exec_now(
+                    run_in_event_loop,
                     exception_callback=ExceptionRule.abort_xact(xact))
 
         return wrapper if on_validate is not None else None
@@ -1860,15 +1885,17 @@ class AppConfEventAdapter(EventAdapter):
 
             scratch = self.registration.scratch.setdefault(xact.id, {})
 
+            @asyncio.coroutine
+            def run_in_event_loop():
+
+                on_apply(self.dts, self.registration,
+                         xact, action, scratch)
+
             if not asyncio.iscoroutinefunction(on_apply):
-                self.scheduler.exec_soon(
-                        on_apply,
-                        self.dts,
-                        self.registration,
-                        xact,
-                        action,
-                        scratch,
-                        exception_callback=exception_callback)
+              self.scheduler.exec_now(
+                      run_in_event_loop,
+                      exception_callback=exception_callback)
+
             else:
                 self.scheduler.schedule_task(
                         on_apply,
@@ -2582,6 +2609,10 @@ class DTS(object):
 
         @param flags  - RwDts.Flag
         @return       - new Transaction instance
+
+        Sample Usage:
+        with dts.transaction() as xact:
+            some_registration.create_element(xpath, msg, xact)
         """
         def on_xact_event(raw_xact, status, _):
             print('-'*40, raw_xact, evt)

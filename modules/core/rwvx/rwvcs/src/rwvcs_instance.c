@@ -6,9 +6,9 @@
  *
  */
 
-#include <dirent.h>
-#include <ifaddrs.h>
 
+#include <sys/prctl.h>
+#include <sys/wait.h>
 #include <rwcal-api.h>
 
 #include "rwvcs.h"
@@ -17,6 +17,7 @@
 #include "rwvcs_manifest.h"
 #include "rwvcs_rwzk.h"
 #include "rwcal_vars_api.h"
+#include <dirent.h>
 
 
 RW_CF_TYPE_DEFINE("RW.VX Instance Type", rwvx_instance_ptr_t);
@@ -27,24 +28,12 @@ static void rwmain_crash_task()
     RW_CRASH();
 }
 
-static rw_status_t start_zookeeper_server(
-    rwvcs_instance_ptr_t rwvcs,
-    vcs_manifest_bootstrap * bootstrap)
+
+static void stop_any_local_zookeeper(void)
 {
-  int r;
-  rw_status_t status = RW_STATUS_SUCCESS;
-  struct ifaddrs * ifap;
-  const char * master_ip;
   DIR * proc;
   struct dirent * ent;
 
-  if (bootstrap->zookeeper->zake)
-    goto done;
-
-  // Scan /proc/[0-9]?*/cmdline for any process who's first 3 arguments start
-  // with 'java', '-cp', '/etc/zookeeper'.  While crappy, this is enough to make
-  // sure we don't attempt to start the zookeeper more than once on the same machine
-  // and leave zombies all over the place.
   proc = opendir("/proc/");
   for (ent = readdir(proc); ent; ent = readdir(proc)) {
     FILE * fp;
@@ -60,7 +49,7 @@ static rw_status_t start_zookeeper_server(
       continue;
     #endif
 
-    r = snprintf(path, 128, "/proc/%s/cmdline", ent->d_name);
+    int r = snprintf(path, 128, "/proc/%s/cmdline", ent->d_name);
     RW_ASSERT(r != -1);
 
     fp = fopen(path, "r");
@@ -82,51 +71,37 @@ static rw_status_t start_zookeeper_server(
         || strncmp(cmdline_start + 9, "/etc/zookeeper", 14)) {
       continue;
     }
-
-    closedir(proc);
-    goto done;
+    //send_kill_to_pid (atoi(ent->d_name), SIGTERM, "zookeeper kill");
   }
   closedir(proc);
+}
 
-  /*
-   * Check each ip address associated with this machine.  If it matches the
-   * one specified for the zookeepr master, start if it is not already running.
-   *
-   * Note that the zkServer.sh script provided by zookeeper upstream keeps a
-   * pid file and considers it a successful no-op if the zookeeper is already
-   * running.
-   */
+rw_status_t start_zookeeper_server(
+    rwvcs_instance_ptr_t rwvcs,
+    vcs_manifest_bootstrap * bootstrap)
+{
+  rw_status_t status = RW_STATUS_SUCCESS;
+  rwvcs_mgmt_info_t *mgmt_info = &rwvcs->mgmt_info;
+  if ((bootstrap->zookeeper->zake) 
+      || (!mgmt_info->mgmt_vm))
+    goto done;
 
-  r = getifaddrs(&ifap);
-  RW_ASSERT(r == 0);
+  mgmt_info->config_start_zk_pending = false;
 
-  master_ip = bootstrap->zookeeper->master_ip;
+  struct timeval tv_begin;
+  gettimeofday(&tv_begin, NULL);
 
-  for (struct ifaddrs * it = ifap; it != NULL; it = it->ifa_next) {
-    struct sockaddr_in * addr = (struct sockaddr_in *)it->ifa_addr;
-
-    if (!strncmp(master_ip, inet_ntoa(addr->sin_addr), 15)) {
-      char * server_names[3] = {NULL, NULL, NULL};
-
-      r = asprintf(&server_names[0], "%s", inet_ntoa(addr->sin_addr));
-      RW_ASSERT(r != -1);
-
-      struct timeval tv_begin;
-      gettimeofday(&tv_begin, NULL);
-
-      status = rwvcs_rwzk_server_start(
+  int indx;
+  for (indx = 0; (indx < RWVCS_ZK_SERVER_CLUSTER) && mgmt_info->zk_server_port_details[indx]; indx++) {
+    if (mgmt_info->zk_server_port_details[indx]->zk_server_start) {
+    mgmt_info->zk_server_port_details[indx]->zk_server_pid = rwvcs_rwzk_server_start(
           rwvcs,
-          tv_begin.tv_sec,
-          bootstrap->zookeeper->unique_ports,
-          (const char **)server_names);
-
-      free(server_names[0]);
-
-      break;
+          mgmt_info->zk_server_port_details[indx]->zk_server_id,
+          mgmt_info->zk_server_port_details[indx]->zk_client_port,
+          mgmt_info->unique_ports,
+          mgmt_info->zk_server_port_details);
     }
   }
-
-  freeifaddrs(ifap);
 
 done:
 
@@ -296,26 +271,31 @@ static rw_status_t apply_vmpool_settings(
   return RW_STATUS_SUCCESS;
 }
 
-static rw_status_t initialize_zookeeper(rwvcs_instance_ptr_t rwvcs)
+static rw_status_t initialize_zookeeper(rwvcs_instance_ptr_t rwvcs, const char *ip_address)
 {
   rw_status_t status;
 
+#if 1
   if (rwvcs->rwvx->rwsched_tasklet &&
       !rwvcs->zk_rwq) {
+#if 1
     char zk_rwq_name[256] = {0};
     snprintf(zk_rwq_name, 256, "rwzkq-%d",rwvcs->identity.rwvm_instance_id);
     rwvcs->zk_rwq = rwsched_dispatch_queue_create(rwvcs->rwvx->rwsched_tasklet,
 					zk_rwq_name, DISPATCH_QUEUE_SERIAL);
     RW_ASSERT(rwvcs->zk_rwq);
+#endif
   }
+#endif
 
+  stop_any_local_zookeeper();
   status = start_zookeeper_server(rwvcs, rwvcs->pb_rwmanifest->bootstrap_phase);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
   if (status != RW_STATUS_SUCCESS)
     return status;
 
-  // Start the zookeeper client
-  status = rwvcs_rwzk_client_start(rwvcs);
+  // init and start the zookeeper client
+  status = rwvcs_rwzk_client_init(rwvcs);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
   if (status != RW_STATUS_SUCCESS)
     return status;
@@ -483,26 +463,18 @@ static rw_status_t rwvcs_instance_process_manifest_path(
   return status;
 }
 
-rw_status_t rwvcs_instance_init(
+rw_status_t rwvcs_process_manifest_file(
     rwvcs_instance_ptr_t rwvcs,
-    const char * manifest_path,
-    int (*rwmain_f)(int argc, char ** argv, char ** envp))
+    const char * manifest_file)
 {
-  rw_status_t status;
-  char * ld_preload;
+  rw_status_t status = RW_STATUS_SUCCESS;
 
-  rwvcs->rwmain_f = rwmain_f;
-  rwvcs->rwcrash = rwmain_crash_task;
-
-  ld_preload = getenv("LD_PRELOAD");
-  if (ld_preload) {
-    rwvcs->ld_preload = strdup(ld_preload);
-    RW_ASSERT(rwvcs->ld_preload);
-    unsetenv("LD_PRELOAD");
+  if (rwvcs->pb_rwmanifest->bootstrap_phase) {
+    return status;
   }
 
-  if (manifest_path) {
-    status = rwvcs_instance_process_manifest_path(rwvcs, manifest_path);
+  if (manifest_file) {
+    status = rwvcs_instance_process_manifest_path(rwvcs, manifest_file);
     if (status != RW_STATUS_SUCCESS)
       return status;
   }
@@ -523,18 +495,69 @@ rw_status_t rwvcs_instance_init(
   if (status != RW_STATUS_SUCCESS)
     return status;
 
-  status = initialize_zookeeper(rwvcs);
-  if (status != RW_STATUS_SUCCESS)
-    return status;
-
   // Evaluate the starting environment variable list
   status = rwvcs_variable_list_evaluate(
       rwvcs,
       rwvcs->pb_rwmanifest->init_phase->environment->n_python_variable,
       rwvcs->pb_rwmanifest->init_phase->environment->python_variable);
+
+  
+  return status;
+}
+
+rw_status_t rwvcs_instance_init(
+    rwvcs_instance_ptr_t rwvcs,
+    const char * manifest_file,
+    const char * ip_address,
+    int (*rwmain_f)(int argc, char ** argv, char ** envp))
+{
+  rw_status_t status;
+  char * ld_preload;
+
+  rwvcs->rwmain_f = rwmain_f;
+  rwvcs->rwcrash = rwmain_crash_task;
+
+  ld_preload = getenv("LD_PRELOAD");
+  if (ld_preload) {
+    rwvcs->ld_preload = strdup(ld_preload);
+    RW_ASSERT(rwvcs->ld_preload);
+    unsetenv("LD_PRELOAD");
+  }
+
+  rwvcs_process_manifest_file (rwvcs, manifest_file);
+
+  status = initialize_zookeeper(rwvcs, ip_address);
   if (status != RW_STATUS_SUCCESS)
     return status;
 
   return RW_STATUS_SUCCESS;
+}
+
+void send_kill_to_pid(
+    int pid, 
+    int signal,
+    char *name)
+{
+  fprintf (stderr, " [[[%d]]] '%s' being send %d by [%d] \n", pid, name, signal, getpid());
+  int r = kill(pid, signal);
+  if (r != -1) {
+    for (size_t i = 0; i < 1000; ++i) {
+      r = kill(pid, 0);
+      if (r == -1)
+        break;
+      usleep(1000);
+    }
+
+    if (r != -1)
+      kill(pid, SIGKILL);
+  }
+  int wait_status;
+  r = waitpid(pid, &wait_status, WNOHANG);
+  if (r != pid) {
+    fprintf(stderr,
+        "Failed to wait for pid %u(%s)",
+        pid,
+        name);
+  }
 }
 

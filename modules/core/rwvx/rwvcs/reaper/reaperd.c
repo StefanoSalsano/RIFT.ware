@@ -26,6 +26,7 @@ static void help() {
   printf("\n");
   printf("COMMANDS:\n");
   printf("    add_pid <pid>     Add a pid to be reaped when the connection is closed:\n");
+  printf("    del_pid <pid>     Del a pid from the reaper:\n");
   printf("    add_path <path>   Add a path to be unlinked when the connection is closed:\n");
   printf("\n");
   printf("ARGUMENTS:\n");

@@ -74,7 +74,7 @@ class About extends React.Component {
 
     if (this.state != null) {
       var html = (
-              <div>
+              <div className="table-container-wrapper">
                 {uptime}
                 <div className="table-container">
                   <h2> Version Info </h2>

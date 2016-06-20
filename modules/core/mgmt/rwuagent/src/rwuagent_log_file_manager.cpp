@@ -13,7 +13,6 @@
  */
 
 #include <string>
-#include <fstream>
 #include <sstream>
 
 #include <boost/format.hpp>
@@ -49,7 +48,8 @@ LogFileManager::LogFileManager(Instance* instance):
     instance_(instance),
     memlog_buf_(instance_->get_memlog_inst(),
                 "LogFileManager",
-                reinterpret_cast<intptr_t>(this))
+                reinterpret_cast<intptr_t>(this)),
+    log_file_writers_()
 {
   postrotate_script_ = rwyangutil::get_rift_install() + "/usr/local/confd/bin/confd_cmd -c reopen_logs";
   config_file_ = "/etc/logrotate.d/rwuagent";
@@ -57,11 +57,14 @@ LogFileManager::LogFileManager(Instance* instance):
   transaction_log_file_ = log_dir + "/rwuagent_transaction.log";
   failure_log_file_ = log_dir + "/rwuagent_transaction_failures.log";
 
+  log_file_writers_[transaction_log_file_] = instance->create_async_file_writer(transaction_log_file_);
+  log_file_writers_[failure_log_file_] = instance->create_async_file_writer(failure_log_file_);
+
   logs_.emplace_back(transaction_log_file_);
   logs_.emplace_back(failure_log_file_);
 
-  write_to_file(transaction_log_file_, "## system start ##");
-  write_to_file(failure_log_file_, "## system start ##");
+  write_to_file(transaction_log_file_, "## system start ##\n");
+  write_to_file(failure_log_file_, "## system start ##\n");
 }
 
 LogFileManager::~LogFileManager()
@@ -352,28 +355,28 @@ void LogFileManager::log_failure(void* req, const char * tag, const char * str)
 
 void LogFileManager::write_to_file(std::string const & filename, void* req, const char * tag, const char * str)
 {
-  std::ofstream logfile;
-  logfile.open (filename, std::ios_base::app | std::ios_base::out);
+  std::stringstream logmessage;
 
-  logfile << get_timestamp() << LOG_SEPARATOR;
-  logfile << req << LOG_SEPARATOR;
-  logfile << tag << LOG_SEPARATOR;
-  logfile << str << std::endl;
+  logmessage << get_timestamp() << LOG_SEPARATOR;
+  logmessage << req << LOG_SEPARATOR;
+  logmessage << tag << LOG_SEPARATOR;
+  logmessage << str << std::endl;
 
-  logfile.close();
+  std::string const message = logmessage.str();
+  
+  write_to_file(filename, message);
+
 }
 
-void LogFileManager::write_to_file(std::string const & filename, std::string & payload)
+void LogFileManager::write_to_file(std::string const & filename, std::string const & payload)
 {
   write_to_file(filename, payload.c_str());
 }
 
 void LogFileManager::write_to_file(std::string const & filename, const char * payload)
 {
-  std::ofstream logfile;
-  logfile.open (filename, std::ios_base::app | std::ios_base::out);
+  std::string const message(payload);
 
-  logfile << payload << std::endl;
+  log_file_writers_[filename]->write_message(message);  
 
-  logfile.close();
 }

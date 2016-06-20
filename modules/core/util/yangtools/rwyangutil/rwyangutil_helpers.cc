@@ -155,10 +155,21 @@ std::string fs_read_symlink(const std::string& sym_link)
 }
 
 bool fs_create_symlink(const std::string& target,
-                       const std::string& link)
+                       const std::string& link,
+                       bool const force)
 {
   try {
-    fs::create_symlink(target, link);
+    if (force) {
+      /*
+       * boost::filesystem::create_symlink can't do a forced operation
+       * so to avoid the delete just make a temporary and rename it.
+       */
+      fs::path const temporary_link = link + ".tmp";
+      fs::create_symlink(target, temporary_link);
+      fs::rename(temporary_link, link);
+    } else {
+      fs::create_symlink(target, link);
+    }
   } catch (const fs::filesystem_error& e) {
     std::cerr << "Exception while creating sym link to "
               << target << " as " << link << " "
@@ -228,16 +239,18 @@ std::set<std::string> read_northbound_schema_listing(
 
 std::string execute_command_and_get_result(const std::string& cmd)
 {
-  std::shared_ptr<FILE> pipe(popen(cmd.c_str(), "r"), pclose);
-
-  if (!pipe) return std::string();
+  std::string result;
+  FILE* pipe_f = popen(cmd.c_str(), "r");
+  if (!pipe_f) {
+    return result;
+  }
+  std::shared_ptr<FILE> pipe_sp(pipe_f, pclose);
 
   size_t const buffer_size = 128;
   char buffer[buffer_size];
-  std::string result;
 
-  while (!feof(pipe.get())) {
-    if (fgets(buffer, buffer_size, pipe.get()) != NULL)
+  while (!feof(pipe_f)) {
+    if (fgets(buffer, buffer_size, pipe_f) != NULL)
       result += buffer;
   }
 

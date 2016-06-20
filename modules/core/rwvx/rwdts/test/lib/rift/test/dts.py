@@ -155,7 +155,7 @@ class AbstractDTSTest(unittest.TestCase):
         Returns:
             Time limit for each test case, in seconds.
         """
-        return 5
+        return 10
 
     @classmethod
     def configure_suite(cls, rwmain):

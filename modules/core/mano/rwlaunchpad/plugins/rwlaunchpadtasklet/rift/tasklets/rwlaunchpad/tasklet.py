@@ -23,6 +23,7 @@ gi.require_version('RwDts', '1.0')
 gi.require_version('RwcalYang', '1.0')
 gi.require_version('RwTypes', '1.0')
 gi.require_version('RwLaunchpadYang', '1.0')
+
 from gi.repository import (
     RwDts as rwdts,
     RwLaunchpadYang as rwlaunchpad,
@@ -332,9 +333,9 @@ class CfgAgentAccountHandlers(object):
             self._dts, self._log, self._loop,
         )
 
-    def on_cfg_agent_account_deleted(self, account_name):
+    def on_cfg_agent_account_deleted(self, account):
         self._log.debug("config agent account deleted")
-        self.cfg_agent_operdata_handler.delete_cfg_agent_account(account_name)
+        self.cfg_agent_operdata_handler.delete_cfg_agent_account(account.name)
 
     def on_cfg_agent_account_added(self, account):
         self._log.debug("config agent account added")
@@ -369,12 +370,14 @@ class CloudAccountHandlers(object):
 
     def on_cloud_account_deleted(self, account_name):
         self._log.debug("cloud account deleted")
-        self._app.accounts = list(self.cloud_cfg_handler.accounts.values())
+        self._app.accounts.clear()
+        self._app.accounts.extend(list(self.cloud_cfg_handler.accounts.values()))
         self.cloud_operdata_handler.delete_cloud_account(account_name)
 
     def on_cloud_account_added(self, account):
         self._log.debug("cloud account added")
-        self._app.accounts = list(self.cloud_cfg_handler.accounts.values())
+        self._app.accounts.clear()
+        self._app.accounts.extend(list(self.cloud_cfg_handler.accounts.values()))
         self._log.debug("accounts: %s", self._app.accounts)
         self.cloud_operdata_handler.add_cloud_account(account)
 
@@ -403,6 +406,7 @@ class LaunchpadTasklet(rift.tasklets.Tasklet):
         self.vnfd_catalog_handler = None
         self.cloud_handler = None
         self.datacenter_handler = None
+        self.lp_config_handler = None
 
         self.nsd_catalog = dict()
         self.vld_catalog = dict()
@@ -432,12 +436,13 @@ class LaunchpadTasklet(rift.tasklets.Tasklet):
         self.log.debug("Created DTS Api GI Object: %s", self.dts)
 
     def stop(self):
-      try:
-         self.server.stop()
-         self.dts.deinit()
-      except Exception:
-         print("Caught Exception in LP stop:", sys.exc_info()[0])
-         raise
+        try:
+            self.server.stop()
+            self.dts.deinit()
+        except Exception:
+            self.log.exception("Caught Exception in LP stop")
+            raise
+
     def set_mode(self, mode):
         """ Sets the mode of this launchpad"""
         self.mode = mode
@@ -451,16 +456,16 @@ class LaunchpadTasklet(rift.tasklets.Tasklet):
         ssl_cert = manifest.bootstrap_phase.rwsecurity.cert
         ssl_key = manifest.bootstrap_phase.rwsecurity.key
         ssl_options = {
-            "certfile" : ssl_cert,
-            "keyfile" : ssl_key,
-        }
+                "certfile": ssl_cert,
+                "keyfile": ssl_key,
+                }
 
         if manifest.bootstrap_phase.rwsecurity.use_ssl:
             self.server = tornado.httpserver.HTTPServer(
                 self.app,
                 max_body_size=LaunchpadTasklet.UPLOAD_MAX_BODY_SIZE,
                 io_loop=io_loop,
-                ssl_options=ssl_options,                
+                ssl_options=ssl_options,
             )
 
         else:

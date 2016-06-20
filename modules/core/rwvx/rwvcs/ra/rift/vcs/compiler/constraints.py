@@ -64,6 +64,20 @@ class UniqueUAgent(SystemConstraint):
 
         """
         uagents = sysinfo.list_by_class(rift.vcs.uAgentTasklet)
+        a_uagent, s_uagent = None, None
+        for uagent in uagents:
+            if uagent.mode_active:
+                if not a_uagent:
+                    a_uagent = uagent
+                else:
+                    raise exc.ConstraintError('more than one active uAgent')
+            if not uagent.mode_active:
+                if not s_uagent:
+                    s_uagent = uagent
+                else:
+                    raise exc.ConstraintError('more than one standby uAgent')
+        if s_uagent  and s_uagent in uagents: uagents.remove(s_uagent)
+
         uagents += sysinfo.list_by_class(rift.vcs.MgmtMockTasklet)
         if len(uagents) != 1:
             raise exc.ConstraintError('non-unique uagent')
@@ -99,7 +113,7 @@ class AdjacentAgentRestconfTasklets(SystemConstraint):
         for component in sysinfo:
             # If the component is one of the types that we are interested in,
             # add it to the list of components
-            if isinstance(component, component_types):
+            if isinstance(component, component_types) and component.mode_active:
                 components.append(component)
                 continue
 

@@ -45,6 +45,8 @@
 #include <rwyangutil_argument_parser.hpp>
 #include <yangncx.hpp>
 
+#include "async_file_writer.hpp"
+#include "queue_manager.hpp"
 #include "rwuagent.h"
 #include "rwuagent_dynamic_schema.hpp"
 #include "rwuagent_request_mode.hpp"
@@ -134,6 +136,8 @@ typedef RWPB_T_MSG(RwMgmtagtDts_output_MgmtAgentDts_PbRequest) RwMgmtagtDts_PbRe
 typedef UniquePtrProtobufCMessage<>::uptr_t pbcm_uptr_t;
 typedef UniquePtrKeySpecPath::uptr_t ks_uptr_t;
 
+typedef std::pair<rw_keyspec_path_t*, ProtobufCMessage *> BlockContents;
+
 
 /*
  * Logging Macros for UAGENT
@@ -210,6 +214,49 @@ typedef UniquePtrKeySpecPath::uptr_t ks_uptr_t;
     evvtt, \
     __VA_ARGS__ )
 
+/*!
+ * Information about the supported Netconf Notification stream
+ */
+typedef struct {
+  std::string name;        ///< Name of the event stream
+  std::string description; ///< Event stream description
+  bool replay_support;     ///< supports replay or not
+} netconf_stream_info_t;
+
+/*!
+ * Utility class to tie yang node name and namespace together, so that together
+ * it can be used as a key. Used in Instance::notification_stream_map_.
+ */
+class NotificationYangNode {
+ public:
+  /*!
+   * Constructor for NotificationYangNode
+   * @param [in] name   Yang Node name
+   * @param [in] ns     Yang Node's namespace
+   */
+  NotificationYangNode(const std::string& name, const std::string& ns)
+    : name_(name),
+      ns_(ns)
+  {
+  }
+
+  /*!
+   * Comparison operator required by std::map to perform key comparisons
+   */
+  bool operator < (const NotificationYangNode& other) const {
+    int res = name_.compare(other.name_);
+    if (res < 0) {
+      return true;
+    }
+    if (res > 0) {
+      return false;
+    }
+    return ns_ < other.ns_;
+  }
+
+  std::string name_;   ///< Yang Node local name
+  std::string ns_;     ///< Yang Node's namespace
+};
 
 static inline
 std::string get_rift_install()
@@ -676,7 +723,8 @@ private:
  *  - ATTN: maintaining a DOM
  *  - ATTN: responding directly to DOM-get requests
  */
-class Instance
+class Instance : public AsyncFileWriterFactory,
+                 public QueueManager
 {
 public:
   Instance(rwuagent_instance_t rwuai);
@@ -762,20 +810,6 @@ public:
   {
     return dts_ && dts_->is_ready();
   }
-
-  //! Get the pointer to the uagent concurrent dispatch queue.
-  rwsched_dispatch_queue_t concurrent_q() const noexcept
-  {
-    return concurrent_q_;
-  }
-
-  //! Get the serial dispatch queue for managing async
-  // tasks
-  rwsched_dispatch_queue_t serial_q() const noexcept
-  {
-    return serial_q_;
-  }
-
   BaseMgmtSystem* mgmt_handler() const noexcept
   {
     return mgmt_handler_.get();
@@ -876,6 +910,18 @@ public:
    */
   bool module_is_exported(std::string const & module_name);
 
+  /*!
+   * Given the Yang name and namspace, this method fetches the notification
+   * stream.
+   * @param [in] node_name   Yang node name
+   * @param [in] node_ns     Yang node namespace 
+   * @returns The notifications stream on successful match. Otherwise empty
+   * string.
+   */
+  std::string lookup_notification_stream(
+                    const std::string& node_name,
+                    const std::string& node_ns);
+
 private:
   rw_status_t fill_in_confd_info();
   bool parse_cmd_args(const rwyangutil::ArgumentParser&);
@@ -970,6 +1016,13 @@ public: // ATTN: private
   std::list<module_details_t> pending_schema_modules_;
 
   std::atomic<bool> initializing_composite_schema_;
+
+  /// Contains the list of supported Netconf streams by UAgent
+  std::vector<netconf_stream_info_t> netconf_streams_;
+
+  /// YangNode name+ns to the notification-stream mapping
+  std::map<NotificationYangNode, std::string> notification_stream_map_;
+
 private:
 
   /// XML document factory manager
@@ -987,15 +1040,6 @@ private:
   MsgClient* msg_client_ = nullptr;
 
   std::unique_ptr<DynamicSchemaDriver> schema_driver_ = nullptr;
-
-  /// A concurrent dispatch queue for multi-threading
-  rwsched_dispatch_queue_t concurrent_q_;
-
-  /// Serial dispatch queue for loading schema files
-  rwsched_dispatch_queue_t schema_load_q_;
-
-  /// Serial dispatch queue for other blocking tasks
-  rwsched_dispatch_queue_t serial_q_;
 
   /// Northbound management system interface.
   std::unique_ptr<BaseMgmtSystem> mgmt_handler_;
@@ -1031,6 +1075,17 @@ private:
   LogFileManager * log_file_manager() {
     return log_file_manager_;
   }
+
+  // AsyncFileWriterFactory
+  std::unique_ptr<AsyncFileWriter> create_async_file_writer(std::string const & name) override;
+
+  // QueueManager
+ private:
+  void create_queue(QueueType const & type) override;
+
+ public:
+  void release_queue(QueueType const & type) override;
+  rwsched_dispatch_queue_t get_queue(QueueType const & type) override;
 };
 
 /*!
@@ -1054,16 +1109,35 @@ private:
 class ProtoSplitter
     :public rw_yang::XMLVisitor
 {
-public:
+ private:
+
   /// The transaction to which protos are to be added
   rwdts_xact_t* xact_ = nullptr;
   /// Atleast one message was created
-  bool valid_ = false;
+  bool created_block_ = false;
   /// A flag to be set on the next DTS transaction
   RWDtsXactFlag dts_flags_ = RWDTS_XACT_FLAG_NONE;
 
+  rw_yang::XMLNode* root_node_ = nullptr;
+
+  /// The collection of created keyspecs and protobufs
+  std::list<BlockContents> transaction_contents_;
+
+  /// The used to allow outside ownership of the contents
+  std::list<BlockContents> & block_collector_;
+
+  /// True if the ProtoSplitter owns the transaction contents
+  bool own_contents_ = true;
+
+  /// If true create and execute the dts block queries.
+  bool create_blocks_ = true;
+
+  // Cannot copy
+  ProtoSplitter(const ProtoSplitter&) = delete;
+  ProtoSplitter& operator=(const ProtoSplitter&) = delete;
 public:
 
+  /// constructor to make and execute the xact
   ProtoSplitter(
     /** Transaction to which the XML is to be split */
     rwdts_xact_t *xact,
@@ -1074,21 +1148,30 @@ public:
     rw_yang::XMLNode* root_node
   );
 
+  /// constructor to not make the xact and only store the contents of the blocks
+  ProtoSplitter(
+    /** Transaction to which the XML is to be split */
+    rwdts_xact_t *xact,
+    /** [in] the underlying YANG model for the splitter */
+    rw_yang::YangModel *model,
+    RWDtsXactFlag flag,
+    /** [in] tag of the extension to split at */
+    rw_yang::XMLNode* root_node,
+    /** [in] used to transfer ownership of the transaction contents */
+    std::list<BlockContents> & transaction_contents
+  );
+
+
   /// trivial  destructor
-  virtual ~ProtoSplitter() {}
-
-  // Cannot copy
-  ProtoSplitter(const ProtoSplitter&) = delete;
-  ProtoSplitter& operator=(const ProtoSplitter&) = delete;
-
-public:
+  virtual ~ProtoSplitter();
 
   ///@see XMLVisitor::visit
   rw_yang::rw_xml_next_action_t visit(rw_yang::XMLNode* node,
                                       rw_yang::XMLNode** path,
                                       int32_t level);
-private:
-  rw_yang::XMLNode* root_node_ = nullptr;
+
+  bool executed_xact();
+
 };
 
 /*!

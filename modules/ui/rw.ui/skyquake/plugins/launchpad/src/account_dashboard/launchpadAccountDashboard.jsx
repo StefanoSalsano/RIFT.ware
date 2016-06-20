@@ -9,8 +9,8 @@ import AppHeader from 'widgets/header/header.jsx';
 import SdnAccountStore from '../launchpad_sdn_account/sdnAccountStore.js';
 import CloudAccount from '../launchpad_cloud_account/cloudAccount.jsx';
 import CloudAccountStore from '../launchpad_cloud_account/cloudAccountStore';
-import CloudAccountActions from '../launchpad_cloud_account/cloudAccountActions';
 import AccountSidebar from '../account_sidebar/accountSidebar.jsx';
+import './launchpadAccountDashboard.scss';
 
 export default class LaunchpadAccountDashboard extends React.Component {
     constructor(props) {
@@ -66,7 +66,7 @@ export default class LaunchpadAccountDashboard extends React.Component {
         if (this.props.edit) {
             title = "Launchpad: Edit Cloud Account";
         }
-        html = (<div>
+        html = (<div className="launchpad-account-dashboard">
                   <AppHeader title={title} isLoading={this.state.isLoading} />
                     <div className="flex">
                       <AccountSidebar/>

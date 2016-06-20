@@ -41,6 +41,16 @@ module rwvcs-types
     }
   }
 
+  typedef vm-state {
+    type enumeration {
+      enum NONE;
+      enum MGMTACTIVE;
+      enum MGMTSTANDBY;
+      enum APPACTIVE;
+      enum APPSTANDBY;
+    }
+  }
+
   typedef recovery-type {
     type enumeration {
       enum NONE;
@@ -48,6 +58,15 @@ module rwvcs-types
       enum FAILCRITICAL;
       enum IGNORE;
       enum CUSTOM;
+    }
+  }
+
+  typedef data-store {
+    type enumeration {
+      enum NONE;
+      enum NOSTORE;
+      enum REDIS;
+      enum BDB;
     }
   }
 
@@ -141,6 +160,11 @@ module rwvcs-types
                    in the inventory";
               type string;
             }
+            leaf ip-address {
+              description 
+                  "IP address of the component if present";
+              type string;
+            }
             leaf config-ready {
               description 
                   "Config readiness check enable";
@@ -151,6 +175,17 @@ module rwvcs-types
               description 
                   "Define recovery action if this component fail";
               type recovery-type;
+            }
+            leaf data-storetype {
+              description
+                  "Define the type of data-storetype to store the data";
+              type data-store;
+            }
+            leaf mode-active {
+              description 
+                  "Define active mode setting";
+              type boolean;
+              default true;
             }
           }
         }
@@ -286,6 +321,19 @@ module rwvcs-types
           description 
               "Define recovery action if this component fail";
           type recovery-type;
+        }
+
+        leaf data-storetype {
+          description
+              "Define the type of data-storetype to store the data";
+          type data-store;
+        }
+
+        leaf mode-active {
+          description 
+              "Define active mode setting";
+          type boolean;
+          default true;
         }
 
         uses rwvcs-variable-list;

@@ -16,7 +16,7 @@ import unittest
 import tempfile
 import xmlrunner
 
-from rift.tasklets.rwlaunchpad.uploader import (
+from rift.tasklets.rwlaunchpad.extract import (
         boundary_search,
         extract_package,
         )

@@ -33,6 +33,11 @@
 
 __BEGIN_DECLS
 
+typedef struct rwmain_tasklet_mode_active_s {
+  bool has_mode_active;
+  bool mode_active;
+} rwmain_tasklet_mode_active_t;
+
 #ifndef __GI_SCANNER__
 /* This is a less void-y C version of RWTasklet::_RWTaskletInfo over
    in rwtasklet_plugin.vala. */
@@ -46,10 +51,14 @@ struct rwtasklet_info_s {
   rwmsg_endpoint_t *rwmsg_endpoint;
   struct rwvcs_instance_s *rwvcs;
   struct rwvx_instance_s *rwvx;
+  data_store_type data_store;
+  char *vm_ip_address;
   struct {
     int rwtasklet_instance_id;
     char *rwtasklet_name;
   } identity;
+  rwmain_tasklet_mode_active_t mode;
+  
 
   /* Any changes here should match in rwtasklet_plugin.vala and the 
    * rwtasklet_info_new function below */

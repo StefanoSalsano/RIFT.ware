@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <memory>
 
-#include <rwvcs.h>
+
 #include <rw_pb_schema.h>
 #include <rw_schema_defs.h>
 
@@ -35,6 +35,20 @@ RW_CF_TYPE_DEFINE("RW.uAgent RWTasklet Instance Type", rwuagent_instance_t);
 const char *rw_uagent::uagent_yang_ns = "http://riftio.com/ns/riftware-1.0/rw-mgmtagt";
 const char *rw_uagent::uagent_dts_yang_ns = "http://riftio.com/ns/riftware-1.0/rw-mgmtagt-dts";
 const char *rw_uagent::uagent_confd_yang_ns = "http://riftio.com/ns/riftware-1.0/rw-mgmtagt-confd";
+
+// Predefined Netconf Notification streams
+static std::vector<netconf_stream_info_t> netconf_stream_initializer {
+  { "uagent_notification", "RW.MgmtAgent notifications stream", true },
+  { "ha_notification", "RW.HA notifications stream", true }
+};
+
+// Defines a static mapping between a Yang Node and the notifications stream.
+// If there is no mapping defined, then it defaults to uagent_notifications
+// stream.
+static std::map<NotificationYangNode, std::string> notifcation_stream_map_initializer {
+  { {"test-tasklet-failed", "http://riftio.com/ns/core/mgmt/rwuagent/test/notif"}, 
+      "ha_notification" }
+};
 
 rwuagent_component_t rwuagent_component_init(void)
 {
@@ -147,7 +161,8 @@ Instance::Instance(rwuagent_instance_t rwuai)
           reinterpret_cast<intptr_t>(this)),
       rwuai_(rwuai),
       initializing_composite_schema_(true),
-      log_file_manager_(new LogFileManager(this))
+      netconf_streams_(netconf_stream_initializer),
+      notification_stream_map_(notifcation_stream_map_initializer)
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "Instance constructor");
   RW_CF_TYPE_VALIDATE(rwuai_, rwuagent_instance_t);
@@ -184,22 +199,8 @@ Instance::Instance(rwuagent_instance_t rwuai)
     }
   }
 
-  // Create a concurrent dispatch queue for multi-threading.
-  concurrent_q_ = rwsched_dispatch_queue_create(
-      rwsched_tasklet(),
-      "agent-cc-queue",
-      RWSCHED_DISPATCH_QUEUE_CONCURRENT);
-
-  schema_load_q_ = rwsched_dispatch_queue_create(
-      rwsched_tasklet(),
-      "schema-load-queue",
-      RWSCHED_DISPATCH_QUEUE_SERIAL);
-
-  serial_q_ = rwsched_dispatch_queue_create(
-      rwsched_tasklet(),
-      "agent-serial-queue",
-      RWSCHED_DISPATCH_QUEUE_SERIAL);
-
+  // needs a queue
+  log_file_manager_ = new LogFileManager(this);
 }
 
 /**
@@ -217,6 +218,14 @@ Instance::~Instance()
   rwmemlog_instance_dts_deregister(xml_mgr_->get_memlog_inst(), false/*dts_internal*/);
 
   RW_CF_TYPE_VALIDATE(rwuai_, rwuagent_instance_t);
+
+
+  // QueueManager destructor
+  for (auto const & entry : queues_) {
+    QueueType const & type = entry.first;
+    release_queue(type);
+  }
+
 }
 
 void Instance::async_start(void *ctxt)
@@ -440,7 +449,7 @@ void Instance::start()
   instance_name_ = rwtasklet()->identity.rwtasklet_name;
 
   rwsched_dispatch_async_f(rwsched_tasklet(),
-                           schema_load_q_,
+                           get_queue(QueueType::SchemaLoading),
                            this,
                            Instance::async_start);
 }
@@ -511,6 +520,7 @@ rw_status_t Instance::handle_dynamic_schema_update(const int batch_size,
                                                    rwdynschema_module_t * modules)
 {
   RWMEMLOG_TIME_SCOPE(memlog_buf_, RWMEMLOG_MEM2, "handle dynamic schema");
+  RW_ASSERT (batch_size != 0);
 
   rw_status_t status = RW_STATUS_SUCCESS;
   update_dyn_state(RW_MGMT_SCHEMA_APPLICATION_STATE_WORKING);
@@ -549,7 +559,7 @@ void Instance::perform_dynamic_schema_update()
   after_modules_loaded_cb_ = perform_dynamic_schema_update_end;
 
   rwsched_dispatch_async_f(rwsched_tasklet(),
-                           schema_load_q_,
+                           get_queue(QueueType::SchemaLoading),
                            this,
                            perform_dynamic_schema_update_load_modules);
 
@@ -617,7 +627,7 @@ void Instance::perform_dynamic_schema_update_load_modules(void * context)
   if (instance->pending_schema_modules_.size() > 0) {
     // keep loading modules
     rwsched_dispatch_async_f(instance->rwsched_tasklet(),
-                             instance->schema_load_q_,
+                             instance->get_queue(QueueType::SchemaLoading),
                              instance,
                              perform_dynamic_schema_update_load_modules);
    return;
@@ -959,5 +969,90 @@ void Instance::update_stats(RwMgmtagt_SbReqType type,
 bool Instance::module_is_exported(std::string const & module_name)
 {
   return exported_modules_.count(module_name) > 0;
+}
+
+std::unique_ptr<AsyncFileWriter> Instance::create_async_file_writer(std::string const & filename)
+{
+  return std::unique_ptr<AsyncFileWriter>(new AsyncFileWriter(filename,
+                                                              get_queue(QueueType::LogFileWriting),
+                                                              rwsched(),
+                                                              rwsched_tasklet()));
+}
+
+void Instance::create_queue(QueueType const & type)
+{
+  dispatch_queue_attr_t queue_attribute = DISPATCH_QUEUE_SERIAL;
+  std::string queue_name = "default name";
+
+  switch(type) {
+    case QueueType::DefaultConcurrent:
+      queue_attribute = DISPATCH_QUEUE_CONCURRENT;
+      queue_name = "agent-cc-queue";
+      break;
+    case QueueType::DefaultSerial:
+      queue_attribute = DISPATCH_QUEUE_SERIAL;
+      queue_name = "agent-serial-queue";
+      break;
+    case QueueType::LogFileWriting:
+      queue_attribute = DISPATCH_QUEUE_SERIAL;
+      queue_name = "agent-log-file-writing-queue";
+      break;
+    case QueueType::Main:
+      RW_ASSERT_NOT_REACHED();
+      break;
+    case QueueType::SchemaLoading:
+      queue_attribute = DISPATCH_QUEUE_SERIAL;
+      queue_name = "schema-load-queue";
+      break;
+    case QueueType::XmlAgentEditConfig:
+      queue_attribute = DISPATCH_QUEUE_SERIAL;
+      queue_name = "xml-agent-queue";
+      break;
+  }
+
+  rwsched_dispatch_queue_t new_queue = rwsched_dispatch_queue_create(
+      rwsched_tasklet(),
+      queue_name.c_str(),
+      queue_attribute);
+  
+  queues_[type] = new_queue;
+}
+
+rwsched_dispatch_queue_t Instance::get_queue(QueueType const & type)
+{
+  if (type == QueueType::Main){
+      // special case
+      return rwsched_dispatch_get_main_queue(rwsched());
+  }
+
+  if (queues_.count(type) <= 0) {
+    create_queue(type);
+  }
+
+  return queues_[type];
+}
+
+void Instance::release_queue(QueueType const & type)
+{
+  if (queues_.count(type) <= 0) {
+    std::string const log_message = "Tried to release queue that doesn't exist";
+    RW_MA_INST_LOG(this, InstanceError, log_message.c_str());
+    return;
+  }
+
+  rwsched_dispatch_release(rwsched_tasklet(), queues_[type]);
+  queues_.erase(type);
+}
+
+std::string Instance::lookup_notification_stream(
+                    const std::string& node_name,
+                    const std::string& node_ns)
+{
+  auto it = notification_stream_map_.find({node_name, node_ns});
+  if (it == notification_stream_map_.end()) {
+    return std::string();
+  }
+
+  return it->second;
 }
 

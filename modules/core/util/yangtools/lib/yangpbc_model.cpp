@@ -1590,7 +1590,7 @@ parser_control_t PbModel::output_doc_user_file(const doc_file_t file_type, const
   // ATTN: List of direct imports
   // ATTN: List of transitive imports
   if (file_type == doc_file_t::HTML) {
-    std::cout << "<ol>" << std::endl;
+    os << "<ol>" << std::endl;
   }
 
   if (has_data_) {
@@ -1605,7 +1605,7 @@ parser_control_t PbModel::output_doc_user_file(const doc_file_t file_type, const
     os << "\n\n";
   }
   if (file_type == doc_file_t::HTML) {
-    std::cout << "</ol>" << std::endl;
+    os << "</ol>" << std::endl;
   }
 
   if (has_data_) {
@@ -1667,7 +1667,7 @@ parser_control_t PbModel::output_doc_api_file(const doc_file_t file_type, const 
   os << std::endl << std::endl;
 
   if (file_type == doc_file_t::HTML) {
-    std::cout << "<ol>" << std::endl;
+    os << "<ol>" << std::endl;
   }
 
   output_doc_heading(file_type, os, 0/*indent*/, PbMessage::doc_t::api_toc, "1", "Schema Globals" );
@@ -1685,7 +1685,7 @@ parser_control_t PbModel::output_doc_api_file(const doc_file_t file_type, const 
 
   }
   if (file_type == doc_file_t::HTML) {
-    std::cout << "</ol>" << std::endl;
+    os << "</ol>" << std::endl;
   }
 
   os << "\n\n";

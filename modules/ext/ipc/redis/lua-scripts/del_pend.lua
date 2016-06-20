@@ -40,11 +40,10 @@ else
         i = i + 1
     end
     local old_serial = tonumber(result[0])
-    local shard = tonumber(result[1])
     if ((serial == (old_serial + 1)) or (serial == 0)) then
       table.insert(inter_key, (old_serial + 1))
       table.insert(inter_key, ":")
-      table.insert(inter_key, shard)
+      table.insert(inter_key, result[1])
       local final_key = table.concat(inter_key)
 
       local value = redis.call("HGET", KEYS[1], key[1]) 

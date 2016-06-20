@@ -46,3 +46,9 @@
 [submodule "modules/core/mano"]
 	path = modules/core/mano
 	url = ../modules/core/mano.git
+[submodule "modules/ext/vnfs"]
+	path = modules/ext/vnfs
+	url = ../modules/ext/vnfs.git
+[submodule "modules/ext/charms"]
+	path = modules/ext/charms
+	url = ../modules/ext/charms.git

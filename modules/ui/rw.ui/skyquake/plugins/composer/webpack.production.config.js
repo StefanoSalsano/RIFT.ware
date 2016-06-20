@@ -13,7 +13,8 @@
 
 var webpack = require('webpack');
 var path = require('path');
-var frameworkPath = '../../framework';
+var uiPluginCmakeBuild = process.env.ui_plugin_cmake_build || false;
+var frameworkPath = uiPluginCmakeBuild?'../../../../skyquake/skyquake-build/framework':'../../framework';
 var HtmlWebpackPlugin = require('html-webpack-plugin');
 // Added to overcome node-sass bug https://github.com/iam4x/isomorphic-flux-boilerplate/issues/62
 process.env.UV_THREADPOOL_SIZE=64;

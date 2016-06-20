@@ -24,6 +24,7 @@ from .util import (
     split_url,
     naive_xml_to_json,
     NetconfOperation,
+    get_json_schema,
 )
 
 from .translation import (

@@ -206,6 +206,9 @@ class ManoResource(object):
         self.log.debug(_("{0}: Not doing anything for YANG model generation").
                        format(self))
 
+    def get_supporting_files(self, files, desc_id=None):
+        pass
+
     def top_of_chain(self):
         dependent = self.group_dependencies.get(self)
         if dependent is None:

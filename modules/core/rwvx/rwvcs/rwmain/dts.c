@@ -106,7 +106,6 @@ static rwdts_member_rsp_code_t on_tasklet_info(
     size_t new_components;
 
     status = rwvcs_rwzk_lookup_component(rwvcs, child, &child_info);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
     if (status != RW_STATUS_SUCCESS)
       goto err;
 
@@ -525,10 +524,23 @@ _fill_info:
             caller_ptr = (RWPB_T_MSG(RwDebug_data_RwDebug_Heap_Tasklet_Allocation_Caller)*)malloc(sizeof(*caller_ptr));
             RW_ASSERT(caller_ptr != NULL);
             RWPB_F_MSG_INIT(RwDebug_data_RwDebug_Heap_Tasklet_Allocation_Caller, caller_ptr);
-            caller_ptr->info = rw_btrace_get_proc_name(s[i].callers[j]);
+            if (g_heap_decode_using == RW_DEBUG_DECODE_TYPE_BTRACE) {
+              caller_ptr->info = rw_btrace_get_proc_name(s[i].callers[j]);
+            } else if (g_heap_decode_using == RW_DEBUG_DECODE_TYPE_UNWIND) {
+              caller_ptr->info = rw_unw_get_proc_name(s[i].callers[j]);
+            } else {
+              RW_CRASH();
+            }
             allocation_ptr->n_caller++;
 #else
-            char *str = rw_btrace_get_proc_name(s[i].callers[j]);
+            char *str;
+            if (g_heap_decode_using == RW_DEBUG_DECODE_TYPE_BTRACE) {
+              str = rw_btrace_get_proc_name(s[i].callers[j]);
+            } else if (g_heap_decode_using == RW_DEBUG_DECODE_TYPE_UNWIND) {
+              str = rw_unw_get_proc_name(s[i].callers[j]);
+            } else {
+              RW_CRASH();
+            }
             fprintf(stderr, "    caller%u: %s\n", j, str);
             free(str);
 #endif
@@ -620,6 +632,10 @@ static rwdts_member_rsp_code_t on_config_tasklet_heap(
   g_heap_track_bigger_than = msg && ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->has_track_bigger_than ?
                       ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->track_bigger_than :
                       g_heap_track_bigger_than;
+
+  g_heap_decode_using = msg && ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->has_decode_using ?
+                      ((RWPB_T_MSG(RwDebug_data_RwDebug_Settings_Heap)*)msg)->decode_using :
+                      g_heap_decode_using;
 
   return RWDTS_ACTION_OK;
 }
@@ -1323,6 +1339,10 @@ char * rwvcs_get_publish_xpath(
         return NULL;
       }
     case RWVCS_TYPES_COMPONENT_TYPE_PROC:
+      RW_ASSERT(parent_name);
+      if (strcmp(rwvcs->instance_name, parent_name)) {
+        return NULL;
+      }
     default:
     break;
   }
@@ -1342,6 +1362,8 @@ rw_status_t rwvcs_instance_update_child_state(
   rw_status_t rs = RW_STATUS_SUCCESS;
   RW_CF_TYPE_VALIDATE(rwmain->rwvx, rwvx_instance_ptr_t);
   RW_ASSERT(child_name);
+  if (rwmain->rwvx->rwvcs->restart_inprogress) 
+    return rs;
 
   char *xpath = rwvcs_get_publish_xpath(
       false,
@@ -1607,7 +1629,7 @@ rw_status_t send2dts_start_req(
       rwmain->dts,
       VCS_GET(rwmain)->vcs_instance_xpath,
       RWDTS_QUERY_CREATE,
-      0, //RWDTS_FLAG_TRACE,
+      0, //RWDTS_XACT_FLAG_TRACE,
       (cls ? send2dts_start_req_done : NULL),
       cls,
       &(inst->base));
@@ -2060,6 +2082,10 @@ rw_status_t rwmain_dts_config_ready_process(rwvcs_instance_ptr_t rwvcs,
                                             rw_component_info * id)
 {
   rw_status_t status = RW_STATUS_SUCCESS;
+
+  if (rwvcs->restart_inprogress) {
+    //return status;
+  }
   char *instance_xpath = rwvcs_get_publish_xpath(
       true, /* called from within zk_rwq serial thread*/
       rwvcs,

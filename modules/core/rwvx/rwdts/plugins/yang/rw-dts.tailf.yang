@@ -20,39 +20,39 @@ module rw-dts-tailf
   }
 
   tailf:annotate "/rwdts:dts/rwdts:member" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwdts:dts/rwdts:routers" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
   
   tailf:annotate "/rwdts:rtr-init-reg-id" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwdts:rtr-init-reg-keyspec" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwdts:rtr-peer-reg-keyspec" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwdts:member-info-bcast" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
   
   tailf:annotate "/rwdts:journal-info" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwdts:start-dts" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 
   tailf:annotate "/rwdts:stop-dts" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 
 }

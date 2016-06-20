@@ -54,7 +54,7 @@ export default class LaunchpadSdnAccount extends React.Component {
         } else {
              body = <SdnAccount {...this.props} store={SdnAccountStore} actions={SdnAccountActions} edit={this.state.isEdit} />
         }
-        html = (<div>
+        html = (<div className="cloud-account-wrapper">
                   <AppHeader title={title}  isLoading={this.state.isLoading} />
                     <div className="flex">
                       <AccountSidebar/>

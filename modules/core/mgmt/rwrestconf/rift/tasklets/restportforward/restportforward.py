@@ -131,7 +131,7 @@ class RestPortForwardTasklet(rift.tasklets.Tasklet):
         self._messages = {}
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+        def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
             self._messages[xact.id] = msg
             acg.handle.prepare_complete_ok(xact_info.handle)
 

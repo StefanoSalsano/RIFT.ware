@@ -76,7 +76,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_get_callback(void *val, int 
     fprintf(stderr, "Successfully extracted data from database\n");
     fprintf(stderr, "a->a(%d), a->b(%d), a->c(%d)\n", reply->a, reply->b, reply->c);
    }
-   rwdts_kv_light_del_keyval(handle, 0, "FOO", 3, rwdts_kv_light_del_callback, NULL);
+   rwdts_kv_handle_del_keyval(handle, 0, "FOO", 3, rwdts_kv_light_del_callback, NULL);
    return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
@@ -91,16 +91,17 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_set_callback(rwdts_kv_light_
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
-void redis_initialized(void *userdata)
+void redis_initialized(void *userdata, rw_status_t status)
 {
   rwdts_kv_handle_t *handle = (rwdts_kv_handle_t *)userdata;
   /* ok, redis client connection to databases are up */
   fprintf(stderr, "[%s]Riftdb is up\n", getTime());
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
   a.a = 1;
   a.b = 2;
   a.c = 3;
 
-  rwdts_kv_light_set_keyval(handle, 0, "FOO", 3,
+  rwdts_kv_handle_add_keyval(handle, 0, "FOO", 3,
                             (void*)&a,
                             sizeof(a),
                             rwdts_kv_light_set_callback, (void*)handle);
@@ -124,7 +125,8 @@ int main(int argc, char **argv, char **envp) {
   tasklet = rwsched_tasklet_new(rwsched);
   RW_ASSERT(tasklet);
 
-  rwdts_kv_light_db_connect(myUserData.handle, rwsched, tasklet, "127.0.0.1:9997", redis_initialized, myUserData.handle);
+  rwdts_kv_handle_db_connect(myUserData.handle, rwsched, tasklet, "127.0.0.1:9997", "test", NULL, 
+                             redis_initialized, myUserData.handle);
 
   myUserData.rwsched = rwsched;
   myUserData.tasklet = tasklet;

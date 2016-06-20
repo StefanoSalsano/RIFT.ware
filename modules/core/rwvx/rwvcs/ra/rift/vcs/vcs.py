@@ -93,7 +93,7 @@ class VcsComponentInfo(object):
 
         logger.info("All components have NOT YET entered RUNNING state")
         for component in unstarted_components:
-            if not component.state in ["STARTING", "INITIALIZING", "RUNNING", "RECOVERING"]:
+            if not component.state in ["STARTING", "INITIALIZING", "RUNNING", "RECOVERING", "TO_RECOVER"]:
                 raise SystemStartError("Component (%s) entered a invalid startup state: %s",
                         component.instance_name, component.state)
 

@@ -1,8 +1,9 @@
 import sys
 import asyncio
 from gi import require_version
-require_version('RwCal', '1.0')
-
+require_version('RwcalYang', '1.0')
+require_version('RwTypes', '1.0')
+require_version('RwCloudYang', '1.0')
 
 from gi.repository import (
         RwTypes,
@@ -114,9 +115,9 @@ class CloudAccount(object):
         else:
             raise NotImplementedError("Update cloud account not yet supported")
 
-    def create_image(self, filename):
+    def create_image(self, image_info_msg):
         image_id = self._wrap_status_fn(
-                self.cal.create_image, self.cal_account_msg, filename
+                self.cal.create_image, self.cal_account_msg, image_info_msg
                 )
 
         return image_id

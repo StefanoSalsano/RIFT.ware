@@ -62,6 +62,56 @@
 
 #include <libunwind-coredump.h>
 
+#define RIFT_CHANGES
+
+#ifdef RIFT_CHANGES
+
+#include <endian.h>
+#include <stdint.h>
+// Caution - these changes works only for x86_64 architecture now
+#define NT_FILE         0x46494c45
+typedef struct {
+  unsigned char ident[16];
+  uint16_t type;
+  uint16_t arch;
+  uint32_t ver;
+  uint64_t va_entry;
+  uint64_t phoff;
+  uint64_t shoff;
+  unsigned char flags[4];
+  uint16_t hsize;
+  uint16_t phentsize;
+  uint16_t phnum;
+  uint16_t shentsize;
+  uint16_t shnum;
+  uint16_t shstrndx;
+} elf64_header;
+
+typedef struct {
+  uint32_t type;
+  unsigned char flags[4];
+  uint64_t offset;
+  uint64_t vaddr;
+  uint64_t paddr;
+  uint64_t filesz;
+  uint64_t memsz;
+  unsigned char align[8];
+} elf64_phdr;
+
+typedef struct {
+  uint32_t namesz;
+  uint32_t descsz;
+  uint32_t type;
+  char          name[1];
+} elfnote;
+
+
+#define addr_align(addr)        \
+  (((addr) + ((uint64_t) 1 << (2)) - 1) & (-((uint64_t) 1 << (2))))
+
+static int read_elfnotes(char *corefilename, struct UCD_info *ui);
+
+#endif
 
 /* Utility logging functions */
 
@@ -139,7 +189,10 @@ static void verror_msg_helper(const char *s,
       fflush(stdout);
       used += write(STDERR_FILENO, msg, used + msgeol_len);
     }
+  // following line corrupts memory so disabled
+#ifndef RIFT_CHANGES 
   msg[used] = '\0'; /* remove msg_eol (usually "\n") */
+#endif
   if (flags & LOGMODE_SYSLOG)
     {
       syslog(LOG_ERR, "%s", msg + prefix_len);
@@ -269,9 +322,17 @@ main(int argc UNUSED, char **argv)
   struct UCD_info *ui;
   unw_cursor_t c;
   int ret;
+#ifdef RIFT_CHANGES
+  char *corefile = NULL;
+#define TEST_FRAMES 256
+#define TEST_NAME_LEN 256
+#else 
 
 #define TEST_FRAMES 4
 #define TEST_NAME_LEN 32
+
+#endif
+
   int testcase = 0;
   int test_cur = 0;
   long test_start_ips[TEST_FRAMES];
@@ -288,6 +349,9 @@ main(int argc UNUSED, char **argv)
   if (!argv[1])
     error_msg_and_die("Usage: %s COREDUMP [VADDR:BINARY_FILE]...", progname);
 
+#ifdef RIFT_CHANGES
+   corefile = argv[1];
+#endif
   msg_prefix = progname;
 
   as = unw_create_addr_space(&_UCD_accessors, 0);
@@ -311,6 +375,9 @@ main(int argc UNUSED, char **argv)
     argv++;
   }
 
+#ifdef RIFT_CHANGES
+  read_elfnotes(corefile, ui);
+#else 
   while (*argv)
     {
       char *colon;
@@ -321,6 +388,7 @@ main(int argc UNUSED, char **argv)
         error_msg_and_die("Can't add backing file '%s'", colon + 1);
       argv++;
     }
+#endif
 
   for (;;)
     {
@@ -393,3 +461,140 @@ main(int argc UNUSED, char **argv)
 
   return 0;
 }
+#ifdef RIFT_CHANGES
+static int
+read_elfnotes(char *corefilename, struct UCD_info *ui)
+{
+
+  FILE *fp = NULL;
+  struct stat stbuf;
+  elf64_header header;
+  elf64_phdr *program_headers = NULL;
+  unsigned char *notes = NULL;
+  int i;
+  size_t ret;
+  elfnote *note;
+  unsigned char *end=NULL, *curr=NULL;
+  unsigned char *filenames = NULL, *descend = NULL , *previous_filenames = NULL;
+  uint64_t count;
+  int retval = -1;
+
+  if (stat(corefilename, &stbuf) < 0 ) {
+    goto func_exit;
+  }
+  if (!S_ISREG(stbuf.st_mode)) {
+    goto func_exit;
+  }
+
+  fp = fopen(corefilename, "r");
+  if (fp == NULL) {
+    goto func_exit;
+  }
+  memset(&header, 0, sizeof(header));
+
+  if (fread(&header, sizeof(header), 1, fp)!= 1) {
+    goto func_exit;
+  }
+
+  if (header.ident[0]  !=0x7f ||header.ident[1]!='E'
+      ||header.ident[2]!='L'  ||header.ident[3] !='F')
+  {
+    goto func_exit;
+  }
+  if ((header.ident[5] == 2)  || (header.ident[4] != 2)
+      || (header.phnum == 0 ) || (header.phentsize != sizeof(elf64_phdr))) {
+    goto func_exit;
+  }
+
+  program_headers = malloc(sizeof(elf64_phdr)*header.phnum);
+  if (program_headers == NULL) {
+    goto func_exit;
+  }
+
+  if (fseek(fp,(long)header.phoff,SEEK_SET) == -1) {
+    goto func_exit;
+  }
+
+  if (fread(program_headers, sizeof(elf64_phdr), header.phnum, fp) !=  header.phnum) {
+    goto func_exit;
+  }
+
+
+  for (i=0; i< header.phnum; i++) {
+    if (program_headers[i].type != 4) continue;
+
+    retval = fseek(fp,(long) program_headers[i].offset, SEEK_SET);
+    if (retval == -1) {
+      goto func_exit;
+    }
+    notes = malloc(program_headers[i].filesz);
+    if (notes == NULL) {
+      goto func_exit;
+    }
+
+    ret = fread(notes, 1, program_headers[i].filesz, fp);
+    if (ret !=  program_headers[i].filesz ) {
+      goto func_exit;
+    }
+    end = notes + program_headers[i].filesz;
+    curr = notes;
+    while (curr <  end) {
+      unsigned char *descdata;
+      note =  (elfnote*) curr;
+      descdata = (unsigned char *) note->name + addr_align (note->namesz);
+
+      if (note->type != NT_FILE) {
+        curr = (unsigned char *) (descdata + addr_align (note->descsz));
+        continue;
+      }
+
+      if (note->descsz < 16)  goto func_exit;
+      descend = descdata + note->descsz;
+      if (descdata[note->descsz - 1] != '\0') goto func_exit;
+
+      count =  *((uint64_t *)descdata);
+      descdata += 8;
+
+      descdata += 8;
+
+      if (note->descsz < 16 + count * 24 ) goto func_exit;
+
+      filenames = descdata + count * 3 * 8;
+      while (count-- > 0)
+      {
+        uint64_t start;
+
+        if (filenames == descend) goto func_exit;
+
+        start =  *((uint64_t*)descdata);
+        descdata += 8;
+        descdata += 8;
+        descdata += 8;
+
+        if (filenames && previous_filenames && !strcmp((char*)filenames,(char*)previous_filenames)) {
+           previous_filenames = filenames;
+           filenames += 1 + strlen ((char *) filenames);
+           continue;
+        }
+
+        if (_UCD_add_backing_file_at_vaddr(ui, (long)start, (char *)filenames) < 0) {
+          fprintf(stderr, "uid add backing file failed");
+        }
+        previous_filenames = filenames;
+        filenames += 1 + strlen ((char *) filenames);
+      }
+      
+      curr = (unsigned char *) (descdata + addr_align (note->descsz));
+    }
+    if (notes) free(notes);
+    notes = NULL;
+  }
+  retval = 0;
+
+func_exit:
+  if (fp) fclose(fp);
+  if (program_headers) free(program_headers);
+  if (notes) free(notes);
+  return(retval);
+}
+#endif

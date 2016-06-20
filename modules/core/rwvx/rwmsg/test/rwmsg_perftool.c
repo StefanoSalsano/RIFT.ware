@@ -652,13 +652,6 @@ void start_zookeeper() {
   }                                                                                                                                                                                                                 
   closedir(proc);
 
-#if 0
-  const char * server_names[2] = { "127.0.0.1", NULL };
-  status = rwcal_rwzk_create_server_config(perf.rwcal, getpid(), 0,&server_names[0]);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
-  status = rwcal_rwzk_server_start(perf.rwcal,getpid());
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
-#else
   struct ifaddrs * ifap;
   const char * master_ip;
   /*
@@ -681,36 +674,31 @@ void start_zookeeper() {
     struct sockaddr_in * addr = (struct sockaddr_in *)it->ifa_addr;
 
     if (!strncmp(master_ip, inet_ntoa(addr->sin_addr), 15)) {
-      char * server_names[3] = {NULL, NULL, NULL};
-      server_names[0] = malloc(100);
-      sprintf((char*)server_names[0], "%s", inet_ntoa(addr->sin_addr));
-      //char * server_names[3] = {NULL, NULL, NULL};
-      //r = asprintf(&server_names[0], "%s", inet_ntoa(addr->sin_addr));
-      //RW_ASSERT(r != -1);
+      char server_name[100];
+      sprintf(server_name, "%s", inet_ntoa(addr->sin_addr));
 
-      fprintf(stderr, "Starting zookeeper server (if not already running) for %s\n", server_names[0]);
 
-#if 0
-      status = rwvcs_rwzk_server_start(
-          rwvcs,
-          getpid(), 0,
-          //pb_mprofile->bootstrap_phase->zookeeper->unique_ports,
-          (const char **)server_names);
-      RW_ASSERT(status == RW_STATUS_SUCCESS);
-#else
-      status = rwcal_rwzk_create_server_config(perf.rwcal, getpid(), 0,(const char **)server_names);
-      RW_ASSERT(status == RW_STATUS_SUCCESS);
-      status = rwcal_rwzk_server_start(perf.rwcal,getpid());
-      RW_ASSERT(status == RW_STATUS_SUCCESS);
-#endif
+      rwcal_zk_server_port_detail_ptr_t zk_server_port_detail = rwcal_zk_server_port_detail_alloc(
+          server_name,
+          2181,
+          1,
+          true,
+          true);
 
-      free(server_names[0]);
+      rwcal_zk_server_port_detail_ptr_t zk_server_port_details[] = {
+        zk_server_port_detail,
+        NULL
+      };
+      status = rwcal_rwzk_create_server_config(perf.rwcal, getpid(), 2181, 0, zk_server_port_details);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      int ret_pid = rwcal_rwzk_server_start(perf.rwcal,getpid());
+      RW_ASSERT(ret_pid > 0);
 
       break;
     }
   }
   freeifaddrs(ifap);
-#endif
+
 
 done:
   return;
@@ -1057,8 +1045,12 @@ int main(int argc, char * const *argv, const char *envp[]) {
 #if 1 // ZOOKEEPER
   if (perf.zookeep) {
     start_zookeeper();
-    const char * server_names[2] = { "127.0.0.1", NULL };
-    status = rwcal_rwzk_kazoo_init(perf.rwcal, 0, &server_names[0]);
+    RwCalZkServerPortDetail server_detail;
+    server_detail.zk_client_port = 2181;
+    server_detail.zk_server_addr = "127.0.0.1";
+    server_detail.zk_server_id = 1;
+    rwcal_zk_server_port_detail_ptr_t server_details[2] = { &server_detail, NULL };
+    status = rwcal_rwzk_kazoo_init(perf.rwcal, server_details);
     RW_ASSERT(RW_STATUS_SUCCESS == status);
   } else {
     status = rwcal_rwzk_zake_init(perf.rwcal);

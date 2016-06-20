@@ -454,29 +454,38 @@ class AssignInitVM(ManifestTransform):
 
         """
         # Create a generator of components
-        components = (component
+        a_components = (component
                     for colony in manifest.components
                     for component in rift.vcs.core.component_iterator(colony))
 
-        # Iterate through the components until the CLI is found
-        for component in components:
-            if isinstance(component, rift.vcs.manifest.RaCliProc):
+        # Iterate through the components until the active uAgent is found
+        for a_component in a_components:
+            if isinstance(a_component, rift.vcs.manifest.RaUagent) and a_component.mode_active:
                 break
         else:
-            raise exc.CompilationError('Unable to find the CLI tasklet')
+            raise exc.CompilationError('Unable to find the Active uAgent tasklet')
 
         # Continue iterating through the components from where we left off.
         # Component iteration is a depth-first traversal of the hierarchy,
-        # therefore the next virtual machine we enounter will contain the CLI
+        # therefore the next virtual machine we enounter will contain the 
         # tasklet (this assumes that tasklets are always descendents of VMs and
         # VMs can never be descendents of tasklets).
-        for component in components:
-            if isinstance(component, rift.vcs.manifest.RaVm):
-                manifest.init = component
+        for a_component in a_components:
+            if isinstance(a_component, rift.vcs.manifest.RaVm):
+                manifest.init = a_component
+                manifest.a_vm = a_component
                 break
         else:
-            raise exc.CompilationError('CLI tasklet is not in a virtual machine')
+            raise exc.CompilationError('Active uAgent tasklet is not in a virtual machine')
 
+        parent_components = (rift.vcs.manifest.RaCluster, rift.vcs.manifest.RaColony, rift.vcs.manifest.RaCollection)
+        for a_parent in a_components:
+            if isinstance(a_parent, parent_components):
+                break
+        else:
+            raise exc.CompilationError('Active uAgent tasklet virtual machine not in any collection')
+
+        current_id = 0
         # The init phase needs to refer to the instance ID of the init VM, so
         # we need to make sure that the selected VM has been assigned an
         # instance ID.
@@ -491,7 +500,53 @@ class AssignInitVM(ManifestTransform):
                 current_id += 1
 
             manifest.init.instance_id = current_id
+            manifest.a_vm.instance_id = current_id
 
+        if not a_parent.instance_id:
+            known = set()
+            for component in manifest:
+                if component.instance_id is not None:
+                    known.add(component.instance_id)
+ 
+            current_id = 1
+            while current_id in known:
+                current_id += 1
+            a_parent.instance_id = current_id
+ 
+        parent_id = a_parent.instance_id
+        manifest.a_vm.parent = '{}-{}'.format(a_parent.name, parent_id)
+
+        manifest.s_vm = None
+        if len(manifest.mgmt_ip_list) > 1:
+            s_components = (component
+                    for colony in manifest.components
+                    for component in rift.vcs.core.component_iterator(colony))
+            # Iterate through the components until the active uAgent is found
+            for s_component in s_components:
+                if isinstance(s_component, rift.vcs.manifest.RaUagent) and not s_component.mode_active:
+                    break
+            else:
+                raise exc.CompilationError('Unable to find the Standby uAgent tasklet')
+    
+            # Find the VM
+            for s_component in s_components:
+                if isinstance(s_component, rift.vcs.manifest.RaVm):
+                    manifest.s_vm = s_component
+                    break
+            else:
+                raise exc.CompilationError('Standby uAgent tasklet is not in a virtual machine')
+    
+            # Find the Cluster
+            for s_parent in s_components:
+                if isinstance(s_parent, parent_components):
+                    break
+            else:
+                raise exc.CompilationError('Standby uAgent tasklet virtual machine not in any collection')
+            if s_parent.name != a_parent.name:
+                raise exc.CompilationError('uagent active tasklet virtual machine "{}"'
+                     ' not in same collection as standby "{}"'.format(a_parent.name, s_parent.name))
+
+            manifest.s_vm.parent = '{}-{}'.format(s_parent.name, parent_id)
 
 class AssignIPAddresses(ManifestTransform):
     def __call__(self, manifest, sysinfo):
@@ -507,6 +562,11 @@ class AssignIPAddresses(ManifestTransform):
         """
         addrs = [vm.ip for vm in sysinfo.list_by_class(rift.vcs.VirtualMachine)]
         manifest.ipaddresses = addrs
+        manifest.mgmt_ip_list = sysinfo.mgmt_ip_list
+        if manifest.mgmt_ip_list:
+            manifest.mgmt_ip_list.sort()
+        elif sysinfo and sysinfo.zookeeper:
+            manifest.mgmt_ip_list = [sysinfo.zookeeper.master_ip]
 
 
 class SetManifestFlags(ManifestTransform):
@@ -685,35 +745,8 @@ class AssignNetconfHostToRiftCli(SystemTransform):
         if cli_proc is None:
             return
 
-        # Since confd is launched by uagent, search for uagent VM and set its
-        # VM IP as netconf host
-        components = rift.vcs.core.component_iterator(sysinfo)
-
-        # Iterate over the system info components until an instance of
-        # uAgent is found.
-        for component in components:
-            if isinstance(component, rift.vcs.uAgentTasklet):
-                break
-        else:
-            # No uAgentTasklet is found
-            return
-
-        # Continuing iterating of the components to find the virtual
-        # machine that contains the uAgent component.
-        for component in components:
-            if isinstance(component, rift.vcs.VirtualMachine):
-                host = component.ip
-                break
-        else:
-            raise exc.TransformError('uAgent is not in a VM')
-
-        cli_proc.netconf_host = host
-
-        #Pass the correct northbound schema listing to rwcli.
-        cli_proc.schema_listing = []
-        cli_proc.schema_listing.append(sysinfo.northbound_listing)
-        if sysinfo.agent_mode == RwmgmtAgentMode.CONFD:
-            cli_proc.schema_listing.append("confd_nb_schema_list.txt")
+        #use localhost always
+        cli_proc.netconf_host = "127.0.0.1"
 
         if sysinfo.agent_mode == RwmgmtAgentMode.RWXML:
             cli_proc.use_netconf = False

@@ -4702,57 +4702,33 @@ void rw_keyspec_path_reroot_iter_init(
   state->next_state = REROOT_ITER_FIRST;
 }
 
-static void adjust_upper_level_wc_pes(
+static bool bt_and_check_for_iter_end(
     keyspec_reroot_iter_state_t *state,
     int pe_idx)
 {
 
   if (!pe_idx) {
-    return;
+    return true;
   }
 
   int i;
   for (i = pe_idx - 1; i >= 0; i--) {
     if (state->path_entries[i].is_iteratable) {
       state->path_entries[i].next_index++;
-      if (state->path_entries[i].next_index == state->path_entries[i].count) {
-        if (!state->path_entries[i].is_first_iter_index) {
-          state->path_entries[i].next_index = 0;
-        } else {
-          break;
-        }
-      } else {
-        break;
+      if (state->path_entries[i].next_index < state->path_entries[i].count) {
+        // We still have not exhausted this level.
+        return false;
       }
-    }
-  }
-}
-
-static bool iter_can_continue(
-    keyspec_reroot_iter_state_t *state,
-    int pe_idx)
-{
-  if (!pe_idx) {
-    return false;
-  }
-
-  int i = 0;
-  for (i = pe_idx - 1; i >= 0; i--) {
-    if (state->path_entries[i].is_iteratable) {
-      state->path_entries[i].next_index++;
-      if (state->path_entries[i].next_index == state->path_entries[i].count) {
-        if (!state->path_entries[i].is_first_iter_index) {
-          state->path_entries[i].next_index = 0;
-        } else {
-          return false;
-        }
-      } else {
+      // This level is exhausted.
+      if (state->path_entries[i].is_first_iter_index) { // Top level, cannot iterate anymore
         return true;
       }
+      // Not top-level, reset the index and continue going up
+      state->path_entries[i].next_index = 0;
     }
   }
 
-  return false;
+  return true;
 }
 
 #define PREPARE_FOR_ITERATION(state_)\
@@ -4803,8 +4779,28 @@ bool rw_keyspec_path_reroot_iter_next(
 
   KeySpecHelper ks_cur(state->cur_ks);
 
-  PREPARE_FOR_ITERATION(state)
+  PREPARE_FOR_ITERATION(state);
 
+  // Shallower case.
+  if (index > state->depth_o) {
+
+    RW_ASSERT(state->next_state == REROOT_ITER_FIRST);
+
+    state->cur_msg = keyspec_reroot_shallower(
+        state->instance, nullptr, *state->ks_in, state->depth_i, 
+        state->in_msg, *state->ks_out, state->depth_o);
+
+    // curr_ks is already setup as part of the macro PREPARE_FOR_ITERATION.
+    state->next_state = REROOT_ITER_DONE;
+    if (!state->cur_msg) {
+      rw_keyspec_path_reroot_iter_done(st);
+      return false;
+    }
+
+    return true;
+  }
+
+  // Deeper case
   while (index < state->depth_o) {
 
     bool exit_wloop = false;
@@ -4822,6 +4818,13 @@ bool rw_keyspec_path_reroot_iter_next(
               element_id->element_tag, &fd, &msg_ptr, &off, &is_dptr);
 
     if (!count) {
+      // There is no message for this path entry. Check whether we can continue
+      // the iteration
+      if (!bt_and_check_for_iter_end(state, pe_idx)) {
+        // Start over the iteration again.
+        PREPARE_FOR_ITERATION(state);
+        continue;
+      }
       break;
     }
 
@@ -4861,9 +4864,9 @@ bool rw_keyspec_path_reroot_iter_next(
 
             if (i == count) {
               // No message matched for the path entry.
-              if (iter_can_continue(state, pe_idx)) {
+              if (!bt_and_check_for_iter_end(state, pe_idx)) {
                 // Start over the iteration again.
-                PREPARE_FOR_ITERATION(state)
+                PREPARE_FOR_ITERATION(state);
                 continue;
               }
               exit_wloop = true;
@@ -4883,15 +4886,6 @@ bool rw_keyspec_path_reroot_iter_next(
 
               path_entry_copy_keys(state->instance, msg, (rw_keyspec_entry_t *)path_entry2);
 
-              if (state->path_entries[pe_idx].is_last_iter_index) { // Is it last index?
-                state->path_entries[pe_idx].next_index++;
-                if (state->path_entries[pe_idx].next_index == state->path_entries[pe_idx].count) {
-                  if (!state->path_entries[pe_idx].is_first_iter_index) {
-                    state->path_entries[pe_idx].next_index = 0;
-                    adjust_upper_level_wc_pes(state, pe_idx);
-                  }
-                }
-              }
             } else {
               // No more messages.
               exit_wloop = true;
@@ -4920,9 +4914,9 @@ bool rw_keyspec_path_reroot_iter_next(
 
             if (i == count) {
               // No message matched for the path entry.
-              if (iter_can_continue(state, pe_idx)) {
+              if (!bt_and_check_for_iter_end(state, pe_idx)) {
                 // Start over the iteration again.
-                PREPARE_FOR_ITERATION(state)
+                PREPARE_FOR_ITERATION(state);
                 continue;
               }
               exit_wloop = true;
@@ -4930,16 +4924,6 @@ bool rw_keyspec_path_reroot_iter_next(
               // A message was found.
               path_entry_copy_keys(state->instance, msg, const_cast<rw_keyspec_entry_t *>(path_entry2));
               state->path_entries[pe_idx].next_index = i;
-
-              if (state->path_entries[pe_idx].is_last_iter_index) {
-                state->path_entries[pe_idx].next_index++;
-                if (state->path_entries[pe_idx].next_index == state->path_entries[pe_idx].count) {
-                  if (!state->path_entries[pe_idx].is_first_iter_index) {
-                    state->path_entries[pe_idx].next_index = 0;
-                    adjust_upper_level_wc_pes(state, pe_idx);
-                  }
-                }
-              }
             }
           }
           break;
@@ -4958,29 +4942,34 @@ bool rw_keyspec_path_reroot_iter_next(
   }
 
   if (index == state->depth_o) {
+
     state->cur_msg = msg;
+
     if (!state->ks_has_iter_pes) {
+
       RW_ASSERT(state->next_state == REROOT_ITER_FIRST);
       state->next_state = REROOT_ITER_DONE;
+
     } else {
+
+      // Update indices for next iteration.
+      for (unsigned i = 0; i < state->n_path_ens; ++i) {
+        if (state->path_entries[i].is_last_iter_index) {
+          state->path_entries[i].next_index++;
+          if (state->path_entries[i].next_index == state->path_entries[i].count) {
+            if (!state->path_entries[i].is_first_iter_index) {
+              state->path_entries[i].next_index = 0;
+              bt_and_check_for_iter_end(state, i); // ignore the return value.
+            }
+          }
+          break;
+        }
+      }
+
       state->next_state = REROOT_ITER_NEXT;
     }
+
     return true;
-  } else if (index > state->depth_o) {
-    // shawller case.
-    RW_ASSERT(state->next_state == REROOT_ITER_FIRST);
-    state->cur_msg = keyspec_reroot_shallower(state->instance,
-                                              nullptr,
-                                              *state->ks_in,
-                                              state->depth_i,
-                                              state->in_msg,
-                                              *state->ks_out,
-                                              state->depth_o);
-    // curr_ks is already setup as part of the macro PREPARE_FOR_ITERATION.
-    if (state->cur_msg) {
-      state->next_state = REROOT_ITER_DONE;
-      return true;
-    } // else below code will return failure.
   }
 
   rw_keyspec_path_reroot_iter_done(st);

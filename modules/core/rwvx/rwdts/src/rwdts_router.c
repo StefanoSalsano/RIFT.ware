@@ -719,7 +719,12 @@ rwdts_router_reg_handle_delete(rwdts_router_t *dts,
             pathspec.dompath.path001.key00.name, 
             strlen(pathspec.dompath.path001.key00.name), memb);
 
+  if (strstr(member_p->name, "uAgent")) {
+    member_p->has_recovery_action = true;
+    member_p->recovery_action = RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL;
+  }
   bool all_regs = (member_p->has_recovery_action && (member_p->recovery_action == RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL));
+  RWDTS_ROUTER_LOG_EVENT(dts, DtsrouterCritical, RWLOG_ATTR_SPRINTF("%s Delete Received for regs %d", member_p->name, all_regs));
   if (memb)  {
     if (all_regs && member_p->n_registration) {
       RWPB_T_PATHSPEC(RwDts_data_RtrPeerRegKeyspec_Router_Member_Registration) router_pub_ks  =
@@ -727,6 +732,7 @@ rwdts_router_reg_handle_delete(rwdts_router_t *dts,
       rwdts_router_fill_router_reg_key(dts, &router_pub_ks, memb->msgpath, member_p->registration[0]->keystr, member_p->registration[0]->flags);
       rw_keyspec_path_t *keyspec = (rw_keyspec_path_t*)&router_pub_ks;
       PRINT_STR (dts->rwmsgpath," delete with %s member regns", memb->msgpath);
+      RWDTS_ROUTER_LOG_EVENT(dts, DtsrouterCritical, RWLOG_ATTR_SPRINTF("%s Delete all member regs", memb->msgpath));
       if(memb->router_idx == RWDTS_ROUTER_LOCAL_IDX(dts)) {
         rw_status_t rs = rwdts_member_reg_handle_delete_element_keyspec(dts->local_regkeyh,
                                                                         keyspec,
@@ -739,6 +745,7 @@ rwdts_router_reg_handle_delete(rwdts_router_t *dts,
       RWDTS_ROUTER_LOG_XACT_EVENT(dts, xact, RwDtsRouterLog_notif_DtsrouterXactDebug,
                                   RWLOG_ATTR_SPRINTF("WAIT_RESTART Setting for %s", memb->msgpath));
       memb->wait_restart = true;
+      RWDTS_ROUTER_LOG_EVENT(dts, DtsrouterCritical, RWLOG_ATTR_SPRINTF("%s member set wait recovery", memb->msgpath));
       if (memb->dest) {
         rwmsg_clichan_stream_reset(dts->clichan, memb->dest);
       }
@@ -1900,9 +1907,11 @@ rwdts_router_manage_peers(rwdts_router_t *dts,
     if (rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path)) {
       PRINT_STR(dts->rwmsgpath, "ERROR: Entry exist %s: Stale Instance", my_rwzk_path);
     }
+    else {
     RW_ASSERT(!rwvcs_rwzk_exists(ti->rwvcs, my_rwzk_path));
     status = rwvcs_rwzk_create(ti->rwvcs, my_rwzk_path);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
+    }
 
     sprintf(rwzk_set_data, ":%u:%s:somemore", 0, "JUnk Str");
     status = rwvcs_rwzk_set(ti->rwvcs, my_rwzk_path, rwzk_set_data);

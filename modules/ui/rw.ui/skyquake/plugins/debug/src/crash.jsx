@@ -97,7 +97,7 @@ class CrashDetails extends React.Component {
                   );
                 })}
       html = (
-        <div>
+        <div className="crash-details-wrapper">
               <div className="form-actions">
                 <button role="button" className="dark" onClick={this.state.noDebug ? false : this.downloadFile.bind(this, 'crash.txt', 'data:text;charset=UTF-8,' + decodeURIComponent(JSON.stringify(this.state.list, null, 2)))}> Download Crash Details</button>
               </div>

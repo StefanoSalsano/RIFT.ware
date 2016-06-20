@@ -4,8 +4,18 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
+
+ .cloud-account-wrapper {
+    height: 100%;
+    overflow-y: auto;
+ }
+
+.app-body.cloudAccount, .app-body.configAgentAccount, .app-body.sdnAccount{
+  height:auto;
+}
+
 .header-app h1 {
-    background: url('../../../../framework/style//img/header-logo.png') no-repeat left center;
+    background: url('/style//img/header-logo.png') no-repeat left center;
     height: 51px;
     line-height: 51px;
     margin-left: 80px;

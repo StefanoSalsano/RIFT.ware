@@ -20,6 +20,6 @@ module rw-agent-testbed-tailf {
   }
 
   tailf:annotate "/rw-agent-testbed:agent-tests" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 }

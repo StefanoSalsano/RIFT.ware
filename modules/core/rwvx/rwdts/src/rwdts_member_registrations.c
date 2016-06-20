@@ -382,6 +382,89 @@ rwdts_begin_recovery_audit(rwdts_member_registration_t *reg)
   }
 }
 
+rwdts_kv_light_reply_status_t
+rwdts_kv_light_get_all_cb(void **key, int *key_len, void **val,
+                          int *val_len, int total, void *callbk_data)
+{
+
+  rw_keyspec_path_t **keyspecs = NULL;
+  ProtobufCMessage **msgs = NULL;
+  int key_count = 0;
+
+  rwdts_member_registration_t *reg = (rwdts_member_registration_t *)callbk_data;
+  RW_ASSERT(reg);
+  rwdts_member_reg_handle_unref((rwdts_member_reg_handle_t)reg);
+
+  if (!total) {
+    return RWDTS_KV_LIGHT_REPLY_DONE;
+  }
+  int i;
+  for(i=0; i < total; i++) {
+    ProtobufCBinaryData bin_key;
+    bin_key.len = key_len[i];
+    bin_key.data = (uint8_t *)key[i];
+    rw_keyspec_path_t *keyspec = NULL;
+    ProtobufCMessage* msg = NULL;
+
+    keyspec = rw_keyspec_path_create_concrete_with_dompath_binary_data(NULL, &bin_key, reg->keyspec->base.descriptor);
+    RW_ASSERT(keyspec);
+    msg = protobuf_c_message_unpack(NULL, reg->desc,
+                                         val_len[i], (const uint8_t*)val[i]); 
+    RW_ASSERT(msg);   
+    key_count++;      
+    keyspecs = realloc(keyspecs, (key_count * sizeof(*keyspecs[0])));
+    keyspecs[key_count-1] = keyspec;
+    msgs = realloc(msgs, (key_count * sizeof(*msgs[0])));
+    msgs[key_count-1] = msg;
+    free(val[i]);     
+    free(key[i]);     
+  }                 
+  free(val);        
+  free(key);        
+
+  for (i = 0; i < key_count; i++) {
+    rwdts_member_reg_handle_create_element_keyspec((rwdts_member_reg_handle_t)reg,
+                                                    keyspecs[i],   
+                                                    msgs[i],       
+                                                    NULL);         
+    rw_keyspec_path_free(keyspecs[i], NULL);
+    protobuf_c_message_free_unpacked(NULL, msgs[i]);
+  }
+
+  if (keyspecs) {
+    free(keyspecs);
+  }               
+  if (msgs) {     
+    free(msgs);     
+  }               
+
+  if (reg->group.group && reg->group.group->cb.xact_event) {
+    reg->group.group->cb.xact_event(reg->apih, reg->group.group, NULL,
+                                    RWDTS_MEMBER_EVENT_INSTALL,
+                                    reg->group.group->cb.ctx, NULL);
+  }
+  return RWDTS_KV_LIGHT_REPLY_DONE;
+}
+
+static void rwdts_redis_ready(rwdts_member_registration_t* reg, rw_status_t status)
+{
+  RW_ASSERT(reg);
+  rw_status_t rs;
+  if (status != RW_STATUS_SUCCESS) {
+    /* TODO */
+    /* This code is for active VM only, hence fail this VM and switch the
+       standby to active */
+    return;
+  }
+  rs = rwdts_kv_handle_get_all(reg->kv_handle, 0, (void *)rwdts_kv_light_get_all_cb, (void *)reg); 
+  if (rs != RW_STATUS_SUCCESS) {
+    /* TODO */
+    /* This code is for active VM only, hence fail this VM and switch the
+     * standby to active */
+  }
+  return;
+}
+
 static void
 rwdts_member_reg_advise_cb(rwdts_xact_t* xact,
                             rwdts_xact_status_t* xact_status,
@@ -542,69 +625,40 @@ rwdts_member_reg_advise_cb(rwdts_xact_t* xact,
                                               true, 
                                               &chunk->chunk_id, 
                                               reg->apih->client_path);
-            if (reg->flags & RWDTS_FLAG_FILE_DATASTORE) {
-              if (!reg->kv_handle) {
-                reg->kv_handle = rwdts_kv_allocate_handle(BK_DB);
-                rw_status_t res;
-                char *val, *key;
-                int val_len = 0, key_len = 0;
-                void *cursor = NULL, *out_cursor= NULL;
-                char *installdir = getenv("INSTALLDIR");
-                char *db_name = rwdts_get_file_dbname(strdup(apih->client_path));
-                snprintf(reg->kv_handle->file_name, 255, "%s%s%s%u%s", installdir, "/", db_name, reg->reg_id,".db");
-                res = rwdts_kv_handle_open_db(reg->kv_handle, reg->kv_handle->file_name, NULL, NULL);
-                free(db_name);
-                if (res == RW_STATUS_SUCCESS) {
-                  cursor = rwdts_kv_handle_file_get_cursor(reg->kv_handle);
-                  RW_ASSERT(cursor);
-                  rw_keyspec_path_t **keyspecs = NULL;
-                  ProtobufCMessage **msgs = NULL;
-                  uint32_t key_count = 0, i;
-                  while ((res = rwdts_kv_handle_file_getnext(reg->kv_handle, cursor, (char **)&key, &key_len,
-                                                             (char **)&val, &val_len, &out_cursor)) == RW_STATUS_SUCCESS) {
-                    ProtobufCBinaryData bin_key;
-                    bin_key.len = key_len;
-                    bin_key.data = (uint8_t *)key;
-                    rw_keyspec_path_t *keyspec = NULL;
-                    ProtobufCMessage* msg = NULL;
-
-                    keyspec = rw_keyspec_path_create_concrete_with_dompath_binary_data(NULL, &bin_key, reg->keyspec->base.descriptor);
-                    RW_ASSERT(keyspec);
-                    msg = protobuf_c_message_unpack(NULL, reg->desc,
-                                                         val_len, (const uint8_t*)val);
-                    RW_ASSERT(msg);
-                    key_count++;
-                    keyspecs = realloc(keyspecs, (key_count * sizeof(*keyspecs[0])));
-                    keyspecs[key_count-1] = keyspec;
-                    msgs = realloc(msgs, (key_count * sizeof(*msgs[0])));
-                    msgs[key_count-1] = msg;
-                    cursor = out_cursor; out_cursor = NULL;
+            if (apih->rwtasklet_info) {
+              if ((reg->group.group && reg->group.group->cb.xact_event) && 
+                  (reg->flags & RWDTS_FLAG_DATASTORE) &&
+                  ((apih->rwtasklet_info->data_store != RWVCS_TYPES_DATA_STORE_NONE) &&
+                   (apih->rwtasklet_info->data_store != RWVCS_TYPES_DATA_STORE_NOSTORE))) {
+                if (!reg->kv_handle) {
+                  rw_status_t res;
+                  char *installdir = getenv("INSTALLDIR");
+                  char *db_name = rwdts_get_file_dbname(strdup(apih->client_path));
+                  if (apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_BDB) {
+                    reg->kv_handle = rwdts_kv_allocate_handle(BK_DB);
+                    snprintf(reg->kv_handle->file_name_shard, 255, "%s%s%s%u%s", installdir, "/", db_name, reg->reg_id,".db");
+                    res = rwdts_kv_handle_db_connect(reg->kv_handle, NULL, NULL, NULL, reg->kv_handle->file_name_shard, NULL, NULL, NULL);
+                    if (res == RW_STATUS_SUCCESS) {
+                      rwdts_member_reg_handle_ref((rwdts_member_reg_handle_t)reg);
+                      rwdts_kv_handle_get_all(reg->kv_handle, 0, (void *)rwdts_kv_light_get_all_cb, (void *)reg);
+                    }
+                  } else {
+                    reg->kv_handle = rwdts_kv_allocate_handle(REDIS_DB);
+                    snprintf(reg->kv_handle->file_name_shard, 255, "%s%s%s%u%s", installdir, "/", db_name, reg->reg_id,".db");
+                    char address_port[20];
+                    int len = 0;
+                    len = sprintf(address_port, "%s%c%d", apih->rwtasklet_info->vm_ip_address, ':', 9999);
+                    address_port[len] = '\0';
+                    rwdts_member_reg_handle_ref((rwdts_member_reg_handle_t)reg); 
+                    rwdts_kv_handle_db_connect(reg->kv_handle, apih->sched,
+                                               apih->tasklet, address_port,
+                                               reg->kv_handle->file_name_shard,
+                                               NULL, (void *)rwdts_redis_ready,
+                                               (void *)reg);
                   }
-                  rwdts_kv_handle_file_close(reg->kv_handle);
-                  for (i = 0; i < key_count; i++) {
-                    rwdts_member_reg_handle_create_element_keyspec((rwdts_member_reg_handle_t)reg,
-                                                                   keyspecs[i],
-                                                                   msgs[i],
-                                                                   NULL);
-                    rw_keyspec_path_free(keyspecs[i], NULL);
-                    protobuf_c_message_free_unpacked(NULL, msgs[i]);
-                  }
-                  if (keyspecs) {
-                    free(keyspecs);
-                  }
-                  if (msgs) {
-                    free(msgs);
-                  }
-                } else {
-                  RW_FREE(reg->kv_handle);
-                  reg->kv_handle = NULL;
-                }
+                  free(db_name);
+                } 
               }
-            }
-            if (reg->group.group && reg->group.group->cb.xact_event) {
-              reg->group.group->cb.xact_event(apih, reg->group.group, NULL,
-                                              RWDTS_MEMBER_EVENT_INSTALL,
-                                              reg->group.group->cb.ctx, NULL);
             }
           }
           if (reg->flags & RWDTS_FLAG_SUBSCRIBER) {

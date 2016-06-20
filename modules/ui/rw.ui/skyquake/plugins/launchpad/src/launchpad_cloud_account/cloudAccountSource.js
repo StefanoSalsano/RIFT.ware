@@ -6,10 +6,10 @@
  */
 var API_SERVER = require('utils/rw.js').getSearchParams(window.location).api_server;
 var NODE_PORT = 3000;
-var createCloudAccountActions = require('./cloudAccountActions.js');
 var Utils = require('utils/utils.js');
 import $ from 'jquery';
-var createCloudAccountSource = {
+var createCloudAccountSource = function(Alt){
+  return {
   /**
    * Creates a new Cloud Account
    * @param  {object} state        Reference to parent store state.
@@ -23,9 +23,8 @@ var createCloudAccountSource = {
    *                               }
    * @return {[type]}              [description]
    */
-  create: function() {
 
-    return {
+    create: {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -49,11 +48,10 @@ var createCloudAccountSource = {
 
         });
       },
-      success: createCloudAccountActions.createSuccess,
-      loading: createCloudAccountActions.createLoading,
-      error: createCloudAccountActions.createFail
-    }
-  },
+      success: Alt.actions.global.createSuccess,
+      loading: Alt.actions.global.createLoading,
+      error: Alt.actions.global.createFail
+    },
 
   /**
    * Updates a Cloud Account
@@ -68,9 +66,7 @@ var createCloudAccountSource = {
    *                               }
    * @return {[type]}              [description]
    */
-  update: function() {
-
-    return {
+  update:  {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -92,10 +88,9 @@ var createCloudAccountSource = {
           });
         });
       },
-      success: createCloudAccountActions.updateSuccess,
-      loading: createCloudAccountActions.updateLoading,
-      error: createCloudAccountActions.updateFail
-    }
+      success: Alt.actions.global.updateSuccess,
+      loading: Alt.actions.global.updateLoading,
+      error: Alt.actions.global.updateFail
   },
 
   /**
@@ -104,9 +99,8 @@ var createCloudAccountSource = {
    * @param  {object} cloudAccount cloudAccount to delete
    * @return {[type]}              [description]
    */
-  delete: function() {
+  delete: {
 
-    return {
       remote: function(state, cloudAccount, cb) {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -125,18 +119,16 @@ var createCloudAccountSource = {
           });
         });
       },
-      success: createCloudAccountActions.deleteSuccess,
-      loading: createCloudAccountActions.updateLoading,
-      error: createCloudAccountActions.deleteCloudAccountFail
-    }
+      success: Alt.actions.global.deleteSuccess,
+      loading: Alt.actions.global.updateLoading,
+      error: Alt.actions.global.deleteCloudAccountFail
   },
   /**
    * Get a cloud account
    *
    * @return {Promise}
    */
-  getCloudAccountByName: function() {
-    return {
+  getCloudAccountByName:  {
       remote: function(state, cloudAccount) {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -158,12 +150,10 @@ var createCloudAccountSource = {
           });;
         });
       },
-      success: createCloudAccountActions.getCloudAccountSuccess,
-      error: createCloudAccountActions.getCloudAccountFail
-    }
+      success: Alt.actions.global.getCloudAccountSuccess,
+      error: Alt.actions.global.getCloudAccountFail
   },
-  getCloudAccounts: function() {
-    return {
+  getCloudAccounts: {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -177,10 +167,10 @@ var createCloudAccountSource = {
           });
         });
       },
-      success: createCloudAccountActions.getCloudAccountsSuccess,
-      error: createCloudAccountActions.getCloudAccountsFail
-    }
+      success: Alt.actions.global.getCloudAccountsSuccess,
+      error: Alt.actions.global.getCloudAccountsFail
   }
+}
 };
 
 module.exports = createCloudAccountSource;

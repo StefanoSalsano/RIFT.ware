@@ -15,16 +15,29 @@ from . import jujuconf
 import rift.mano.config_agent
 
 
-
-class ConfigAgentExistsError(Exception):
+class ConfigAgentError(Exception):
     pass
 
+
+class ConfigAgentExistsError(ConfigAgentError):
+    pass
+
+
+class UnknownAgentTypeError(Exception):
+    pass
+
+
+class ConfigAgentVnfrAddError(Exception):
+    pass
+
+
 class ConfigAccountHandler(object):
-    def __init__(self, dts, log, loop, on_add_config_agent):
+    def __init__(self, dts, log, loop, on_add_config_agent, on_delete_config_agent):
         self._log = log
         self._dts = dts
         self._loop = loop
         self._on_add_config_agent = on_add_config_agent
+        self._on_delete_config_agent = on_delete_config_agent
 
         self._log.debug("creating config account handler")
         self.cloud_cfg_handler = rift.mano.config_agent.ConfigAgentSubscriber(
@@ -32,25 +45,17 @@ class ConfigAccountHandler(object):
             rift.mano.config_agent.ConfigAgentCallbacks(
                 on_add_apply=self.on_config_account_added,
                 on_delete_apply=self.on_config_account_deleted,
-                on_update_prepare=self.on_config_account_update,
             )
         )
 
-    def on_config_account_deleted(self, account_name):
-        self._log.debug("config account deleted")
-        self._log.debug(account_name)
-        self._log.error("Config agent update not supported yet")
+    def on_config_account_deleted(self, account):
+        self._log.debug("config account deleted: %s", account.name)
+        self._on_delete_config_agent(account)
 
     def on_config_account_added(self, account):
         self._log.debug("config account added")
         self._log.debug(account.as_dict())
         self._on_add_config_agent(account)
-
-    @asyncio.coroutine
-    def on_config_account_update(self, account):
-        self._log.debug("config account being updated")
-        self._log.debug(account.as_dict())
-        self._log.error("Config agent update not supported yet")
 
     @asyncio.coroutine
     def register(self):
@@ -97,7 +102,7 @@ class RiftCMConfigAgent(object):
 
         self._config_plugins = RiftCMConfigPlugins()
         self._config_handler = ConfigAccountHandler(
-            self._dts, self._log, self._loop, self._on_config_agent)
+            self._dts, self._log, self._loop, self._on_config_agent, self._on_config_agent_delete)
         self._plugin_instances = {}
         self._default_account_added = False
 
@@ -143,26 +148,37 @@ class RiftCMConfigAgent(object):
             cap_inst = self._config_plugins.class_by_plugin_name(
                 config_agent.account_type)
         except KeyError as e:
-            self._log.debug(
-                "Config agent nsm plugin type not found: {}.  Using default plugin, e={}".
-                format(config_agent.account_type, e))
-            cap_name = self.DEFAULT_CAP_TYPE
-            cap_inst = self._config_plugins.class_by_plugin_name(cap_name)
+            msg = "Config agent nsm plugin type not found: {}". \
+                format(config_agent.account_type)
+            self._log.error(msg)
+            raise UnknownAgentTypeError(msg)
 
         # Check to see if the plugin was already instantiated
         if cap_name in self._plugin_instances:
-            self._log.debug("Config agent nsm plugin already instantiated.  Using existing.")
+            self._log.debug("Config agent nsm plugin {} already instantiated. " \
+                            "Using existing.". format(cap_name))
         else:
             # Otherwise, instantiate a new plugin using the config agent account
             self._log.debug("Instantiting new config agent using class: %s", cap_inst)
             new_instance = cap_inst(self._dts, self._log, self._loop, config_agent)
             self._plugin_instances[cap_name] = new_instance
 
-        if self._default_account_added:
-            # If the user has provided a config account, chuck the default one.
-            if self.DEFAULT_CAP_TYPE in self._plugin_instances:
-                del self._plugin_instances[self.DEFAULT_CAP_TYPE]
+        # TODO (pjoseph): See why this was added, as this deletes the
+        # Rift plugin account when Juju account is added
+        # if self._default_account_added:
+        #     # If the user has provided a config account, chuck the default one.
+        #     if self.DEFAULT_CAP_TYPE in self._plugin_instances:
+        #         del self._plugin_instances[self.DEFAULT_CAP_TYPE]
 
+    def _on_config_agent_delete(self, config_agent):
+        self._log.debug("Got nsm plugin config agent delete, account: %s, type: %s",
+                config_agent.name, config_agent.account_type)
+        cap_name = config_agent.account_type
+        if cap_name in self._plugin_instances:
+            self._log.debug("Config agent nsm plugin exists, deleting it.")
+            del self._plugin_instances[cap_name]
+        else:
+            self._log.error("Error deleting - Config Agent nsm plugin %s does not exist.", cap_name)
 
 
     @asyncio.coroutine
@@ -185,13 +201,18 @@ class RiftCMConfigAgent(object):
         if method == 'juju':
             agent_type = 'juju'
         elif method in ['netconf', 'script']:
-            agent_type = 'riftca'
+            agent_type = self.DEFAULT_CAP_TYPE
         else:
-            self._log.error("Unsupported configuration method ({}) for VNF:{}/{}".format(method, nsr.name, vnfr.name))
+            msg = "Unsupported configuration method ({}) for VNF:{}/{}". \
+                  format(method, nsr.name, vnfr.name)
+            self._log.error(msg)
+            raise UnknownAgentTypeError(msg)
 
         try:
-            if agent_type in self._plugin_instances.keys():
-                agent = self._plugin_instances[agent_type]
-                agent.add_vnfr_managed(vnfr)
+            agent = self._plugin_instances[agent_type]
+            agent.add_vnfr_managed(vnfr)
         except Exception as e:
-            self._log.error("Error set_config_agent={}".format(str(e)))
+            self._log.error("Error set_config_agent for type {}: {}".
+                            format(agent_type, str(e)))
+            self._log.exception(e)
+            raise ConfigAgentVnfrAddError(e)

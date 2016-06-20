@@ -84,7 +84,7 @@ export default class TopologyL2view extends React.Component {
         }
 
         html = (
-            <div className="app-body">
+            <div className="app-body topologyL2ViewAppBody">
                 {nav}
                 {reloadButton}
                 <div className="topologyL2View">

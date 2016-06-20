@@ -16,6 +16,7 @@
 #include <rwtrace.h>
 #include <rwvcs.h>
 #include <rwvcs_manifest.h>
+#include <rwvcs_internal.h>
 #include <rwvcs_rwzk.h>
 
 #include <google/coredumper.h>
@@ -26,12 +27,18 @@
 
 #define CHECK_DTS_MAX_ATTEMPTS 100
 #define CHECK_DTS_FREQUENCY 100
+#define CHECK_PARENT_CHK_FREQ 100
+#define RWMAIN_RESTART_DEFERD 25
 
 struct wait_on_dts_cls {
   struct rwmain_gi * rwmain;
   uint16_t attempts;
 };
 
+static void
+rwmain_process_pm_inputs(
+    rwvcs_instance_ptr_t rwvcs,
+    rwmain_pm_struct_t *rwmain_pm);
 static rwsched_dispatch_queue_t g_zk_rwq = NULL;
 static rw_component_type component_type_str_to_enum(const char * type)
 {
@@ -92,6 +99,46 @@ static void schedule_next(
       rwmain->rwvx->rwsched->main_cfrunloop_mode);
 }
 
+/*
+ * Schedule the next rwmain phase.  This will run on the scheduler in the
+ * next interation.
+ *
+ * @param rwmain    - rwmain instance
+ * @param next      - next phase function
+ * @param interval  - interval of the timer
+ * @param ctx       - if defined, context passed to the next phase, otherwise the
+ *                    rwmain instance is passed.
+ */
+static void schedule_interval(
+    struct rwmain_gi * rwmain,
+    rwsched_CFRunLoopTimerCallBack next,
+    uint16_t interval,
+    void * ctx)
+{
+  rwsched_CFRunLoopTimerRef cftimer;
+  rwsched_CFRunLoopTimerContext cf_context;
+
+
+  bzero(&cf_context, sizeof(rwsched_CFRunLoopTimerContext));
+  cf_context.info = ctx ? ctx : rwmain;
+
+  cftimer = rwsched_tasklet_CFRunLoopTimerCreate(
+      rwmain->rwvx->rwsched_tasklet,
+      kCFAllocatorDefault,
+      CFAbsoluteTimeGetCurrent() + interval, 
+      0,
+      0,
+      0,
+      next,
+      &cf_context);
+
+  rwsched_tasklet_CFRunLoopAddTimer(
+      rwmain->rwvx->rwsched_tasklet,
+      rwsched_tasklet_CFRunLoopGetCurrent(rwmain->rwvx->rwsched_tasklet),
+      cftimer,
+      rwmain->rwvx->rwsched->main_cfrunloop_mode);
+}
+
 
 static void init_rwtrace(rwvx_instance_ptr_t rwvx, char ** argv)
 {
@@ -135,7 +182,7 @@ static rwtasklet_info_ptr_t get_rwmain_tasklet_info(
   char * instance_name = NULL;
   int broker_instance_id;
 
-  info = (rwtasklet_info_ptr_t)malloc(sizeof(struct rwtasklet_info_s));
+  info = (rwtasklet_info_ptr_t)RW_MALLOC0(sizeof(struct rwtasklet_info_s));
   if (!info) {
     RW_CRASH();
     goto err;
@@ -255,7 +302,7 @@ struct rwmain_gi * rwmain_alloc(
         rwvx->rwvcs,
         "$instance_id",
         &id);
-    if (status == RW_STATUS_SUCCESS) {
+    if ((status == RW_STATUS_SUCCESS) && id) {
       rwmain->instance_id = (uint32_t)id;
     } else {
       status = rwvcs_rwzk_next_instance_id(rwvx->rwvcs, &rwmain->instance_id, NULL);
@@ -397,6 +444,14 @@ struct rwmain_gi * rwmain_alloc(
 
   instance_name = to_instance_name(rwmain->component_name, rwmain->instance_id);
   RW_ASSERT(instance_name!=NULL);
+  if (rwmain->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM) {
+    rwvx->rwvcs->identity.rwvm_name = instance_name;
+  }
+  else if (rwmain->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWPROC) {
+    RW_ASSERT(rwmain->parent_id);
+    rwvx->rwvcs->identity.rwvm_name = strdup(rwmain->parent_id);
+  }
+
   dts = rwdts_api_new(
       info,
       (rw_yang_pb_schema_t *)RWPB_G_SCHEMA_YPBCSD(RwVcs),
@@ -795,6 +850,30 @@ finished:
   free(cls);
 }
 
+static void check_parent_started(rwsched_CFRunLoopTimerRef timer, void * ctx)
+{
+  struct rwmain_gi * rwmain = (struct rwmain_gi *)ctx;
+  rw_component_info c_info;
+
+  rw_status_t status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, rwmain->parent_id, &c_info);
+  RW_ASSERT(status != RW_STATUS_FAILURE);
+  if (status == RW_STATUS_NOTFOUND) {
+    return;
+  }
+  else {
+    status = rwmain_bootstrap(rwmain);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+
+    struct wait_on_dts_cls *cls = (struct wait_on_dts_cls *)malloc(sizeof(struct wait_on_dts_cls));
+    RW_ASSERT(cls);
+    cls->rwmain = rwmain;
+    cls->attempts = 0;
+    schedule_next(rwmain, check_dts_connected, CHECK_DTS_FREQUENCY, cls);
+  }
+
+  rwsched_tasklet_CFRunLoopTimerRelease(rwmain->rwvx->rwsched_tasklet, timer);
+}
+
 static void usage() {
   printf("rwmain [ARGUMENTS]\n");
   printf("\n");
@@ -919,8 +998,6 @@ static void rwmain_schedule_segv(struct rwmain_gi * rwmain,
       rwmain->rwvx->rwsched->main_cfrunloop_mode);
 }
 
-
-
 struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
 {
   rw_status_t status;
@@ -928,7 +1005,7 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
   struct rwmain_gi * rwmain;
   struct wait_on_dts_cls * cls;
 
-  char * manifest = NULL;
+  char * manifest_file = NULL;
   char * component_name = NULL;
   char * component_type = NULL;
   char * parent = NULL;
@@ -971,8 +1048,8 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
 	break;
 
       case 'm':
-        manifest = strdup(optarg);
-        RW_ASSERT(manifest);
+        manifest_file = strdup(optarg);
+        RW_ASSERT(manifest_file);
         break;
 
       case 'n':
@@ -1018,7 +1095,7 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
   }
   optind = 0;
 
-  if (!manifest) {
+  if (!manifest_file) {
     fprintf(stderr, "ERROR:  No manifest file specified.\n");
     exit(1);
   }
@@ -1026,22 +1103,62 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
   rwvx = rwvx_instance_alloc();
   RW_ASSERT(rwvx);
 
+  rwvcs_instance_ptr_t rwvcs = rwvx->rwvcs;
+  RW_ASSERT(rwvcs);
+
   init_rwtrace(rwvx, argv);
-  rwvx->rwvcs->envp = envp;
-  rwvx->rwvcs->rwmain_exefile = strdup(argv[0]);
-  RW_ASSERT(rwvx->rwvcs->rwmain_exefile);
+  rwvcs->envp = envp;
+  rwvcs->rwmain_exefile = strdup(argv[0]);
+  RW_ASSERT(rwvcs->rwmain_exefile);
+
+  status = rwvcs_process_manifest_file (rwvcs, manifest_file);
+  bool mgmt_vm = rwvcs_manifest_is_mgmt_vm(rwvcs, component_name);
+  rwmain_pm_struct_t pm = {};
+  if (mgmt_vm) {
+    start_pacemaker_and_determine_role(rwvx, rwvcs->pb_rwmanifest, &pm);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    usleep (RWVCS_DELAY_START);
+    if (ip_address)
+      free(ip_address);
+    ip_address = rwvcs_manifest_get_local_mgmt_addr(rwvcs->pb_rwmanifest->bootstrap_phase);
+    RW_ASSERT(ip_address);
+    if (pm.i_am_dc) {
+      rwvcs->mgmt_info.state = RWVCS_TYPES_VM_STATE_MGMTACTIVE;
+      status = rwvcs_variable_list_evaluate(
+          rwvcs,
+          rwvcs->pb_rwmanifest->init_phase->environment->active_component->n_python_variable,
+          rwvcs->pb_rwmanifest->init_phase->environment->active_component->python_variable);
+    }
+    else {
+      rwvcs->mgmt_info.state = RWVCS_TYPES_VM_STATE_MGMTSTANDBY;
+      status = rwvcs_variable_list_evaluate(
+          rwvcs,
+          rwvcs->pb_rwmanifest->init_phase->environment->standby_component->n_python_variable,
+          rwvcs->pb_rwmanifest->init_phase->environment->standby_component->python_variable);
+    }
+  }
+  else {
+    NEW_DBG_PRINTS("Attempting starting [[%s]] component\n", component_name);
+    //usleep (RWVCS_DELAY_START * 4);
+  }
+  rwvcs_manifest_setup_mgmt_info (rwvcs, mgmt_vm, ip_address);
+  rwmain_process_pm_inputs(rwvcs, &pm);
 
   if (g_zk_rwq)
-    rwvx->rwvcs->zk_rwq = g_zk_rwq;
-  status = rwvcs_instance_init(rwvx->rwvcs, manifest, main_function);
+    rwvcs->zk_rwq = g_zk_rwq;
+  status = rwvcs_instance_init(rwvcs, 
+                               manifest_file, 
+                               ip_address, 
+                               main_function);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
-  if (!g_zk_rwq && rwvx->rwvcs->pb_rwmanifest->init_phase->settings->rwvcs->collapse_each_rwprocess)
-    g_zk_rwq = rwvx->rwvcs->zk_rwq;
+  if (!g_zk_rwq && rwvcs->pb_rwmanifest->init_phase->settings->rwvcs->collapse_each_rwprocess)
+    g_zk_rwq = rwvcs->zk_rwq;
 
   rwmain = rwmain_alloc(rwvx, component_name, instance_id, component_type, parent, ip_address, vm_instance_id);
   RW_ASSERT(rwmain);
+  rwvx->rwmain = rwmain;
   {
-    rwmain->rwvx->rwvcs->apih = rwmain->dts;
+    rwvcs->apih = rwmain->dts;
     RW_SKLIST_PARAMS_DECL(
         config_ready_entries_,
         rwvcs_config_ready_entry_t,
@@ -1049,9 +1166,9 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
         rw_sklist_comp_charptr,
         config_ready_elem);
     RW_SKLIST_INIT(
-        &(rwmain->rwvx->rwvcs->config_ready_entries), 
+        &(rwvcs->config_ready_entries), 
         &config_ready_entries_);
-    rwmain->rwvx->rwvcs->config_ready_fn = rwmain_dts_config_ready_process;
+    rwvcs->config_ready_fn = rwmain_dts_config_ready_process;
   }
 
   if (coretest) {
@@ -1061,19 +1178,10 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
   }
 
   if (rwmain->vm_ip_address) {
-    rwmain->rwvx->rwvcs->identity.vm_ip_address = strdup(rwmain->vm_ip_address);
-    RW_ASSERT(rwmain->rwvx->rwvcs->identity.vm_ip_address);
+    rwvcs->identity.vm_ip_address = strdup(rwmain->vm_ip_address);
+    RW_ASSERT(rwvcs->identity.vm_ip_address);
   }
-  rwmain->rwvx->rwvcs->identity.rwvm_instance_id = rwmain->vm_instance_id;
-
-  if (rwmain->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM) {
-    RW_ASSERT(VCS_GET(rwmain)->instance_name);
-    rwmain->rwvx->rwvcs->identity.rwvm_name = strdup(VCS_GET(rwmain)->instance_name);
-  }
-  else if (rwmain->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWPROC) {
-    RW_ASSERT(parent);
-    rwmain->rwvx->rwvcs->identity.rwvm_name = strdup(parent);
-  }
+  rwvcs->identity.rwvm_instance_id = rwmain->vm_instance_id;
 
 #if 1
   {
@@ -1084,29 +1192,38 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
   }
 #endif
 
-#if 1
-  if (rwmain->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM && parent!=NULL) {
-    rwvcs_instance_ptr_t rwvcs = rwvx->rwvcs;
-    struct timeval timeout = { .tv_sec = RWVCS_RWZK_TIMEOUT_S, .tv_usec = 0 };
-    rw_component_info rwvm_info;
-    char * instance_name = NULL;
-    instance_name = to_instance_name(component_name, instance_id);
-    RW_ASSERT(instance_name!=NULL);
-    // Lock so that the parent can initialize the zk data before the child updates it
-    status = rwvcs_rwzk_lock(rwvcs, instance_name, &timeout);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-    printf("instance_nameinstance_nameinstance_nameinstance_nameinstance_name=%s\n", instance_name);
-    status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &rwvm_info);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-    RW_ASSERT(rwvm_info.vm_info!=NULL);
-    rwvm_info.vm_info->has_pid = true;
-    rwvm_info.vm_info->pid = getpid();
-    status = rwvcs_rwzk_node_update(rwvcs, &rwvm_info);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-    status = rwvcs_rwzk_unlock(rwvcs, instance_name);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-    free(instance_name);
-  } else if (rwmain->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM && parent == NULL) {
+  rw_component_info c_info;
+  if (!mgmt_vm) {
+    if (rwmain->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM) {
+      struct timeval timeout = { .tv_sec = RWVCS_RWZK_TIMEOUT_S, .tv_usec = 0 };
+      char * instance_name = NULL;
+      instance_name = to_instance_name(component_name, instance_id);
+      RW_ASSERT(instance_name!=NULL);
+      status = rwvcs_rwzk_lock(rwvcs, instance_name, &timeout);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &c_info);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      RW_ASSERT(c_info.vm_info!=NULL);
+      c_info.vm_info->has_pid = true;
+      c_info.vm_info->pid = getpid();
+      status = rwvcs_rwzk_node_update(rwvcs, &c_info);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      status = rwvcs_rwzk_unlock(rwvcs, instance_name);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      free(instance_name);
+    } 
+  }
+  else  {
+    if (rwvcs->mgmt_info.state == RWVCS_TYPES_VM_STATE_MGMTSTANDBY) {
+      status = rwvcs_rwzk_lookup_component(rwvcs, rwmain->parent_id, &c_info);
+      RW_ASSERT(status != RW_STATUS_FAILURE);
+      if (status == RW_STATUS_NOTFOUND) {
+        schedule_next(rwmain, check_parent_started, CHECK_PARENT_CHK_FREQ, rwmain);
+        goto done;
+      }
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+    }
+    
     struct rlimit rlimit;
     uint32_t core_limit;
     uint32_t file_limit;
@@ -1119,7 +1236,6 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
         "getrlimit(RLIMIT_CORE)=%u getrlimit(RLIMIT_FSIZE)=%u get_current_dir_name()=%s",
         core_limit, file_limit, get_current_dir_name());
   }
-#endif
 
   status = rwmain_bootstrap(rwmain);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -1131,8 +1247,9 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
 
   schedule_next(rwmain, check_dts_connected, CHECK_DTS_FREQUENCY, cls);
 
-  if (manifest)
-    free(manifest);
+done:
+  if (manifest_file)
+    free(manifest_file);
 
   if (component_name)
     free(component_name);
@@ -1149,3 +1266,259 @@ struct rwmain_gi * rwmain_setup(int argc, char ** argv, char ** envp)
   return rwmain;
 }
 
+static void
+rwmain_stop_local_zk_server(struct rwmain_gi *rwmain)
+{
+  rwvcs_instance_ptr_t rwvcs = rwmain->rwvx->rwvcs;
+  rwvcs_mgmt_info_t *mgmt_info = &rwvcs->mgmt_info;
+  int indx;
+  for (indx=0; 
+       ((indx < RWVCS_ZK_SERVER_CLUSTER) && mgmt_info->zk_server_port_details[indx]);
+       indx++) {
+    if (mgmt_info->zk_server_port_details[indx]->zk_server_start) {
+      char *zk_server_detail = NULL;
+      int r = asprintf(&zk_server_detail, "zookeeper_server:%s:%d:%d:%s",
+                       mgmt_info->zk_server_port_details[indx]->zk_server_addr,
+                       mgmt_info->zk_server_port_details[indx]->zk_client_port,
+                       mgmt_info->zk_server_port_details[indx]->zk_server_pid,
+                       (mgmt_info->state == RWVCS_TYPES_VM_STATE_MGMTACTIVE)?"ACTIVE":"STANDBY");
+      RW_ASSERT(r > 0);
+      send_kill_to_pid (mgmt_info->zk_server_port_details[indx]->zk_server_pid,
+                        SIGTERM,
+                        zk_server_detail);
+      fprintf (stderr, "%s is KILLED by %d\n", zk_server_detail, getpid());
+      RW_FREE(zk_server_detail);
+    }
+  }
+}
+
+static void
+rwmain_process_pm_inputs(
+    rwvcs_instance_ptr_t rwvcs,
+    rwmain_pm_struct_t *rwmain_pm)
+{
+  rwvcs_mgmt_info_t *mgmt_info = &rwvcs->mgmt_info;
+  if (!rwvcs->pb_rwmanifest->bootstrap_phase 
+      || (rwvcs->pb_rwmanifest->bootstrap_phase->n_ip_addrs_list == 1)
+      || (!mgmt_info->mgmt_vm)) {
+    return;
+  }
+  int pm_count = 0;
+  char *lead_ip_decision = NULL;
+  int indx;
+  for (indx = 0; (indx < RWVCS_ZK_SERVER_CLUSTER) && rwmain_pm->ip_entry[indx].pm_ip_addr; indx++) {
+    if ((rwmain_pm->ip_entry[indx].pm_ip_state == RWMAIN_PM_IP_STATE_ACTIVE)
+        ||(rwmain_pm->ip_entry[indx].pm_ip_state == RWMAIN_PM_IP_STATE_LEADER)) {
+      pm_count++;
+      if ((rwmain_pm->ip_entry[indx].pm_ip_state == RWMAIN_PM_IP_STATE_LEADER)) {
+        lead_ip_decision = rwmain_pm->ip_entry[indx].pm_ip_addr;
+      }
+    }
+  }
+  if (!lead_ip_decision) {
+    return;
+  }
+  int inconfig_count = 0;
+  int list_indx;
+  int lead_ip_count = 0;
+  for (list_indx=0; 
+       ((list_indx < RWVCS_ZK_SERVER_CLUSTER) 
+        && mgmt_info->zk_server_port_details[list_indx]);
+       list_indx++) {
+    if (mgmt_info->zk_server_port_details[list_indx]->zk_in_config) {
+      inconfig_count++;
+      mgmt_info->zk_server_port_details[list_indx]->zk_in_config = false;
+    }
+    if (!strcmp(mgmt_info->zk_server_port_details[list_indx]->zk_server_addr, lead_ip_decision)) {
+      lead_ip_count++;
+    }
+  }
+  if (pm_count < lead_ip_count) {
+    pm_count = lead_ip_count;
+  }
+
+  int new_config_count = 0;
+
+  for (indx = 0; (indx < RWVCS_ZK_SERVER_CLUSTER) && rwmain_pm->ip_entry[indx].pm_ip_addr; indx++) {
+    switch (rwmain_pm->ip_entry[indx].pm_ip_state) {
+      case RWMAIN_PM_IP_STATE_ACTIVE:
+      case RWMAIN_PM_IP_STATE_LEADER:{
+        for (list_indx=0; 
+             ((list_indx < RWVCS_ZK_SERVER_CLUSTER) 
+              && mgmt_info->zk_server_port_details[list_indx]);
+             list_indx++) {
+          if (!strcmp(rwmain_pm->ip_entry[indx].pm_ip_addr,
+                      mgmt_info->zk_server_port_details[list_indx]->zk_server_addr)) {
+            mgmt_info->zk_server_port_details[list_indx]->zk_server_disable = false;
+            if (((pm_count == 1) && !new_config_count)|| pm_count > 1) {
+              mgmt_info->zk_server_port_details[list_indx]->zk_in_config = true;
+              new_config_count++;
+            }
+          }
+        }
+      }
+      break;
+      case RWMAIN_PM_IP_STATE_FAILED:{
+        int list_indx;
+        for (list_indx=0; 
+             ((list_indx < RWVCS_ZK_SERVER_CLUSTER) 
+              && mgmt_info->zk_server_port_details[list_indx]);
+             list_indx++) {
+          if (!strcmp(rwmain_pm->ip_entry[indx].pm_ip_addr,
+                      mgmt_info->zk_server_port_details[list_indx]->zk_server_addr)) {
+            mgmt_info->zk_server_port_details[list_indx]->zk_server_disable = true;
+            if (pm_count > 1) {
+              mgmt_info->zk_server_port_details[list_indx]->zk_in_config = true;
+              new_config_count++;
+            }
+          }
+        }
+      }
+      break;
+      default:
+      break;
+    }
+  }
+  if (inconfig_count != new_config_count) {
+    mgmt_info->config_start_zk_pending = true;
+  }
+  NEW_DBG_PRINTS("[[%s]] %s ending %d prev count %d new count %d pm_count\n", 
+                 rwvcs->instance_name,
+                 mgmt_info->config_start_zk_pending?"PEND":"NOOP",
+                 inconfig_count, new_config_count, pm_count);
+}
+
+static void
+rwmain_handle_zookeeper_handler(
+    struct rwmain_gi *rwmain,
+    rwmain_pm_struct_t *rwmain_pm)
+{
+  rwvcs_instance_ptr_t rwvcs = rwmain->rwvx->rwvcs;
+  rwmain_process_pm_inputs(rwvcs, rwmain_pm);
+  if (rwvcs->mgmt_info.config_start_zk_pending) {
+    rw_status_t status = rwvcs_rwzk_client_stop(rwvcs);
+    NEW_DBG_PRINTS("rwvcs_rwzk_client_stop from %s\n", rwvcs->instance_name);
+    RW_ASSERT(RW_STATUS_SUCCESS == status);
+
+    rwmain_stop_local_zk_server(rwmain);
+    NEW_DBG_PRINTS("rwmain_stop_local_zk_server from %s\n", rwvcs->instance_name);
+    start_zookeeper_server(rwvcs, rwvcs->pb_rwmanifest->bootstrap_phase);
+    NEW_DBG_PRINTS("start_zookeeper_server from %s\n", rwvcs->instance_name);
+
+    status = rwvcs_rwzk_client_start(rwvcs);
+    RW_ASSERT(RW_STATUS_SUCCESS == status);
+    NEW_DBG_PRINTS("rwvcs_rwzk_client_start from %s\n", rwvcs->instance_name);
+  }
+}
+
+rw_status_t
+rwmain_pm_handler(
+    struct rwmain_gi *rwmain,
+    rwmain_pm_struct_t *rwmain_pm)
+{
+  rwvcs_instance_ptr_t rwvcs = rwmain->rwvx->rwvcs;
+  rwvcs_mgmt_info_t *mgmt_info = &rwvcs->mgmt_info;
+  if (mgmt_info->mgmt_vm) {
+    rwmain_handle_zookeeper_handler(rwmain, rwmain_pm);
+    vcs_vm_state vm_state = RWVCS_TYPES_VM_STATE_MGMTSTANDBY;
+    if (rwmain_pm->i_am_dc) {
+      vm_state = RWVCS_TYPES_VM_STATE_MGMTACTIVE;
+    }
+    switch (mgmt_info->state) {
+      case RWVCS_TYPES_VM_STATE_MGMTACTIVE:{
+        switch(vm_state) {
+          case RWVCS_TYPES_VM_STATE_MGMTSTANDBY:{
+            // TBD
+          }
+          break;
+          case RWVCS_TYPES_VM_STATE_MGMTACTIVE:
+          case RWVCS_TYPES_VM_STATE_APPACTIVE:
+          case RWVCS_TYPES_VM_STATE_APPSTANDBY:
+          default: {
+            // NOP
+          }
+          break;
+        }
+      }
+      break;
+      case RWVCS_TYPES_VM_STATE_MGMTSTANDBY:{
+        switch(vm_state) {
+          case RWVCS_TYPES_VM_STATE_MGMTACTIVE:{
+            rwmain_notify_transition (rwmain, RWVCS_TYPES_VM_STATE_MGMTACTIVE);
+            mgmt_info->state = vm_state;
+          }
+          break;
+          case RWVCS_TYPES_VM_STATE_MGMTSTANDBY:
+          case RWVCS_TYPES_VM_STATE_APPACTIVE:
+          case RWVCS_TYPES_VM_STATE_APPSTANDBY:
+          default: {
+            //NOP 
+          }
+          break;
+        }
+      }
+      break;
+      case RWVCS_TYPES_VM_STATE_APPACTIVE:{
+        switch(vm_state) {
+          case RWVCS_TYPES_VM_STATE_MGMTACTIVE:
+          case RWVCS_TYPES_VM_STATE_MGMTSTANDBY:
+          case RWVCS_TYPES_VM_STATE_APPACTIVE:
+          case RWVCS_TYPES_VM_STATE_APPSTANDBY:
+          default:
+          break;
+        }
+      }
+      break;
+      case RWVCS_TYPES_VM_STATE_APPSTANDBY:{
+        switch(vm_state) {
+          case RWVCS_TYPES_VM_STATE_MGMTACTIVE:
+          case RWVCS_TYPES_VM_STATE_MGMTSTANDBY:
+          case RWVCS_TYPES_VM_STATE_APPACTIVE:
+          case RWVCS_TYPES_VM_STATE_APPSTANDBY:
+          default:
+          break;
+        }
+      }
+      break;
+      default:
+      break;
+    }
+  }
+  return RW_STATUS_SUCCESS;
+}
+
+
+
+static void restart_deferred(rwsched_CFRunLoopTimerRef timer, void * ctx)
+{
+  rwmain_restart_instance_t *restart_instance = (rwmain_restart_instance_t *)ctx;
+  RW_ASSERT_TYPE(restart_instance, rwmain_restart_instance_t);
+  struct rwmain_gi *rwmain = restart_instance->rwmain;
+  rwsched_tasklet_CFRunLoopTimerRelease(rwmain->rwvx->rwsched_tasklet, timer);
+  rwmain->rwvx->rwvcs->restart_inprogress = false;
+
+  rwmain_restart_instance_t *next = NULL;
+  while (restart_instance) {
+    RW_ASSERT_TYPE(restart_instance, rwmain_restart_instance_t);
+    next = restart_instance->next_restart_instance;
+
+    handle_recovery_action_instance_name(rwmain, restart_instance->instance_name);
+    RW_FREE(restart_instance->instance_name);
+    RW_FREE_TYPE(restart_instance, rwmain_restart_instance_t);
+    restart_instance = next;
+  }
+}
+
+void
+rwmain_restart_deferred(rwmain_restart_instance_t *restart_list)
+{
+  RW_ASSERT_TYPE(restart_list, rwmain_restart_instance_t);
+  struct rwmain_gi *rwmain = restart_list->rwmain;
+  RWTRACE_CRIT(
+      rwmain->rwvx->rwtrace,
+      RWTRACE_CATEGORY_RWVCS,
+      "SCHEDULE_INTERVAL %d by %s **************************************",
+      RWMAIN_RESTART_DEFERD,
+      rwmain->rwvx->rwvcs->instance_name);
+  schedule_interval(rwmain, restart_deferred, RWMAIN_RESTART_DEFERD, restart_list);
+}

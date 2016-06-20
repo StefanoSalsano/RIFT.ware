@@ -14,6 +14,7 @@ install(
     pingpong_records_systest
     pingpong_vnf_reload_systest
     pingpong_lp_standalone_systest
+    pingpong_recovery_systest
     scaling_systest
   DESTINATION usr/rift/systemtest/pingpong_vnf
   COMPONENT ${PKG_LONG_NAME})
@@ -68,6 +69,7 @@ install(
     racfg/pingpong_lp_standalone_systest_openstack.racfg
     racfg/pingpong_lp_standalone_systest_openstack_xml.racfg
     racfg/scaling_systest.racfg
+    racfg/recovery_systest.racfg
   DESTINATION usr/rift/systemtest/pingpong_vnf
   COMPONENT ${PKG_LONG_NAME})
 

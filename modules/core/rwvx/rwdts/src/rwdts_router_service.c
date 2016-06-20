@@ -815,8 +815,9 @@ rwdts_router_get_shard_db_info(rwdts_router_t *dts,
           rsp->responses[rsp->n_responses-1] = db_shard_info;
           rsp->responses[rsp->n_responses-1]->db_number = shard_tab->table_id;
           rsp->responses[rsp->n_responses-1]->has_db_number = 1;
-          rsp->responses[rsp->n_responses-1]->shard_chunk_id = shard_tab->member[i].registration_detail_tab[j].shard_chunk_id;
-          rsp->responses[rsp->n_responses-1]->has_shard_chunk_id = 1;
+          strcpy(rsp->responses[rsp->n_responses-1]->shard_chunk_id, "What");
+          //rsp->responses[rsp->n_responses-1]->shard_chunk_id = shard_tab->member[i].registration_detail_tab[j].shard_chunk_id;
+          //rsp->responses[rsp->n_responses-1]->has_shard_chunk_id = 1;
         }
         break;
       }

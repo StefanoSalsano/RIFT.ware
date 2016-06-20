@@ -2100,10 +2100,10 @@ TEST (CliAppData, Create)
   // BaseCLI already registers for mode_string, print_hook, show-key-keyword extensions
   typedef AppDataParseToken<char*> adpt_t;
   adpt_t adpt0 = adpt_t::create_and_register("mod","ext0",&tbcli);
-  EXPECT_EQ(adpt0.app_data_index,3);
+  EXPECT_EQ(adpt0.app_data_index,4);
 
   adpt_t adpt1 = adpt_t::create_and_register("mod","ext1",&tbcli);
-  EXPECT_EQ(adpt1.app_data_index,4);
+  EXPECT_EQ(adpt1.app_data_index,5);
 }
 
 
@@ -2120,18 +2120,18 @@ TEST (CliAppData, ParserLookup)
   // BaseCLI already registers for mode_string, print_hook, show-key-keyword extensions
   typedef AppDataParseToken<const char*> adpt_t;
   adpt_t adpt1 = adpt_t::create_and_register(ns,"ext1",&tbcli);
-  EXPECT_EQ(adpt1.app_data_index,3);
+  EXPECT_EQ(adpt1.app_data_index,4);
 
   adpt_t adpt2 = adpt_t::create_and_register(ns,"ext2",&tbcli);
-  EXPECT_EQ(adpt2.app_data_index,4);
+  EXPECT_EQ(adpt2.app_data_index,5);
 
   // test duplicates
   adpt_t adpt3 = adpt_t::create_and_register(ns,"ext1",&tbcli);
-  EXPECT_EQ(adpt3.app_data_index,3);
+  EXPECT_EQ(adpt3.app_data_index,4);
 
   adt_t adt1;
   EXPECT_TRUE(model->app_data_get_token(ns, "ext1", &adt1));
-  EXPECT_EQ(adt1.index_, 3);
+  EXPECT_EQ(adt1.index_, 4);
   EXPECT_STREQ(adt1.ns_.c_str(), ns);
   EXPECT_STREQ(adt1.ext_.c_str(), "ext1");
   EXPECT_TRUE(adt1.deleter_);
@@ -3097,3 +3097,51 @@ TEST(YangCLINsPrefix, HelpAndTabComplete)
   EXPECT_TRUE(tbcli.exit_config_mode());
 }
 
+TEST(YangCLIAppData, SuppressNamespace)
+{
+  TEST_DESCRIPTION("Test Help and Tab complete when there prefix is required");
+  YangModelNcx* model = YangModelNcx::create_model();
+  YangModel::ptr_t p(model);
+  YangModule* module = nullptr;
+
+  module = model->load_module("rift-cli-test");
+  ASSERT_TRUE(module);
+
+  module = model->load_module("other-rwcli_test");
+  ASSERT_TRUE(module);
+
+  TestBaseCli tbcli(*model,0);
+  tbcli.set_rwcli_like_params();
+
+  // ATTN the namespace of other-rwcli_test should be a test namespace, this has
+  // to be changed
+  tbcli.suppress_namespace("urn:ietf:params:xml:ns:yang:rift:config");
+
+  ParseLineResult p1(tbcli, "show port all", ParseLineResult::ENTERKEY_MODE);
+  ASSERT_FALSE(p1.success_);
+
+  ParseLineResult p2(tbcli, "show general-show g-container", ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p2.success_);
+}
+
+TEST(YangCLIAppData, SuppressCommand)
+{
+  TEST_DESCRIPTION("Test Help and Tab complete when there prefix is required");
+  YangModelNcx* model = YangModelNcx::create_model();
+  YangModel::ptr_t p(model);
+  YangModule* module = nullptr;
+
+  module = model->load_module("rift-cli-test");
+  ASSERT_TRUE(module);
+
+  TestBaseCli tbcli(*model,0);
+  tbcli.root_parse_node_->flags_.set_inherit(ParseFlags::V_LIST_KEYS_CLONED);
+
+  tbcli.suppress_command_path("general-container g-container");
+
+  ParseLineResult p1(tbcli, "general-container g-container gc-name test", ParseLineResult::ENTERKEY_MODE);
+  ASSERT_FALSE(p1.success_);
+
+  ParseLineResult p2(tbcli, "general-container g-list index 1",  ParseLineResult::ENTERKEY_MODE);
+  ASSERT_TRUE(p2.success_);
+}

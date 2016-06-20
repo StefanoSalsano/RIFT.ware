@@ -44,16 +44,26 @@ var dashboardCard = React.createClass({
       var cardClassContent = cardClass + '_content';
       var cardClassContentBody = cardClassContent + '-body';
       var hasHeader;
+      var cardClasses = [];
       if(this.props.className) {
-        cardClassWrapper += ' ' + this.props.className;
-        cardClassContent += ' ' + this.props.className + '_content';
-        cardClassContentBody += ' ' + this.props.className + '-body';
+        cardClasses = this.props.className.split(' ');
+        cardClasses.map(function(c, i) {
+          cardClassWrapper += ' ' + c;
+          cardClassContent += ' ' + c + '_content';
+          cardClassContentBody += ' ' + c + '-body';
+        })
+
       }
+      let closeCard = null;
     if (this.props.showHeader) {
       hasHeader = <CardHeader className={this.props.className} title={this.props.title}/>;
     };
+    if (this.props.closeCard) {
+      closeCard = this.props.closeCard;
+    }
     return (
         <div className={cardClassWrapper} style={{display: this.props.isHidden ? 'none':'inherit'}}>
+          {closeCard}
           <i className="corner-accent top left"></i>
           <i className="corner-accent top right"></i>
             {hasHeader}

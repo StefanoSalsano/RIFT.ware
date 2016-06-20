@@ -14,7 +14,7 @@ SCRIPT_TEST="py.test -v -p no:cacheprovider --recovery --no-update \
             ${PYTEST_DIR}/mission_control/pingpong_vnf/test_onboard_vnf.py \
             ${PYTEST_DIR}/mission_control/pingpong_vnf/test_records.py"
 
-test_prefix="pingpong_lp_standalone"
+test_prefix="tasklet_recovery"
 test_cmd=""
 
 # Parse commonline argument and set test variables

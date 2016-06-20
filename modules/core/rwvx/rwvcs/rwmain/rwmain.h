@@ -182,16 +182,6 @@ rw_status_t rwmain_tasklet_restart(
     const char * tasklet_instance);
 
 /*
- * Restart the specified native process which is owned by this rwvcs instance.
- *
- * @param rwmain  - rwmain instance
- * @param proc    - instance-name of native proc to restart
- */
-rw_status_t rwmain_native_proc_restart(
-    struct rwmain_gi * rwmain,
-    const char * proc);
-
-/*
  * Execute a specified action
  *
  * @param rwmain    - rwmaininstance
@@ -270,6 +260,7 @@ rwmain_rwproc_init(
 // is assumed to have crashed.
 #define RWVCS_HEARTBEAT_DELAY 600
 
+#define RWVCS_DELAY_START 10000000 // 10 sec 
 /*
  * Environment variables:
  *
@@ -380,6 +371,7 @@ rw_status_t rwproc_heartbeat_stats(
  *
  * @param instance_name - tasklet instance name
  * @param instance_id   - tasklet instance id
+ * @param mode_active   - tuple indicate presence of mode_active and its value
  * @param plugin_name   - name of plugin defining the tasklet
  * @param plugin_dir    - directory where the plugin can be found
  * @param rwvcs         - rwvcs instance
@@ -388,6 +380,7 @@ rw_status_t rwproc_heartbeat_stats(
 struct rwmain_tasklet * rwmain_tasklet_alloc(
     const char * instance_name,
     uint32_t instance_id,
+    rwmain_tasklet_mode_active_t *mode_active,
     const char * plugin_name,
     const char * plugin_dir,
     rwvcs_instance_ptr_t rwvcs);
@@ -549,5 +542,70 @@ rw_status_t start_component(
     const char * parent_instance,
     char ** instance_name,
     vcs_manifest_component *m_component);
+
+typedef enum rwmain_pm_ip_enum_s {
+  RWMAIN_PM_IP_STATE_INVALID,
+  RWMAIN_PM_IP_STATE_FAILED,
+  RWMAIN_PM_IP_STATE_ACTIVE,
+  RWMAIN_PM_IP_STATE_LEADER
+} rwmain_pm_ip_enum_t;
+
+typedef struct rwmain_pm_ip_entry_s {
+  char *pm_ip_addr;
+  rwmain_pm_ip_enum_t pm_ip_state;
+} rwmain_pm_ip_entry_t;
+
+#define RWVCS_ZK_SERVER_CLUSTER 3
+typedef struct rwmain_pm_struct_s {
+  bool i_am_dc;
+  rwmain_pm_ip_entry_t ip_entry[RWVCS_ZK_SERVER_CLUSTER];
+} rwmain_pm_struct_t;
+
+rw_status_t
+rwmain_pm_handler(
+    struct rwmain_gi *rwmain,
+    rwmain_pm_struct_t *rwmain_pm);
+
+rw_status_t  process_component_death(
+    rwmain_gi_t * rwmain,
+    char *instance_name,
+    rw_component_info *cinfo);
+void handle_recovery_action_instance_name(
+    rwmain_gi_t * rwmain,
+    char *instance_name);
+void restart_process(
+    rwmain_gi_t * rwmain,
+    char *instance_name);
+
+void start_pacemaker_and_determine_role(
+    rwvx_instance_ptr_t rwvx,
+    vcs_manifest       *pb_rwmanifest,
+    rwmain_pm_struct_t *rwmain_pm);
+
+rw_status_t
+read_pacemaker_state(rwmain_pm_struct_t *pm);
+
+#define RWMAIN_SKIP_COMPONENTS(t_cinfo, t_failed_vm) \
+    (!strcmp((t_cinfo).component_name, "dtsrouter") \
+     ||!strcmp((t_cinfo).component_name, "msgbroker") \
+     ||!strcmp((t_cinfo).component_name, "logd") \
+     ||!strcmp((t_cinfo).component_name, "RW.TermIO") \
+     || strstr((t_cinfo).instance_name, "confd") \
+     || strstr((t_cinfo).instance_name, t_failed_vm))
+
+typedef struct rwmain_restart_instance_s {
+  char *instance_name;
+  struct rwmain_restart_instance_s *next_restart_instance;
+  struct rwmain_gi *rwmain;
+  bool no_skip;
+} rwmain_restart_instance_t;
+
+void
+rwmain_restart_deferred(rwmain_restart_instance_t *restart_list);
+
+void kill_component(
+    rwmain_gi_t * rwmain,
+    char *instance_name,
+    rw_component_info *ci);
 __END_DECLS
 #endif

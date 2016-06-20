@@ -113,11 +113,11 @@ if __name__ == '__main__':
             flavors_to_delete.add(info.flavor_id)
             images_to_delete.add(info.image_id)
 
-    if not vms_to_delete:
-        print("Nothing to do, tenant already clean")
-        sys.exit(0)
-
     if args.confirm:
+        if not vms_to_delete:
+            print("Nothing to do, tenant already clean")
+            sys.exit(0)
+
         print("\nPreparing to delete VMs: [%s]\n" % (', '.join(vm_names)))
         response = input('Delete VMs and associated resources? [y/N]: ')
         if response.upper() not in ['Y','YES']:
@@ -200,4 +200,10 @@ if __name__ == '__main__':
             cal.delete_port(account, instance_id)
         except Exception as e:
             logger.error("Failed to delete Port - %s", e, exc_info=True)
+
+    with cal._use_driver(account) as drv:
+        unused_floating_ips = [floating_ip for floating_ip in drv.nova_floating_ip_list() if floating_ip.instance_id is None]
+        for floating_ip in unused_floating_ips:
+            logger.info('Deleting unused floating ip address: %s', floating_ip.ip)
+            drv.nova_drv.floating_ip_delete(floating_ip)
 

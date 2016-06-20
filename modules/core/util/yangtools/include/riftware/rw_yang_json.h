@@ -80,7 +80,9 @@ public:
   void print_value(const char* value)
   {
     //manage_indentation();
-    if (value) quote(value);
+    if (value) {
+      quote(value);
+    }
   }
 
   template <typename ValueT,
@@ -116,7 +118,9 @@ private:
 
   void newline()
   {
-    if (pprint_) os_ << "\n";
+    if (pprint_) {
+      os_ << "\n";
+    }
     manage_indentation();
   }
 

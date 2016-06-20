@@ -4,7 +4,7 @@
  *
  */
 //Login needs to be refactored. Too many cross dependencies
-var AuthActions = require('../../plugins/login/src/loginAuthActions.js');
+var AuthActions = require('../widgets/login/loginAuthActions.js');
 var $ = require('jquery');
 var Utils = {};
 

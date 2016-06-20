@@ -32,6 +32,8 @@ import rift.vcs.compiler
 import rift.vcs.manifest
 import rift.vcs.vms
 
+import time
+
 logger = logging.getLogger(__name__)
 
 class TestSystem(object):
@@ -95,14 +97,15 @@ class TestSystem(object):
                                     rwmain_cmd, loop=self.loop,
                                     preexec_fn=os.setsid,
                                )
-            # wait till confd is accepting connections
+
+            # wait till RESTCONF is ready 
             while True:
                 yield from asyncio.sleep(3, loop=self.loop)
                 try:
                     yield from self.loop.create_connection(
                             lambda: asyncio.Protocol(),
                             "127.0.0.1",
-                            "2022",
+                            "8888",
                             )
                     break
                 except OSError as e:
@@ -111,12 +114,21 @@ class TestSystem(object):
         pwd = os.getcwd()
         os.chdir(self.rift_install)
         # ATTN: Are these really needed?
-        os.system("rm -rf ./confd_persist*")
-        os.system("rm -rf ./xml_persist*")
+        os.system("rm -rf ./persist*")
         self.generate_manifest()
         os.environ['RIFT_NO_SUDO_REAPER'] = '1'
         self.loop.run_until_complete(
                     asyncio.wait_for(start(), timeout=300, loop=self.loop))
+
+        # wait till the system is ready 
+        mgmt_session = rift.auto.session.NetconfSession(host="127.0.0.1")
+        mgmt_session.connect()
+        rift.vcs.vcs.wait_until_system_started(mgmt_session)
+
+        # wait a little more (this was added to have rwlog ready). The tests set
+        # a logging configuration to trigger NETCONF notifications.
+        time.sleep(5)
+
         logger.info("Testware started and running.")
         os.chdir(pwd)
 

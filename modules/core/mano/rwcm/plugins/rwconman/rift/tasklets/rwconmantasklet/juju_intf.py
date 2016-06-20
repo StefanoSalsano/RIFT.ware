@@ -821,13 +821,13 @@ class JujuApi(object):
         return False
 
     def is_service_up(self, service):
-        if self.get_service_status in ['active', 'blocked']:
+        if self.get_service_status(service) in ['active', 'blocked']:
             return True
 
         return False
 
     def is_service_in_error(self, service):
-        if self.get_service_status == 'error':
+        if self.get_service_status(service) == 'error':
             self.log.debug("Juju: service is in error state for %s" % service)
 
     def wait_for_service(self, service):

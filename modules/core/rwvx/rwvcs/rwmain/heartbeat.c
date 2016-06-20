@@ -10,7 +10,6 @@
 #include <mqueue.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 
 #include <reaper_client.h>
 #include <rwsched.h>
@@ -18,6 +17,7 @@
 #include <rwvcs_rwzk.h>
 #include <rwvx.h>
 #include <rwvcs_manifest.h>
+#include <rwvcs_internal.h>
 
 #include "rwmain.h"
 
@@ -102,17 +102,20 @@ static inline double current_time() {
 }
 
 
-static void dead_process(
+rw_status_t  process_component_death(
     rwmain_gi_t * rwmain,
     char *instance_name,
-    rw_component_info *ci)
+    rw_component_info *cinfo)
 {
-  int r;
-  rw_status_t status;
-  char * path;
-  bool restart = ci->has_recovery_action && (ci->recovery_action== RWVCS_TYPES_RECOVERY_TYPE_RESTART);
-  ci->state = restart ? RW_BASE_STATE_TYPE_TO_RECOVER: RW_BASE_STATE_TYPE_CRASHED;
-  status = rwvcs_rwzk_node_update(rwmain->rwvx->rwvcs, ci);
+  rw_status_t status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, instance_name, cinfo);
+  RW_ASSERT(status == RW_STATUS_SUCCESS || status == RW_STATUS_NOTFOUND);
+  if (status == RW_STATUS_NOTFOUND) {
+    return status;
+  }
+
+  bool restart = cinfo->has_recovery_action && (cinfo->recovery_action == RWVCS_TYPES_RECOVERY_TYPE_RESTART);
+  cinfo->state = restart ? RW_BASE_STATE_TYPE_TO_RECOVER: RW_BASE_STATE_TYPE_CRASHED;
+  status = rwvcs_rwzk_node_update(rwmain->rwvx->rwvcs, cinfo);
   if (status != RW_STATUS_SUCCESS && status != RW_STATUS_NOTFOUND) {
     rwmain_trace_crit(
         rwmain,
@@ -120,83 +123,161 @@ static void dead_process(
         instance_name, restart?"TO_RECOVER":"CRASHED");
   }
 
-  r = asprintf(&path, "/R/%s/%lu", ci->component_name, ci->instance_id);
-  RW_ASSERT(r != -1);
-
-  status = rwdts_member_deregister_path(rwmain->dts, path,
-                                        ci->has_recovery_action? ci->recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
-
-  free(path);
-
-  int n;
-  rw_component_info child;
-  for (n=0; n < ci->n_rwcomponent_children; n++) {
-    status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, ci->rwcomponent_children[n], &child);
-    if(status == RW_STATUS_NOTFOUND) continue;
-    bool child_restart = child.has_recovery_action && (child.recovery_action== RWVCS_TYPES_RECOVERY_TYPE_RESTART);
-    status = rwvcs_rwzk_update_state(rwmain->rwvx->rwvcs, ci->rwcomponent_children[n],
-                                     child_restart ? RW_BASE_STATE_TYPE_TO_RECOVER: RW_BASE_STATE_TYPE_CRASHED);
-    if (status != RW_STATUS_SUCCESS && status != RW_STATUS_NOTFOUND) {
-      rwmain_trace_crit(
-          rwmain,
-          "Failed to update %s state to %s",
-          ci->rwcomponent_children[n], child_restart ? "TO_RECOVER": "CRASHED");
-    }
-
-    r = asprintf(&path, "/R/%s/%lu", child.component_name, child.instance_id);
+  int r;
+  char * path;
+  rwvcs_instance_ptr_t rwvcs = rwmain->rwvx->rwvcs;
+  if (!strcmp(cinfo->component_name, "dtsrouter")) {
+    // Find the VM name going up the tree
+    int vm_id = split_instance_id(cinfo->rwcomponent_parent);
+    r = asprintf(&path, "/R/RW.DTSRouter/%d", vm_id);
     RW_ASSERT(r != -1);
-
-    status = rwdts_member_deregister_path(rwmain->dts, path,
-                                          child.has_recovery_action? child.recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-    free(path);
+    char *zklock = NULL;
+    r = asprintf(&zklock, "%s-lOcK/routerlock", path);
+    RW_ASSERT(r != -1);
+    char *rwzk_path = NULL;
+    r = asprintf(&rwzk_path, "/sys-router%s", path);
+    RW_ASSERT(r != -1);
+    if (rwvcs_rwzk_exists(rwvcs, rwzk_path)) {
+      struct timeval tv = { .tv_sec = 120, .tv_usec = 1000 };
+      status = rwvcs_rwzk_lock_path(rwvcs, zklock, &tv);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      status = rwvcs_rwzk_delete_path(rwvcs, rwzk_path);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      status = rwvcs_rwzk_unlock_path(rwvcs, zklock);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      status = rwvcs_rwzk_delete_path(rwvcs, zklock);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+    }
+  }
+  else {
+    r = asprintf(&path, "/R/%s/%lu", cinfo->component_name, cinfo->instance_id);
+    RW_ASSERT(r != -1);
+    if (!strcmp(cinfo->component_name, "msgbroker")) {
+      // Find the VM name going up the tree
+      int vm_id = split_instance_id(cinfo->rwcomponent_parent);
+      char *zklock = NULL;
+      r = asprintf(&zklock, "/sys/rwmsg/broker-lock/lock-1");
+      RW_ASSERT(r != -1);
+      char *rwzk_path = NULL;
+      r = asprintf(&rwzk_path, "/sys-1/rwmsg/broker/inst-%d", vm_id);
+      RW_ASSERT(r != -1);
+      if (rwvcs_rwzk_exists(rwvcs, rwzk_path)) {
+        struct timeval tv = { .tv_sec = 120, .tv_usec = 1000 };
+        status = rwvcs_rwzk_lock_path(rwvcs, zklock, &tv);
+        RW_ASSERT(status == RW_STATUS_SUCCESS);
+        status = rwvcs_rwzk_delete_path(rwvcs, rwzk_path);
+        RW_ASSERT(status == RW_STATUS_SUCCESS);
+        status = rwvcs_rwzk_unlock_path(rwvcs, zklock);
+        RW_ASSERT(status == RW_STATUS_SUCCESS);
+        status = rwvcs_rwzk_delete_path(rwvcs, zklock);
+        RW_ASSERT(status == RW_STATUS_SUCCESS);
+      }
+    }
   }
 
+  status = rwdts_member_deregister_path(
+      rwmain->dts, path,
+      cinfo->has_recovery_action? cinfo->recovery_action: RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  free(path);
+
+  int indx;
+  rw_component_info chinfo;
+
+  for (indx=0; indx < cinfo->n_rwcomponent_children; indx++) {
+    rw_status_t child_status = process_component_death (rwmain, cinfo->rwcomponent_children[indx], &chinfo);
+    if (child_status == RW_STATUS_SUCCESS) {
+      protobuf_free_stack(chinfo);
+    }
+  }
+  return status;
 }
 
-static void kill_process(
+void kill_component(
     rwmain_gi_t * rwmain,
     char *instance_name,
     rw_component_info *ci)
 {
-  int r;
   rw_status_t status;
-  int wait_status;
 
-  status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, instance_name, ci);
+  status = process_component_death(rwmain, instance_name, ci);
   RW_ASSERT(status == RW_STATUS_SUCCESS || status == RW_STATUS_NOTFOUND);
 
   if (status != RW_STATUS_SUCCESS)
     return;
 
-  r = kill(ci->proc_info->pid, SIGABRT);
-  if (r != -1) {
-    for (size_t i = 0; i < 1000; ++i) {
-      r = kill(ci->proc_info->pid, 0);
-      if (r == -1)
-        break;
-      usleep(1000);
-    }
-
-    if (r != -1)
-      kill(ci->proc_info->pid, SIGKILL);
+  if (ci->proc_info) {
+    int pid = ci->proc_info->pid;
+    send_kill_to_pid(pid, SIGABRT, instance_name);
   }
 
-  int pid = ci->proc_info->pid;
-  dead_process(rwmain, instance_name, ci);
-
-  r = waitpid(pid, &wait_status, WNOHANG);
-  if (r != pid) {
-    rwmain_trace_crit(
-        rwmain,
-        "Failed to wait for pid %u, instance-name %s",
-        pid,
-        instance_name);
-  }
   return;
 }
 
+static void handle_recovery_action(rwmain_gi_t * rwmain,
+                            rw_component_info *ci)
+{
+  if (ci->has_recovery_action && (ci->recovery_action== RWVCS_TYPES_RECOVERY_TYPE_RESTART)) {
+    if ((ci->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWPROC)
+        || (ci->component_type == RWVCS_TYPES_COMPONENT_TYPE_PROC)) {
+      vcs_manifest_component *m_component = NULL;
+      rw_status_t status = rwvcs_manifest_component_lookup(
+          rwmain->rwvx->rwvcs,
+          ci->component_name,
+          &m_component);
+      RW_ASSERT (status == RW_STATUS_SUCCESS);
+      char *instance_name = NULL;
+      rwmain_trace_crit(
+          rwmain,
+          "[%s]Instance name %s:Component Names %s:Recovery %d:Active %d:Parent %s", 
+          rwmain->rwvx->rwvcs->instance_name, 
+          ci->instance_name,
+          ci->component_name,
+          ci->recovery_action,
+          ci->mode_active,
+          ci->rwcomponent_parent);
+      start_component(rwmain,
+                      ci->component_name,
+                      NULL,
+                      RW_BASE_ADMIN_COMMAND_RECOVER,
+                      ci->rwcomponent_parent,
+                      &instance_name,
+                      m_component);
+    }
+    else if (ci->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM) {
+      vcs_manifest_component *m_component = NULL;
+      rw_status_t status = rwvcs_manifest_component_lookup(
+          rwmain->rwvx->rwvcs,
+          ci->component_name,
+          &m_component);
+      RW_ASSERT (status == RW_STATUS_SUCCESS);
+      char *instance_name = NULL;
+      rwmain_trace_crit(
+          rwmain,
+          "starting recovery of %s",
+          ci->component_name);
+
+      start_component(rwmain,
+                      ci->component_name,
+                      rwmain->vm_ip_address,
+                      RW_BASE_ADMIN_COMMAND_RECOVER,
+                      ci->rwcomponent_parent,
+                      &instance_name,
+                      m_component);
+    }
+  }
+}
+
+void handle_recovery_action_instance_name(
+    rwmain_gi_t * rwmain,
+    char *instance_name)
+{
+  rw_component_info ci;
+  rw_status_t status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, instance_name, &ci);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  handle_recovery_action(rwmain, &ci);
+  protobuf_free_stack(ci);
+}
 
 void restart_process(
     rwmain_gi_t * rwmain,
@@ -204,10 +285,13 @@ void restart_process(
 {
   rw_component_info ci;
   rw_status_t status;
-  status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, instance_name, &ci);
+
+  status = process_component_death(rwmain, instance_name, &ci);
   RW_ASSERT(status == RW_STATUS_SUCCESS || status == RW_STATUS_NOTFOUND);
 
-  dead_process(rwmain, instance_name, &ci);
+  if (status != RW_STATUS_SUCCESS)
+    return;
+
 
   bool found = false;
   struct subscriber_cls * cls = NULL;
@@ -235,29 +319,7 @@ void restart_process(
     free(cls);
   }
 
-  if (ci.has_recovery_action && (ci.recovery_action== RWVCS_TYPES_RECOVERY_TYPE_RESTART)) {
-    if (ci.component_type == RWVCS_TYPES_COMPONENT_TYPE_RWPROC){
-      vcs_manifest_component *m_component = NULL;
-      rw_status_t status = rwvcs_manifest_component_lookup(
-          rwmain->rwvx->rwvcs,
-          ci.component_name,
-          &m_component);
-      RW_ASSERT (status == RW_STATUS_SUCCESS);
-      char *instance_name = NULL;
-      rwmain_trace_crit(
-          rwmain,
-          "starting recovery of %s",
-          ci.component_name);
-
-      start_component(rwmain,
-                      ci.component_name,
-                      NULL,
-                      RW_BASE_ADMIN_COMMAND_RECOVER,
-                      ci.rwcomponent_parent,
-                      &instance_name,
-                      m_component);
-    }
-  }
+  handle_recovery_action(rwmain, &ci);
 }
 
 
@@ -334,7 +396,7 @@ static void on_subscriber_delay_timeout(rwsched_CFRunLoopTimerRef timer, void * 
       cls->sub_cls->rwmain->rwvx->rwsched_tasklet,
       cls->sub_cls->timer);
   rw_component_info ci;
-  kill_process(cls->sub_cls->rwmain, cls->sub_cls->instance_name, &ci);
+  kill_component(cls->sub_cls->rwmain, cls->sub_cls->instance_name, &ci);
 
   r = asprintf(&path, "/%s", cls->sub_cls->instance_name);
   if (r != -1) {
@@ -447,7 +509,7 @@ static void check_mq_heartbeat(rwsched_CFRunLoopTimerRef timer, void * ctx)
 
       rwsched_tasklet_CFRunLoopTimerRelease(cls->rwmain->rwvx->rwsched_tasklet, timer);
       rw_component_info ci;
-      kill_process(cls->rwmain, cls->instance_name, &ci);
+      kill_component(cls->rwmain, cls->instance_name, &ci);
 
       found = false;
       for (size_t i = 0; cls->rwmain->rwproc_heartbeat->subs[i]; ++i) {

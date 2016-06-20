@@ -62,11 +62,11 @@ static rw_component_info * rwvcs_component_alloc(
     RW_ASSERT(info->rwcomponent_parent);
   }
 
-  rwvcs_component_link_parent(rwvcs, info, parent_id);
 
   status = rwvcs_rwzk_node_create(rwvcs, info);
   RW_ASSERT(status == RW_STATUS_SUCCESS || status == RW_STATUS_EXISTS);
 
+  rwvcs_component_link_parent(rwvcs, info, parent_id);
   return info;
 }
 

@@ -431,7 +431,7 @@ message RWDtsSingleRegisterRsp {
   optional uint32 flags = 4;        /* subscriber/publisher ... */
   optional uint32 status = 5;       /* status of this registration */
   optional uint32 db_number = 6;
-  optional uint32 shard_chunk_id = 7;
+  optional string shard_chunk_id = 7;
   optional RWDtsDebug dbg = 15; 
 }
 
@@ -446,7 +446,7 @@ message RWDtsSingleDeRegisterRsp {
 
 message RWDtsDbShardInfoRsp {
   optional uint32 db_number = 2;
-  optional uint32 shard_chunk_id = 3;
+  optional string shard_chunk_id = 3;
 }
 
 message RWDtsGetDbShardInfoReq {

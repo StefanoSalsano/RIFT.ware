@@ -20,14 +20,11 @@ typedef rw_status_t (*rwdts_db_connect_api_t)(rwdts_kv_handle_t *kv_handle,
                                               rwsched_instance_ptr_t sched_instance,
                                               rwsched_tasklet_ptr_t tasklet_info,
                                               char * hostname, uint16_t port,
+                                              const char *file_name,
+                                              const char *program_name,
                                               void *callbk_fn, void * userdata);
 
-typedef rw_status_t (*rwdts_db_open_api_t)(rwdts_kv_handle_t *kv_handle,
-                                           const char *file_name,
-                                           const char *program_name,
-                                           FILE *error_file_pointer);
-
-typedef void (*rwdts_db_set_api_t)(void *instance, int db_num, char *key,
+typedef rw_status_t (*rwdts_db_set_api_t)(rwdts_kv_handle_t *kv_handle, int db_num, char *file_name_shard, char *key,
                                    int key_len, char *val, int val_len,
                                    void *callbkfn, void *callbk_data);
 
@@ -35,12 +32,12 @@ typedef void (*rwdts_db_get_api_t)(void *instance, int db_num, char *key,
                                    int key_len, void *callbkfn,
                                    void *callbk_data);
 
-typedef void (*rwdts_db_del_api_t)(void *instance, int db_num, char *key,
-                                   int key_len, void *callbkfn,
-                                   void *callbk_data);
+typedef rw_status_t (*rwdts_db_del_api_t)(rwdts_kv_handle_t *kv_handle, int db_num, char *file_name_shard, char *key,
+                                          int key_len, void *callbkfn,
+                                          void *callbk_data);
 
 typedef void (*rwdts_db_hash_set_api_t)(rwdts_kv_handle_t *kv_handle, int db_num,
-                                        int shard_num, char *key, int key_len,
+                                        char *shard_num, char *key, int key_len,
                                         int serial_num, char *val, int val_len,
                                         void *callbkfn, void *callbk_data);
 
@@ -53,7 +50,7 @@ typedef void (*rwdts_db_hash_get_sernum_api_t)(void *instance, int db_num,
                                                void *callbkfn, void *callbk_data);
 
 typedef void (*rwdts_db_hash_del_api_t)(rwdts_kv_handle_t *kv_handle, int db_num,
-                                        int shard_num, char *key, int key_len,
+                                        char *shard_num, char *key, int key_len,
                                         int serial_num, void *callbkfn, void *callbk_data);
 
 typedef void (*rwdts_db_hash_get_all_api_t)(void *instance, int db_num,
@@ -71,7 +68,7 @@ typedef void (*rwdts_db_run_script_api_t)(void *instance, const char *sha_script
                                           void *callbk_data);
 
 typedef void (*rwdts_db_get_next_api_t)(rwdts_kv_table_handle_t *tab_handle,
-                                        int shard_num, void *callbkfn,
+                                        char *shard_num, void *callbkfn,
                                         void *callbk_data);
 
 typedef void (*rwdts_db_hash_exists_api_t)(void *instance, int db_num, char *key,
@@ -80,14 +77,14 @@ typedef void (*rwdts_db_hash_exists_api_t)(void *instance, int db_num, char *key
 typedef void (*rwdts_db_table_del_api_t)(void *instance, int db_num,
                                         void *callbkfn, void *callbk_data);
 
-typedef void (*rwdts_db_table_get_all_api_t)(rwdts_kv_handle_t *kv_handle, int db_num,
+typedef rw_status_t (*rwdts_db_table_get_all_api_t)(rwdts_kv_handle_t *kv_handle, int db_num, char *file_name_shard,
                                              void *callbkfn, void *callbk_data);
 
 typedef void (*rwdts_db_shard_delete_api_t)(rwdts_kv_handle_t *kv_handle, int db_num,
-                                            int shard_num,  void *callbkfn, void *callbk_data);
+                                            char *shard_num,  void *callbkfn, void *callbk_data);
 
 typedef void (*rwdts_db_hash_set_pend_api_t)(rwdts_kv_handle_t *kv_handle, int db_num,
-                                             int shard_num, char *key, int key_len,
+                                             char *shard_num, char *key, int key_len,
                                              int serial_num, void *callbkfn, void *callbk_data);
 
 typedef void (*rwdts_db_hash_del_pend_api_t)(rwdts_kv_handle_t *kv_handle, int db_num,
@@ -96,26 +93,11 @@ typedef void (*rwdts_db_hash_del_pend_api_t)(rwdts_kv_handle_t *kv_handle, int d
 
 typedef void (*rwdts_db_disc_api_t) (void *instance);
 
-typedef rw_status_t (*rwdts_file_db_set_api_t) (void *instance, char *file_name, char *key, int key_len,
-                                         char *val, int val_len);
-
-
-typedef rw_status_t (*rwdts_file_db_get_api_t) (void *instance, char *file_name, char *key, int key_len,
-                                         char **val, int *val_len);
-
-typedef rw_status_t (*rwdts_file_db_del_api_t) (void *instance, char *file_name, char *key, int key_len);
-
-typedef void* (*rwdts_file_db_get_cursor_t) (void *instance, char *file_name);
-
-typedef rw_status_t (*rwdts_file_db_getnext_t) (void *instance, void *cursor, char **key, int *key_len,
-                                          char **val, int *val_len, void** out_cursor);
-
 typedef rw_status_t (*rwdts_file_db_remove_t) (void *instance, const char *file_name);
 
 typedef rw_status_t (*rwdts_file_db_close_t) (void *instance);
 
 typedef struct rwdts_db_fn_table {
-  rwdts_db_open_api_t            rwdts_db_open_api;
   rwdts_db_connect_api_t         rwdts_db_init_api;
   rwdts_db_set_api_t             rwdts_db_set_api;
   rwdts_db_get_api_t             rwdts_db_get_api;
@@ -136,50 +118,10 @@ typedef struct rwdts_db_fn_table {
   rwdts_db_hash_del_pend_api_t   rwdts_db_hash_del_pend_api;
   rwdts_db_hash_del_pend_api_t   rwdts_db_hash_del_pend_commit_api;
   rwdts_db_hash_del_pend_api_t   rwdts_db_hash_del_pend_abort_api;
-  rwdts_file_db_set_api_t        rwdts_file_db_set_api;
-  rwdts_file_db_get_api_t        rwdts_file_db_get_api;
-  rwdts_file_db_del_api_t        rwdts_file_db_del_api;
-  rwdts_file_db_get_cursor_t     rwdts_file_db_get_cursor;
-  rwdts_file_db_getnext_t        rwdts_file_db_getnext;
   rwdts_file_db_remove_t         rwdts_file_db_remove;
   rwdts_file_db_close_t          rwdts_file_db_close;
 } rwdts_db_fn_table_t;
 
-
-/*
- * rwdts_kv_light_db_connect
- * Arguments: rwdts_kv_handle_t *handle
- *            rwsched_instance_ptr_t sched_instance
- *            rwsched_tasklet_ptr_t tasklet_info
- *            char *uri
- *            void *callbkfn, void *callbkdata
- *
- * Returns: Status - Success or Failure
- *
- * API to connect to the DB.
- */
-rw_status_t rwdts_kv_light_db_connect(rwdts_kv_handle_t *handle, rwsched_instance_ptr_t sched_instance,
-                                      rwsched_tasklet_ptr_t tasklet_info, char *uri,
-                                      void *callbkfn, void *callbkdata);
-
-/*
- * rwdts_kv_light_set_keyval
- *
- * Arguments: rwdts_kv_handle_t *handle
- *            int db_num
- *            void *key, int key_len
- *            void *val, int val_len
- *            void *callbkfn, void *callbk_data
- *
- * Returns : Void
- *
- * API to set Key-Value pair in a DB. This API does not support sharding and
- * also does not validate the ownership of the data before updating the DB.
- */
-
-void rwdts_kv_light_set_keyval(rwdts_kv_handle_t *handle, int db_num, void *key,
-                               int key_len, void *val, int val_len,void *callbkfn,
-                               void *callbk_data);
 
 /*
  * rwdts_kv_light_get_val_from_key
@@ -196,21 +138,6 @@ void rwdts_kv_light_set_keyval(rwdts_kv_handle_t *handle, int db_num, void *key,
 void rwdts_kv_light_get_val_from_key(rwdts_kv_handle_t *handle, int db_num,
                                      void *key, int key_len, void *callbkfn,
                                      void *callbk_data);
-
-/*
- * rwdts_kv_light_del_keyval
- * Arguments: rwdts_kv_handle_t *handle
- *            int db_num
- *            void *key, int key_len
- *            void *callbkfn, void *callbk_data
- *
- * Returns: Void
- *
- * API to delete a KEY value pair. This API does not support sharding and
- * also does not validate the ownership of the data before updating the DB.
- */
-void rwdts_kv_light_del_keyval(rwdts_kv_handle_t *handle, int db_num, void *key,
-                               int key_len, void *callbkfn, void *callbk_data);
 
 /*
  * rwdts_kv_light_register_table
@@ -239,7 +166,7 @@ void rwdts_kv_light_deregister_table(rwdts_kv_table_handle_t *tab_handle);
 /*
  * rwdts_kv_light_table_insert
  * Arguments: rwdts_kv_table_handle_t *tab_handle
- *            int serial_num, int shard_num
+ *            int serial_num, char* shard_num
  *            void *key, int key_len
  *            void *val, int val_len
  *            void *callbkfn, void *callbk_data
@@ -251,13 +178,13 @@ void rwdts_kv_light_deregister_table(rwdts_kv_table_handle_t *tab_handle);
  * before updating the data.
  */
 void rwdts_kv_light_table_insert(rwdts_kv_table_handle_t *tab_handle, int serial_num,
-                                 int shard_num, void *key, int key_len, void *val,
+                                 char* shard_num, void *key, int key_len, void *val,
                                  int val_len, void *callbkfn, void *callbk_data);
 
 /*
  * rwdts_kv_light_table_delete_key
  * Arguments: rwdts_kv_table_handle_t *tab_handle
- *            int serial_num, int shard_num
+ *            int serial_num, char *shard_num
  *            void *key, int key_len
  *            void *callbkfn, void *callbk_data
  *
@@ -268,7 +195,7 @@ void rwdts_kv_light_table_insert(rwdts_kv_table_handle_t *tab_handle, int serial
  * before deleting the data.
  */
 void rwdts_kv_light_table_delete_key(rwdts_kv_table_handle_t *tab_handle,
-                                     int serial_num, int shard_num, void *key,
+                                     int serial_num, char *shard_num, void *key,
                                      int key_len, void *callbkfn, void *callbk_data);
 
 /*
@@ -317,7 +244,7 @@ void rwdts_kv_light_tab_field_exists(rwdts_kv_table_handle_t *tab_handle,
 /*
  * rwdts_kv_light_get_next_fields
  * Arguments: rwdts_kv_table_handle_t *tab_handle
- *            int shard_num
+ *            char *shard_num
  *            void *callbkfn, void *callbk_data
  *            void *next_block
  *
@@ -330,7 +257,7 @@ void rwdts_kv_light_tab_field_exists(rwdts_kv_table_handle_t *tab_handle,
  * belonging to a particular shard.
  */
 void rwdts_kv_light_get_next_fields(rwdts_kv_table_handle_t *tab_handle,
-                                    int shard_num, void *callbkfn,
+                                    char *shard_num, void *callbkfn,
                                     void *callbk_data, void *next_block);
 
 /*
@@ -354,18 +281,18 @@ void rwdts_kv_light_del_table(rwdts_kv_table_handle_t *tab_handle,
  * Arguments: rwdts_kv_table_handle_t *tab_handle
  *            void *callbkfn, void *callbk_data
  *
- * Returns: Void
+ * Returns: rw_status_t
  *
  * API to get all the key-value pairs from a DB (identified by DB number).
  */
-void rwdts_kv_light_tab_get_all(rwdts_kv_table_handle_t *tab_handle,
-                                void *callbkfn,
-                                void *callbk_data);
+rw_status_t rwdts_kv_handle_get_all(rwdts_kv_handle_t *handle, int db_num,
+                                    void *callbkfn,
+                                    void *callbk_data);
 
 /*
  * rwdts_kv_light_delete_shard_entries
  * Arguments: rwdts_kv_table_handle_t *tab_handle
- *            int shard_num
+ *            char *shard_num
  *            void *callbkfn, void *callbk_data
  *
  * Returns: Void
@@ -373,13 +300,13 @@ void rwdts_kv_light_tab_get_all(rwdts_kv_table_handle_t *tab_handle,
  * API to delete all the key-value pairs related to a shard number.
  */
 void rwdts_kv_light_delete_shard_entries(rwdts_kv_table_handle_t *tab_handle,
-                                         int shard_num, void *callbkfn,
+                                         char *shard_num, void *callbkfn,
                                          void *callbk_data);
 
 /*
  * rwdts_kv_light_table_xact_insert
  * Arguments: rwdts_kv_table_handle_t *tab_handle
- *            int serial_num, int shard_num,
+ *            int serial_num, char *shard_num,
  *            void *key, int key_len,
  *            void *val, int val_len
  *            void *callbkfn, void *callbk_data
@@ -389,7 +316,7 @@ void rwdts_kv_light_delete_shard_entries(rwdts_kv_table_handle_t *tab_handle,
  * API to insert a KV pair to the DB as part of DTS transaction.
  */
 void rwdts_kv_light_table_xact_insert(rwdts_kv_table_handle_t *tab_handle, int serial_num,
-                                      int shard_num, void *key, int key_len, void *val,
+                                      char *shard_num, void *key, int key_len, void *val,
                                       int val_len, void *callbkfn, void *callbk_data);
 
 /*
@@ -410,7 +337,7 @@ void rwdts_kv_light_table_xact_delete(rwdts_kv_table_handle_t *tab_handle, int s
 /*
  * rwdts_kv_light_api_xact_insert_commit
  * Arguments: rwdts_kv_table_handle_t *tab_handle
- *            int serial_num, int shard_num,
+ *            int serial_num, char *shard_num,
  *            void *key, int key_len,
  *            void *callbkfn, void *callbk_data
  *
@@ -419,7 +346,7 @@ void rwdts_kv_light_table_xact_delete(rwdts_kv_table_handle_t *tab_handle, int s
  * API to commit the previously pending insert transaction as part of DTS transaction.
  */
 void rwdts_kv_light_api_xact_insert_commit(rwdts_kv_table_handle_t *tab_handle, int serial_num,
-                                           int shard_num, void *key, int key_len,
+                                           char *shard_num, void *key, int key_len,
                                            void *callbkfn, void *callbk_data);
 
 /*
@@ -439,7 +366,7 @@ void rwdts_kv_light_table_xact_delete_commit(rwdts_kv_table_handle_t *tab_handle
 /*
  * rwdts_kv_light_api_xact_insert_abort
  * Arguments: rwdts_kv_table_handle_t *tab_handle
- *            int serial_num, int shard_num,
+ *            int serial_num, char *shard_num,
  *            void *key, int key_len,
  *            void *callbkfn, void *callbk_data
  *
@@ -448,7 +375,7 @@ void rwdts_kv_light_table_xact_delete_commit(rwdts_kv_table_handle_t *tab_handle
  * API to abort the previously pending insert transaction as part of DTS transaction.
  */
 void rwdts_kv_light_api_xact_insert_abort(rwdts_kv_table_handle_t *tab_handle, int serial_num,
-                                          int shard_num, void *key, int key_len,
+                                          char *shard_num, void *key, int key_len,
                                           void *callbkfn, void *callbk_data);
 
 /*

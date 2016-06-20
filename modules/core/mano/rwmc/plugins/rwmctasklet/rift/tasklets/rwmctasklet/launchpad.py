@@ -470,11 +470,10 @@ class LaunchpadSaltLifetimeManager(object):
             self._log.error("Launchpad is still running, cannot delete launchpad confd dir")
             return
 
-        hostname = salt.get_launchpad_hostname(self._log, self._launchpad.node_id)
-        confd_file = "confd_persist_{hostname}".format(hostname=hostname)
-        install_dir_path = os.environ["RIFT_INSTALL"]
-        cmd = "rm -rf {dir}/{file}".format(dir=install_dir_path, file=confd_file)
-
+        cmd = "{rift_root}/rift-shell -e -r -- {command}".format(
+                rift_root=os.environ['RIFT_ROOT'],
+                command=" ".join(["rwyangutil", "--rm-persist-mgmt-ws"])
+                )
         try:
             stdout = salt.execute_salt_cmd(self._log, self._launchpad.node_id, cmd)
         except Exception as e:

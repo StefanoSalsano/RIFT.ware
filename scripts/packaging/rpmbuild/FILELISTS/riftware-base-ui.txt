@@ -9,6 +9,7 @@
 .install/etc/lxc-fedora-rift.lxctemplate
 .install/etc/rw_confd.conf
 .install/etc/rw_confd_prototype.conf
+.install/etc/rwmain.screenrc
 .install/etc/syslog_template.conf
 .install/etc/userdata-template
 .install/usr/bin/RIFT.ware-ready.py
@@ -182,6 +183,9 @@
 .install/usr/lib/librwyangutil_lib.so
 .install/usr/lib/libtalloc.so.2
 .install/usr/lib/libunwind.so.8
+.install/usr/lib/libunwind-x86_64.so.8
+.install/usr/lib/libunwind-ptrace.so.0
+.install/usr/lib/libunwind-coredump.so.0
 .install/usr/lib/libxalan-c.so.111
 .install/usr/lib/libxalanMsg.so.111
 .install/usr/lib/libxerces-c-3.1.so

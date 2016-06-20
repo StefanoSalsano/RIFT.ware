@@ -49,8 +49,7 @@ const CatalogItems = React.createClass({
 	},
 	handleImageError(e) {
 		console.log('Bad logo path, using default');
-		// e.target.src = require('style/img/catalog-default.svg');
-		e.target.src = require('style/img/svg/riftio_logo.svg');
+		e.target.src = require('style/img/catalog-default.svg');
 	},
 	render() {
 		const self = this;

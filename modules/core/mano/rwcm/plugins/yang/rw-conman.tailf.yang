@@ -7,16 +7,12 @@ module rw-conman-annotation
     prefix tailf;
   }
 
-  import rw-base {
-    prefix rwbase;
-  }
-
   import rw-conman {
     prefix conman;
   }
 
   tailf:annotate "/conman:cm-state" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
   
 }

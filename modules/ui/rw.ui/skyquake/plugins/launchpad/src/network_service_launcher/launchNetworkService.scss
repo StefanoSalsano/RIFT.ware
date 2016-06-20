@@ -3,8 +3,8 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
-@import '../../../../framework/style/_colors.scss';
-@import '../../../../framework/style/layout.scss';
+@import 'style/_colors.scss';
+@import 'style/layout.scss';
 $treemargin: 0.25rem;
 
 .create-fleet-header {
@@ -13,6 +13,7 @@ $treemargin: 0.25rem;
   }
 }
 .app-body.create-fleet {
+  flex:1;
   >header {
     padding: 20px 0px;
 

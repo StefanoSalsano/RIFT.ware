@@ -158,10 +158,12 @@ void rwdynschema_load_all_schema(void * context)
 
   while (!created_schema_directory) {
     // try again
-    rwsched_dispatch_async_f(reg->dts_handle->tasklet,
+    rwsched_dispatch_after_f(reg->dts_handle->tasklet,
+                             dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * CREATE_SCHEMA_DIR_RETRY_SECS),
                              reg->load_queue,
                              context,
                              rwdynschema_load_all_schema);
+                        
     return;
   }
 

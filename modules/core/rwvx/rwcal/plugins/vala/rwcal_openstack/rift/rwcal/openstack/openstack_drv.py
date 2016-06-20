@@ -1233,8 +1233,11 @@ class NeutronDriver(object):
         ntconn = self._get_neutron_connection()
         subnets = ntconn.list_subnets(id=subnet_id)
         if not subnets['subnets']:
-            raise NeutronException.NotFound("Could not find subnet_id %s" %(subnet_id))
-        return subnets['subnets'][0]
+            logger.error("OpenstackDriver: Get subnet operation failed for subnet_id: %s" %(subnet_id)) 
+            #raise NeutronException.NotFound("Could not find subnet_id %s" %(subnet_id))
+            return None
+        else:
+            return subnets['subnets'][0]
 
     def subnet_get(self, subnet_id):
         """
@@ -1752,7 +1755,7 @@ class OpenstackDriver(object):
                 pass
 
             except Exception as e:
-                logger.exception(e)
+                logger.error("Got exception while querying ceilometer, exception details:%s " %str(e))
 
             return None
 

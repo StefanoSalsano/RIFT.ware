@@ -130,7 +130,6 @@ class XPaths(object):
                 ("/nsr:instance") +
                 ("[nsr:scaling-group-index-ref='{}']".format(index) if index is not None else ""))
 
-
     @staticmethod
     def nsr_scale_group_instance_config(nsr_id=None, group_name=None, index=None):
         return (("C,/nsr:ns-instance-config/nsr:nsr") +
@@ -139,9 +138,6 @@ class XPaths(object):
                 ("[nsr:scaling-group-name-ref='{}']".format(group_name) if group_name is not None else "") +
                 ("/nsr:instance") +
                 ("[nsr:index='{}']".format(index) if index is not None else ""))
-
-
-
 
 
 class ManoQuerier(object):
@@ -565,7 +561,7 @@ class PingPongDescriptorPublisher(object):
                         internal_vlr_count=num_internal_vlrs,
                         num_vnf_vms=2,
                         mano_ut=True,
-                        use_scale_group=False,
+                        use_scale_group=True,
                         use_mon_params=False,
                         )
 
@@ -783,8 +779,20 @@ class ManoTestCase(rift.test.dts.AbstractDTSTest):
             while True:
                 nsrs = yield from self.querier.get_nsr_opdatas()
                 if termination:
-                    self.assertEqual(0, len(nsrs))
-                    return
+                    if len(nsrs) != 0:
+                        for i in range(10):
+                            nsrs = yield from self.querier.get_nsr_opdatas()
+                            if len(nsrs) == 0:
+                                self.log.debug("No active NSR records found. NSR termination successful")
+                                return
+                        else:
+                            self.assertEqual(0, len(nsrs))
+                            self.log.error("Active NSR records found. NSR termination failed")
+
+                    else:
+                        self.log.debug("No active NSR records found. NSR termination successful")
+                        self.assertEqual(0, len(nsrs))
+                        return
 
                 nsr = nsrs[0]
                 self.log.debug("Got nsr record %s", nsr)
@@ -833,7 +841,7 @@ class ManoTestCase(rift.test.dts.AbstractDTSTest):
             self.log.debug("Verifying vnfr record path = %s, Termination=%d",
                            XPaths.vnfr(), termination)
             if termination:
-                for i in range(5):
+                for i in range(10):
                     vnfrs = yield from self.querier.get_vnfrs()
                     if len(vnfrs) == 0:
                         return True
@@ -1017,7 +1025,7 @@ class ManoTestCase(rift.test.dts.AbstractDTSTest):
 
             yield from terminate_ns(nsr_id)
 
-            yield from asyncio.sleep(10, loop=self.loop)
+            yield from asyncio.sleep(25, loop=self.loop)
             self.log.debug("Verifying termination results")
             yield from verify_results(termination=True, nsrid=nsr_id)
             self.log.debug("Verified termination results")

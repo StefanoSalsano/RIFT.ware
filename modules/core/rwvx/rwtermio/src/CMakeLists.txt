@@ -19,6 +19,7 @@ set(PKG_LONG_NAME ${PKG_NAME}-${PKG_VERSION})
 include_directories(BEFORE
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwsched/src
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwmsg/include
+  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwlog/rwlogd/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwlog/include
 )

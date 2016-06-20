@@ -10,6 +10,7 @@
 #include "rwtasklet.h"
 #include "rwmsgbroker-c.h"
 #include <rwvcs.h>
+#include "rwmemlogdts.h"
                                                                                            
 RwTaskletPluginComponentHandle *
 rwmsgbroker__component__component_init(RwTaskletPluginComponent *self)
@@ -139,6 +140,9 @@ rwmsgbroker__component__instance_start(RwTaskletPluginComponent *self,
   rw_status_t rs;
   rs = rwmsg_broker_dts_registration (instance);
   RW_ASSERT(rs == RW_STATUS_SUCCESS);
+
+  instance->broker->rwmemlog = rwmemlog_instance_alloc("MSGBroker", 0, 0);
+  rwmemlog_instance_dts_register(instance->broker->rwmemlog, instance->rwtasklet_info, instance->dts_h);
 }
 
   static void

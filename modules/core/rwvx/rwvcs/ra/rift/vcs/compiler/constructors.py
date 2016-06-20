@@ -93,6 +93,7 @@ class GenericComponentCtor(Constructor):
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
                 start=prototype.start,
+                data_storetype=prototype.data_storetype,
                 )
 
         for component in prototype.subcomponents:
@@ -126,6 +127,7 @@ class VirtualMachineCtor(Constructor):
         obj.config_ready = prototype.config_ready
         obj.recovery_action = prototype.recovery_action
         obj.start = prototype.start
+        obj.data_storetype = prototype.data_storetype
 
         for component in prototype.subcomponents:
             obj.add_component(self.compiler.create(component))
@@ -156,7 +158,9 @@ class TaskletCtor(Constructor):
                 instance_id=prototype.uid,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
-                start=prototype.start
+                start=prototype.start,
+                data_storetype=prototype.data_storetype,
+                mode_active=prototype.mode_active,
                 )
 
 
@@ -183,7 +187,9 @@ class NativeProcessCtor(Constructor):
                 run_as=prototype.run_as,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
-                start=prototype.start
+                start=prototype.start,
+                data_storetype=prototype.data_storetype,
+                mode_active=prototype.mode_active,
                 )
 
         obj.instance_id = prototype.uid
@@ -245,6 +251,7 @@ class LegacyProcCtor(Constructor):
         obj.config_ready = prototype.config_ready
         obj.recovery_action = prototype.recovery_action
         obj.start = prototype.start
+        obj.data_storetype = prototype.data_storetype
         for component in prototype.subcomponents:
             obj.add_component(self.compiler.create(component))
 
@@ -291,6 +298,7 @@ class LegacyVmCtor(Constructor):
         obj.config_ready = prototype.config_ready
         obj.recovery_action = prototype.recovery_action
         obj.start = prototype.start
+        obj.data_storetype = prototype.data_storetype
 
         for component in prototype.subcomponents:
             child = self.compiler.create(component)
@@ -323,12 +331,16 @@ class LegacyTaskletCtor(Constructor):
             tasklet = self.cls(prototype.name, port=prototype.port,
                                config_ready=prototype.config_ready,
                                recovery_action=prototype.recovery_action,
-                               start=prototype.start
+                               start=prototype.start,
+                               data_storetype=prototype.data_storetype,
+                               mode_active=prototype.mode_active,
                               )
         except AttributeError:
             tasklet = self.cls(prototype.name, config_ready=prototype.config_ready,
                                recovery_action=prototype.recovery_action,
-                               start=prototype.start
+                               start=prototype.start,
+                               data_storetype=prototype.data_storetype,
+                               mode_active=prototype.mode_active,
                               )
 
         tasklet.instance_id = prototype.uid
@@ -369,7 +381,9 @@ class LegacyUAgentCtor(Constructor):
                 port=prototype.port,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
-                start=prototype.start
+                start=prototype.start,
+                data_storetype=prototype.data_storetype,
+                mode_active=prototype.mode_active,
                 )
         tasklet.instance_id = prototype.uid
 
@@ -418,7 +432,9 @@ class FastpathTaskletCtor(Constructor):
                 hashbin_credit=prototype.hashbin_credit,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
-                start=prototype.start
+                start=prototype.start,
+                data_storetype=prototype.data_storetype,
+                mode_active=prototype.mode_active,
                 )
         tasklet.instance_id = prototype.uid
         return tasklet
@@ -463,6 +479,8 @@ class CliTaskletCtor(Constructor):
                 manifest_file=manifest_file,
                 config_ready=prototype.config_ready,
                 recovery_action=prototype.recovery_action,
-                start=prototype.start
+                start=prototype.start,
+                data_storetype=prototype.data_storetype,
+                mode_active=prototype.mode_active,
                 )
         return tasklet

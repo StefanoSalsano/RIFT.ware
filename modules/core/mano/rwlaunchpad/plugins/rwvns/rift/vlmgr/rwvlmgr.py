@@ -367,7 +367,7 @@ class VlrDtsHandler(object):
             self._regh = group.register(
                 xpath=VlrDtsHandler.XPATH,
                 handler=reg_handle,
-                flags=rwdts.Flag.PUBLISHER | rwdts.Flag.NO_PREP_READ| rwdts.Flag.FILE_DATASTORE,
+                flags=rwdts.Flag.PUBLISHER | rwdts.Flag.NO_PREP_READ| rwdts.Flag.DATASTORE,
                 )
 
     @asyncio.coroutine

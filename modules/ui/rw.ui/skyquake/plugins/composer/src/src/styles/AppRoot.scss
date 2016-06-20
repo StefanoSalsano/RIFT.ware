@@ -6,9 +6,10 @@
  */
 @import "main";
 @import "FullScreen";
-$app-header-height: 157px;
 .AppRoot {
-    position: absolute;
+    display: flex;
+    flex: 1;
+    position: relative;
     top: 0;
     bottom: 0;
     right: 0;
@@ -76,12 +77,12 @@ $app-header-height: 157px;
         top: 0;
         right: 0;
         left: 0;
-        height: $app-header-height;
+        height: 0;
     }
     .AppBody {
 		@extend .panel;
 		position: absolute;
-        top: $app-header-height;
+        top: 0px;
         right: 20px;
         bottom: 20px;
         left: 20px;
@@ -98,7 +99,7 @@ $app-header-height: 157px;
     }
     .corner-accent.top {
         border-bottom: 0 none;
-        top: 164px;
+        top: 6px;
     }
 	.corner-accent.bottom {
 		border-top: 0 none;

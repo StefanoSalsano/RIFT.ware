@@ -62,6 +62,7 @@ if (cluster.isMaster && clusteredLaunch) {
 	require('require-json');
 
 	var httpServer = null;
+	var secureHttpServer = null;
 
 	var httpsConfigured = false;
 
@@ -124,6 +125,22 @@ if (cluster.isMaster && clusteredLaunch) {
 	}
 
 	/**
+	 * Start listening on a port
+	 * @param {string} port - Port to listen on
+	 * @param {object} httpServer - httpServer created with http(s).createServer
+	 */
+	function startListening(port, httpServer) {
+		var server = httpServer.listen(port, function () {
+			var host = server.address().address;
+
+			var port = server.address().port;
+
+			console.log('Express server listening on port', port);
+		});
+		return server;
+	}
+
+	/**
 	 * Initialize skyquake
 	 */
 	function init() {
@@ -164,18 +181,25 @@ if (cluster.isMaster && clusteredLaunch) {
 
 		// Server start
 		if (httpsConfigured) {
-			httpServer = https.createServer(sslOptions, app);
+			console.log('HTTPS configured. Will start 2 servers');
+			secureHttpServer = https.createServer(sslOptions, app);
+			var secureServer = startListening(constants.SECURE_SERVER_PORT, secureHttpServer);
+			
+			// Add redirection on SERVER_PORT
+			httpServer = http.createServer(function(req, res) {
+				var host = req.headers['host'];
+				host = host.replace(/:\d+$/, ":" + constants.SECURE_SERVER_PORT);
+
+				res.writeHead(301, { "Location": "https://" + host + req.url });
+    			res.end();
+			});
 		} else {
 			httpServer = http.createServer(app);
 		}
 
-		var server = httpServer.listen(constants.SERVER_PORT, function () {
-			var host = server.address().address;
+		var server = startListening(constants.SERVER_PORT, httpServer);
 
-			var port = server.address().port;
-
-			console.log('Express server listening on port', port, 'HTTPS configured:', httpsConfigured ? 'YES': 'NO');
-		});
+		
 	}
 
 	init();

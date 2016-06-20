@@ -8,17 +8,17 @@
 
 module mano-base.tailf
 {
-    namespace "http://riftio.com/ns/riftware-1.0/mano-base-annotation";
-    prefix "mano-base-ann";
-    
-    import mano-base {
-        prefix manobase;
-    }
-    import tailf-common {
-        prefix tailf;
-    }
+  namespace "http://riftio.com/ns/riftware-1.0/mano-base-annotation";
+  prefix "mano-base-ann";
+  
+  import mano-base {
+    prefix manobase;
+  }
+  import tailf-common {
+    prefix tailf;
+  }
 
-    tailf:annotate "/manobase:vnf-opdata/manobase:vnf" {
-      tailf:callpoint base_show;
-    }
+  tailf:annotate "/manobase:vnf-opdata/manobase:vnf" {
+    tailf:callpoint rw_callpoint;
+  }
 }

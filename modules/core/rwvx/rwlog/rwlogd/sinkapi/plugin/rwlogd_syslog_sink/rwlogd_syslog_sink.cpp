@@ -23,7 +23,7 @@ typedef struct {
 
 class syslog_conn : public rwlogd_rt_sink_conn {
 private:
-  int _socket_descriptor;
+  int _socket_descriptor = -1;
   char *_syslog_server;
   uint32_t _port;
   struct in_addr _server_ip;
@@ -56,6 +56,10 @@ public:
     if(_syslog_server)
     {
       RW_FREE(_syslog_server);
+    }
+    if (_socket_descriptor != -1) {
+        close(_socket_descriptor);
+        _socket_descriptor = -1;
     }
   }
 

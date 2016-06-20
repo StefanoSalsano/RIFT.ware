@@ -1,6 +1,6 @@
 {
   "test_name":"TC_LPRECOVERY_TEST",
-  "commandline":"./launchpad_recovery.py",
+  "commandline":"./launchpad_recovery",
   "target_vm":"VM",
   "test_description":"Test targeting launchpad recovery feature",
   "run_as_root": true,

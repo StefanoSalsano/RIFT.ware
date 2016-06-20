@@ -379,7 +379,7 @@ class RwDtsPerfTasklet(rift.tasklets.Tasklet):
                     on_prepare=self.handle_start_xact))
 
         @asyncio.coroutine
-        def prepare_acg(dts, acg, xact, xact_info, ksp, msg):
+        def prepare_acg(dts, acg, xact, xact_info, ksp, msg, scratch):
             """Prepare for application configuration. Stash the pending
             configuration object for subsequent transaction phases"""
             acg.scratch[xact.id] = msg
@@ -550,7 +550,7 @@ class RwDtsPerfTasklet(rift.tasklets.Tasklet):
         # it takes care of on_response internally and provides the results.
         # But we need the on_reponse to compute our perf statistics. So, here
         # we explicitly add a done callback.
-        future = asyncio.ensure_future(xact_detail.query(self._dts))
+        future = asyncio.ensure_future(xact_detail.query(self._dts), loop=self.loop)
         self.curr_xacts[future] = True
         future.add_done_callback(functools.partial(
                                         self.handle_response,

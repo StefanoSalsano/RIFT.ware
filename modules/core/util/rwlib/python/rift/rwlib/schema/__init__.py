@@ -8,4 +8,5 @@ from .helpers import (
     collect_children,
     get_keys,
     get_key_names,    
+    prune_non_schema_xml,
 )

@@ -61,6 +61,7 @@ class Demo(rift.vcs.demo.Demo):
             rift.vcs.DtsRouterTasklet(),
             rift.vcs.MsgBrokerTasklet(),
             rift.vcs.RestconfTasklet(),
+            rift.vcs.RestPortForwardTasklet(),
             rift.vcs.RiftCli(),
             rift.vcs.uAgentTasklet(),
             TestTasklet(),

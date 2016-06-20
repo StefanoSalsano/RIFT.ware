@@ -26,8 +26,8 @@ class SdnGetInterfaceError(Exception):
     pass
 
 
-class SdnAccountExistsError(Exception):
-    """ Error while creating SDN Account"""
+class SdnAccountError(Exception):
+    """ Error while creating/deleting/updating SDN Account"""
     pass
 
 class VnffgrDoesNotExist(Exception):
@@ -76,6 +76,17 @@ class VnffgMgr(object):
     def del_sdn_account(self, name):
         self._log.debug("Account deleted is %s , %s", type(self._account), name)
         del self._account[name]
+
+    def update_sdn_account(self,account):
+        self._log.debug("Account updated is %s , %s", type(self._account), account)
+        if account.name in self._account:
+            sdn_account = self._account[account.name]
+
+            sdn_account.from_dict(
+                account.as_dict(),
+                ignore_missing_keys=True,
+                )
+            self._account[account.name] = sdn_account
 
     def get_sdn_account(self, name):
         """
@@ -322,6 +333,12 @@ class SDNAccountDtsHandler(object):
 
         self._parent.del_sdn_account(account_name)
 
+    def _update_sdn_account(self, account):
+        self._log.info("Updating sdn account: {}".format(account))
+        # No need to update locally saved sdn_account's updated fields, as they
+        # are not used anywhere. Call the parent's update callback.
+        self._parent.update_sdn_account(account)
+
     @asyncio.coroutine
     def register(self):
         def apply_config(dts, acg, xact, action, _):
@@ -333,7 +350,7 @@ class SDNAccountDtsHandler(object):
             return RwTypes.RwStatus.SUCCESS
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ Prepare callback from DTS for SDN Account config """
 
             self._log.info("SDN Cloud account config received: %s", msg)
@@ -345,16 +362,31 @@ class SDNAccountDtsHandler(object):
                 # Delete the sdn account record
                 self._del_sdn_account(msg.name)
             else:
+                # If the account already exists, then this is an update.
                 if msg.name in self._sdn_account:
-                    msg = "Cannot update a SDN account that already was set."
-                    self._log.error(msg)
-                    xact_info.send_error_xpath(RwTypes.RwStatus.FAILURE,
-                                               SDNAccountDtsHandler.XPATH,
-                                               msg)
-                    raise SdnAccountExistsError(msg)
+                    self._log.debug("SDN account already exists. Invoking on_prepare update request")
+                    if msg.has_field("account_type"):
+                        errmsg = "Cannot update SDN account's account-type."
+                        self._log.error(errmsg)
+                        xact_info.send_error_xpath(RwTypes.RwStatus.FAILURE,
+                                                   SDNAccountDtsHandler.XPATH,
+                                                   errmsg)
+                        raise SdnAccountError(errmsg)
 
-                # Set the sdn account record
-                self._set_sdn_account(msg)
+                    # Update the sdn account record
+                    self._update_sdn_account(msg)
+                else:
+                    self._log.debug("SDN account does not already exist. Invoking on_prepare add request")
+                    if not msg.has_field('account_type'):
+                        errmsg = "New SDN account must contain account-type field."
+                        self._log.error(errmsg)
+                        xact_info.send_error_xpath(RwTypes.RwStatus.FAILURE,
+                                                   SDNAccountDtsHandler.XPATH,
+                                                   errmsg)
+                        raise SdnAccountError(errmsg)
+
+                    # Set the sdn account record
+                    self._set_sdn_account(msg)
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 

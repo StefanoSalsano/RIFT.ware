@@ -59,9 +59,15 @@ rift_gtest(rwdts_gtest_long
 
 set(test_srcs_redis rwdts_gtest_redis.cc)
 
+set(test_srcs_sing_redis rwdts_gtest_no_cluster_redis.cc)
 
 rift_gtest(rwdts_gtest_redis
   TEST_SRCS ${test_srcs_redis}
+  TEST_LIBS ${test_libs}
+  TEST_ARGS --gtest_shuffle --gtest_repeat=1)
+
+rift_gtest(rwdts_gtest_no_cluster_redis
+  TEST_SRCS ${test_srcs_sing_redis}
   TEST_LIBS ${test_libs}
   TEST_ARGS --gtest_shuffle --gtest_repeat=1)
 
@@ -491,6 +497,11 @@ rift_unittest(rwdts_gi_test-83
 
 rift_unittest(rwdts_gi_test-84
   TEST_ARGS
+  python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_sub_read
+  ENVSET_ARGS FORCE=1)
+
+rift_unittest(rwdts_gi_test-85
+  TEST_ARGS
   python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwdts_gi_test.py DtsTestCase.test_deregister
   ENVSET_ARGS FORCE=1)
 
@@ -580,6 +591,7 @@ rwdts_gi_test-62
     rwdts_gi_test-82
     rwdts_gi_test-83
     rwdts_gi_test-84
+    rwdts_gi_test-85
 )
 
 add_custom_target(rwdts_unittest

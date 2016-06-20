@@ -228,6 +228,9 @@ rwsched_instance_free_int(rwsched_instance_t *instance)
   }
 
   ck_pr_dec_32(&g_rwsched_instance_count);
+  if (instance->rwlog_instance) {
+    rwlog_close(instance->rwlog_instance, FALSE);
+  }
   //NO-FREE
   RW_CF_TYPE_FREE(instance, rwsched_instance_ptr_t);
 #endif

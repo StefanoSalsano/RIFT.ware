@@ -48,7 +48,6 @@ def get_add_delete_update_cfgs(dts_member_reg, xact, key_name):
 class ConfigAgentCallbacks(object):
     def __init__(self,
                  on_add_apply=None, on_add_prepare=None,
-                 on_update_apply=None, on_update_prepare=None,
                  on_delete_apply=None, on_delete_prepare=None):
 
         @asyncio.coroutine
@@ -60,12 +59,10 @@ class ConfigAgentCallbacks(object):
 
         self.on_add_apply = on_add_apply
         self.on_add_prepare = on_add_prepare
-        self.on_update_apply = on_update_apply
-        self.on_update_prepare = on_update_prepare
         self.on_delete_apply = on_delete_apply
         self.on_delete_prepare = on_delete_prepare
 
-        for f in ('on_add_apply', 'on_update_apply', 'on_delete_apply'):
+        for f in ('on_add_apply', 'on_delete_apply'):
             ref = getattr(self, f)
             if ref is None:
                 setattr(self, f, apply_noop)
@@ -74,7 +71,7 @@ class ConfigAgentCallbacks(object):
             if asyncio.iscoroutinefunction(ref):
                 raise ValueError('%s cannot be a coroutine' % (f,))
 
-        for f in ('on_add_prepare', 'on_update_prepare', 'on_delete_prepare'):
+        for f in ('on_add_prepare', 'on_delete_prepare'):
             ref = getattr(self, f)
             if ref is None:
                 setattr(self, f, prepare_noop)
@@ -103,17 +100,27 @@ class ConfigAgentSubscriber(object):
 
         self._config_callbacks.on_add_apply(account_msg)
 
-    def delete_account(self, account_name):
-        self._log.info("deleting config account: {}".format(account_name))
-        del self.accounts[account_name]
+    def delete_account(self, account_msg):
+        self._log.info("deleting config account: {}".format(account_msg.name))
+        del self.accounts[account_msg.name]
 
-        self._config_callbacks.on_delete_apply(account_name)
+        self._config_callbacks.on_delete_apply(account_msg)
 
     def update_account(self, account_msg):
-        self._log.info("updating config account: {}".format(account_msg))
-        self.accounts[account_msg.name] = account_msg
+        """ Update an existing config-agent account
 
-        self._config_callbacks.on_update_apply(account_msg)
+        In order to simplify update, turn an update into a delete followed by
+        an add.  The drawback to this approach is that we will not support
+        updates of an "in-use" config-agent account, but this seems like a
+        reasonable trade-off.
+
+        Arguments:
+            account_msg - The config-agent account config message
+        """
+
+        self._log.info("updating config-agent account: {}".format(account_msg))
+        self.delete_account(account_msg)
+        self.add_account(account_msg)
 
     def register(self):
         def apply_config(dts, acg, xact, action, _):
@@ -134,7 +141,7 @@ class ConfigAgentSubscriber(object):
 
             # Handle Deletes
             for cfg in delete_cfgs:
-                self.delete_account(cfg.name)
+                self.delete_account(cfg)
 
             # Handle Adds
             for cfg in add_cfgs:
@@ -145,7 +152,7 @@ class ConfigAgentSubscriber(object):
                 self.update_account(cfg)
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ Prepare callback from DTS for Config Account """
 
             action = xact_info.handle.query_action
@@ -153,15 +160,15 @@ class ConfigAgentSubscriber(object):
                             xact_info.handle.query_action, msg)
 
             if action in [rwdts.QueryAction.CREATE, rwdts.QueryAction.UPDATE]:
-                # If the account already exists, then this is an update.  Update the
-                # cloud account and invoke the on_update_prepare callback
+                # If the account already exists, then this is an update.
                 if msg.name in self.accounts:
                     self._log.debug("Config account already exists. Invoking on_prepare update request")
                     if msg.has_field("account_type"):
                         raise ConfigAccountError("Cannot change config's account-type")
 
-                    account = self.accounts[msg.name]
-                    yield from self._config_callbacks.on_update_prepare(account)
+                    # Since updates are handled by a delete followed by an add, invoke the
+                    # delete prepare callbacks to give clients an opportunity to reject.
+                    yield from self._config_callbacks.on_delete_prepare(msg.name)
 
                 else:
                     self._log.debug("Config account does not already exist. Invoking on_prepare add request")

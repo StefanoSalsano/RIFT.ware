@@ -80,17 +80,16 @@ class LaunchpadCard extends React.Component {
         </DashboardCard>
         );
     } else {
-
+      let self = this;
       let closeButton = (
-            <a onClick={this.props.closeButtonAction}
+            <a onClick={self.props.closeButtonAction}
               className={"close-btn"}>
               <img src={circleXImage} title="Close card" />
               </a>
       );
 
       html = (
-        <DashboardCard className={'launchpadCard'}>
-          {closeButton}
+        <DashboardCard className={'launchpadCard'} closeCard={closeButton}>
           <LaunchpadHeader nsr={this.props.nsr} name={this.props.name} isActive={this.props.isActive} id={this.props.id}/>
           {
           deleting ?
@@ -143,7 +142,6 @@ export class LpCardNfviMetrics extends React.Component {
     let html = (
       <div style={{overflow: 'hidden'}}>
         <div className="launchpadCard_title">
-          NFVI-METRICS
           NFVI-METRICS
         </div>
         <div className="metricBars">

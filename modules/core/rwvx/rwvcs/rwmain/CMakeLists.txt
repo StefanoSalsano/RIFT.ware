@@ -36,6 +36,7 @@ add_library(librwmain SHARED
   heartbeat.c
   proc.c
   rwmain.c
+  pacemaker.c
   serf_client.c
   sys.c
   tasklet.c)
@@ -67,6 +68,8 @@ target_link_libraries(librwmain
   rwvcs
   rw_tasklet_plugin-1.0
   rw_vcs_yang_gen
+  kv_light_api
+  rwdts_redis
 
   rwshell-1.0
   rwshell_api)
@@ -133,3 +136,8 @@ rift_install_vala_artifacts(
   DEST_PREFIX .
 )
 
+add_custom_command(TARGET rwmain POST_BUILD
+  COMMAND ${CMAKE_COMMAND}
+  ARGS -E copy ${CMAKE_CURRENT_SOURCE_DIR}/rwmain.screenrc ${CMAKE_INSTALL_PREFIX}/etc/rwmain.screenrc
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/rwmain.screenrc
+  )

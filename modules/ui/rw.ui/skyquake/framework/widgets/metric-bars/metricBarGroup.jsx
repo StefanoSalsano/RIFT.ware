@@ -16,7 +16,7 @@ class MetricBarGroup extends React.Component {
   }
   componentWillMount() {
     const {...props} = this.props;
-    this.margin = {top: 20, right: 50, bottom: 600, left: 100};
+    this.margin = {top: 20, right: 50, bottom: 700, left: 100};
     this.width = 1220 - this.margin.left - this.margin.right;
     this.height = 1220 - this.margin.top - this.margin.bottom;
     // this.width = 800;

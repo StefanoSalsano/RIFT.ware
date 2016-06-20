@@ -6,15 +6,15 @@
     <vnfd:name>IMS-ALLIN1_2p</vnfd:name>
     <vnfd:description>IMS-ALLIN1_2p</vnfd:description>
     <vnfd:mgmt-interface>
+      <vnfd:vdu-id>47915d5e-c474-11e5-990a-fa163eb18cb8</vnfd:vdu-id>
       <vnfd:vnf-configuration>
-        <vnfd:config-type>juju</vnfd:config-type>
         <vnfd:juju>
           <vnfd:charm>clearwater-aio-proxy</vnfd:charm>
         </vnfd:juju>
-        <vnfd:input-params>
+        <vnfd:config-attributes>
           <vnfd:config-priority>1</vnfd:config-priority>
           <vnfd:config-delay>0</vnfd:config-delay>
-        </vnfd:input-params>
+        </vnfd:config-attributes>
         <vnfd:config-primitive>
           <vnfd:name>config</vnfd:name>
           <vnfd:parameter>
@@ -59,8 +59,7 @@
             <vnfd:value>&lt;rw_mgmt_ip&gt;</vnfd:value>
           </vnfd:parameter>
         </vnfd:initial-config-primitive>
-      </vnfd:vnf-configuration>
-      <vnfd:vdu-id>47915d5e-c474-11e5-990a-fa163eb18cb8</vnfd:vdu-id>
+     </vnfd:vnf-configuration>
     </vnfd:mgmt-interface>
     <vnfd:connection-point>
       <vnfd:name>eth0</vnfd:name>

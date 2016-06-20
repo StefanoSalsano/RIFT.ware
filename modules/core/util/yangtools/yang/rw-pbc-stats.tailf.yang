@@ -20,10 +20,10 @@ module rw-pbc-stats-tailf
   }
 
   tailf:annotate "/rwpbc:pbc-stats" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwpbc:pbc-ebuf" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

@@ -35,6 +35,8 @@
 
 #include "rwmain.h"
 #include "serf_client.h"
+#include "rwdts_redis.h"
+#include "rwdts_kv_light_common.h"
 
 #define UINT_STR_SZ  16
 /*
@@ -434,6 +436,159 @@ static rw_status_t event_run(
   return RW_STATUS_SUCCESS;
 }
 
+rwdts_reply_status
+rwdts_rwmain_m_to_s(rwdts_redis_msg_handle* handle, void *userdata)
+{
+  struct rwmain_gi *rwmain = (struct rwmain_gi *)userdata;
+  RW_ASSERT(rwmain);
+  return RWDTS_REDIS_REPLY_DONE;
+}
+
+rwdts_reply_status
+rwdts_rwmain_s_to_m(rwdts_redis_msg_handle* handle, void *userdata)
+{
+
+  struct rwmain_gi *rwmain = (struct rwmain_gi *)userdata;
+  RW_ASSERT(rwmain);
+  return RWDTS_REDIS_REPLY_DONE;
+}
+
+static void rwmain_redis_ready(struct rwmain_gi * rwmain,
+                               rw_status_t rt_status)
+{
+  if (rt_status != RW_STATUS_SUCCESS) {
+    /* TODO */
+    if (rwmain->rwvx->rwvcs->mgmt_info.state == RWVCS_TYPES_VM_STATE_MGMTSTANDBY) {
+      /* Fail this standby VM and restart */
+    } else {
+      /* Fail this VM and switch the standby to active */
+    }
+    return;
+  }
+  if (rwmain->rwvx->rwvcs->mgmt_info.state == RWVCS_TYPES_VM_STATE_MGMTSTANDBY) {
+    rwmain_pm_struct_t pm = {};
+    rw_status_t status = read_pacemaker_state(&pm);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+
+    int indx;
+    char *lead_ip_address = NULL;
+    for(indx=0; pm.ip_entry[indx].pm_ip_addr; indx++) {
+      if (pm.ip_entry[indx].pm_ip_state == RWMAIN_PM_IP_STATE_LEADER) {
+        lead_ip_address = pm.ip_entry[indx].pm_ip_addr;
+      }
+    }
+    RW_ASSERT(lead_ip_address);
+
+    rwdts_redis_master_to_slave((rwdts_redis_instance_t *)rwmain->redis_handle->kv_conn_instance,
+                                lead_ip_address, 9999, rwdts_rwmain_m_to_s, (void *)rwmain);
+  }
+  else {
+    rwdts_redis_slave_to_master((rwdts_redis_instance_t *)rwmain->redis_handle->kv_conn_instance,
+                                 rwdts_rwmain_s_to_m,
+                                 (void *)rwmain);
+  }
+  return;
+}
+
+void rwmain_start_redis_client(struct rwmain_gi * rwmain)
+{
+  char address_port[20];
+  int len;
+  len = sprintf(address_port, "%s%c%d", rwmain->vm_ip_address, ':', 9999);
+  address_port[len] = '\0';
+  rw_status_t status = rwdts_kv_handle_db_connect(rwmain->redis_handle, rwmain->rwvx->rwsched, 
+                                                  rwmain->rwvx->rwsched_tasklet, address_port,
+                                                  "controller", NULL,
+                                                  (void *)rwmain_redis_ready,
+                                                  (void *)rwmain);
+  RW_ASSERT(RW_STATUS_SUCCESS == status);
+  return;
+}
+
+rw_status_t 
+rwvcs_gen_redis_conf_file(char *ip_address, unsigned short port, bool active)
+{
+  FILE *fp;
+
+  char *installdir = getenv("INSTALLDIR");
+
+  char file_name[512];
+ 
+  if (active) { 
+    snprintf(file_name, 512, "%s%s", installdir, "/usr/bin/active_redis.conf");
+  } else {
+    snprintf(file_name, 512, "%s%s", installdir, "/usr/bin/standby_redis.conf");
+  }
+
+  fp = fopen(file_name, "w+");
+
+  if (!fp) {
+    return RW_STATUS_FAILURE;
+  }
+
+  fprintf(fp, "%s %d\n", "port", (int)port);
+  fprintf(fp, "%s %s\n", "bind", ip_address);
+  fprintf(fp, "%s\n", "unixsocket redis.sock");
+  fprintf(fp, "%s", "unixsocketperm 755");
+
+  fclose(fp);
+  
+  return RW_STATUS_SUCCESS;
+}
+  
+static int rwmain_check_and_set_instance_name (
+    struct rwmain_gi * rwmain,
+    const char *orig_parent_id,
+    const char *chk_instance_name,
+    const vcs_manifest_action *action,
+    char **instance_name,
+    uint32_t *instance_id)
+{
+  RW_ASSERT(instance_name && instance_id);
+  if ((*instance_name) && (*instance_id)) {
+    goto done;
+  }
+  if (chk_instance_name) {
+    rw_component_info cinfo;
+    rw_status_t status = rwvcs_rwzk_lookup_component(
+        rwmain->rwvx->rwvcs,
+        chk_instance_name,
+        &cinfo);
+    if (status != RW_STATUS_SUCCESS) {
+      goto done;
+    }
+    if (!strcmp(cinfo.component_name, action->start->component_name)) {
+      rw_component_info chinfo;
+      status = rwvcs_rwzk_lookup_component(
+          rwmain->rwvx->rwvcs,
+          cinfo.instance_name, 
+          &chinfo);
+      if ((status == RW_STATUS_SUCCESS)
+          && (chinfo.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+        (*instance_name) = strdup(chinfo.instance_name);
+        (*instance_id) = chinfo.instance_id;
+        goto done;
+      }
+    }
+    int indx;
+    for (indx=0; !(*instance_name) && (indx < cinfo.n_rwcomponent_children); indx++) {
+      if (!strcmp(orig_parent_id, cinfo.rwcomponent_children[indx])) {
+        continue;
+      }
+      if (((*instance_id) = rwmain_check_and_set_instance_name(rwmain,
+                                             orig_parent_id,
+                                             cinfo.rwcomponent_children[indx],
+                                             action,
+                                             instance_name,
+                                             instance_id))) {
+        goto done;
+      }
+    }
+  }
+done:
+  return (*instance_id);
+}
+
 rw_status_t rwmain_action_run(
     struct rwmain_gi * rwmain,
     const char * parent_id,
@@ -475,9 +630,13 @@ rw_status_t rwmain_action_run(
       return status;
 
     char *instance_name = NULL;
-    uint32_t instance_id;
-    status = generate_instance_name_id(rwmain->rwvx->rwvcs, action->start, &instance_name, &instance_id);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    uint32_t instance_id = 0;
+    rwmain_check_and_set_instance_name (rwmain, parent_id, parent_id, action, &instance_name, &instance_id);
+
+    if (!instance_name) {
+      status = generate_instance_name_id(rwmain->rwvx->rwvcs, action->start, &instance_name, &instance_id);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+    }
     if (status != RW_STATUS_SUCCESS) {
       rwmain_trace_crit(
           rwmain,
@@ -518,12 +677,35 @@ rw_status_t rwmain_action_run(
         break;
 
       case RWVCS_TYPES_COMPONENT_TYPE_PROC:
-        status = rwproc_native_start(rwmain, parent_id, m_component->native_proc, action, instance_name, instance_id);
+        if (!strcmp(component_name, "RW.Redis.Server")) {
+          /* generate the appropriate conf file and start the native proc using
+           * the generated conf file */
+          if (rwmain->rwvx->rwvcs->mgmt_info.state == RWVCS_TYPES_VM_STATE_MGMTACTIVE) {
+            status = rwvcs_gen_redis_conf_file(rwmain->vm_ip_address, 9999, true);
+          } else {
+            status = rwvcs_gen_redis_conf_file(rwmain->vm_ip_address, 9999, false);
+            /* Should old m_component->native_proc->args be freed? */
+            m_component->native_proc->args = RW_STRDUP("./usr/bin/standby_redis.conf --port 9999");
+          }
+          RW_ASSERT(status == RW_STATUS_SUCCESS);
+          status = rwproc_native_start(rwmain, parent_id, m_component->native_proc, action, instance_name, instance_id);
+          rwmain->redis_handle = (rwdts_kv_handle_t *)rwdts_kv_allocate_handle(REDIS_DB);
+          sleep(3);
+          rwmain_start_redis_client(rwmain);
+        } else {
+          status = rwproc_native_start(rwmain, parent_id, m_component->native_proc, action, instance_name, instance_id);
+        }
+
         break;
 
       case RWVCS_TYPES_COMPONENT_TYPE_RWTASKLET:
         RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);
-        status = rwtasklet_start(rwmain, parent_id, m_component->rwtasklet, action, instance_name, instance_id);
+        if (!action->start->mode_active && strstr(instance_name, "RW.uAgent")) {
+          NEW_DBG_PRINTS("Standby TASKLET skipped -- %s --now\n", instance_name);
+        }
+        else {
+          status = rwtasklet_start(rwmain, parent_id, m_component->rwtasklet, action, instance_name, instance_id);
+        }
         RWVCS_LATENCY_CHK_POST(rwmain->rwvx->rwtrace, RWTRACE_CATEGORY_RWVCS,
                                rwtasklet_start, "rwtasklet_start:%s", component_name);
         break;
@@ -753,6 +935,8 @@ static rw_status_t rwcollection_start(
   component->config_ready = m_action->start->config_ready;
   component->has_recovery_action = m_action->start->has_recovery_action;
   component->recovery_action = m_action->start->recovery_action;
+  component->has_data_storetype = m_action->start->has_data_storetype;
+  component->data_storetype = m_action->start->data_storetype;
   component->collection_info->collection_type = strdup(pb->collection_type);
   if (!component->collection_info->collection_type) {
     RW_ASSERT(component->collection_info->collection_type);
@@ -770,6 +954,20 @@ static rw_status_t rwcollection_start(
     status = event_run(rwmain, component->instance_name, m_event);
     if (status != RW_STATUS_SUCCESS)
       goto done;
+  }
+  if (!strcmp(rwmain->parent_id, instance_name)) {
+    rw_component_info info;
+    rwvcs_instance_ptr_t rwvcs= rwmain->rwvx->rwvcs;
+    status = rwvcs_rwzk_lookup_component(rwvcs, rwvcs->instance_name, &info);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    if (!info.rwcomponent_parent) {
+      status = rwvcs_rwzk_update_parent(rwvcs, rwvcs->instance_name, rwmain->parent_id);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+    }
+    if (!strcmp(parent_id, rwvcs->instance_name)) {
+      status = rwvcs_rwzk_update_parent(rwvcs, instance_name, NULL);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+    }
   }
 
   // Update state in rwzk
@@ -897,6 +1095,9 @@ const char *multivm_rwzk_path = "/sys/rwmain/iamup";
 const char *multivm_rwzk_lock = "/sys/rwmain/iamup-LOCK";
 static void watcher_multivm_rwmain(void* ud);
 
+#define IS_MGMT_VM(rwvcs) ((rwvcs)->mgmt_info.state == RWVCS_TYPES_VM_STATE_MGMTACTIVE || (rwvcs)->mgmt_info.state == RWVCS_TYPES_VM_STATE_MGMTSTANDBY)
+#define MGMT_VM_STATE(rwvcs) (rwvcs)->mgmt_info.state
+
 static rw_status_t rwvm_start(
     struct rwmain_gi * rwmain,
     const char * parent_id,
@@ -1014,14 +1215,23 @@ static rw_status_t rwvm_start(
       RWTRACE_CATEGORY_RWVCS,
       "starting rwvm instance name = \"%s\"",
       instance_name);
-
-  // Create an rwvm structure
-  rwvm = rwvcs_rwvm_alloc(
-      rwvcs,
-      parent_id,
-      m_action->start->component_name,
-      instance_id,
-      instance_name);
+  rw_component_info vm;
+  bool alloced = true;
+  status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &vm);
+  if ((status == RW_STATUS_SUCCESS)
+      && (vm.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+    rwvm = &vm;
+    alloced = false;
+  }
+  else {
+    // Create an rwvm structure
+    rwvm = rwvcs_rwvm_alloc(
+        rwvcs,
+        parent_id,
+        m_action->start->component_name,
+        instance_id,
+        instance_name);
+  }
   RW_ASSERT(rwvm);
 
 
@@ -1042,11 +1252,15 @@ static rw_status_t rwvm_start(
   // Initialize the component info
   rwvm->vm_info->vm_ip_address = strdup(vm_ip_address);
   rwvm->has_state = true;
-  rwvm->state = RW_BASE_STATE_TYPE_STARTING;
+  if (alloced) { 
+    rwvm->state = RW_BASE_STATE_TYPE_STARTING;
+  }
   rwvm->has_config_ready = m_action->start->has_config_ready;
   rwvm->config_ready = m_action->start->config_ready;
   rwvm->has_recovery_action = m_action->start->has_recovery_action;
   rwvm->recovery_action = m_action->start->recovery_action;
+  rwvm->has_data_storetype = m_action->start->has_data_storetype;
+  rwvm->data_storetype = m_action->start->data_storetype;
   if (m_rwvm && m_rwvm->has_leader) {
     rwvm->vm_info->has_leader = true;
     rwvm->vm_info->leader = m_rwvm->leader;
@@ -1072,7 +1286,6 @@ static rw_status_t rwvm_start(
     status = rwvcs_get_vm_from_pool(rwvcs, m_rwvm->pool_name, vm_ip_address);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
   }
-
 
   if (rwvcs->pb_rwmanifest->init_phase->settings->rwvcs->collapse_each_rwvm) {
     const char * argv[] = {
@@ -1232,12 +1445,21 @@ static rw_status_t rwvm_start(
     RW_ASSERT(status == RW_STATUS_SUCCESS);
 
 #if 1
+    char *rwmain_screenrc;
+    r = asprintf(
+        &rwmain_screenrc,
+        "%s%s/etc/rwmain.screenrc",
+        riftroot ? riftroot : "",
+        riftroot ? "/.install": "");
+    RW_ASSERT(r != -1);
+
     if (m_rwvm->valgrind
         && m_rwvm->valgrind->has_enable
         && m_rwvm->valgrind->enable) {
       char ** valgrind_argv;
       const char * prefix[] = {
         "ssh", "-n", vm_ip_address, "-o", "StrictHostKeyChecking=no",
+//"/usr/bin/screen", "-d",  "-m", "-c", rwmain_screenrc,
         ssh_wrapper, uid_str, real_uid_str, ld_preload ? ld_preload : "",
         rift_shell,
           "--use-existing",
@@ -1281,6 +1503,7 @@ static rw_status_t rwvm_start(
       // ssh will will call $SHELL -c which drops one layer of quotes.
       const char * argv[] = {
         "ssh", "-n", vm_ip_address, "-o", "StrictHostKeyChecking=no",
+        //"/usr/bin/screen", "-d", "-m", "-c", rwmain_screenrc,
         ssh_wrapper, uid_str, real_uid_str, ld_preload ? ld_preload : "",
         rift_shell,
           "--use-existing",
@@ -1333,11 +1556,14 @@ static rw_status_t rwvm_start(
     free(ssh_wrapper);
     free(rift_shell);
     free(rsync_cmd);
+    free(rwmain_screenrc);
   }
 
   free(rwmain_path);
   free(instance_arg);
-  free(rwvm);
+  if (alloced) {
+    free(rwvm);
+  }
 
   status = RW_STATUS_SUCCESS;
 
@@ -1473,6 +1699,8 @@ static rw_status_t rwproc_start(
   rwproc->config_ready = m_action->start->config_ready;
   rwproc->has_recovery_action = m_action->start->has_recovery_action;
   rwproc->recovery_action = m_action->start->recovery_action;
+  rwproc->has_data_storetype = m_action->start->has_data_storetype;
+  rwproc->data_storetype = m_action->start->data_storetype;
 
   // This needs to run first to make sure the mq is created prior to the
   // child writing to it.
@@ -1750,12 +1978,40 @@ static rw_status_t rwproc_native_start(
     start_terminal_io_tasklet(rwmain, parent_id);
   }
 
-  rwproc = rwvcs_proc_alloc(
-      rwvcs,
-      parent_id,
-      m_action->start->component_name,
-      instance_id,
-      instance_name);
+  rw_component_info proc;
+  bool alloced = true;
+  status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &proc);
+  if ((status == RW_STATUS_SUCCESS) 
+      && (proc.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+    rwproc = &proc;
+    alloced = false;
+    if (rwproc->has_mode_active && !rwproc->mode_active) {
+      rwproc->has_state = true;
+      rwproc->state = RW_BASE_STATE_TYPE_RUNNING;
+      rwproc->mode_active = true;
+      int r = reaper_client_add_pid(rwvcs->reaper_sock, rwproc->proc_info->pid);
+      if (r) {
+        rwmain_trace_crit(
+            rwmain,
+            "Failed to send pid %d to reaper: %s",
+            rwproc->proc_info->pid,
+            strerror(r));
+        RW_CRASH();
+      }
+      goto recovery_done;
+    }
+  }
+  else {
+    rwproc = rwvcs_proc_alloc(
+        rwvcs,
+        parent_id,
+        m_action->start->component_name,
+        instance_id,
+        instance_name);
+    RW_ASSERT(rwproc);
+    rwproc->has_mode_active = m_action->start->has_mode_active;
+    rwproc->mode_active = m_action->start->mode_active;
+  }
   RW_ASSERT(rwproc);
 
   // Switch to the appropriate network namespace, if any.  RIFT-3034
@@ -1861,7 +2117,12 @@ static rw_status_t rwproc_native_start(
   rwproc->config_ready = m_action->start->config_ready;
   rwproc->has_recovery_action = m_action->start->has_recovery_action;
   rwproc->recovery_action = m_action->start->recovery_action;
+  rwproc->has_data_storetype = m_action->start->has_data_storetype;
+  rwproc->data_storetype = m_action->start->data_storetype;
+  rwproc->has_mode_active = m_action->start->has_mode_active;
+  rwproc->mode_active = m_action->start->mode_active;
 
+recovery_done:
   status = rwvcs_rwzk_node_update(rwvcs, rwproc);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
 
@@ -1896,73 +2157,10 @@ done:
       free(instance_name);
   }
 
-  free(rwproc);
-
-  return status;
-}
-
-rw_status_t rwmain_native_proc_restart(
-    struct rwmain_gi * rwmain,
-    const char * proc)
-{
-  rw_status_t status;
-  int r;
-  rw_component_info target;
-  char * component_name = NULL;
-  vcs_manifest_component * component;
-  vcs_manifest_action action;
-  vcs_manifest_action_start start;
-
-  vcs_manifest_action__init(&action);
-  vcs_manifest_action_start__init(&start);
-
-  status = rwvcs_rwzk_lookup_component(rwmain->rwvx->rwvcs, proc, &target);
-  if (status != RW_STATUS_SUCCESS)
-    return status;
-
-  status = rwmain_stop_instance(rwmain, &target);
-  if (status != RW_STATUS_SUCCESS)
-    goto done;
-
-  component_name = split_component_name(proc);
-
-  status = rwvcs_manifest_component_lookup(rwmain->rwvx->rwvcs, component_name, &component);
-  if (status == RW_STATUS_NOTFOUND)
-    goto done;
-
-  action.start = &start;
-  start.component_name = component_name;
-
-  r = asprintf(&start.instance_id, "%u", split_instance_id(proc));
-  RW_ASSERT(r != -1);
-
-  char *instance_name = NULL;
-  uint32_t instance_id;
-  status = generate_instance_name_id(rwmain->rwvx->rwvcs, action.start, &instance_name, &instance_id);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
-
-  status = rwproc_native_start(
-      rwmain,
-      target.rwcomponent_parent,
-      component->native_proc,
-      &action,
-      instance_name,
-      instance_id);
-  if (status == RW_STATUS_SUCCESS) {
-    if (instance_name)
-      free(instance_name);
+  if (rwproc && alloced) {
+    free(rwproc);
   }
 
-done:
-  action.start = NULL;
-  start.component_name = NULL;
-  protobuf_free_stack(action);
-  protobuf_free_stack(start);
-
-  if (component_name)
-    free(component_name);
-
-  protobuf_free_stack(target);
   return status;
 }
 
@@ -2014,6 +2212,10 @@ static rw_status_t rwtasklet_start(
   component->config_ready = m_action->start->config_ready;
   component->has_recovery_action = m_action->start->has_recovery_action;
   component->recovery_action = m_action->start->recovery_action;
+  component->has_data_storetype = m_action->start->has_data_storetype;
+  component->data_storetype = m_action->start->data_storetype;
+  component->has_mode_active = m_action->start->has_mode_active;
+  component->mode_active = m_action->start->mode_active;
   RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);
   status = rwvcs_rwzk_node_update(rwmain->rwvx->rwvcs, component);
   RWVCS_LATENCY_CHK_POST(rwmain->rwvx->rwtrace, RWTRACE_CATEGORY_RWVCS,
@@ -2021,9 +2223,14 @@ static rw_status_t rwtasklet_start(
                          m_rwtasklet->plugin_name, m_rwtasklet->plugin_directory, instance_name);
 
   RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);
+  rwmain_tasklet_mode_active_t mode_active = {
+    .has_mode_active = m_action->start->has_mode_active,
+    .mode_active = m_action->start->mode_active
+  };
   rt = rwmain_tasklet_alloc(
       instance_name,
       instance_id,
+      &mode_active,
       m_rwtasklet->plugin_name,
       m_rwtasklet->plugin_directory,
       rwmain->rwvx->rwvcs);
@@ -2037,6 +2244,12 @@ static rw_status_t rwtasklet_start(
     goto done;
   }
   rt->rwmain = rwmain;
+  rt->tasklet_info->data_store = m_action->start->data_storetype;
+  if (rwmain->rwvx->rwvcs->pb_rwmanifest->init_phase->settings->rwvcs->collapse_each_rwvm) {
+    rt->tasklet_info->vm_ip_address = RW_STRDUP("127.0.1.1");
+  } else {
+    rt->tasklet_info->vm_ip_address = RW_STRDUP(rwmain->vm_ip_address);
+  }
 
   RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);
   status = rwmain_tasklet_start(rwmain, rt);
@@ -2174,17 +2387,35 @@ rwmain_rwvm_init(
 
   rwvcs = rwmain->rwvx->rwvcs;
 
-  // Called and then immediately freed as a side effect gets the linkage to the
-  // parent working.
-  rwvm = rwvcs_rwvm_alloc(
-      rwvcs,
-      parent_id,
-      component_name,
-      instance_id,
-      instance_name);
-  RW_ASSERT(rwvm);
-  free(rwvm);
+  rw_component_info vm;
+  status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &vm);
+  if ((status == RW_STATUS_SUCCESS) 
+      && (vm.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+    status = rwvcs_rwzk_node_update(rwvcs, &vm);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+  }
+  else {
+    // Called and then immediately freed as a side effect gets the linkage to the
+    // Does not update parent here
+    rwvm = rwvcs_rwvm_alloc(
+        rwvcs,
+        (rwvcs->mgmt_info.state != RWVCS_TYPES_VM_STATE_MGMTACTIVE)?parent_id:NULL,
+        component_name,
+        instance_id,
+        instance_name);
+    RW_ASSERT(rwvm);
+    free(rwvm);
+  }
 
+  if (IS_MGMT_VM(rwvcs)) {
+    rw_component_info rw_vm;
+    status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &rw_vm);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    rw_vm.vm_info->has_vm_state = true;
+    rw_vm.vm_info->vm_state = MGMT_VM_STATE(rwvcs);
+    status = rwvcs_rwzk_node_update(rwvcs, &rw_vm);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+  }
 
   status = reaper_start(rwvcs, instance_name);
   RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -2313,7 +2544,6 @@ rwmain_rwproc_init(
   rw_component_info proc;
   bool alloced = true;
   RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);
-  // Create an rwproc structure
   status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &proc);
   if ((status == RW_STATUS_SUCCESS) 
       && (proc.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
@@ -2398,7 +2628,11 @@ rwmain_rwproc_init(
     action.start->config_ready = proc_def->tasklet[i]->config_ready;
     action.start->has_recovery_action = proc_def->tasklet[i]->has_recovery_action;
     action.start->recovery_action = proc_def->tasklet[i]->recovery_action;
-
+    action.start->has_data_storetype = proc_def->tasklet[i]->has_data_storetype;
+    action.start->data_storetype = proc_def->tasklet[i]->data_storetype; 
+    action.start->has_mode_active = proc_def->tasklet[i]->has_mode_active;
+    action.start->mode_active = proc_def->tasklet[i]->mode_active;
+     
     RWVCS_LATENCY_CHK_PRE(rwmain->rwvx->rwsched);                           
     status = rwmain_action_run(rwmain, rwproc->instance_name, &action);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
@@ -3004,22 +3238,26 @@ rw_status_t start_terminal_io_tasklet(
   m_start.config_ready = true;
   m_start.has_recovery_action = true;
   m_start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_FAILCRITICAL;
-
+  m_start.has_data_storetype = true;
+  m_start.data_storetype = RWVCS_TYPES_DATA_STORE_NOSTORE;
 
   char *instance_name = NULL;
-  uint32_t instance_id;
-  status = generate_instance_name_id(rwmain->rwvx->rwvcs, 
-                                     m_action.start, 
-                                     &instance_name, 
-                                     &instance_id);
-  RW_ASSERT(status == RW_STATUS_SUCCESS);
-  if (status != RW_STATUS_SUCCESS) {
-    rwmain_trace_crit(
-        rwmain,
-        "Failed to get instance name and id for %s, parent %s",
-        m_action.start->component_name,
-        parent_id);
-    RW_CRASH();
+  uint32_t instance_id = 0;
+  rwmain_check_and_set_instance_name(rwmain, parent_id, parent_id, &m_action, &instance_name, &instance_id);
+  if (!instance_name) {
+    status = generate_instance_name_id(rwmain->rwvx->rwvcs, 
+                                       m_action.start, 
+                                       &instance_name, 
+                                       &instance_id);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    if (status != RW_STATUS_SUCCESS) {
+      rwmain_trace_crit(
+          rwmain,
+          "Failed to get instance name and id for %s, parent %s",
+          m_action.start->component_name,
+          parent_id);
+      RW_CRASH();
+    }
   }
 
   ret = rwtasklet_start(rwmain, 
@@ -3314,4 +3552,255 @@ done:
     free(children);
   }
   return;
+}
+
+static void
+rwmain_inform_current_children(rwvcs_instance_ptr_t rwvcs,
+                               rwdts_xact_block_t   *block,
+                               rw_component_info    *cinfo,
+                               vcs_vm_state         vm_state)
+{
+  rw_status_t status;
+  if ((cinfo->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWTASKLET) 
+      || (cinfo->component_type == RWVCS_TYPES_COMPONENT_TYPE_PROC)) {
+    status = rwdts_api_add_modeinfo_query_to_block(
+        block,
+        rwvcs->instance_name,
+        cinfo->instance_name,
+        vm_state);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+  }
+
+  int indx;
+  rw_component_info chinfo;
+  for(indx=0; indx < cinfo->n_rwcomponent_children; indx++) {
+    status = rwvcs_rwzk_lookup_component(rwvcs, cinfo->rwcomponent_children[indx], &chinfo);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    rwmain_inform_current_children (rwvcs, block, &chinfo, vm_state);
+  }
+}
+
+static void
+rwmain_restruct_active_child(rwvcs_instance_ptr_t rwvcs,
+                            rw_component_info *reparent_cinfo,
+                            char *instance_name)
+{
+  rw_component_info cinfo;
+  rw_status_t status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &cinfo);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  if (!strcmp(cinfo.component_name, reparent_cinfo->component_name)
+      && cinfo.has_mode_active 
+      && !cinfo.mode_active) {
+    //may need to do for vm_info etc as well 
+    if (reparent_cinfo->proc_info) {
+      reaper_client_del_pid(rwvcs->reaper_sock, cinfo.proc_info->pid);
+      RW_ASSERT(reparent_cinfo->has_mode_active);
+      reparent_cinfo->mode_active = false; // for recovering
+
+      rw_proc_info *proc_info = reparent_cinfo->proc_info;
+      reparent_cinfo->proc_info = cinfo.proc_info;
+      cinfo.proc_info = proc_info;
+      cinfo.mode_active = true;//discard if checked again
+      status = rwvcs_rwzk_node_update(rwvcs, &cinfo);
+      NEW_DBG_PRINTS("Redis MADE standby %s ----\n", reparent_cinfo->instance_name);
+    }
+  }
+  int indx;
+  for(indx=0; indx < cinfo.n_rwcomponent_children; indx++) {
+    rwmain_restruct_active_child(rwvcs, reparent_cinfo, cinfo.rwcomponent_children[indx]);
+  }
+  protobuf_free_stack(cinfo);
+}
+
+static void 
+rwmain_reparent_instance(rwvcs_instance_ptr_t rwvcs,
+                         rw_component_info *chinfo,
+                         char *old_parent_name,
+                         char *new_parent_name)
+{
+  rw_status_t status = rwvcs_rwzk_delete_child(rwvcs, old_parent_name, chinfo->component_name, chinfo->instance_id);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  status = rwvcs_rwzk_add_child(rwvcs, new_parent_name, chinfo->instance_name);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  RW_FREE(chinfo->rwcomponent_parent);
+  chinfo->rwcomponent_parent = strdup(new_parent_name);
+}
+
+static void
+rwmain_setup_recovery_children(struct rwmain_gi *rwmain,
+                               char *instance_name,
+                               rwmain_restart_instance_t **restart_list,
+                               char *failed_vm,
+                               char *current_standby_vm)
+{
+  rwvcs_instance_ptr_t rwvcs = rwmain->rwvx->rwvcs;
+  bool changed = false;
+  rw_component_info cinfo;
+  rw_status_t status = rwvcs_rwzk_lookup_component(rwvcs, instance_name, &cinfo);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  if (!RWMAIN_SKIP_COMPONENTS(cinfo, failed_vm)) {
+    changed = true;
+    cinfo.has_recovery_action = true;
+    cinfo.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_RESTART;
+    if (strstr(cinfo.instance_name, "RW.Redis.Server")) {
+      rwmain_restruct_active_child(rwvcs, &cinfo, current_standby_vm);
+    }
+    if (!strcmp(cinfo.rwcomponent_parent, failed_vm)) {
+      rwmain_reparent_instance(rwvcs, &cinfo, failed_vm, current_standby_vm);
+      rwmain_restart_instance_t *restart_instance = RW_MALLOC0_TYPE(sizeof(rwmain_restart_instance_t), rwmain_restart_instance_t);
+      RW_ASSERT_TYPE(restart_instance, rwmain_restart_instance_t);
+      restart_instance->instance_name = strdup(cinfo.instance_name);
+      restart_instance->rwmain = rwmain;
+      if (!(*restart_list)) {
+        (*restart_list) = restart_instance;
+      }
+      else {
+        restart_instance->next_restart_instance = (*restart_list);
+        (*restart_list) = restart_instance;
+      }
+    }
+  }
+  else if (strcmp(cinfo.instance_name, failed_vm)) {
+    if (cinfo.proc_info) {
+      RW_FREE(cinfo.proc_info);
+      cinfo.proc_info = NULL;
+    }
+    status = rwvcs_rwzk_node_update(rwvcs, &cinfo);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+
+    rw_component_info dummy;
+    kill_component(rwmain, cinfo.instance_name, &dummy);
+    protobuf_free_stack(dummy);
+    if (cinfo.rwcomponent_parent) {
+      rwvcs_rwzk_delete_child(rwvcs, cinfo.rwcomponent_parent, cinfo.component_name, cinfo.instance_id);
+    }
+    rwvcs_component_delete(rwvcs, &cinfo);
+  }
+  if (changed) {
+    status = rwvcs_rwzk_node_update(rwvcs, &cinfo);
+  }
+  int indx;
+  for(indx=0; indx < cinfo.n_rwcomponent_children; indx++) {
+    rwmain_setup_recovery_children (rwmain, cinfo.rwcomponent_children[indx], restart_list, failed_vm, current_standby_vm);
+  }
+  protobuf_free_stack(cinfo);
+}
+
+void
+rwmain_inform_state_change_local (rwvcs_instance_ptr_t rwvcs,
+                                  rw_component_info *cinfo,
+                                  vcs_vm_state vm_state) 
+{
+  rwdts_xact_t *xact = rwdts_api_xact_create(
+      rwvcs->apih,
+      RWDTS_XACT_FLAG_TRACE | RWDTS_XACT_FLAG_ADVISE,
+      NULL,
+      NULL);
+  rwdts_xact_block_t *block = rwdts_xact_block_create(xact);
+  RW_ASSERT(block);
+  rwmain_inform_current_children(
+      rwvcs,
+      block,
+      cinfo,
+      vm_state);
+  rw_status_t status = rwdts_xact_block_execute(block, RWDTS_XACT_FLAG_END, NULL, 0, NULL); 
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+}
+
+rw_status_t
+rwmain_notify_transition (struct rwmain_gi *rwmain, vcs_vm_state state)
+{
+  rwvcs_instance_ptr_t rwvcs = rwmain->rwvx->rwvcs;
+  rw_status_t status = RW_STATUS_SUCCESS;
+
+  if (state == RWVCS_TYPES_VM_STATE_MGMTACTIVE) {
+    rw_component_info cinfo;
+    rw_status_t status = rwvcs_rwzk_lookup_component(rwvcs, rwvcs->instance_name, &cinfo);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    rwvcs->restart_inprogress = true;
+    rwmain_inform_state_change_local(rwvcs, &cinfo, state);
+
+    rw_component_info pinfo;
+    status = rwvcs_rwzk_lookup_component(rwvcs, cinfo.rwcomponent_parent, &pinfo);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+
+    RW_ASSERT(cinfo.vm_info);
+    cinfo.vm_info->has_leader = true;
+    cinfo.vm_info->leader = true;
+    cinfo.vm_info->has_vm_state = true;
+    cinfo.vm_info->vm_state = RWVCS_TYPES_VM_STATE_MGMTACTIVE;
+    status = rwvcs_rwzk_node_update(rwvcs, &cinfo);
+    RW_ASSERT(status == RW_STATUS_SUCCESS);
+    protobuf_free_stack(cinfo);
+
+    int indx;
+    for(indx=0; indx < pinfo.n_rwcomponent_children; indx++) {
+      if (strcmp(pinfo.rwcomponent_children[indx], rwvcs->instance_name)) {
+        rwmain_restart_instance_t *restart_list = NULL;
+        rwmain_setup_recovery_children(rwmain, pinfo.rwcomponent_children[indx], &restart_list, pinfo.rwcomponent_children[indx], rwvcs->instance_name);
+        rw_component_info dummy;
+        kill_component(rwmain, pinfo.rwcomponent_children[indx], &dummy);
+        if (dummy.rwcomponent_parent) {
+          rwvcs_rwzk_delete_child(rwvcs, dummy.rwcomponent_parent, dummy.component_name, dummy.instance_id);
+        }
+        rwvcs_component_delete(rwvcs, &dummy);
+        protobuf_free_stack(dummy);
+
+        RW_ASSERT(restart_list);
+        rwmain_restart_instance_t *restart_instance = restart_list;
+        while (restart_instance) {
+          RW_ASSERT_TYPE(restart_instance, rwmain_restart_instance_t);
+          rw_component_info dummy;
+          process_component_death(rwmain, restart_instance->instance_name, &dummy);
+          protobuf_free_stack(dummy);
+          restart_instance = restart_instance->next_restart_instance;
+        }
+
+        rwmain_restart_instance_t *uagent = NULL;
+        rwmain_restart_instance_t *prev = NULL;
+        restart_instance = restart_list;
+        while (restart_instance) {
+          RW_ASSERT_TYPE(restart_instance, rwmain_restart_instance_t);
+          if (strstr(restart_instance->instance_name, "uAgent")) {
+            uagent = restart_instance;
+          }
+          if (uagent) {
+            if (prev) {
+              prev->next_restart_instance = uagent->next_restart_instance;
+            }
+            else {
+              restart_list = uagent->next_restart_instance;
+            }
+            uagent->next_restart_instance = NULL;
+            break;
+          }
+          prev = restart_instance;
+          restart_instance = restart_instance->next_restart_instance;
+        }
+#if 0
+  rwmain->rwvx->rwvcs->restart_inprogress = false;
+  while (restart_list) {
+    rwmain_restart_instance_t *restart_instance = restart_list;
+    RW_ASSERT_TYPE(restart_instance, rwmain_restart_instance_t);
+    restart_list = restart_instance->next_restart_instance;
+
+    handle_recovery_action_instance_name(rwmain, restart_instance->instance_name);
+    RW_FREE(restart_instance->instance_name);
+    RW_FREE_TYPE(restart_instance, rwmain_restart_instance_t);
+  }
+  //rwmain_restart_deferred (uagent);
+#else
+        rwmain_restart_deferred (restart_list);
+        RW_ASSERT_TYPE(uagent, rwmain_restart_instance_t); //found uAgent
+
+        handle_recovery_action_instance_name(rwmain, uagent->instance_name);
+        RW_FREE(uagent->instance_name);
+        RW_FREE_TYPE(uagent, rwmain_restart_instance_t);
+#endif
+      }
+    }
+    protobuf_free_stack(pinfo);
+  }
+
+  return status;
 }

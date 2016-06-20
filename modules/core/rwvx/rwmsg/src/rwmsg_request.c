@@ -15,6 +15,35 @@
 
 #include "rwmsg_int.h"
 
+static const char*
+rwmsg_request_bounce_to_str(rwmsg_bounce_t bnc)
+{
+  switch(bnc) {
+    case RWMSG_BOUNCE_OK:
+      return "RWMSG_BOUNCE_OK";
+    case RWMSG_BOUNCE_NODEST:
+      return "RWMSG_BOUNCE_NODEST";
+    case RWMSG_BOUNCE_NOMETH:
+      return "RWMSG_BOUNCE_NOMETH";
+    case RWMSG_BOUNCE_NOPEER:
+      return "RWMSG_BOUNCE_NOPEER";
+    case RWMSG_BOUNCE_BROKERR:
+      return "RWMSG_BOUNCE_BROKERR";
+    case RWMSG_BOUNCE_TIMEOUT:
+      return "RWMSG_BOUNCE_TIMEOUT";
+    case RWMSG_BOUNCE_RESET:
+      return "RWMSG_BOUNCE_RESET";
+    case RWMSG_BOUNCE_SRVRST:
+      return "RWMSG_BOUNCE_SRVRST";
+    case RWMSG_BOUNCE_TERM:
+      return "RWMSG_BOUNCE_TERM";
+    case RWMSG_BOUNCE_BADREQ:
+      return "RWMSG_BOUNCE_BADREQ";
+    default:
+      return "??UNK_BOUNCE_??";
+  }
+}
+
 rwmsg_request_t *rwmsg_request_create(rwmsg_clichan_t *cc) {
   rwmsg_channel_t *ch = (rwmsg_channel_t*)cc;
 
@@ -472,6 +501,16 @@ rwmsg_bool_t rwmsg_request_release(rwmsg_request_t *req) {
 
   rwmsg_request_message_free(&req->req);
   rwmsg_request_message_free(&req->rsp);
+  if (req->rwml_buffer) {
+    rwmsg_request_memlog_hdr (&req->rwml_buffer, 
+                              req, 
+                              __PRETTY_FUNCTION__, 
+                              __LINE__, 
+                              "(Req Released)");
+    rwmemlog_buffer_return_all(req->rwml_buffer);
+    req->rwml_buffer = NULL;
+  }
+
 
   /* It would be nice not to hold these references in the request object */
   if (req->clichan) {
@@ -514,3 +553,23 @@ void rwmsg_request_dump() {
   }
 }
 #endif
+
+void rwmsg_request_memlog_hdr(rwmemlog_buffer_t **rwml_buffer,
+                              rwmsg_request_t    *req,
+                              const char         *func_name,
+                              const int          line,
+                              const char         *string)
+{
+  RW_ASSERT(rwml_buffer);
+  if (req) {
+    RWMEMLOG(rwml_buffer,
+	     RWMEMLOG_MEM0,
+       "RWMsg HDR",
+       RWMEMLOG_ARG_STRNCPY(50, func_name),
+       RWMEMLOG_ARG_PRINTF_INTPTR("%"PRIdPTR, line),
+       RWMEMLOG_ARG_PRINTF_INTPTR("broid %"PRIdPTR, req->hdr.id.broid),
+       RWMEMLOG_ARG_PRINTF_INTPTR("chanid %"PRIdPTR, req->hdr.id.chanid),
+       RWMEMLOG_ARG_PRINTF_INTPTR("locid %"PRIdPTR, req->hdr.id.locid),
+       RWMEMLOG_ARG_ENUM_FUNC(rwmsg_request_bounce_to_str, "", req->hdr.bnc)); 
+  }
+}

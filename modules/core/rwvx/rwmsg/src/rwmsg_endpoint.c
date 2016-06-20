@@ -13,6 +13,9 @@
  * @brief RWMSG messaging endpoint object
  */
 
+/* Need PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP */
+#define _GNU_SOURCE 1
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -73,8 +76,8 @@ static struct rwmsg_endpoint_prop_t rwmsg_default_properties[] = {
   { NULL }
 };
 
-/* Processwide data.  Stats, primary hash tables, etc */
-struct rwmsg_endpoint_global_s rwmsg_global = { .rgmut = PTHREAD_MUTEX_INITIALIZER };
+/* Processwide data.  Stats, primary hash tables, etc. */
+struct rwmsg_endpoint_global_s rwmsg_global = { .rgmut = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP };
 
 
 /* Allocator for ck hash tables */

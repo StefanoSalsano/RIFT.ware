@@ -442,7 +442,7 @@ public:
 
 };
 
-static void RedisReady(struct tenv1 *tenv);
+static void RedisReady(struct tenv1 *tenv, rw_status_t status);
 
 struct abc {
   int a;
@@ -458,7 +458,7 @@ const char *tab_entry[30] = {"TEST", "Sheldon", "Leonard", "Raj", "Howard", "Ber
                        "Amy", "Steve", "Wilma", "Fred", "Charlie", "Penny","What",
                        "When", "Why", "Who", "How", "BBC", "CNN"};
 
-int set_count, shard_delete, set_aborted, set_committed, del_committed, del_aborted;
+int set_count, shard_delete, set_aborted, set_committed, del_committed, del_aborted, del_count;
 
 static rwdts_kv_light_reply_status_t rwdts_kv_light_get_callback(void *val, int val_len, void *userdata);
 
@@ -520,7 +520,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_get_xact_callback(void *val,
      a.a = 1;
      a.b = 2;
      a.c = 3;
-     rwdts_kv_light_table_xact_insert(tab_handle, 1, 250, (char*)"FOO", 3,
+     rwdts_kv_light_table_xact_insert(tab_handle, 1, (char *)"What", (char*)"FOO", 3,
                                       (void*)&a, sizeof(a),
                                       (void *)rwdts_kv_light_set_xact_callback, (void*)tab_handle);
    } else {
@@ -544,10 +544,10 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_set_xact_callback(rwdts_kv_l
    rwdts_kv_table_handle_t *tab_handle = (rwdts_kv_table_handle_t *)userdata;
    EXPECT_TRUE(RWDTS_KV_LIGHT_SET_SUCCESS == status);
    if (set_aborted == 1) {
-     rwdts_kv_light_api_xact_insert_commit(tab_handle, serial_num, 250, (char *)"FOO", 3, (void *)rwdts_kv_light_insert_xact_callback, (void *)tab_handle);
+     rwdts_kv_light_api_xact_insert_commit(tab_handle, serial_num, (char *)"What", (char *)"FOO", 3, (void *)rwdts_kv_light_insert_xact_callback, (void *)tab_handle);
      set_committed = 1;
    } else {
-     rwdts_kv_light_api_xact_insert_abort(tab_handle, serial_num, 250, (char *)"FOO", 3, (void *)rwdts_kv_light_insert_xact_callback, (void *)tab_handle);
+     rwdts_kv_light_api_xact_insert_abort(tab_handle, serial_num, (char *)"What", (char *)"FOO", 3, (void *)rwdts_kv_light_insert_xact_callback, (void *)tab_handle);
      set_aborted = 1;
    }
    return RWDTS_KV_LIGHT_REPLY_DONE;
@@ -557,10 +557,11 @@ void RWDtsRedisEnsemble::startClient(void)
 {
   char address_port[20] = "127.0.0.1:";
   strcat(address_port, tenv.redis_port);
-  rw_status_t status = rwdts_kv_light_db_connect(tenv.handle, tenv.rwsched, tenv.redis_tasklet,
-                                                 address_port,
-                                                 (void *)RedisReady,
-                                                 (void *)&tenv);
+  rw_status_t status = rwdts_kv_handle_db_connect(tenv.handle, tenv.rwsched, tenv.redis_tasklet,
+                                                  address_port,
+                                                  "test", NULL,
+                                                  (void *)RedisReady,
+                                                  (void *)&tenv);
   ASSERT_TRUE(RW_STATUS_SUCCESS == status);
 }
 
@@ -1363,17 +1364,16 @@ RWDtsRedisEnsemble::rwdts_test_registration_cb(RWDtsRegisterRsp*    rsp,
 {
   RW_ASSERT(rsp);
   rwdts_api_t *apih = (rwdts_api_t*)ud;
-  uint32_t i, db_number, shard_chunk_id;
+  uint32_t i, db_number;
 
   for(i=0; i< rsp->n_responses; i++) {
-    if (rsp->responses[i]->has_db_number && rsp->responses[i]->has_shard_chunk_id) {
+    if (rsp->responses[i]->has_db_number && rsp->responses[i]->shard_chunk_id) {
       db_number = rsp->responses[i]->db_number;
-      shard_chunk_id = rsp->responses[i]->shard_chunk_id;
       if (tenv.redis_up == 1) {
         if (tenv.tab_handle[db_number] == NULL) {
           tenv.tab_handle[db_number] = rwdts_kv_light_register_table(tenv.handle, db_number);
           RW_ASSERT(tenv.tab_handle[db_number]);
-          rwdts_kv_light_table_insert(tenv.tab_handle[db_number], tenv.next_serial_number[db_number], shard_chunk_id,
+          rwdts_kv_light_table_insert(tenv.tab_handle[db_number], tenv.next_serial_number[db_number], (char *)rsp->responses[i]->shard_chunk_id,
                                       (void *)RWPB_G_PATHSPEC_VALUE(DtsTest_data_Person_Phone),
                                       sizeof(RWPB_T_PATHSPEC(DtsTest_data_Person_Phone)),
                                       (void *)RWPB_G_PATHENTRY_VALUE(DtsTest_data_Person_Phone),
@@ -1421,20 +1421,20 @@ RWDtsRedisEnsemble::rwdts_shard_info_cb(RWDtsGetDbShardInfoRsp*    rsp,
 {
   RW_ASSERT(rsp);
   rwdts_api_t *apih = (rwdts_api_t*)ud;
-  uint32_t i, db_number, shard_chunk_id;
+  uint32_t i, db_number;
 
   if (tenv.redis_up == 1) {
     for (i = 0; i < rsp->n_responses; i++) {
       rwdts_kv_table_handle_t *kv_tab_handle = NULL;
       rw_status_t status;
       db_number = rsp->responses[i]->db_number;
-      shard_chunk_id = rsp->responses[i]->shard_chunk_id;
+      //shard_chunk_id = rsp->responses[i]->shard_chunk_id;
       status = RW_SKLIST_LOOKUP_BY_KEY(&(apih->kv_table_handle_list), &db_number,
                                        (void *)&kv_tab_handle);
       EXPECT_TRUE(status == RW_STATUS_SUCCESS);
       if (kv_tab_handle != NULL) {
         rwdts_kv_light_get_next_fields(kv_tab_handle,
-                                       shard_chunk_id,
+                                       rsp->responses[i]->shard_chunk_id,
                                        (void *)RWDtsRedisEnsemble::rwdts_kv_light_get_shard_callback,
                                        (void *)apih, NULL);
       }
@@ -1591,11 +1591,12 @@ static void memberapi_pub_sub_db_member_start_f(void *ctx) {
   TSTPRN("Member member API pub sub db member start ending , startct=%u\n", s->member_startct);
 }
 
-static void RedisReady(struct tenv1 *tenv)
+static void RedisReady(struct tenv1 *tenv, rw_status_t status)
 {
   int i;
   tenv->redis_instance = (rwdts_redis_instance *)tenv->handle->kv_conn_instance;
   ASSERT_TRUE(tenv->redis_instance);
+  ASSERT_TRUE(status == RW_STATUS_SUCCESS);
   tenv->redis_up = 1;
   for ( i = 0; i < TASKLET_CT; i++)
   {
@@ -1684,7 +1685,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_tab_exist(int exists,
 {
   rwdts_kv_table_handle_t *tab_handle = (rwdts_kv_table_handle_t *)userdata;
   EXPECT_TRUE(exists == 1);
-  rwdts_kv_light_table_delete_key(tab_handle, 2, 250, (char *)"FOO", 3, (void *)rwdts_kv_light_del_callback, (void *)tab_handle);
+  rwdts_kv_light_table_delete_key(tab_handle, 2, (char *)"What", (char *)"FOO", 3, (void *)rwdts_kv_light_del_callback, (void *)tab_handle);
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
@@ -1716,7 +1717,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_delete_shard_cbk_fn(rwdts_kv
     //fprintf(stderr, "Successfully deleted the data\n");
   }
   shard_delete = 1;
-  rwdts_kv_light_tab_get_all(tab_handle, (void *)rwdts_kv_light_get_all_callback, (void *)tab_handle);
+  rwdts_kv_handle_get_all(tab_handle->handle, tab_handle->db_num, (void *)rwdts_kv_light_get_all_callback, (void *)tab_handle);
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
@@ -1745,7 +1746,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_delete_tab_cbk_fn(rwdts_kv_l
   if(RWDTS_KV_LIGHT_DEL_SUCCESS == status) {
     //fprintf(stderr, "Successfully deleted the data\n");
   }
-  rwdts_kv_light_tab_get_all(tab_handle, (void *) rwdts_kv_light_final_get_all_callback, (void *)tab_handle);
+  rwdts_kv_handle_get_all(tab_handle->handle, tab_handle->db_num, (void *) rwdts_kv_light_final_get_all_callback, (void *)tab_handle);
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
@@ -1776,7 +1777,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_get_all_callback(void **key,
 
 
   if (shard_delete == 0) {
-    rwdts_kv_light_delete_shard_entries(tab_handle, 250,
+    rwdts_kv_light_delete_shard_entries(tab_handle, (char *)"What",
                                        (void *)rwdts_kv_light_delete_shard_cbk_fn,
                                        (void *)tab_handle);
   } else {
@@ -1805,7 +1806,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_get_next_callback(void **val
     fprintf(stderr, " Get next %s\n", (char *)key[i]);
   }
 */
-  rwdts_kv_light_tab_get_all(tab_handle, (void *)rwdts_kv_light_get_all_callback, (void *)tab_handle);
+  rwdts_kv_handle_get_all(tab_handle->handle, tab_handle->db_num, (void *)rwdts_kv_light_get_all_callback, (void *)tab_handle);
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
@@ -1822,7 +1823,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_shard_set_callback(rwdts_kv_
 
   set_count++;
   if (set_count == 19) {
-    rwdts_kv_light_get_next_fields(tab_handle, 250, (void *)rwdts_kv_light_get_next_callback,
+    rwdts_kv_light_get_next_fields(tab_handle, (char *)"What", (void *)rwdts_kv_light_get_next_callback,
                                    (void*)tab_handle, NULL);
   }
   return RWDTS_KV_LIGHT_REPLY_DONE;
@@ -1881,7 +1882,7 @@ TEST_F(RWDtsRedisEnsemble, InitRedis)
   a.c = 3;
 
   tenv.kv_tab_handle = rwdts_kv_light_register_table(tenv.handle, 9);
-  rwdts_kv_light_table_insert(tenv.kv_tab_handle, 1, 250, (char*)"FOO", 3,
+  rwdts_kv_light_table_insert(tenv.kv_tab_handle, 1, (char *)"What", (char*)"FOO", 3,
                               (void*)&a,
                               sizeof(a),
                               (void *)rwdts_kv_light_set_foo_callback, (void*)tenv.kv_tab_handle);
@@ -1892,7 +1893,8 @@ TEST_F(RWDtsRedisEnsemble, InitRedis)
 TEST_F(RWDtsRedisEnsemble, InitRedisShard)
 {
   rwsched_dispatch_main_until(tenv.redis_tasklet, 10/*s*/, &tenv.redis_up);
-  int i, shard_num = 250;
+  int i;
+  char shard_num[100] = "What";
 
   ASSERT_TRUE(tenv.redis_up); /*connection should be up at this point */
 
@@ -1903,7 +1905,7 @@ TEST_F(RWDtsRedisEnsemble, InitRedisShard)
 
   for (i = 0; i< 19; i++) {
     if (i > 13) {
-      shard_num = 260;
+      strcpy(shard_num, "When");
     }
     rwdts_kv_light_table_insert(tenv.kv_tab_handle, (i+1), shard_num, (void *)key_entry[i],
                                 strlen(key_entry[i]), (void *)tab_entry[i], strlen(tab_entry[i]),
@@ -1928,11 +1930,128 @@ TEST_F(RWDtsRedisEnsemble, InitRedisXact)
   set_committed = 0;
   del_committed = 0;
 
-  rwdts_kv_light_table_xact_insert(tenv.kv_tab_handle, 1, 250, (char*)"FOO", 3,
+  rwdts_kv_light_table_xact_insert(tenv.kv_tab_handle, 1, (char *)"What", (char*)"FOO", 3,
                                    (void*)&a, sizeof(a),
                                    (void *)rwdts_kv_light_set_xact_callback, (void*)tenv.kv_tab_handle);
 
   rwsched_dispatch_main_until(tenv.redis_tasklet, 2/*s*/, NULL);
+}
+
+static rwdts_kv_light_reply_status_t rwdts_kv_handle_final_get_all_cb(void **key,
+                                                                      int *key_len,
+                                                                      void **val,
+                                                                      int *val_len,
+                                                                      int total,
+                                                                      void *userdata)
+{
+  int i;
+  char res_val[50];
+  char res_key[50];
+  EXPECT_TRUE(total == 14);
+
+  for(i=0; i < total; i++) {
+    memcpy(res_val, (char *)val[i], val_len[i]);
+    res_val[val_len[i]] = '\0';
+    memcpy(res_key, (char *)key[i], key_len[i]);
+    res_key[key_len[i]] = '\0';
+    //fprintf(stderr, "res_key = %s, res_val = %s\n", res_val, res_key);
+    free(key[i]);
+    free(val[i]);
+  }
+  free(key);
+  free(val);
+  free(key_len);
+  free(val_len);
+
+  return RWDTS_KV_LIGHT_REPLY_DONE;
+}
+
+static rwdts_kv_light_reply_status_t
+rwdts_kv_handle_del_shash_cb(rwdts_kv_light_del_status_t status,
+                             void *userdata)
+{
+  rwdts_kv_handle_t *handle = (rwdts_kv_handle_t *)userdata;
+
+  del_count++;
+  if (del_count == 5) {
+    rwdts_kv_handle_get_all(handle, 7, (void *)rwdts_kv_handle_final_get_all_cb,
+                                   (void*)handle);
+  }
+  return RWDTS_KV_LIGHT_REPLY_DONE;
+}
+
+static rwdts_kv_light_reply_status_t rwdts_kv_handle_get_all_shash_cb(void **key,
+                                                                      int *key_len,
+                                                                      void **val,
+                                                                      int *val_len,
+                                                                      int total,
+                                                                      void *userdata)
+{
+  rwdts_kv_handle_t *handle = (rwdts_kv_handle_t *)userdata;
+
+  int i;
+  char res_val[50];
+  char res_key[50];
+  rw_status_t res;
+  EXPECT_TRUE(total == 19);
+
+  for(i=0; i < total; i++) {
+    memcpy(res_val, (char *)val[i], val_len[i]);
+    res_val[val_len[i]] = '\0';
+    memcpy(res_key, (char *)key[i], key_len[i]);
+    res_key[key_len[i]] = '\0';
+    //fprintf(stderr, "res_key = %s, res_val = %s\n", res_val, res_key);
+    free(key[i]);
+    free(val[i]);
+  }
+  free(key);
+  free(val);
+  free(key_len);
+  free(val_len);
+
+  for (i=0; i < 5; i++) {
+    res = rwdts_kv_handle_del_keyval(handle, 7, (char *)key_entry[i],
+                                     strlen(key_entry[i]), (void *)rwdts_kv_handle_del_shash_cb, handle);
+    EXPECT_EQ(res, RW_STATUS_SUCCESS);
+  }
+
+  return RWDTS_KV_LIGHT_REPLY_DONE;
+}
+
+static rwdts_kv_light_reply_status_t rwdts_kv_light_shash_set_callback(rwdts_kv_light_set_status_t status,
+                                                                       int serial_num, void *userdata)
+{
+  rwdts_kv_handle_t *handle = (rwdts_kv_handle_t *)userdata;
+  EXPECT_TRUE(RWDTS_KV_LIGHT_SET_SUCCESS == status);
+
+  if(RWDTS_KV_LIGHT_SET_SUCCESS == status) {
+    //fprintf(stderr, "Successfully inserted the data\n");
+  }
+
+  set_count++;
+  if (set_count == 19) {
+    rwdts_kv_handle_get_all(handle, 7, (void *)rwdts_kv_handle_get_all_shash_cb,
+                                   (void*)handle);
+  }
+  return RWDTS_KV_LIGHT_REPLY_DONE;
+}
+
+TEST_F(RWDtsRedisEnsemble, RedisDBTest)
+{
+  rwsched_dispatch_main_until(tenv.redis_tasklet, 10/*s*/, &tenv.redis_up);
+  int i;
+
+  ASSERT_TRUE(tenv.redis_up); /*connection should be up at this point */
+
+  set_count = 0;
+  del_count = 0;
+
+  for (i = 0; i< 19; i++) {
+    rwdts_kv_handle_add_keyval(tenv.handle, 7, (void *)key_entry[i], strlen(key_entry[i]),
+                               (void *)tab_entry[i], strlen(tab_entry[i]),
+                               (void *)rwdts_kv_light_shash_set_callback, (void*)tenv.handle);
+  }
+  rwsched_dispatch_main_until(tenv.redis_tasklet, 5/*s*/, NULL);
 }
 
 RWUT_INIT();

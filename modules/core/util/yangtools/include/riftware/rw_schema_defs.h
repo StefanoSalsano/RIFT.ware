@@ -31,14 +31,10 @@
 
 #define RW_SCHEMA_INIT_TMP_PREFIX ("var/rift/tmp.")
 
-#define RW_SCHEMA_CONFD_TEST_PREFIX ("confd_ws.")
-#define RW_SCHEMA_CONFD_PERSIST_PREFIX ("confd_persist_")
-#define RW_SCHEMA_CONFD_ARCHIVE_PREFIX ("ar_confd_persist_")
+#define RW_SCHEMA_MGMT_TEST_PREFIX ("unique_ws.")
+#define RW_SCHEMA_MGMT_PERSIST_PREFIX ("persist.")
+#define RW_SCHEMA_MGMT_ARCHIVE_PREFIX ("ar_persist.")
 #define RW_SCHEMA_CONFD_PROTOTYPE_CONF ("etc/rw_confd_prototype.conf")
-
-#define RW_SCHEMA_XML_TEST_PREFIX ("xml_ws.")
-#define RW_SCHEMA_XML_PERSIST_PREFIX ("xml_persist_")
-#define RW_SCHEMA_XML_ARCHIVE_PREFIX ("ar_xml_persist_")
 
 #define RW_SCHEMA_META_FILE_SUFFIX (".meta_info.txt")
 

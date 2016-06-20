@@ -4,11 +4,14 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
-@import '../../../../framework/style/_colors.scss';
+@import 'style/_colors.scss';
 @import '../../node_modules/open-iconic/font/css/open-iconic.css';
 .launchpadCard {
   display:flex;
   margin-top: 0.75rem;
+  &-body{
+    position: relative;
+  }
   .deletingIndicator {
     display: flex;
     flex:1;

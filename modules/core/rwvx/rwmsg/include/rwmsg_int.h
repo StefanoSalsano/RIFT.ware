@@ -41,6 +41,7 @@
 #include "rwmsg_notify.h"
 #include "rwmsg_queue.h"
 #include "rwlog.h"
+#include <rwmemlog.h>
 
 
 __BEGIN_DECLS
@@ -149,6 +150,7 @@ struct rwmsg_request_s {
   rw_dl_element_t trackelem;
 #endif
   uint32_t refct;
+  rwmemlog_buffer_t *rwml_buffer;
 
   /* Problematic bitfield in broker, all fields owned by brosrvchan so we squeak by for now */
   uint32_t _pad:27;

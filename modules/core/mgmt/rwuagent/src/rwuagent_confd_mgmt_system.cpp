@@ -142,12 +142,32 @@ void ConfdMgmtSystem::create_proxy_manifest_config()
                   (std::chrono::system_clock::now().time_since_epoch()).count();
 
     std::ostringstream oss;
-    oss << RW_SCHEMA_CONFD_TEST_PREFIX << &hostname[0] << "." << seconds_since_epoch;
+    oss << RW_SCHEMA_MGMT_TEST_PREFIX << &hostname[0] << "." << seconds_since_epoch;
     confd_dir_ = std::move(oss.str());
   } else {
-    std::ostringstream oss;
-    oss << RW_SCHEMA_CONFD_PERSIST_PREFIX << &hostname[0];
-    confd_dir_ = std::move(oss.str());
+
+    rwtasklet_info_ptr_t tasklet_info = instance_->rwtasklet();
+
+    if (   tasklet_info
+        && tasklet_info->rwvcs
+        && tasklet_info->rwvcs->pb_rwmanifest
+        && tasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase
+        && tasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt
+        && tasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->persist_dir_name) {
+
+      confd_dir_ = tasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->persist_dir_name;
+
+      std::size_t pos = confd_dir_.find(RW_SCHEMA_MGMT_PERSIST_PREFIX);
+      if (pos == std::string::npos || pos != 0) {
+        confd_dir_.insert(0, RW_SCHEMA_MGMT_PERSIST_PREFIX);
+      }
+
+    } else {
+
+      std::ostringstream oss;
+      oss << RW_SCHEMA_MGMT_PERSIST_PREFIX << &hostname[0];
+      confd_dir_ = std::move(oss.str());
+    }
   }
 
   confd_dir_ = rift_install + "/" + confd_dir_;

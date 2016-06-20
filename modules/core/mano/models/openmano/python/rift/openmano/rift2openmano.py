@@ -73,6 +73,13 @@ class RiftNSD(object):
         return cls(descriptor)
 
     @classmethod
+    def from_yaml_file_hdl(cls, hdl):
+        hdl.seek(0)
+        descriptor = RwNsdYang.YangData_Nsd_NsdCatalog_Nsd()
+        descriptor.from_yaml(RiftNSD.model, hdl.read())
+        return cls(descriptor)
+
+    @classmethod
     def from_dict(cls, nsd_dict):
         descriptor = RwNsdYang.YangData_Nsd_NsdCatalog_Nsd.from_dict(nsd_dict)
         return cls(descriptor)
@@ -121,6 +128,13 @@ class RiftVNFD(object):
         return cls(descriptor)
 
     @classmethod
+    def from_yaml_file_hdl(cls, hdl):
+        hdl.seek(0)
+        descriptor = RwVnfdYang.YangData_Vnfd_VnfdCatalog_Vnfd()
+        descriptor.from_yaml(RiftVNFD.model, hdl.read())
+        return cls(descriptor)
+
+    @classmethod
     def from_dict(cls, vnfd_dict):
         descriptor = RwVnfdYang.YangData_Vnfd_VnfdCatalog_Vnfd.from_dict(vnfd_dict)
         return cls(descriptor)
@@ -160,6 +174,22 @@ def create_vnfd_from_xml_files(vnfd_file_hdls):
 
     return vnfd_dict
 
+def create_vnfd_from_yaml_files(vnfd_file_hdls):
+    """ Create a list of RiftVNFD instances from xml file handles
+
+    Arguments:
+        vnfd_file_hdls - Rift VNFD YAML file handles
+
+    Returns:
+        A list of RiftVNFD instances
+    """
+    vnfd_dict = {}
+    for vnfd_file_hdl in vnfd_file_hdls:
+        vnfd = RiftVNFD.from_yaml_file_hdl(vnfd_file_hdl)
+        vnfd_dict[vnfd.id] = vnfd
+
+    return vnfd_dict
+
 
 def create_nsd_from_xml_file(nsd_file_hdl):
     """ Create a list of RiftNSD instances from xml file handles
@@ -171,6 +201,18 @@ def create_nsd_from_xml_file(nsd_file_hdl):
         A list of RiftNSD instances
     """
     nsd = RiftNSD.from_xml_file_hdl(nsd_file_hdl)
+    return nsd
+
+def create_nsd_from_yaml_file(nsd_file_hdl):
+    """ Create a list of RiftNSD instances from yaml file handles
+
+    Arguments:
+        nsd_file_hdls - Rift NSD XML file handles
+
+    Returns:
+        A list of RiftNSD instances
+    """
+    nsd = RiftNSD.from_yaml_file_hdl(nsd_file_hdl)
     return nsd
 
 

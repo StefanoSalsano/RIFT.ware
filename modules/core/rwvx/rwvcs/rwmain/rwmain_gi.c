@@ -12,6 +12,7 @@
 #include <rwsched_main.h>
 #include <rwtasklet.h>
 #include <rwvcs_defs.h>
+#include <rwvcs_manifest.h>
 #include <rwvcs_rwzk.h>
 #include <rwvx.h>
 
@@ -321,11 +322,28 @@ struct rwmain_gi * rwmain_gi_new(rwpb_gi_RwManifest_Manifest * manifest_box)
                     NULL, &manifest->base,
                     manifest->base.descriptor); /* used for module / unit test hack */
 
+  char cn[1024];
+
+  status = rwvcs_variable_evaluate_str(
+      rwvx->rwvcs,
+      "$rw_component_name",
+      cn,
+      sizeof(cn));
+
+  rwvcs_process_manifest_file (rwvx->rwvcs, getenv("RW_MANIFEST"));
+  if(!(cn[0])) {
+    ip_address = rwvcs_manifest_get_local_mgmt_addr(rwvx->rwvcs->pb_rwmanifest->bootstrap_phase);
+    RW_ASSERT(ip_address);
+  }
+  rwvcs_manifest_setup_mgmt_info (rwvx->rwvcs, !(cn[0]), ip_address);
   if (manifest_file) {
-     status = rwvcs_instance_init(rwvx->rwvcs, getenv("RW_MANIFEST"), main_function);
+     status = rwvcs_instance_init(rwvx->rwvcs, 
+                               getenv("RW_MANIFEST"), 
+                               ip_address, 
+                               main_function);
   }
   else {
-    status = rwvcs_instance_init(rwvx->rwvcs, NULL, rwmain_gi_function);
+    status = rwvcs_instance_init(rwvx->rwvcs, NULL, ip_address, rwmain_gi_function);
   }
   RW_ASSERT(status == RW_STATUS_SUCCESS);
 
@@ -515,6 +533,7 @@ rw_status_t rwmain_gi_add_tasklet(
   uint32_t instance_id;
   char * instance_name;
   struct rwmain_tasklet * tasklet;
+  rwmain_tasklet_mode_active_t mode_active = {};
 
   rwvcs = rwmain_gi->rwvx->rwvcs;
 
@@ -530,6 +549,7 @@ rw_status_t rwmain_gi_add_tasklet(
   tasklet = rwmain_tasklet_alloc(
       instance_name,
       instance_id,
+      &mode_active,
       plugin_name,
       plugin_dir,
       rwvcs);
@@ -622,3 +642,11 @@ rwmain_gi_find_taskletinfo_by_name(struct rwmain_gi * rwmain,
   }
   return rt?rt->tasklet_info:NULL;
 }
+
+rwmain_tasklet_mode_active_t *
+rwmain_gi_taskletinfo_get_mode_active(rwtasklet_info_t *tinfo)
+{
+  return &(tinfo->mode);
+}
+
+

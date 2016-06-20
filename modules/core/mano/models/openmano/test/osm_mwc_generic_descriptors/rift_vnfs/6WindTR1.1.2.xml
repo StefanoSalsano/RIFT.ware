@@ -1,11 +1,70 @@
-
 <vnfd:vnfd-catalog xmlns:vnfd="urn:ietf:params:xml:ns:yang:nfvo:vnfd">
-
   <vnfd:vnfd>
     <vnfd:id>b7a3d170-c448-11e5-8795-fa163eb18cb8</vnfd:id>
     <vnfd:name>6WindTR1.1.2</vnfd:name>
     <vnfd:mgmt-interface>
       <vnfd:vdu-id>b7bbc9b0-c448-11e5-8795-fa163eb18cb8</vnfd:vdu-id>
+      <vnfd:vnf-configuration>
+          <vnfd:juju>
+              <vnfd:charm>vpe-router</vnfd:charm>
+          </vnfd:juju>
+          <vnfd:config-attributes>
+              <vnfd:config-priority>0</vnfd:config-priority>
+              <vnfd:config-delay>0</vnfd:config-delay>
+          </vnfd:config-attributes>
+          <vnfd:initial-config-primitive>
+              <vnfd:seq>1</vnfd:seq>
+              <vnfd:name>config</vnfd:name>
+              <vnfd:parameter>
+                  <vnfd:name>vpe-router</vnfd:name>
+                  <vnfd:value>&lt;rw_mgmt_ip&gt;</vnfd:value>
+              </vnfd:parameter>
+              <vnfd:parameter>
+                  <vnfd:name>user</vnfd:name>
+                  <vnfd:value>root</vnfd:value>
+              </vnfd:parameter>
+              <vnfd:parameter>
+                  <vnfd:name>pass</vnfd:name>
+                  <vnfd:value>6windos</vnfd:value>
+              </vnfd:parameter>
+              <vnfd:parameter>
+                  <vnfd:name>hostname</vnfd:name>
+                  <vnfd:value>pe1</vnfd:value>
+              </vnfd:parameter>
+          </vnfd:initial-config-primitive>
+          <vnfd:initial-config-primitive>
+              <vnfd:seq>2</vnfd:seq>
+              <vnfd:name>configure-interface</vnfd:name>
+              <vnfd:parameter>
+                  <vnfd:name>iface-name</vnfd:name>
+                  <vnfd:value>eth1</vnfd:value>
+              </vnfd:parameter>
+              <vnfd:parameter>
+                  <vnfd:name>cidr</vnfd:name>
+                  <vnfd:value>10.10.10.9/30</vnfd:value>
+              </vnfd:parameter>
+          </vnfd:initial-config-primitive>
+          <vnfd:initial-config-primitive>
+              <vnfd:seq>3</vnfd:seq>
+              <vnfd:name>configure-interface</vnfd:name>
+              <vnfd:parameter>
+                  <vnfd:name>iface-name</vnfd:name>
+                  <vnfd:value>eth2</vnfd:value>
+              </vnfd:parameter>
+              <vnfd:parameter>
+                  <vnfd:name>cidr</vnfd:name>
+                  <vnfd:value>10.10.10.1/30</vnfd:value>
+              </vnfd:parameter>
+          </vnfd:initial-config-primitive>
+          <vnfd:initial-config-primitive>
+              <vnfd:seq>4</vnfd:seq>
+              <vnfd:name>configure-interface</vnfd:name>
+              <vnfd:parameter>
+                  <vnfd:name>iface-name</vnfd:name>
+                  <vnfd:value>eth3</vnfd:value>
+              </vnfd:parameter>
+          </vnfd:initial-config-primitive>
+      </vnfd:vnf-configuration>
     </vnfd:mgmt-interface>
     <vnfd:connection-point>
       <vnfd:name>eth0</vnfd:name>

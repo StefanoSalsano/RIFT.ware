@@ -1,5 +1,22 @@
 namespace RwCal {
 
+  public enum KazooClientStateEnum {
+    LOST,
+    SUSPENDED,
+    CONNECTED
+  }
+
+  public class ZkServerPortDetail : GLib.Object {
+    public string zk_server_addr;
+    public int zk_client_port;
+    public int zk_server_id;
+    public int zk_server_pid;
+    public bool zk_server_disable;
+    public bool zk_in_config;
+    public bool zk_server_start;
+    public bool zk_client_connect;
+  }
+
   public static delegate void rwcal_callback(void * rwcal, void * user_data, int length);
   public class Closure: GLib.Object {
     public void * m_rwcal;
@@ -36,17 +53,22 @@ namespace RwCal {
 
     public abstract RwTypes.RwStatus create_server_config(
       int id,
+      int client_port,
       bool unique_ports,
       [CCode (array_length = false, array_null_terminated = true)]
-      string [] server_names);
-    public abstract RwTypes.RwStatus server_start(int id);
+      ZkServerPortDetail [] server_details);
+
+    public abstract int server_start(int id);
 
     public abstract RwTypes.RwStatus kazoo_init(
-      bool unique_ports,
       [CCode (array_length = false, array_null_terminated = true)]
-      string [] server_names);
+      ZkServerPortDetail [] server_details);
 
     public abstract RwTypes.RwStatus zake_init();
+
+    public abstract RwTypes.RwStatus kazoo_start();
+
+    public abstract RwTypes.RwStatus kazoo_stop();
 
     public abstract RwTypes.RwStatus lock(string path, float timeout);
 
@@ -58,6 +80,8 @@ namespace RwCal {
                                             Closure closure);
 
     public abstract bool exists(string path);
+
+    public abstract RwCal.KazooClientStateEnum get_client_state();
 
     public abstract RwTypes.RwStatus get(string path, out string data,
                                          Closure closure);

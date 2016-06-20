@@ -548,6 +548,7 @@ void rw_show_unw_backtrace(FILE *out);
 void rw_show_gdb_trace(void);
 
 int rw_btrace_backtrace(void **array, int depth);
+char* rw_unw_get_proc_name(void *addr);
 char* rw_btrace_get_proc_name(void *addr);
 /**
  * Macro to generate stacktrace.

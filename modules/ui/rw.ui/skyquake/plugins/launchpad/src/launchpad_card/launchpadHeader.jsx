@@ -119,17 +119,17 @@ class LaunchpadHeader extends React.Component {
                             </Link>
               }
             </h3>
-            <h3 className="launchpadCard_header-link" style={{display: this.props.nsr['cloud-account'] ? 'inherit' : 'none'}}>
-              <a onClick={this.openCloudAccountPanel} title="Cloud Account" className={self.state.displayCloudAccount ? 'activeIcon' : 'inActiveIcon'}>
-                <span className="oi" data-glyph="cloud" aria-hidden="true"></span>
-              </a>
-            </h3>
           <div className="launchpadCard_header-actions">
             <h3>
               {isLoading ? this.props.nsr["operational-status"] : this.props.nsr['config-status'] != 'configured' ? this.props.nsr['config-status'] : 'Active' }
             </h3>
             <h3 style={{display: isLoading ? 'none' : 'inherit'}}>
                 <UpTime initialTime={nsrCreateTime} run={true} />
+            </h3>
+            <h3 className="launchpadCard_header-link" style={{display: this.props.nsr['cloud-account'] ? 'inherit' : 'none'}}>
+              <a onClick={this.openCloudAccountPanel} title="Cloud Account" className={self.state.displayCloudAccount ? 'activeIcon' : 'inActiveIcon'}>
+                <span className="oi" data-glyph="cloud" aria-hidden="true"></span>
+              </a>
             </h3>
             <h3 className="launchpadCard_header-link" style={{'display': !isLoading ? 'inherit' : 'none'}}>
                 <a onClick={this.openInterfacePanel} title="View Management Interfaces" className={self.state.displayInterfacePanel ? 'activeIcon' : 'inActiveIcon'}>

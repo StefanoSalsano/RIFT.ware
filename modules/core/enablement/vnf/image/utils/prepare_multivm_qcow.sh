@@ -135,10 +135,8 @@ rm -rf $RIFTWORKAREA/.install.temp/usr/lib/libdts_test_yang_gen.so
 rm -rf $RIFTWORKAREA/.install.temp/usr/share/rift/vapi/test*
 rm -rf $RIFTWORKAREA/.install.temp/usr/lib/librwrestconf_test_yang_gen.so
 #rm -rf $RIFTWORKAREA/.install.temp/usr/local/qat
-rm -rf $RIFTWORKAREA/.install.temp/confd_persist*
-rm -rf $RIFTWORKAREA/.install.temp/confd_ws*
-rm -rf $RIFTWORKAREA/.install.temp/xml_persist*
-rm -rf $RIFTWORKAREA/.install.temp/xml_ws*
+rm -rf $RIFTWORKAREA/.install.temp/unique_ws*
+rm -rf $RIFTWORKAREA/.install.temp/persist*
 rm -rf $RIFTWORKAREA/.install.temp/var/rift/schema
 
 du -sh $RIFTWORKAREA/.install.temp
@@ -163,6 +161,11 @@ cp  $RIFTWORKAREA/rift-prompt $IMAGE_DIR/mnt/home/rift
 cp -r $RIFTWORKAREA/scripts/* $IMAGE_DIR/mnt/home/rift/scripts
 cp -r $RIFTWORKAREA/etc $IMAGE_DIR/mnt/home/rift
 cp -r $RIFTWORKAREA/.install.temp $IMAGE_DIR/mnt/home/rift/.install
+
+echo "Copying IPSec stuff to image ..."
+mkdir -p $IMAGE_DIR/mnt/$RIFTWORKAREA/.install/usr
+cp -R $RIFTWORKAREA/.install.temp/usr/etc $IMAGE_DIR/mnt/$RIFTWORKAREA/.install/usr
+
 sync
 sleep 30
 guestunmount $IMAGE_DIR/mnt

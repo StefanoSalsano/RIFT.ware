@@ -18,7 +18,9 @@ class Controller(core.Tasklet):
 
     def __init__(self, name="RW.FpCtrl", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a Controller object.
 
@@ -28,11 +30,15 @@ class Controller(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action  - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(Controller, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                          recovery_action=recovery_action,
-                                         start=start
+                                         start=start, 
+                                         data_storetype=data_storetype,
+                                         mode_active=mode_active,
                                          )
 
     plugin_name = ClassProperty("rwfpctrl-c")
@@ -42,11 +48,15 @@ class Controller(core.Tasklet):
 class CalProxy(core.Tasklet):
     def __init__(self, name="RW.CalProxy", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         super(CalProxy, self).__init__(name=name, config_ready=config_ready,
                                        recovery_action=recovery_action,
-                                       start=start
+                                       start=start, 
+                                       data_storetype=data_storetype,
+                                       mode_active=mode_active,
                                        )
 
     plugin_name = "rwcalproxytasklet"
@@ -60,7 +70,9 @@ class NNLatencyTasklet(core.Tasklet):
 
     def __init__(self, name="RW.NNLatencyTasklet", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True, 
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a NN Latency object.
 
@@ -70,11 +82,15 @@ class NNLatencyTasklet(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(NNLatencyTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
-                                               start=start
+                                               start=start,
+                                               data_storetype=data_storetype,
+                                               mode_active=mode_active,
                                                )
 
     plugin_name = ClassProperty("rwnnlatencytasklet")
@@ -88,7 +104,9 @@ class SfMgr(core.Tasklet):
 
     def __init__(self, name="RW.SfMgr", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a SF Mgr object.
 
@@ -98,11 +116,15 @@ class SfMgr(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(SfMgr, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                     recovery_action=recovery_action,
-                                    start=start
+                                    start=start,
+                                    data_storetype=data_storetype,
+                                    mode_active=mode_active,
                                     )
 
     plugin_name = ClassProperty("rwsfmgr")
@@ -115,7 +137,9 @@ class SffMgr(core.Tasklet):
 
     def __init__(self, name="RW.SffMgr", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a SFF Mgr object.
 
@@ -125,11 +149,15 @@ class SffMgr(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(SffMgr, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                      recovery_action=recovery_action,
-                                     start=start
+                                     start=start,
+                                     data_storetype=data_storetype,
+                                     mode_active=mode_active,
                                      )
 
     plugin_name = ClassProperty("rwsffmgr")
@@ -142,7 +170,9 @@ class NetworkContextManager(core.Tasklet):
 
     def __init__(self, name="RW.NcMgr", uid=None, fp_uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a NetworkContextManager object.
 
@@ -153,11 +183,15 @@ class NetworkContextManager(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(NetworkContextManager, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                     recovery_action=recovery_action,
-                                                    start=start
+                                                    start=start,
+                                                    data_storetype=data_storetype,
+                                                    mode_active=mode_active,
                                                     )
         self.fp_uid = fp_uid
 
@@ -172,7 +206,9 @@ class InterfaceManager(core.Tasklet):
 
     def __init__(self, name="RW.IfMgr", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.RESTART.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates an InterfaceManager object.
 
@@ -182,11 +218,15 @@ class InterfaceManager(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(InterfaceManager, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
-                                               start=start
+                                               start=start,
+                                               data_storetype=data_storetype,
+                                               mode_active=mode_active,
                                                )
 
     plugin_name = ClassProperty("rwifmgr-c")
@@ -200,7 +240,9 @@ class ApplicationManager(core.Tasklet):
 
     def __init__(self, name="RW.AppMgr", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates an ApplicationManager object.
 
@@ -210,11 +252,15 @@ class ApplicationManager(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(ApplicationManager, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                  recovery_action=recovery_action,
-                                                 start=start
+                                                 start=start,
+                                                 data_storetype=data_storetype,
+                                                 mode_active=mode_active,
                                                  )
 
     plugin_name = ClassProperty("rwappmgr-c")
@@ -228,7 +274,9 @@ class CliTasklet(core.Tasklet):
 
     def __init__(self, name="RW.Cli", uid=None, manifest_file="cli_rwfpath.xml", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a CliTasklet object.
 
@@ -238,11 +286,15 @@ class CliTasklet(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(CliTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                          recovery_action=recovery_action,
-                                         start=start
+                                         start=start,
+                                         data_storetype=data_storetype,
+                                         mode_active=mode_active,
                                          )
         self.manifest_file = manifest_file
 
@@ -256,7 +308,9 @@ class MockCliTasklet(CliTasklet):
 
     def __init__(self, name="RW.MockCli", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a MockCliTasklet object.
 
@@ -266,11 +320,15 @@ class MockCliTasklet(CliTasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(MockCliTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                              recovery_action=recovery_action,
-                                             start=start
+                                             start=start,
+                                             data_storetype=data_storetype,
+                                             mode_active=mode_active,
                                              )
 
     plugin_name = ClassProperty("pytoytasklet")
@@ -288,7 +346,9 @@ class uAgentTasklet(core.Tasklet):
             port=None,
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=core.DataStore.NOSTORE.value,
+            mode_active=True,
             ):
         """Creates a uAgentTasklet object.
 
@@ -299,11 +359,15 @@ class uAgentTasklet(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(uAgentTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                             recovery_action=recovery_action,
-                                            start=start
+                                            start=start,
+                                            data_storetype=data_storetype,
+                                            mode_active=mode_active,
                                             )
         self.port = str(os.getuid()) if port is None else port
         self.port = os.environ.get("_UAGENT_PORT", self.port)
@@ -318,7 +382,9 @@ class MgmtMockTasklet(core.Tasklet):
 
     def __init__(self, name="RW.MgmtMock", uid=None, port=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a MgmtMock object.
 
@@ -329,11 +395,15 @@ class MgmtMockTasklet(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting 
 
         """
         super(MgmtMockTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                               recovery_action=recovery_action,
-                                              start=start
+                                              start=start,
+                                              data_storetype=data_storetype,
+                                              mode_active=mode_active,
                                               )
         self.port = str(os.getuid()) if port is None else port
         self.port = os.environ.get("_UAGENT_PORT", self.port)
@@ -354,7 +424,9 @@ class RestconfTasklet(core.Tasklet):
             rest_port="8888",
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=core.DataStore.NOSTORE.value,
+            mode_active=True,
             ):
         """Creates a Rift Restconf Server object.
 
@@ -367,11 +439,15 @@ class RestconfTasklet(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(RestconfTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                               recovery_action=recovery_action,
-                                              start=start
+                                              start=start,
+                                              data_storetype=data_storetype,
+                                              mode_active=mode_active,
                                               )
         self.confd_host = confd_host
         self.confd_port = confd_port
@@ -391,7 +467,9 @@ class RestStreamTasklet(core.Tasklet):
             name="RW.RestStream",
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=core.DataStore.NOSTORE.value,
+            mode_active=True,
             ):
         """Creates a Rift RestStream Server object.
 
@@ -401,11 +479,15 @@ class RestStreamTasklet(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(RestStreamTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                 recovery_action=recovery_action,
-                                                start=start
+                                                start=start,
+                                                data_storetype=data_storetype,
+                                                mode_active=mode_active,
                                                 )
 
     plugin_name = ClassProperty("reststream")
@@ -421,7 +503,9 @@ class RestPortForwardTasklet(core.Tasklet):
             name="RW.RestPortForward",
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=core.DataStore.NOSTORE.value,
+            mode_active=True,
             ):
         """Creates a Rift RestStream Server object.
 
@@ -431,11 +515,15 @@ class RestPortForwardTasklet(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(RestPortForwardTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                      recovery_action=recovery_action,
-                                                     start=start
+                                                     start=start,
+                                                     data_storetype=data_storetype,
+                                                     mode_active=mode_active,
                                                      )
 
     plugin_name = ClassProperty("restportforward")
@@ -448,7 +536,9 @@ class ToyTasklet(core.Tasklet):
 
     def __init__(self, name="RW.toytasklet", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a ToyTasklet object.
 
@@ -458,11 +548,14 @@ class ToyTasklet(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action  - recovery action mode
             start        - Flag denotes whether to initially start this component
-
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         super(ToyTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                          recovery_action=recovery_action,
-                                         start=start
+                                         start=start,
+                                         data_storetype=data_storetype,
+                                         mode_active=mode_active,
                                          )
 
     plugin_name = ClassProperty("rwtoytasklet-c")
@@ -476,7 +569,9 @@ class ToyTaskletPython(core.Tasklet):
 
     def __init__(self, name="RW.toytasklet.python", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a Python ToyTasklet object.
 
@@ -486,11 +581,15 @@ class ToyTaskletPython(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action  - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(ToyTaskletPython, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
-                                               start=start
+                                               start=start,
+                                               data_storetype=data_storetype,
+                                               mode_active=mode_active,
                                                )
 
     plugin_name = ClassProperty("pytoytasklet")
@@ -504,7 +603,9 @@ class DtsTaskletPython(core.Tasklet):
 
     def __init__(self, name="RW.dtstasklet.python", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a Python DTS ToyTasklet object.
 
@@ -514,11 +615,15 @@ class DtsTaskletPython(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action  - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(DtsTaskletPython, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
-                                               start=start
+                                               start=start,
+                                               data_storetype=data_storetype,
+                                               mode_active=mode_active,
                                                )
 
     plugin_name = ClassProperty("rwdtstasklet")
@@ -532,7 +637,9 @@ class MsgBrokerTasklet(core.Tasklet):
 
     def __init__(self, name="RW.Msgbroker", port=None, uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a MsgBrokerTasklet object.
 
@@ -542,11 +649,15 @@ class MsgBrokerTasklet(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(MsgBrokerTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
-                                               start=start
+                                               start=start,
+                                               data_storetype=data_storetype,
+                                               mode_active=mode_active,
                                                )
         self.port = random.randint(20000, 30000) if port is None else port
 
@@ -561,7 +672,9 @@ class DtsRouterTasklet(core.Tasklet):
 
     def __init__(self, name="RW.DTS.Router", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a DtsRouterTasklet object.
 
@@ -571,11 +684,15 @@ class DtsRouterTasklet(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(DtsRouterTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                recovery_action=recovery_action,
-                                               start=start
+                                               start=start,
+                                               data_storetype=data_storetype,
+                                               mode_active=mode_active,
                                                )
 
     plugin_directory = ClassProperty("./usr/lib/rift/plugins/rwdtsrouter-c")
@@ -589,7 +706,9 @@ class LogdTasklet(core.Tasklet):
 
     def __init__(self, name='rwlog', uid=None, schema="rw-mgmt", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a LogdTasklet object.
 
@@ -600,11 +719,14 @@ class LogdTasklet(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
-
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         super(LogdTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                           recovery_action=recovery_action,
-                                          start=start
+                                          start=start,
+                                          data_storetype=data_storetype,
+                                          mode_active=mode_active,
                                           )
         self.schema = schema
 
@@ -619,7 +741,9 @@ class DtsPerfTasklet(core.Tasklet):
 
     def __init__(self, name="RW.DTSPerf", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a DtsPerfTasklet object.
 
@@ -629,11 +753,15 @@ class DtsPerfTasklet(core.Tasklet):
             config_ready  - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(DtsPerfTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                              recovery_action=recovery_action,
-                                             start=start
+                                             start=start,
+                                             data_storetype=data_storetype,
+                                             mode_active=mode_active,
                                              )
 
     plugin_directory = ClassProperty("./usr/lib/rift/plugins/rwdtsperf-c")
@@ -645,7 +773,9 @@ class DtsPerfMgrTasklet(core.Tasklet):
 
     def __init__(self, name="RW.DTSPerfMgrTasklet", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a DtsPerfMgrTasklet object.
 
@@ -655,10 +785,14 @@ class DtsPerfMgrTasklet(core.Tasklet):
             config_ready -  config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting 
         """
         super(DtsPerfMgrTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                 recovery_action=recovery_action,
-                                                start=start
+                                                start=start,
+                                                data_storetype=data_storetype,
+                                                mode_active=mode_active,
                                                 )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwdtsperfmgrtasklet')
@@ -670,7 +804,9 @@ class DtsMockServerTasklet(core.Tasklet):
 
     def __init__(self, name="RW.DTSMockServerTasklet", uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a DtsMockServerTasklet object.
 
@@ -680,10 +816,14 @@ class DtsMockServerTasklet(core.Tasklet):
             config_ready -   config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         super(DtsMockServerTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                    recovery_action=recovery_action,
-                                                   start=start
+                                                   start=start,
+                                                   data_storetype=data_storetype,
+                                                   mode_active=mode_active,
                                                    )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwdtsmockservertasklet')
@@ -697,7 +837,9 @@ class VnfMgrTasklet(core.Tasklet):
 
     def __init__(self, name='vnfmgr', uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """
         Creates a VnfMgrTasklet object.
@@ -708,10 +850,14 @@ class VnfMgrTasklet(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         super(VnfMgrTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                             recovery_action=recovery_action,
-                                            start=start
+                                            start=start,
+                                            data_storetype=data_storetype,
+                                            mode_active=mode_active,
                                             )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/vnfmgr')
@@ -724,7 +870,9 @@ class Launchpad(core.Tasklet):
 
     def __init__(self, name='launchpad', uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """
         Creates a Launchpad object.
@@ -735,10 +883,14 @@ class Launchpad(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         super(Launchpad, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                         recovery_action=recovery_action,
-                                        start=start
+                                        start=start,
+                                        data_storetype=data_storetype,
+                                        mode_active=mode_active,
                                         )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwlaunchpad')
@@ -752,7 +904,9 @@ class MissionControl(core.Tasklet):
 
     def __init__(self, name='mission-control', uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """
         Creates a MissionControl object.
@@ -763,10 +917,14 @@ class MissionControl(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         super(MissionControl, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                              recovery_action=recovery_action,
-                                             start=start
+                                             start=start,
+                                             data_storetype=data_storetype,
+                                             mode_active=mode_active,
                                              )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwmctasklet')
@@ -780,7 +938,9 @@ class MissionControlCTasklet(core.Tasklet):
 
     def __init__(self, name='mission-control-ctasklet', uid=None, config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """
         Creates a MissionControlCTasklet object.
@@ -791,10 +951,14 @@ class MissionControlCTasklet(core.Tasklet):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         super(MissionControlCTasklet, self).__init__(name=name, uid=uid, config_ready=config_ready,
                                                      recovery_action=recovery_action,
-                                                     start=start
+                                                     start=start,
+                                                     data_storetype=data_storetype,
+                                                     mode_active=mode_active,
                                                      )
 
     plugin_directory = ClassProperty('./usr/lib/rift/plugins/rwmctasklet-c')
@@ -804,11 +968,15 @@ class MissionControlCTasklet(core.Tasklet):
 class ContainerManager(core.Tasklet):
     def __init__(self, name="RW.CntMgr", config_ready=False,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         super(ContainerManager, self).__init__(name=name, config_ready=config_ready,
                                                recovery_action=recovery_action,
-                                               start=start
+                                               start=start,
+                                               data_storetype=data_storetype,
+                                               mode_active=mode_active,
                                                )
 
     plugin_name = "rwcntmgrtasklet"

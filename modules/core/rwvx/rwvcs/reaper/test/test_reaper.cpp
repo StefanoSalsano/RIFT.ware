@@ -51,6 +51,24 @@ static void * write_thread(void * arg) {
   r = reaper_client_add_pid(sock, 65535);
   EXPECT_EQ(0, r);
 
+  r = reaper_client_del_pid(sock, 65535);
+  EXPECT_EQ(0, r);
+
+  r = reaper_client_del_pid(sock, 1);
+  EXPECT_EQ(0, r);
+
+  r = reaper_client_del_pid(sock, 1839);
+  EXPECT_EQ(0, r);
+
+  r = reaper_client_add_pid(sock, 1);
+  EXPECT_EQ(0, r);
+
+  r = reaper_client_add_pid(sock, 1839);
+  EXPECT_EQ(0, r);
+
+  r = reaper_client_add_pid(sock, 65535);
+  EXPECT_EQ(0, r);
+
   r = reaper_client_add_path(sock, "path1");
   EXPECT_EQ(0, r);
 
@@ -153,6 +171,36 @@ class ReaperTest: public ::testing::Test {
           }
 
           ASSERT_EQ(n_found, 3);
+          break;
+        }
+      }
+
+      ASSERT_TRUE(found);
+
+      found = false;
+
+      r = reaper_del_client_pid(m_reaper, cp, 65535);
+      ASSERT_FALSE(r);
+
+      r = reaper_del_client_pid(m_reaper, cp, 1);
+      ASSERT_FALSE(r);
+
+      r = reaper_del_client_pid(m_reaper, cp, 200);
+      ASSERT_FALSE(r);
+
+      SLIST_FOREACH(cp, &m_reaper->clients, slist) {
+        if (cp->socket == 10) {
+          int n_found = 0;
+          found = true;
+
+          for (size_t i = 0; cp->pids[i]; ++i) {
+            if (cp->pids[i] == 1
+                || cp->pids[i] == 200
+                || cp->pids[i] == 65535)
+              ++n_found;
+          }
+
+          ASSERT_EQ(n_found, 0);
           break;
         }
       }

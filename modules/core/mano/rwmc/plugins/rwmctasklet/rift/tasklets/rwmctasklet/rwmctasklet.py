@@ -1187,7 +1187,7 @@ class ResourcePoolDtsConfigHandler(object):
             return RwTypes.RwStatus.SUCCESS
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ prepare callback from dts for resource pool """
 
             action = xact_info.handle.get_query_action()
@@ -1484,7 +1484,7 @@ class CloudAccountDtsConfigHandler(object):
             #return RwTypes.RwStatus.SUCCESS
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ Prepare callback from DTS for Cloud Account """
 
             action = xact_info.handle.get_query_action()
@@ -1965,7 +1965,7 @@ class MgmtDomainDtsConfigHandler(object):
                 return
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ prepare callback from dts for mgmt domain """
 
             action = xact_info.handle.get_query_action()

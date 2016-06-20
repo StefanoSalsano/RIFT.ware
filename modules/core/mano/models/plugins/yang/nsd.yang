@@ -60,6 +60,231 @@ module nsd
     }
   }
 
+  grouping primitive-parameter {
+    leaf name {
+      description
+          "Name of the parameter.";
+      type string;
+    }
+
+    leaf data-type {
+      description
+          "Data type associated with the name.";
+      type manotypes:parameter-data-type;
+    }
+
+    leaf mandatory {
+      description "Is this field mandatory";
+      type boolean;
+      default false;
+    }
+
+    leaf default-value {
+      description "The default value for this field";
+      type string;
+    }
+
+    leaf parameter-pool {
+      description "NSD Parameter pool name to use for this paramter";
+      type string;
+    }
+  }
+
+  grouping vnf-configuration {
+    container vnf-configuration {
+      description
+          "Information regarding the VNF configuration
+           is captured here. Note that if the NS contains
+           multiple instances of the same VNF, each instance
+           of the VNF may have different configuration";
+
+      leaf config-type {
+        description
+            "Must use this configuration type and fill in only pertaining
+             config-method below";
+        type enumeration {
+          enum none;
+          enum netconf;
+          enum rest;
+          enum script;
+          enum juju;
+        }
+      }
+
+      choice config-method {
+        description
+            "Defines the configuration method for the VNF.";
+        case netconf {
+          description
+              "Use NETCONF for configuring the VNF.";
+          container netconf {
+            leaf target {
+              description
+                  "Netconf configuration target";
+              type enumeration {
+                enum running;
+                enum candidate;
+              }
+            }
+
+            leaf protocol {
+              description
+                  "Protocol to use for netconf (e.g. ssh)";
+              type enumeration {
+                enum None;
+                enum ssh;
+              }
+            }
+
+            leaf port {
+              description
+                  "Port for the netconf server.";
+              type inet:port-number;
+            }
+          }
+        }
+
+        case rest {
+          description
+              "Use REST for configuring the VNF.";
+          container rest {
+            leaf port {
+              description
+                  "Port for the REST server.";
+              type inet:port-number;
+            }
+          }
+        }
+
+        case script {
+          description
+              "Use custom script for configuring the VNF.
+               This script is executed in the context of
+               Orchestrator.";
+          container script {
+            leaf script-type {
+              description
+                  "Script type - currently supported : bash, expect";
+              type enumeration {
+                enum bash;
+                enum expect;
+              }
+            }
+          }
+        }
+
+        case juju {
+          description
+            "Configure the VNF through Juju.";
+          container juju {
+            leaf charm {
+              description "Juju charm to use with the VNF.";
+              type string;
+            }
+          }
+        }
+      }
+
+      container config-access {
+        leaf mgmt-ip-address {
+          description
+              "IP address to be used to configure this VNF,
+               optional if it is possible to resolve dynamically.";
+          type inet:ip-address;
+        }
+
+        leaf username {
+          description
+              "username for configuration.";
+          type string;
+        }
+
+        leaf password {
+          description
+              "Password for configuration access authentication.";
+          type string;
+        }
+      }
+
+      container input-params {
+        description
+            "Miscelaneous input parameters to be considered
+             while processing the NSD to apply configuration";
+
+        leaf config-priority {
+          description
+              "Configuration priority - order of confgiration
+               to be applied to each VNF in this NS,
+               low number gets precedence over high number";
+          type uint64;
+        }
+
+        leaf config-delay {
+          description
+              "Wait (seconds) before applying the configuration to VNF";
+          type uint64;
+        }
+      }
+
+      list config-primitive {
+        rwpb:msg-new ConfigPrimitive;
+        description
+            "List of configuration primitives supported by the
+            configuration agent for this VNF.";
+        key "name";
+
+        leaf name {
+          description
+              "Name of the configuration primitive.";
+          type string;
+        }
+
+        list parameter {
+          description
+              "List of parameters to the configuration primitive.";
+          key "name";
+          uses primitive-parameter;
+        }
+      }
+
+      list initial-config-primitive {
+        rwpb:msg-new InitialConfigPrimitive;
+        description
+            "Initial set of configuration primitives.";
+        key "seq";
+        leaf seq {
+          description
+              "Sequence number for the configuration primitive.";
+          type uint64;
+        }
+
+        leaf name {
+          description
+              "Name of the configuration primitive.";
+          type string;
+        }
+
+        list parameter {
+          key "name";
+          leaf name {
+            type string;
+          }
+
+          leaf value {
+            type string;
+          }
+        }
+      }
+
+      leaf config-template {
+        description
+            "Configuration template for each VNF";
+        type string;
+      }
+    }
+  } // END - grouping vnf-configuration
+
+
   container nsd-catalog {
 
     list nsd {
@@ -80,7 +305,6 @@ module nsd
         description "NSD short name.";
         type string;
       }
-
 
       leaf vendor {
         description "Vendor of the NSD.";
@@ -638,6 +862,42 @@ module nsd
       }
 
       uses manotypes:config-primitive;
+
+      list initial-config-primitive {
+        rwpb:msg-new NsdInitialConfigPrimitive;        
+        description
+            "Initial set of configuration primitives for NSD.";
+        key "seq";
+        leaf seq {
+          description
+              "Sequence number for the configuration primitive.";
+          type uint64;
+        }
+
+        leaf name {
+          description
+              "Name of the configuration primitive.";
+          type string;
+          mandatory "true";
+        }
+
+        leaf user-defined-script {
+          description
+              "A user defined script.";
+          type string;
+        }
+
+        list parameter {
+          key "name";
+          leaf name {
+            type string;
+          }
+
+          leaf value {
+            type string;
+          }
+        }
+      }
     }
   }
 }

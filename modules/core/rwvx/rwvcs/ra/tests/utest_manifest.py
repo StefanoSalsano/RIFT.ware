@@ -40,7 +40,7 @@ class TestManifest(unittest.TestCase):
         self.cli = RaCliProc(name='test.cli')
         self.colony = RaColony(name='test.colony')
         self.cluster = RaCluster(name='test.cluster')
-        self.manifest = RaManifest(northbound_listing=None)
+        self.manifest = RaManifest(northbound_listing=None, persist_dir_name='test')
         self.assertEqual(self.manifest.netconf_trace, NetconfTrace.AUTO)
 
         # Put the CLI tasklet into a proc

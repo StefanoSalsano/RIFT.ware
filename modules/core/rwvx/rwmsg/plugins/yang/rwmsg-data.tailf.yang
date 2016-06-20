@@ -20,6 +20,6 @@ module rwmsg-data-tailf
   }
 
   tailf:annotate "/rwmsg:messaging" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

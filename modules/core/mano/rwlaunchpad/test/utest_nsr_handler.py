@@ -254,7 +254,7 @@ class NsrDtsHandler(object):
             return RwTypes.RwStatus.SUCCESS
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ Prepare calllback from DTS for NSR """
 
             xpath = ks_path.to_xpath(NsrYang.get_schema())

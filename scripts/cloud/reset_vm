@@ -219,7 +219,7 @@ kill_all () {
 
 if [ -n "$1" ]; then
     log "clearing confd peristent data"
-    rm -rf $1/.install/confd_persist*
+    rm -rf $1/.install/persist*
 fi
 
 if [ -n "$2" ]; then

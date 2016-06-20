@@ -20,7 +20,7 @@ module ietf-resfconf-monitoring-annotation
   }
 
   tailf:annotate "/rcmon:restconf-state" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }
 

@@ -10,7 +10,7 @@
   "vms":[
     {
       "name": "rift_auto_launchpad",
-      "memory": 8192,
+      "memory": 4096,
       "cpus": 2
     }
   ]

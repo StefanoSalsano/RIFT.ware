@@ -39,6 +39,12 @@ struct rwvx_instance_s {
   rwsched_tasklet_ptr_t rwsched_tasklet;
   rwvcs_instance_ptr_t rwvcs;
   rwcal_module_ptr_t rwcal_module;
+  struct rwmain_gi* rwmain;
+  struct {
+    int fd;
+    rwsched_CFSocketRef cfsocket;
+    rwsched_CFRunLoopSourceRef cfsource;
+  } pacemaker_inotify;
 };
 
 RW_TYPE_DECL(rwvx_instance);

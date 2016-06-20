@@ -12,7 +12,6 @@ import CardActions from './launchpad_card/launchpadCardActions.js';
 var Utils = require('utils/utils.js');
 import LaunchNetworkServiceSource from './network_service_launcher/launchNetworkServiceSource.js';
 import LaunchNetworkServiceActions from './network_service_launcher/launchNetworkServiceActions.js';
-import AuthActions from '../../login/src/loginAuthActions.js';
 import LoggingSource from 'widgets/logging/loggingSource.js';
 
 import {LaunchpadSettings} from './settings.js';
@@ -29,9 +28,8 @@ function FleetStoreConstructor() {
   this.selectedSlaParam = '';
   this.launchpads = [];
   this.nsrs = [];
-  this.isLoading = false;
   this.isStandAlone = false;
-  this.exportAsync(FleetSource);
+  this.registerAsync(FleetSource);
   this.exportAsync(LoggingSource);
   this.exportAsync(LaunchNetworkServiceSource);
   this.slideno = 0;
@@ -66,8 +64,6 @@ function FleetStoreConstructor() {
     validateError: FleetActions.validateError,
     //Launch Network Service Source Actions
     getCatalogSuccess: LaunchNetworkServiceActions.getCatalogSuccess,
-    //AuthActions
-    handleLogout : AuthActions.notAuthenticated,
     // Card management actions
     openNsrCard: FleetActions.openNsrCard,
     closeNsrCard: FleetActions.closeNsrCard,
@@ -112,9 +108,8 @@ FleetStoreConstructor.prototype.getSysLogViewerURLError = function(data) {
 
 //NEW
 FleetStoreConstructor.prototype.openNSRSocketLoading = function(connection) {
-  this.setState({
-    isLoading: true
-  });
+  console.log('open socketloading')
+  Alt.actions.global.showScreenLoader.defer();
 };
 FleetStoreConstructor.prototype.getLaunchpadConfigSuccess = function(config) {
   var isStandAlone = ((!config) || config["operational-mode"] == "STANDALONE");
@@ -124,6 +119,7 @@ FleetStoreConstructor.prototype.getLaunchpadConfigSuccess = function(config) {
 };
 FleetStoreConstructor.prototype.openNSRSocketSuccess = function(connection) {
   var self = this;
+  var isLoading = true;
   if (!connection) return;
   self.setState({
     socket: connection
@@ -153,10 +149,12 @@ FleetStoreConstructor.prototype.openNSRSocketSuccess = function(connection) {
           }
         });
       });
-
+      if(isLoading) {
+        isLoading = false;
+        Alt.actions.global.hideScreenLoader.defer();
+      }
       self.setState({
-        nsrs: data.nsrs,
-        isLoading: false
+        nsrs: data.nsrs
       });
      } catch(e) {
 

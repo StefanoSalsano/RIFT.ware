@@ -6,18 +6,22 @@ import time
 import pytest
 
 import gi
+import re
 gi.require_version('RwMcYang', '1.0')
 gi.require_version('RwNsrYang', '1.0')
 from gi.repository import (
         NsdYang,
+        RwBaseYang,
         RwConmanYang,
         RwMcYang,
         RwNsrYang,
-        VlrYang,
+        RwNsdYang,
+        RwVcsYang,
         RwVlrYang,
         RwVnfdYang,
         RwVnfrYang,
-        VnfrYang
+        VlrYang,
+        VnfrYang,
         )
 import rift.auto.session
 import rift.mano.examples.ping_pong_nsd as ping_pong
@@ -27,6 +31,12 @@ import rift.mano.examples.ping_pong_nsd as ping_pong
 def proxy(request, launchpad_session):
     return launchpad_session.proxy
 
+@pytest.fixture(scope='session')
+def updated_ping_pong_records(ping_pong_factory):
+    '''Fixture returns a newly created set of ping and pong descriptors
+    for the create_update tests
+    '''
+    return ping_pong_factory.generate_descriptors()
 
 def yield_vnfd_vnfr_pairs(proxy, nsr=None):
     """
@@ -58,7 +68,7 @@ def yield_vnfd_vnfr_pairs(proxy, nsr=None):
 
 
 def yield_nsd_nsr_pairs(proxy):
-    """Yields tuples of NSD & NSR pairs
+    """Yields tuples of NSD & NSR
 
     Args:
         proxy (callable): Launchpad proxy
@@ -66,14 +76,31 @@ def yield_nsd_nsr_pairs(proxy):
     Yields:
         Tuple: NSD and its corresponding NSR record
     """
+
+    for nsr_cfg, nsr in yield_nsrc_nsro_pairs(proxy):
+        nsd_path = "/nsd-catalog/nsd[id='{}']".format(
+                nsr_cfg.nsd_ref)
+        nsd = proxy(RwNsdYang).get_config(nsd_path)
+
+        yield nsd, nsr
+
+def yield_nsrc_nsro_pairs(proxy):
+    """Yields tuples of NSR Config & NSR Opdata pairs
+
+    Args:
+        proxy (callable): Launchpad proxy
+
+    Yields:
+        Tuple: NSR config and its corresponding NSR op record
+    """
     nsr = "/ns-instance-opdata/nsr"
     nsrs = proxy(RwNsrYang).get(nsr, list_obj=True)
     for nsr in nsrs.nsr:
-        nsd_path = "/ns-instance-config/nsr[id='{}']".format(
+        nsr_cfg_path = "/ns-instance-config/nsr[id='{}']".format(
                 nsr.ns_instance_config_ref)
-        nsd = proxy(RwNsrYang).get_config(nsd_path)
+        nsr_cfg = proxy(RwNsrYang).get_config(nsr_cfg_path)
 
-        yield nsd, nsr
+        yield nsr_cfg, nsr
 
 
 def assert_records(proxy):
@@ -87,8 +114,10 @@ def assert_records(proxy):
 
 
 @pytest.mark.depends('nsr')
+@pytest.mark.setup('records')
+@pytest.mark.usefixtures('recover_tasklet')
 @pytest.mark.incremental
-class TestRecords(object):
+class TestRecordsData(object):
     def is_valid_ip(self, address):
         """Verifies if it is a valid IP and if its accessible
 
@@ -105,17 +134,100 @@ class TestRecords(object):
         else:
             return True
 
+
+    @pytest.mark.feature("recovery")
+    def test_tasklets_recovery(self, launchpad_session, proxy, recover_tasklet):
+        """Test the recovery feature of tasklets
+
+        Triggers the vcrash and waits till the system is up
+        """
+        RECOVERY = "RESTART"
+
+        def vcrash(comp):
+            rpc_ip = RwVcsYang.VCrashInput.from_dict({"instance_name": comp})
+            proxy(RwVcsYang).rpc(rpc_ip)
+
+        tasklet_name = r'^{}-.*'.format(recover_tasklet)
+
+        vcs_info = proxy(RwBaseYang).get("/vcs/info/components")
+        for comp in vcs_info.component_info:
+            if comp.recovery_action == RECOVERY and \
+               re.match(tasklet_name, comp.instance_name):
+                vcrash(comp.instance_name)
+
+        time.sleep(60)
+
+        rift.vcs.vcs.wait_until_system_started(launchpad_session)
+        # NSM tasklet takes a couple of seconds to set up the python structure
+        # so sleep and then continue with the tests.
+        time.sleep(60)
+
     def test_records_present(self, proxy):
         assert_records(proxy)
+
+    def test_nsd_ref_count(self, proxy):
+        """
+        Asserts
+        1. The ref count data of the NSR with the actual number of NSRs
+        """
+        nsd_ref_xpath = "/ns-instance-opdata/nsd-ref-count"
+        nsd_refs = proxy(RwNsrYang).get(nsd_ref_xpath, list_obj=True)
+
+        expected_ref_count = collections.defaultdict(int)
+        for nsd_ref in nsd_refs.nsd_ref_count:
+            expected_ref_count[nsd_ref.nsd_id_ref] = nsd_ref.instance_ref_count
+
+        actual_ref_count = collections.defaultdict(int)
+        for nsd, nsr in yield_nsd_nsr_pairs(proxy):
+            actual_ref_count[nsd.id] += 1
+
+        assert expected_ref_count == actual_ref_count
+
+    def test_vnfd_ref_count(self, proxy):
+        """
+        Asserts
+        1. The ref count data of the VNFR with the actual number of VNFRs
+        """
+        vnfd_ref_xpath = "/vnfr-catalog/vnfd-ref-count"
+        vnfd_refs = proxy(RwVnfrYang).get(vnfd_ref_xpath, list_obj=True)
+
+        expected_ref_count = collections.defaultdict(int)
+        for vnfd_ref in vnfd_refs.vnfd_ref_count:
+            expected_ref_count[vnfd_ref.vnfd_id_ref] = vnfd_ref.instance_ref_count
+
+        actual_ref_count = collections.defaultdict(int)
+        for vnfd, vnfr in yield_vnfd_vnfr_pairs(proxy):
+            actual_ref_count[vnfd.id] += 1
+
+        assert expected_ref_count == actual_ref_count
+
+    def test_nsr_nsd_records(self, proxy):
+        """
+        Verifies the correctness of the NSR record using its NSD counter-part
+
+        Asserts:
+        1. The count of vnfd and vnfr records
+        2. Count of connection point descriptor and records
+        """
+        for nsd, nsr in yield_nsd_nsr_pairs(proxy):
+            assert nsd.name == nsr.nsd_name_ref
+            assert len(nsd.constituent_vnfd) == len(nsr.constituent_vnfr_ref)
+
+            assert len(nsd.vld) == len(nsr.vlr)
+            for vnfd_conn_pts, vnfr_conn_pts in zip(nsd.vld, nsr.vlr):
+                assert len(vnfd_conn_pts.vnfd_connection_point_ref) == \
+                       len(vnfr_conn_pts.vnfr_connection_point_ref)
 
     def test_vdu_record_params(self, proxy):
         """
         Asserts:
         1. If a valid floating IP has been assigned to the VM
+        2. Count of VDUD and the VDUR
         3. Check if the VM flavor has been copied over the VDUR
         """
         for vnfd, vnfr in yield_vnfd_vnfr_pairs(proxy):
             assert vnfd.mgmt_interface.port == vnfr.mgmt_interface.port
+            assert len(vnfd.vdu) == len(vnfr.vdur)
 
             for vdud, vdur in zip(vnfd.vdu, vnfr.vdur):
                 assert vdud.vm_flavor == vdur.vm_flavor
@@ -129,15 +241,26 @@ class TestRecords(object):
         1. Valid IP for external connection point
         2. A valid external network fabric
         3. Connection point names are copied over
+        4. Count of VLD and VLR
+        5. Checks for a valid subnet ?
+        6. Checks for the operational status to be running?
         """
         for vnfd, vnfr in yield_vnfd_vnfr_pairs(proxy):
             cp_des, cp_rec = vnfd.connection_point, vnfr.connection_point
+
+            assert len(cp_des) == len(cp_rec)
             assert cp_des[0].name == cp_rec[0].name
             assert self.is_valid_ip(cp_rec[0].ip_address) is True
 
-            xpath = "/vlr-catalog/vlr[id='{}']/network-id".format(cp_rec[0].vlr_ref)
-            network_id = proxy(VlrYang).get(xpath)
-            assert len(network_id) > 0
+            xpath = "/vlr-catalog/vlr[id='{}']".format(cp_rec[0].vlr_ref)
+            vlr = proxy(RwVlrYang).get(xpath)
+
+            assert len(vlr.network_id) > 0
+            assert len(vlr.assigned_subnet) > 0
+            ip, _ = vlr.assigned_subnet.split("/")
+            assert self.is_valid_ip(ip) is True
+            assert vlr.operational_status == "running"
+
 
     def test_monitoring_params(self, proxy):
         """
@@ -170,44 +293,13 @@ class TestRecords(object):
         1. The constituent components.
         2. Admin status of the corresponding NSD record.
         """
-        for nsd, nsr in yield_nsd_nsr_pairs(proxy):
+        for nsr_cfg, nsr in yield_nsrc_nsro_pairs(proxy):
             # 1 n/w and 2 connection points
             assert len(nsr.vlr) == 1
             assert len(nsr.vlr[0].vnfr_connection_point_ref) == 2
 
             assert len(nsr.constituent_vnfr_ref) == 2
-            assert nsd.admin_status == 'ENABLED'
-
-    def test_create_update_vnfd(self, proxy, ping_pong_records):
-        """
-        Verify VNFD related operations
-
-        Asserts:
-            If a VNFD record is created
-        """
-        ping_vnfd, pong_vnfd, _ = ping_pong_records
-        vnfdproxy = proxy(RwVnfdYang)
-
-        for vnfd_record in [ping_vnfd, pong_vnfd]:
-            xpath = "/vnfd-catalog/vnfd[id='{}']".format(vnfd_record.id)
-            vnfdproxy.replace_config(xpath, vnfd_record.vnfd)
-            vnfd = vnfdproxy.get(xpath)
-            assert vnfd.id == vnfd_record.id
-
-    def test_create_update_nsd(self, proxy, ping_pong_records):
-        """
-        Verify NSD related operations
-
-        Asserts:
-            If NSD record was created
-        """
-        _, _, ping_pong_nsd = ping_pong_records
-        nsdproxy = proxy(NsdYang)
-
-        xpath = "/nsd-catalog/nsd[id='{}']".format(ping_pong_nsd.id)
-        nsdproxy.replace_config(xpath, ping_pong_nsd.descriptor)
-        nsd = nsdproxy.get(xpath)
-        assert nsd.id == ping_pong_nsd.id
+            assert nsr_cfg.admin_status == 'ENABLED'
 
     def test_wait_for_pingpong_configured(self, proxy):
         nsr_opdata = proxy(RwNsrYang).get('/ns-instance-opdata')
@@ -217,7 +309,7 @@ class TestRecords(object):
         current_nsr = nsrs[0]
 
         xpath = "/ns-instance-opdata/nsr[ns-instance-config-ref='{}']/config-status".format(current_nsr.ns_instance_config_ref)
-        proxy(RwNsrYang).wait_for(xpath, "configured", timeout=240)
+        proxy(RwNsrYang).wait_for(xpath, "configured", timeout=400)
 
     def test_cm_nsr(self, proxy):
         """
@@ -227,13 +319,10 @@ class TestRecords(object):
             3. The vnfr component's count
             4. State of the cm-nsr
         """
-        for nsd, _ in yield_nsd_nsr_pairs(proxy):
-            con_nsr_xpath = "/cm-state/cm-nsr[id='{}']".format(nsd.id)
+        for nsd, nsr in yield_nsd_nsr_pairs(proxy):
+            con_nsr_xpath = "/cm-state/cm-nsr[id='{}']".format(nsr.ns_instance_config_ref)
             con_data = proxy(RwConmanYang).get(con_nsr_xpath)
 
-            assert con_data is not None, \
-                    "No Config data obtained for the nsd {}: {}".format(
-                    nsd.name, nsd.id)
             assert con_data.name == "ping_pong_nsd"
             assert len(con_data.cm_vnfr) == 2
 
@@ -255,8 +344,8 @@ class TestRecords(object):
                 return True
             return False
 
-        nsd, _ = list(yield_nsd_nsr_pairs(proxy))[0]
-        con_nsr_xpath = "/cm-state/cm-nsr[id='{}']".format(nsd.id)
+        nsr_cfg, _ = list(yield_nsrc_nsro_pairs(proxy))[0]
+        con_nsr_xpath = "/cm-state/cm-nsr[id='{}']".format(nsr_cfg.id)
 
         for _, vnfr in yield_vnfd_vnfr_pairs(proxy):
             con_vnfr_path = con_nsr_xpath + "/cm-vnfr[id='{}']".format(vnfr.id)
@@ -278,6 +367,7 @@ class TestRecords(object):
             assert con_data.cfg_location is not None
 
 @pytest.mark.depends('nsr')
+@pytest.mark.setup('nfvi')
 @pytest.mark.incremental
 class TestNfviMetrics(object):
 
@@ -335,3 +425,48 @@ class TestNfviMetrics(object):
                     assert total > 0
                     computed_utilization = round((used/total) * 100, 2)
                     assert abs(computed_utilization - utilization) <= 0.1
+
+
+
+@pytest.mark.depends('nfvi')
+@pytest.mark.incremental
+class TestRecordsDescriptors:
+    def test_create_update_vnfd(self, proxy, updated_ping_pong_records):
+        """
+        Verify VNFD related operations
+
+        Asserts:
+            If a VNFD record is created
+        """
+        ping_vnfd, pong_vnfd, _ = updated_ping_pong_records
+        vnfdproxy = proxy(RwVnfdYang)
+
+        for vnfd_record in [ping_vnfd, pong_vnfd]:
+            xpath = "/vnfd-catalog/vnfd"
+            vnfdproxy.create_config(xpath, vnfd_record.vnfd)
+
+            xpath = "/vnfd-catalog/vnfd[id='{}']".format(vnfd_record.id)
+            vnfd = vnfdproxy.get(xpath)
+            assert vnfd.id == vnfd_record.id
+
+            vnfdproxy.replace_config(xpath, vnfd_record.vnfd)
+
+    def test_create_update_nsd(self, proxy, updated_ping_pong_records):
+        """
+        Verify NSD related operations
+
+        Asserts:
+            If NSD record was created
+        """
+        _, _, ping_pong_nsd = updated_ping_pong_records
+        nsdproxy = proxy(NsdYang)
+
+        xpath = "/nsd-catalog/nsd"
+        nsdproxy.create_config(xpath, ping_pong_nsd.descriptor)
+
+        xpath = "/nsd-catalog/nsd[id='{}']".format(ping_pong_nsd.id)
+        nsd = nsdproxy.get(xpath)
+        assert nsd.id == ping_pong_nsd.id
+
+        nsdproxy.replace_config(xpath, ping_pong_nsd.descriptor)
+

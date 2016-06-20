@@ -35,7 +35,7 @@ bool fs_create_directory(const std::string& path);
 
 bool fs_create_hardlinks(const std::string& spath, const std::string& dpath);
 
-bool fs_create_symlink(const std::string& target, const std::string& link);
+bool fs_create_symlink(const std::string& target, const std::string& link, bool const force=false);
 
 bool fs_empty_the_directory(const std::string& dpath);
 

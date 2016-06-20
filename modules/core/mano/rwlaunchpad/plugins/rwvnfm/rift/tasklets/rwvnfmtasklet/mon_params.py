@@ -686,4 +686,3 @@ class VnfMonitorDtsHandler(object):
             self._regh.deregister()
             self._regh = None
             self._vnfr = None
-

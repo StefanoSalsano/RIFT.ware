@@ -58,7 +58,11 @@ const CatalogPackageManagerSource = {
 						response.data.status = 'download-requested';
 						resolve(response);
 					};
-					const path = '/api/export?schema=' + format + '&ids=' + download.ids;
+					// RIFT-13485 requires to send type (nsd/vnfd) as a path element.
+					// Backend no longer supports mixed multi-package download.
+					// Probably does not even support multi-package download of same type.
+					// Hence, pick the type from the first element.
+					const path = '/api/export/' + download['catalogItems'][0]['uiState']['type'] + '?schema=' + format + '&ids=' + download.ids;
 					ajaxRequest(path, download, setStatusBeforeResolve, reject);
 				});
 			},

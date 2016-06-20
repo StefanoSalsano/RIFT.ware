@@ -2801,7 +2801,6 @@ enum {
 
 typedef struct rift_cmdargs_s {
   int   trace_level;
-  char* schema_listing;
   int   use_netconf;
   char* netconf_host;
   char* netconf_port;

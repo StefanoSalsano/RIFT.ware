@@ -21,7 +21,7 @@ export default class CatalogItems extends Component {
     let outerSpanClassNames = 'outerDefault';
     let catalogItems = [];
     self.props.catalogs.forEach((catalog) => {
-      catalog.descriptors.map((item, i) => {
+      catalog.descriptors && catalog.descriptors.map((item, i) => {
         let itemClassName = classNames + '_item';
         if (self.props.selectedNSDid == item.id) {
           itemClassName += ' -is-selected';

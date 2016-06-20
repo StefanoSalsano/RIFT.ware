@@ -490,3 +490,4 @@ zip-3.0-9.fc20.x86_64
 zlib-1.2.8-3.fc20.x86_64
 zlib-devel-1.2.8-3.fc20.x86_64
 zookeeper-java.noarch
+pcs

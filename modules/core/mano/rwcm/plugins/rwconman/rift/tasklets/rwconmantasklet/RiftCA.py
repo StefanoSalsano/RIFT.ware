@@ -36,7 +36,7 @@ class RiftCAConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         return self._name
         
     @asyncio.coroutine
-    def notify_create_vls(self, agent_nsr, agent_vnfr, vld, vlr):
+    def notify_create_vlr(self, agent_nsr, agent_vnfr, vld, vlr):
         """
         Notification of create VL record
         """
@@ -63,7 +63,7 @@ class RiftCAConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         """
         # Deploy the charm if specified for the vnf
         self._log.debug("Rift config agent: create vnfr nsr={}  vnfr={}"
-                        .format(agent_nsr, agent_vnfr.name))
+                        .format(agent_nsr.name, agent_vnfr.name))
         try:
             self._loop.create_task(self.is_vnf_configurable(agent_vnfr))
         except Exception as e:
@@ -74,27 +74,27 @@ class RiftCAConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         return True
 
     @asyncio.coroutine
-    def notify_instantiate_vnf(self, agent_nsr, agent_vnfr):
+    def notify_instantiate_vnfr(self, agent_nsr, agent_vnfr):
         """
         Notification of Instantiate NSR with the passed nsr id
         """
         pass
 
     @asyncio.coroutine
-    def notify_instantiate_vl(self, agent_nsr, agent_vnfr, vlr):
+    def notify_instantiate_vlr(self, agent_nsr, agent_vnfr, vlr):
         """
         Notification of Instantiate NSR with the passed nsr id
         """
         pass
 
     @asyncio.coroutine
-    def notify_terminate_vnf(self, agent_nsr, agent_vnfr):
+    def notify_terminate_vnfr(self, agent_nsr, agent_vnfr):
         """
         Notification of Terminate the network service
         """
 
     @asyncio.coroutine
-    def notify_terminate_vl(self, agent_nsr, agent_vnfr, vlr):
+    def notify_terminate_vlr(self, agent_nsr, agent_vnfr, vlr):
         """
         Notification of Terminate the virtual link
         """
@@ -256,7 +256,14 @@ class RiftCAConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         if agent_vnfr.id not in self._rift_vnfs.keys():
             self._log.info("Rift config agent: add vnfr={}/{}".format(agent_vnfr.name, agent_vnfr.id))
             self._rift_vnfs[agent_vnfr.id] = agent_vnfr
-            
+
+    @asyncio.coroutine
+    def get_config_status(self, agent_nsr, agent_vnfr):
+            if agent_vnfr.id in self._rift_vnfs.keys():
+                return 'configured'
+            return 'unknown'
+
+
     def get_action_status(self, execution_id):
         ''' Get the action status for an execution ID
             *** Make sure this is NOT a asyncio coroutine function ***

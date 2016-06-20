@@ -276,80 +276,64 @@ const char *tab_entry[30] = {"TEST", "Sheldon", "Leonard", "Raj", "Howard", "Ber
                        "Amy", "Steve", "Wilma", "Fred", "Charlie", "Penny","What",
                        "When", "Why", "Who", "How", "BBC", "CNN"};
 
+rwdts_kv_light_reply_status_t
+rwdts_kv_handle_get_all_cb(void **key, int *key_len, void **val,
+                           int *val_len, int total, void *callbk_data)
+{
+  int *cb_data = (int *)callbk_data;
+  RW_ASSERT(cb_data);
+
+  EXPECT_EQ(total, *cb_data);
+
+  int i;
+  char res_val[50];
+  char res_key[50];
+  for(i=0; i < total; i++) {
+    memcpy(res_val, (char *)val[i], val_len[i]);
+    res_val[val_len[i]] = '\0';
+    memcpy(res_key, (char *)key[i], key_len[i]);
+    res_key[key_len[i]] = '\0';
+    fprintf(stderr, "res_key = %s, res_val = %s\n", res_val, res_key);
+    free(key[i]);
+    free(val[i]);
+  }
+  free(key);
+  free(val);
+
+  return RWDTS_KV_LIGHT_REPLY_DONE;
+}
+
 TEST(RwDtsFileDB, FileBkDB)
 {
   rw_status_t res;
   rwdts_kv_handle_t* handle = (rwdts_kv_handle_t*)rwdts_kv_allocate_handle(BK_DB);
   RW_ASSERT(handle);
-  char *val, *key;
-  int val_len = 0, key_len = 0;
-  void *cursor = NULL, *out_cursor = NULL;
-  int count = 0, i;
+  int* cb_data = (int *)RW_MALLOC0(sizeof(int));
+  int i;
 
-  res = rwdts_kv_handle_open_db(handle, "test_client.db", NULL, NULL);
+  res = rwdts_kv_handle_db_connect(handle, NULL, NULL, NULL, "test_client.db", NULL, NULL, NULL);
   EXPECT_EQ(res, RW_STATUS_SUCCESS);
 
+  res = rwdts_kv_handle_add_keyval(handle, 0, (char *)key_entry[0],
+                                   strlen(key_entry[0]), (char *)tab_entry[0], strlen(tab_entry[0]), NULL, NULL);
+  EXPECT_EQ(res, RW_STATUS_SUCCESS);
   for (i = 0; i< 19; i++) {
-    res = rwdts_kv_handle_file_set_keyval(handle, (char *)key_entry[i],
-                                         strlen(key_entry[i]), (char *)tab_entry[i], strlen(tab_entry[i]));
+    res = rwdts_kv_handle_add_keyval(handle, 0, (char *)key_entry[i],
+                                     strlen(key_entry[i]), (char *)tab_entry[i], strlen(tab_entry[i]), NULL, NULL);
     EXPECT_EQ(res, RW_STATUS_SUCCESS);
   }
 
-  for (i = 0; i < 19; i++) {
-    char res_val[50];
-    res = rwdts_kv_handle_file_get_keyval(handle, (char *)key_entry[i], strlen(key_entry[i]),
-                                         &val, (int *)&val_len);
-    EXPECT_EQ(res, RW_STATUS_SUCCESS);
-    strncpy(res_val, val, val_len);
-    res_val[val_len] = '\0';
-    RW_FREE(val);
-    EXPECT_STREQ(res_val, tab_entry[i]);
-  }
-
-  cursor = rwdts_kv_handle_file_get_cursor(handle);
-  RW_ASSERT(cursor);
-
-  while ((res = rwdts_kv_handle_file_getnext(handle, cursor, (char **)&key, &key_len,
-                                             (char **)&val, &val_len, &out_cursor)) == RW_STATUS_SUCCESS) {
-    char res_val[50];
-    char res_key[50];
-    strncpy(res_val, val, val_len);
-    res_val[val_len] = '\0';
-    strncpy(res_key, key, key_len);
-    res_key[key_len] = '\0';
-    fprintf(stderr, "res_key = %s, res_val = %s\n", res_val, res_key); 
-    count++;
-    cursor = out_cursor; out_cursor = NULL;
-  }
-
-  EXPECT_EQ(count, 19);
+  *cb_data = 19;
+  rwdts_kv_handle_get_all(handle, 0, (void *)rwdts_kv_handle_get_all_cb, cb_data);
 
   for (i=0; i < 5; i++) {
-    res = rwdts_kv_handle_file_del_keyval(handle, (char *)key_entry[i],
-                                         strlen(key_entry[i]));
+    res = rwdts_kv_handle_del_keyval(handle, 0, (char *)key_entry[i],
+                                     strlen(key_entry[i]), NULL, NULL);
     EXPECT_EQ(res, RW_STATUS_SUCCESS);
   }
 
-  cursor = rwdts_kv_handle_file_get_cursor(handle);
-  RW_ASSERT(cursor);
-  count = 0;
-
-  fprintf(stderr, "After Delete \n\n\n");
-
-  while ((res = rwdts_kv_handle_file_getnext(handle, cursor, (char **)&key, &key_len,
-                                             (char **)&val, &val_len, &out_cursor)) == RW_STATUS_SUCCESS) {
-    char res_val[50];
-    char res_key[50];
-    strncpy(res_val, val, val_len);
-    res_val[val_len] = '\0';
-    strncpy(res_key, key, key_len);
-    res_key[key_len] = '\0';
-    fprintf(stderr, "res_key = %s, res_val = %s\n", res_val, res_key);
-    count++;
-    cursor = out_cursor; out_cursor = NULL;
-  }
-
-  EXPECT_EQ(count, 14);
+  *cb_data = 14;
+  rwdts_kv_handle_get_all(handle, 0, (void *)rwdts_kv_handle_get_all_cb, cb_data);
 
   res = rwdts_kv_handle_file_remove(handle);
   EXPECT_EQ(res, RW_STATUS_SUCCESS);

@@ -15,14 +15,11 @@ module vlr-annotation
     prefix tailf;
   }
 
-  import rw-base {
-    prefix rwbase;
-  }
-
   import vlr {
     prefix vlr;
   }
+
   tailf:annotate "/vlr:vlr-catalog" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

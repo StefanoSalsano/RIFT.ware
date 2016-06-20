@@ -208,7 +208,7 @@ def wait_for_image_state(account, image_id, state, timeout=300):
 
     return image_info
 
-def wait_for_vm_state(account, vm_id, state, timeout=120):
+def wait_for_vm_state(account, vm_id, state, timeout=300):
     start_time = time.time()
     state = state.lower()
     current_state = 'unknown'
@@ -490,6 +490,7 @@ if __name__ == '__main__':
             'vm_id':str(uuid.uuid4().hex[:10]),
             'flavor_id':str(flavor_id),
             'image_id':image_id,
+            'allocate_public_address':True,
             'cloud_init': {
                 'userdata':''
             }
@@ -591,15 +592,36 @@ if __name__ == '__main__':
                 rc, port_id = cal.create_port(account, port)
 
 
-    rc, vdu_list = cal.get_vdu_list(account)
-    assert rc == RwTypes.RwStatus.SUCCESS
+
+    elapsed = 0
+    timeout = 300
+    start = time.time()
+
+    logger.info("Waiting for Resources to have a public ip address assigned")
+    while elapsed < timeout:
+        elapsed = time.time() - start
+
+        rc, vdu_list = cal.get_vdu_list(account)
+        assert rc == RwTypes.RwStatus.SUCCESS
+
+        vms_pending_public_ip = [vdu_info for vdu_info in vdu_list.vdu_info_list if vdu_info.vdu_id in vm_ids and vdu_info.public_ip == ""]
+        if not vms_pending_public_ip:
+            break
+
+        logger.info("Resource %s has no public ip address", vms_pending_public_ip[0].name)
+        time.sleep(5)
+
+    if vms_pending_public_ip:
+        raise ValidationError("Failed to verify all resources have public ip address")
+
+
 
     vdus = [vdu_info for vdu_info in vdu_list.vdu_info_list if vdu_info.vdu_id in vm_ids]
 
     cmd_cleanup = 'ssh-keygen -R {mgmt_ip}'
     for vdu in vdus:
-        logger.info("Cleaning up known host entry for %s", vdu.management_ip)
-        rc = subprocess.call(shlex.split(cmd_cleanup.format(mgmt_ip=vdu.management_ip)), stdout=subprocess.DEVNULL)
+        logger.info("Cleaning up known host entry for %s", vdu.public_ip)
+        rc = subprocess.call(shlex.split(cmd_cleanup.format(mgmt_ip=vdu.public_ip)), stdout=subprocess.DEVNULL)
         if rc != 0:
             logger.error("Failed to remove known host entry for %s", vdu.name)
 
@@ -617,12 +639,13 @@ if __name__ == '__main__':
     start = time.time()
 
     while elapsed < timeout:
+        elapsed = time.time() - start
         all_resources_ready = True
 
         for vdu in vdus:
             if accessible[vdu.vdu_id]:
                 continue
-            rc = subprocess.call(shlex.split(cmd_accessible.format(mgmt_ip=vdu.management_ip)), stdout=subprocess.DEVNULL)
+            rc = subprocess.call(shlex.split(cmd_accessible.format(mgmt_ip=vdu.public_ip)), stdout=subprocess.DEVNULL)
             if rc != 0:
                 logger.info("Resource %s not accessible", vdu.name)
                 all_resources_ready = False
@@ -637,7 +660,7 @@ if __name__ == '__main__':
         for vdu in vdus:
             if initialized[vdu.vdu_id]:
                 continue
-            rc = subprocess.call(shlex.split(cmd_initialized.format(mgmt_ip=vdu.management_ip)), stdout=subprocess.DEVNULL)
+            rc = subprocess.call(shlex.split(cmd_initialized.format(mgmt_ip=vdu.public_ip)), stdout=subprocess.DEVNULL)
             if rc != 0:
                 logger.info("Resource %s not initialized", vdu.name)
                 all_resources_ready = False
@@ -652,7 +675,7 @@ if __name__ == '__main__':
         for vdu in vdus:
             if lab_enabled[vdu.vdu_id]:
                 continue
-            rc = subprocess.call(shlex.split(cmd_lab_enabled.format(mgmt_ip=vdu.management_ip)), stdout=subprocess.DEVNULL)
+            rc = subprocess.call(shlex.split(cmd_lab_enabled.format(mgmt_ip=vdu.public_ip)), stdout=subprocess.DEVNULL)
             if rc != 0:
                 logger.info("Resource %s not lab enabled", vdu.name)
                 all_resources_ready = False
@@ -660,8 +683,6 @@ if __name__ == '__main__':
                 break
             logger.info("Resource %s lab enabled", vdu.name)
             lab_enabled[vdu.vdu_id] = True
-
-        elapsed = time.time() - start
 
         if not all_resources_ready:
             continue
@@ -681,7 +702,7 @@ if __name__ == '__main__':
 
         if not flavor['names']:
             suts['vms'][default_vm] = 'dynamic_openstack_host'
-            suts['vm_addrs'][default_vm] = vdu.management_ip
+            suts['vm_addrs'][default_vm] = vdu.public_ip
             default_vm = 'VM_%d' % (default_vm_id)
             default_vm_id += 1
 
@@ -689,7 +710,7 @@ if __name__ == '__main__':
             suts['vms'][name] = 'dynamic_openstack_host'
 
         for name in flavor['qualified_names']:
-            suts['vm_addrs'][name] = vdu.management_ip
+            suts['vm_addrs'][name] = vdu.public_ip
 
     for cal_network in cal_networks:
         network = network_by_cal_network[cal_network]

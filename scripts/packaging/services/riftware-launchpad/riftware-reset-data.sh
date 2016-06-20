@@ -33,13 +33,11 @@ function resetData {
     	rm -f ${INSTALLDIR}/*.db
 
 	# unique
-	#${RIFT_ROOT}/rift-shell -- rwyangutil --rm-unique-confd-ws 2>/dev/null >/dev/null
-	#${RIFT_ROOT}/rift-shell -- rwyangutil --rm-unique-xml-ws 2>/dev/null >/dev/null
+	#${RIFT_ROOT}/rift-shell -- rwyangutil --rm-unique-mgmt-ws 2>/dev/null >/dev/null
 	#${RIFT_ROOT}/rift-shell -- rwyangutil --remove-schema-dir 2>/dev/null >/dev/null
 
 	# unique AND persistent
-	${RIFT_ROOT}/rift-shell -- rwyangutil --rm-unique-confd-ws --rm-persist-confd-ws 2>/dev/null >/dev/null
-	${RIFT_ROOT}/rift-shell -- rwyangutil --rm-unique-xml-ws --rm-persist-xml-ws     2>/dev/null >/dev/null
+	${RIFT_ROOT}/rift-shell -- rwyangutil --rm-unique-mgmt-ws --rm-persist-mgmt-ws 2>/dev/null >/dev/null
 	${RIFT_ROOT}/rift-shell -- rwyangutil --remove-schema-dir 			 2>/dev/null >/dev/null
 
 	#echo "Checking:"

@@ -241,6 +241,77 @@ XMLDocument::uptr_t RwCliParser::get_command_dom(ParseNode* result_tree)
   return (command);
 }
 
+void RwCliParser::associate_default_print_hook()
+{
+  // The default print hook is assigned on the following nodes
+  //  - root node
+  //  - no node (within config mode)
+  root_parse_node_->set_cli_print_hook(rw_cli.default_print_hook_.c_str());
+
+  // 'no' behavior has a default print hook (cannot be overridden)
+  if (no_node_) {
+    no_node_->flags_.set(ParseFlags::PRINT_HOOK_STICKY);
+    no_node_->set_cli_print_hook(rw_cli.default_print_hook_.c_str());
+  }
+}
+
+void RwCliParser::associate_config_print_hook()
+{
+  // The config print hooks should be set on the following execution mode
+  // commands
+  //  - show config
+  //  - show candidate-config
+  // For config mode 'show config' and 'show candidate-config', the print-hook
+  // will be set on entering the config mode
+
+
+  if (show_node_) {
+    ParseNodeFunctional* fn_node = nullptr;
+    fn_node = show_node_->find_descendent("config");
+    if (fn_node) {
+      fn_node->set_cli_print_hook(rw_cli.config_print_hook_.c_str());
+    }
+    fn_node = show_node_->find_descendent("candidate-config");
+    if (fn_node) {
+      fn_node->set_cli_print_hook(rw_cli.config_print_hook_.c_str());
+    }
+  }
+}
+
+void RwCliParser::associate_config_print_to_file_hook()
+{
+  // save config text
+  ParseNodeFunctional* save_config_text = find_descendent_deep(
+                                            {"save","config","text"});
+  if (save_config_text) {
+    save_config_text->set_cli_print_hook(
+                        rw_cli.config_print_to_file_hook_.c_str());
+  }
+}
+
+void RwCliParser::associate_pretty_print_xml_hook()
+{
+  // show config xml
+  if (show_node_) {
+    ParseNodeFunctional* fn_node = show_node_->find_descendent_deep(
+                                                  {"config", "xml"});
+    if (fn_node) {
+      fn_node->set_cli_print_hook(rw_cli.pretty_print_xml_hook_.c_str());
+    }
+  }
+}
+
+void RwCliParser::associate_pretty_print_xml_to_file_hook()
+{
+  // save config xml
+  ParseNodeFunctional* save_config_xml = find_descendent_deep(
+                                            {"save","config","xml"});
+  if (save_config_xml) {
+    save_config_xml->set_cli_print_hook(
+                        rw_cli.pretty_print_xml_to_file_hook_.c_str());
+  }
+}
+
 void RwCliParser::enhance_behaviorals()
 {
   /* !! * START OF SHOW * !! */
@@ -448,12 +519,12 @@ rw_status_t CliManifest::show()
 
   if (mfiles.size()) {
     std::cout << "\t Manifest Files:" << std::endl;
-    for (i = 0; i < mfiles.size(); ++i) {
-      std::cout << "\t\t" << mfiles[i] << std::endl;
+    for (const auto& mfile : mfiles) {
+      std::cout << "\t\t" << mfile << std::endl;
     }
   }
 
-  if (rw_cli.schema_mgr_->schema_table_.size()) {
+  if (rw_cli.schema_mgr_->loaded_schema_.size()) {
     std::cout << "\tYANG Modules:" << std::endl;
     rw_cli.schema_mgr_->show_schemas(std::cout);
   }
@@ -511,13 +582,13 @@ CliManifest::ReadingStatus CliManifest::add_cli_print_hook(const char *path, con
   RW_ASSERT(hook);
 
   // Make a new base cli that will skip keys in completions
-  RwCliParser *tmp_parser = new RwCliParser(*(rw_cli.schema_mgr_->model_), rw_cli,
-                                            ParseFlags::V_LIST_KEYS_CLONED);
+  RwCliParser tmp_parser(*(rw_cli.schema_mgr_->model_), rw_cli,
+                         ParseFlags::V_LIST_KEYS_CLONED);
 
   std::string spaced_path = path;
   spaced_path += ' ';
   // Find a path to this node in the yang module - spoof a cli command
-  ParseLineResult r(*tmp_parser, spaced_path.c_str(), ParseLineResult::ENTERKEY_MODE);
+  ParseLineResult r(tmp_parser, spaced_path.c_str(), ParseLineResult::ENTERKEY_MODE);
 
   if (!r.success_) {
     return ReadingStatus(RW_STATUS_FAILURE, r.error_);
@@ -613,18 +684,16 @@ rw_status_t CliManifest::read_cli_manifest(const char* afpath)
   xmlSetGenericErrorFunc(NULL, xml_generic_error_handler);
 
   std::string name(afpath);
-  if (std::find(mfiles.begin(), mfiles.end(), name) != mfiles.end()) {
-    std::cout << "CLI Manifest file already loaded " << name << std::endl;
+  if (mfiles.find(name) != mfiles.end()) {
     return RW_STATUS_SUCCESS;
   }
 
   doc = xmlReadFile(name.c_str(), nullptr, 0);
   if (doc == nullptr) {
-    std::cout << "Error: failed to load " << name << std::endl;
     return RW_STATUS_FAILURE;
   }
 
-  mfiles.push_back(name);
+  mfiles.insert(name);
 
   status = read_cli_manifest_common(doc);
 
@@ -642,15 +711,20 @@ rw_status_t CliManifest::read_base_cli_manifest(const char* file)
     return RW_STATUS_SUCCESS;
   }
 
+  if (mfiles.find(file) != mfiles.end()) {
+    // Already loaded
+    return RW_STATUS_SUCCESS;
+  }
+
   xmlSetGenericErrorFunc(NULL, xml_generic_error_handler);
 
   doc = xmlReadFile(file, nullptr, 0);
   if (doc == nullptr) {
-    std::cout << "Error: failed to load " << file << std::endl;
+    // It the file doesn't exists it will be retried later
     return RW_STATUS_FAILURE;
   }
 
-  mfiles.push_back(file);
+  mfiles.insert(file);
   
   status = read_cli_manifest_common(doc);
   if (status != RW_STATUS_SUCCESS) {
@@ -809,6 +883,54 @@ rw_status_t CliManifest::read_cli_manifest_common(
   xmlXPathFreeObject(result);
   xmlXPathFreeContext(context);
 
+  /**
+   * Read the to be suppressed path or namespace
+   */
+  xpath_query = (xmlChar *) "/cli/modifications/suppress";
+  context = xmlXPathNewContext(doc);
+  result = xmlXPathEvalExpression(xpath_query, context);
+  nodeset = result->nodesetval;
+
+  for (int i = 0; i < nodeset->nodeNr; i++) {
+
+    LIBXML::xmlNode *node = nodeset->nodeTab[i];
+    char *ns = (char *)xmlGetProp(node, (xmlChar *) "namespace");
+    char *path = (char *) xmlGetProp(node, (xmlChar *) "path");
+
+    if (ns && path) {
+      rw_cli.err_stream << "Error: Cannot suppress both Namespace and Path - "
+                        << " Namespace: " << ns
+                        << " Path: " << path << std::endl;
+      xmlFree(ns);
+      xmlFree(path);
+      return RW_STATUS_FAILURE;
+    }
+
+    if (ns) {
+      bool success = rw_cli.parser->suppress_namespace(ns);
+      if (!success) {
+        rw_cli.err_stream << "Error: Failed to suppress namespace - "
+                          << ns << std::endl;
+      }
+    }
+    if (path) {
+      // Make a new base cli that will skip keys in completions
+      RwCliParser tmp_parser(*(rw_cli.schema_mgr_->model_), rw_cli,
+                         ParseFlags::V_LIST_KEYS_CLONED);
+
+      bool success = tmp_parser.suppress_command_path(path);
+      if (!success) {
+        rw_cli.err_stream << "Error: Failed to suppress command path - "
+                          << ns << std::endl;
+      }
+    }
+
+    xmlFree(ns);
+    xmlFree(path);
+  }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
+
   return status;
 }
 
@@ -831,6 +953,10 @@ rw_status_t CliManifest::read_cli_manifest_defaults(
     char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
     rw_cli.default_print_hook_ = prop;
     xmlFree(prop);
+    
+    if (rw_cli.parser) {
+      rw_cli.parser->associate_default_print_hook();
+    }
   }
   xmlXPathFreeObject(result);
   xmlXPathFreeContext(context);
@@ -844,6 +970,10 @@ rw_status_t CliManifest::read_cli_manifest_defaults(
     char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
     rw_cli.config_print_hook_ = prop;
     xmlFree(prop);
+
+    if (rw_cli.parser) {
+      rw_cli.parser->associate_config_print_hook();
+    }
   }
   xmlXPathFreeObject(result);
   xmlXPathFreeContext(context);
@@ -857,6 +987,10 @@ rw_status_t CliManifest::read_cli_manifest_defaults(
     char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
     rw_cli.config_print_to_file_hook_ = prop;
     xmlFree(prop);
+
+    if (rw_cli.parser) {
+      rw_cli.parser->associate_config_print_to_file_hook();
+    }
   }
   xmlXPathFreeObject(result);
   xmlXPathFreeContext(context);
@@ -870,6 +1004,27 @@ rw_status_t CliManifest::read_cli_manifest_defaults(
     char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
     rw_cli.pretty_print_xml_hook_ = prop;
     xmlFree(prop);
+
+    if (rw_cli.parser) {
+      rw_cli.parser->associate_pretty_print_xml_hook();
+    }
+  }
+  xmlXPathFreeObject(result);
+  xmlXPathFreeContext(context);
+
+  xpath_query = (xmlChar *) "/cli/defaults/prettyPrintXmlToFileHook";
+  context = xmlXPathNewContext(doc);
+  result = xmlXPathEvalExpression(xpath_query, context);
+  nodeset = result->nodesetval;
+  if (nodeset->nodeNr) {
+    LIBXML::xmlNode *node = nodeset->nodeTab[0];
+    char* prop = (char*)xmlGetProp(node, (xmlChar*)"hook");
+    rw_cli.pretty_print_xml_to_file_hook_ = prop;
+    xmlFree(prop);
+
+    if (rw_cli.parser) {
+      rw_cli.parser->associate_pretty_print_xml_to_file_hook();
+    }
   }
   xmlXPathFreeObject(result);
   xmlXPathFreeContext(context);
@@ -883,7 +1038,6 @@ rw_status_t CliManifest::read_cli_manifest_defaults(
  * configuration.
  */
 RwCLI::RwCLI(bool no_editline, 
-        const char * schema_listing, 
         rwcli_transport_mode_t transport_mode,
         rwcli_user_mode_t user_mode)
 : parent_rw_cli(nullptr),
@@ -896,19 +1050,30 @@ RwCLI::RwCLI(bool no_editline,
   err_stream(std::cerr),
   messaging_hook_(nullptr),
   transport_mode_(transport_mode),
-  user_mode_(user_mode)
+  user_mode_(user_mode),
+  no_editline_(no_editline)
+
 {
   // Create the syntax model. The other code assumes this exists.
   schema_mgr_ = new SchemaManager();
 
   // Create the cli manifest helper instance.
   manifest_ = new CliManifest(*this);
+}
+
+void RwCLI::setup_parser()
+{
+  if (parser){
+    delete parser;
+  }
+
+  (void)schema_mgr_->load_all_schemas();
 
   // Create a RwCliParser instance
   parser = new RwCliParser( *(schema_mgr_->model_), *this );
   RW_ASSERT(parser);
   parser->has_candidate_store_ = has_candidate_store_;
-  if (!no_editline) {
+  if (!no_editline_) {
     editline =  new CliEditline( *parser, stdin, stdout, stderr );
     editline->nonblocking_mode();
   }
@@ -919,11 +1084,12 @@ RwCLI::RwCLI(bool no_editline,
   config = xmlmgr->create_document().release();
   RW_ASSERT(config);
   parser->root_mode_->set_xml_node(config->get_root_node());
+}
 
-  if (schema_listing) {
-    schema_listing_.assign(schema_listing);
-    load_schema_modules(schema_listing_.c_str());
-  }
+void RwCLI::reset_yang_model()
+{
+  (void)schema_mgr_->load_all_schemas();
+  (void)load_manifest_files();
 }
 
 /**
@@ -946,7 +1112,8 @@ RwCLI::RwCLI(RwCLI* other)
   default_print_hook_(other->default_print_hook_),
   config_print_hook_(other->config_print_hook_),
   config_print_to_file_hook_(other->config_print_to_file_hook_),
-  pretty_print_xml_hook_(other->pretty_print_xml_hook_)
+  pretty_print_xml_hook_(other->pretty_print_xml_hook_),
+  pretty_print_xml_to_file_hook_(other->pretty_print_xml_to_file_hook_)
 {
   RW_ASSERT(other);
   RW_ASSERT(other->schema_mgr_);
@@ -1008,6 +1175,8 @@ void RwCLI::initialize(const char* base_manifest_file)
   // manifest might load plugins
   manifest_->read_base_cli_manifest(base_manifest_file);
 
+  setup_parser();
+  
   // The builtin and behavioral nodes might require default parameters set in
   // the base cli manifest.
   parser->add_builtins();
@@ -1080,7 +1249,6 @@ bool RwCLI::show_config_text(const ParseLineResult&r)
 
 bool RwCLI::show_config_xml(const ParseLineResult& r)
 {
-
   process_cli_command(r, nc_get_config);
   return true;
 }
@@ -1088,7 +1256,6 @@ bool RwCLI::show_config_xml(const ParseLineResult& r)
 
 bool RwCLI::show_manifest(const ParseLineResult& r) 
 {
-
   manifest_->show();
   return true;
 }
@@ -1543,6 +1710,10 @@ rw_status_t RwCLI::print_hook(const ParseLineResult &r,
   std::vector<std::string> words;
   std::string plugin = std::string(r.cli_print_hook_string_);
 
+  if (plugin.empty()) {
+    plugin = default_print_hook_;
+  }
+
   /* hook is specified with a colon seperating the pluing and api
    * For example, rwcli_plugin:default_print */
   split_line(plugin, ':', words);
@@ -1776,7 +1947,7 @@ void RwCLI::add_builtin_cmds()
   name_string->help_full_set (help);
       
   xml_keyword->set_value_node(name_string);
-  xml_keyword->set_cli_print_hook(".:pretty_print_xml_file");
+  xml_keyword->set_cli_print_hook(pretty_print_xml_to_file_hook_.c_str());
   xml_keyword->set_callback(new CallbackRwCli(*this, &RwCLI::save_config));
 
   cfg_keyword->add_descendent (xml_keyword);
@@ -1844,7 +2015,6 @@ bool RwCLI::load_manifest_files()
 {
   std::string cli_dir = schema_mgr_->get_cli_manifest_dir();
   if (!fs::exists(cli_dir)) {
-    std::cerr << "CLI manifest dir doesn't exists " << cli_dir << std::endl;
     return false;
   }
 
@@ -1855,7 +2025,9 @@ bool RwCLI::load_manifest_files()
     std::string ext;
 
     if (fn == RW_CLI_BASE_MANIFEST) {
-      // Already loaded
+      // Base manifest is special. Base manifest will not be loaded if already
+      // loaded
+      manifest_->read_base_cli_manifest(path.string().c_str());
       continue;
     }
 
@@ -1868,28 +2040,6 @@ bool RwCLI::load_manifest_files()
         return false;
       }
     }
-  }
-
-  return true;
-}
-
-bool RwCLI::load_schema_modules(const char * schema_listing_filename)
-{
-  std::string const schema_listing =
-      std::string(getenv("RIFT_INSTALL")) + std::string("/usr/data/manifest/") + schema_listing_filename;
-
-  if (!fs::exists(schema_listing)) {
-    std::cerr << "Schema listing file doesn't exist " << schema_listing << std::endl;
-    return false;
-  }
-
-  std::ifstream file(schema_listing);
-  std::string module_name;
-
-  while(std::getline(file, module_name)) {
-    
-    module_names_.insert(module_name);
-
   }
 
   return true;
@@ -2093,6 +2243,7 @@ CallbackRwCli::CallbackRwCli(RwCLI& data, RwCliCallback cb)
  */
 bool CallbackRwCli::execute (const ParseLineResult &r)
 {
+  // ATTN: ugh
   return (*cb_data_.*cb_func_)(r);
 }
 
@@ -2122,7 +2273,6 @@ xsdcli_instance_init(rwcli_component_ptr_t component,
 
   // Create a RIFT_Cli instance
   RwCLI *rw_cli = new RwCLI(has_editline, 
-                          nullptr,
                           RWCLI_TRANSPORT_MODE_RWMSG,
                           RWCLI_USER_MODE_NONE);
   instance->rwcli = rw_cli;
@@ -2162,7 +2312,6 @@ xsdcli_instance_start(rwcli_component_ptr_t component,
 static RwCLI* rwcli_zsh_instance = NULL;
 
 int rwcli_zsh_plugin_init(
-        const char * schema_listing,
         rwcli_transport_mode_t transport_mode,
         rwcli_user_mode_t user_mode)
 {
@@ -2170,7 +2319,6 @@ int rwcli_zsh_plugin_init(
   const bool no_editline = true;
 
   rwcli_zsh_instance = new RwCLI(no_editline, 
-                              schema_listing,
                               transport_mode,
                               user_mode);
 
@@ -2207,6 +2355,8 @@ int rwcli_zsh_plugin_deinit()
 
 int rwcli_lookup(const char* cmd)
 {
+  rwcli_zsh_instance->reset_yang_model();
+
   // TODO support for modes
   std::string lcmd(cmd);
   lcmd += " ";
@@ -2217,6 +2367,8 @@ int rwcli_lookup(const char* cmd)
 
 char* rwcli_tab_complete(const char* line)
 {
+  rwcli_zsh_instance->reset_yang_model();
+
   std::string new_line;
   new_line = rwcli_zsh_instance->parser->tab_complete(line);
   return new_line.empty() ? NULL : strdup(new_line.c_str());
@@ -2224,11 +2376,15 @@ char* rwcli_tab_complete(const char* line)
 
 int rwcli_generate_help(const char* line)
 {
+  rwcli_zsh_instance->reset_yang_model();
+
   return rwcli_zsh_instance->parser->generate_help(line) ? 0 : -1;
 }
 
 int rwcli_tab_complete_with_matches(const char* line, rwcli_complete_matches_t **matches)
 {
+  rwcli_zsh_instance->reset_yang_model();
+
   *matches = NULL;
   std::vector<ParseMatch> res = rwcli_zsh_instance->parser->generate_matches(line);
 
@@ -2270,24 +2426,5 @@ void rwcli_set_history_hook(rwcli_history_hook hook)
   RW_ASSERT(rwcli_zsh_instance);
   rwcli_zsh_instance->set_history_hook(hook);
 }
-
-int rwcli_get_schema_updater_fd()
-{
-  RW_ASSERT(rwcli_zsh_instance);
-  RW_ASSERT(rwcli_zsh_instance->schema_mgr_);
-  RW_ASSERT(rwcli_zsh_instance->schema_mgr_->updater_);
-
-  return rwcli_zsh_instance->schema_mgr_->updater_->get_handle();
-}
-
-void rwcli_schema_update_event()
-{
-  RW_ASSERT(rwcli_zsh_instance);
-  RW_ASSERT(rwcli_zsh_instance->schema_mgr_);
-  RW_ASSERT(rwcli_zsh_instance->schema_mgr_->updater_);
-
-  rwcli_zsh_instance->schema_mgr_->updater_->check_for_updates();
-}
-
 
 __END_DECLS

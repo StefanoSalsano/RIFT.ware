@@ -64,6 +64,7 @@ class RwLogTestCase(rift.test.dts.AbstractDTSTest):
     @rift.test.dts.async_test
     def test_tasklet_logging(self):
         yield from self.wait_for_tasklet_running("rwlogd-c")
+        #yield from asyncio.sleep(2, loop=self.loop)
 
         temp_file = tempfile.mktemp()
         self.log.debug("Created file log sink location: %s", temp_file)

@@ -115,8 +115,7 @@ class TestWare(object):
         pwd = os.getcwd()
         os.chdir(self.rift_install)
         # ATTN: Are these really needed?
-        os.system("rm -rf ./confd_persist*")
-        os.system("rm -rf ./xml_persist*")
+        os.system("rm -rf ./persist*")
         self.generate_manifest()
         os.environ['RIFT_NO_SUDO_REAPER'] = '1'
         self.loop.run_until_complete(

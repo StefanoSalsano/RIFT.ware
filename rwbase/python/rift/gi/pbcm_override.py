@@ -23,6 +23,10 @@ if sys.version_info >= (3, 0):
             json_to_xml,
             xml_to_json,
         )
+        from rift.rwlib.schema import (
+            prune_non_schema_xml,
+        )
+
     except Exception as e:
         print(e)
 
@@ -221,7 +225,7 @@ def wrap_module():
                 return xml_string
 
             @combomethod
-            def from_xml_v2(receiver, model, xml_str):
+            def from_xml_v2(receiver, model, xml_str, strict=True):
                 """ Deserialize XML message into Protobuf Message
 
                 :param receiver: GI class or instance
@@ -229,7 +233,13 @@ def wrap_module():
                 :param xml_str: Serialized XML message for current Protobuf Type
                 """
                 def _from_xml(self):
-                    orig_from_xml_v2(self, model, xml_str)
+                    if not strict:
+                        schema_root = model.get_root_node()
+                        raw_xml = prune_non_schema_xml(schema_root, xml_str) 
+                    else:
+                        raw_xml = xml_str
+
+                    orig_from_xml_v2(self, model, raw_xml)
 
                 if inspect.isclass(receiver):
                     self = receiver()
@@ -258,7 +268,7 @@ def wrap_module():
                 return json_string
 
             @combomethod
-            def from_json(receiver, model, json_str):
+            def from_json(receiver, model, json_str, strict=True):
                 """ Deserialize JSON message into Protobuf Message
 
                 :param receiver: GI class or instance
@@ -267,7 +277,7 @@ def wrap_module():
                 """
                 def _from_json(self):
                     schema = model.get_root_node()
-                    xml = json_to_xml(schema, json_str)
+                    xml = json_to_xml(schema, json_str, strict)
                     self.from_xml_v2(model, xml)
 
                 if inspect.isclass(receiver):
@@ -300,7 +310,7 @@ def wrap_module():
                 return yaml_string
 
             @combomethod
-            def from_yaml(receiver, model, yaml_str):
+            def from_yaml(receiver, model, yaml_str, strict=True):
                 """ Deserialize YAML message into Protobuf Message
 
                 :param receiver: GI class or instance
@@ -312,7 +322,7 @@ def wrap_module():
                     schema = model.get_root_node()
                     msg_dict = yaml.safe_load(yaml_str)
                     json_str = json.dumps(msg_dict)
-                    self.from_json(model, json_str)
+                    self.from_json(model, json_str, strict)
 
                 if inspect.isclass(receiver):
                     self = receiver()

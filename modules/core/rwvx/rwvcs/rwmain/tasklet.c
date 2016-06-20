@@ -29,6 +29,7 @@ static void kill_not_running_tasklet(rwsched_CFRunLoopTimerRef timer, void * ctx
 
 static struct rwtasklet_info_s * create_tasklet_info(
     rwvcs_instance_ptr_t rwvcs,
+    rwmain_tasklet_mode_active_t *mode_active,
     const char * tasklet_instance_name,
     uint32_t tasklet_instance_id)
 {
@@ -54,6 +55,8 @@ static struct rwtasklet_info_s * create_tasklet_info(
   info->rwvx = rwvcs->rwvx;
   info->rwvcs = rwvcs;
   info->identity.rwtasklet_instance_id = tasklet_instance_id;
+  info->mode.has_mode_active = mode_active->has_mode_active;
+  info->mode.mode_active = mode_active->mode_active;
   info->identity.rwtasklet_name = split_component_name(tasklet_instance_name);
   info->rwlog_instance = rwlog_init(tasklet_instance_name);
 
@@ -72,6 +75,7 @@ static struct rwtasklet_info_s * create_tasklet_info(
 struct rwmain_tasklet * rwmain_tasklet_alloc(
     const char * instance_name,
     uint32_t instance_id,
+    rwmain_tasklet_mode_active_t *mode_active,
     const char * plugin_name,
     const char * plugin_dir,
     rwvcs_instance_ptr_t rwvcs)
@@ -111,7 +115,7 @@ struct rwmain_tasklet * rwmain_tasklet_alloc(
     goto free_tasklet;
   }
 
-  tinfo = create_tasklet_info(rwvcs, instance_name, instance_id);
+  tinfo = create_tasklet_info(rwvcs, mode_active, instance_name, instance_id);
   if (!tinfo) {
     RW_CRASH();
     goto close_library;

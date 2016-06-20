@@ -187,6 +187,11 @@ module rw-base
             description "True if this VM is designated as a leader for the parent collection.";
             type boolean;
           }
+
+          leaf vm-state {
+            description "VM-state - whether this VM is Activ or Standby.";
+            type rwvcstypes:vm-state;
+          }
         }
       }
 
@@ -250,6 +255,18 @@ module rw-base
           leaf recovery-action {
             description "Defined recovery action if this component fail";
             type rwvcstypes:recovery-type;
+          }
+
+          leaf data-storetype {
+            description "Define data-store type to store and recover on
+                restart";
+            type rwvcstypes:data-store;
+          }
+
+          leaf mode-active {
+            description "Define active mode setting";
+            type boolean;
+            default true;
           }
 
           leaf rwcomponent_parent {

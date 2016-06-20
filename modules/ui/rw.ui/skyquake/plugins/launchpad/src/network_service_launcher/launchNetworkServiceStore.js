@@ -6,7 +6,7 @@
 import NetworkServiceActions from './launchNetworkServiceActions.js';
 import NetworkServiceSource from './launchNetworkServiceSource.js';
 import GUID from 'utils/guid.js';
-// import AppHeaderActions from 'widgets/header/headerActions.js';
+import AppHeaderActions from 'widgets/header/headerActions.js';
 import Alt from '../alt';
 
 
@@ -147,7 +147,7 @@ class LaunchNetworkServiceStore {
         });
     }
     //refactor getCloudAccountSuccess to use updatedSelectedCA
-    getCloudAccountSuccess(cloudAccounts) {
+    getLaunchCloudAccountSuccess(cloudAccounts) {
         let newState = {};
         newState.cloudAccounts = cloudAccounts || [];
         if(cloudAccounts && cloudAccounts.length > 0) {
@@ -300,6 +300,7 @@ class LaunchNetworkServiceStore {
         console.log('is Loading', this)
     }
     launchNSRSuccess(data) {
+        console.log('Launching Network Service')
         let tokenizedHash = window.location.hash.split('/');
         this.setState({
             isLoading: false
@@ -307,7 +308,7 @@ class LaunchNetworkServiceStore {
         return window.location.hash = 'launchpad/' + tokenizedHash[2];
     }
     launchNSRError(error) {
-         AppHeaderActions.validateError.defer('Something went wrong while trying to instantiate. Check the error logs for more information');
+         Alt.actions.global.showError.defer('Something went wrong while trying to instantiate. Check the error logs for more information');
         this.setState({
             isLoading: false
         });
@@ -402,4 +403,5 @@ function getMockData() {
         pnfd: data.pnfd
     });
 }
-export default Alt.createStore(LaunchNetworkServiceStore);
+// export default Alt.createStore(LaunchNetworkServiceStore);
+export default LaunchNetworkServiceStore;

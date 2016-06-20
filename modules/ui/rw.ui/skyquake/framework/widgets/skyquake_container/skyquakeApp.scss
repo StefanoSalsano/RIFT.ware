@@ -1,5 +1,10 @@
 //import a reset
 @import '../../style/_colors.scss';
+html, body {
+    height:100%;
+    width:100%;
+}
+
 
 .skyquakeApp {
     display: flex;

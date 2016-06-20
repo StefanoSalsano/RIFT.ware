@@ -250,7 +250,7 @@ module rw-dtsperf
             }
             leaf xact-max-with-outstanding {
               type uint32;
-              description "max num od xacts";
+              description "max num of xacts";
             }
           }
         }

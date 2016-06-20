@@ -10,7 +10,6 @@ import sys
 import tempfile
 import time
 import uuid
-import xml.etree.ElementTree as etree
 import yaml
 
 from collections import deque
@@ -382,7 +381,7 @@ class VnffgRecord(object):
         self._log.info("Instaniating VNFFGR with vnffgd %s",
                        self._vnffgd_msg)
 
-             
+
         vnffgr_request = yield from self.vnffgr_create_msg()
         vnffg_sff_list = yield from self.vnffgr_nsr_sff_list()
 
@@ -429,8 +428,46 @@ class VnffgRecord(object):
 
 class VirtualLinkRecord(object):
     """ Virtual Link Records class"""
-    def __init__(self, dts, log, loop, nsr_name, vld_msg, cloud_account_name, nsr_id):
+    @staticmethod
+    @asyncio.coroutine
+    def create_record(dts, log, loop, nsr_name, vld_msg, cloud_account_name, nsr_id, restart_mode=False):
+        """Creates a new VLR object based on the given data.
 
+        If restart mode is enabled, then we look for existing records in the
+        DTS and create a VLR records using the exiting data(ID)
+
+        Returns:
+            VirtualLinkRecord
+        """
+        vlr_obj = VirtualLinkRecord(
+                      dts,
+                      log,
+                      loop,
+                      nsr_name,
+                      vld_msg,
+                      cloud_account_name,
+                      nsr_id,
+                      )
+
+        if restart_mode:
+            res_iter = yield from dts.query_read(
+                              "D,/vlr:vlr-catalog/vlr:vlr",
+                              rwdts.XactFlag.MERGE)
+
+            for fut in res_iter:
+                response = yield from fut
+                vlr = response.result
+
+                # Check if the record is already present, if so use the ID of
+                # the existing record. Since the name of the record is uniquely
+                # formed we can use it as a search key!
+                if vlr.name == vlr_obj.name:
+                    vlr_obj.reset_id(vlr.id)
+                    break
+
+        return vlr_obj
+
+    def __init__(self, dts, log, loop, nsr_name, vld_msg, cloud_account_name, nsr_id):
         self._dts = dts
         self._log = log
         self._loop = loop
@@ -512,6 +549,9 @@ class VirtualLinkRecord(object):
 
         vlr = RwVlrYang.YangData_Vlr_VlrCatalog_Vlr.from_dict(vlr_dict)
         return vlr
+
+    def reset_id(self, vlr_id):
+        self._vlr_id = vlr_id
 
     def create_nsr_vlr_msg(self, vnfrs):
         """ The VLR message"""
@@ -607,6 +647,49 @@ class VirtualNetworkFunctionRecord(object):
     """ Virtual Network Function Record class"""
     XPATH = "D,/vnfr:vnfr-catalog/vnfr:vnfr"
 
+    @staticmethod
+    @asyncio.coroutine
+    def create_record(dts, log, loop, vnfd, const_vnfd_msg, nsd_id, nsr_name,
+                cloud_account_name, nsr_id, group_name, group_instance_id,
+                placement_groups, restart_mode=False):
+        """Creates a new VNFR object based on the given data.
+
+        If restart mode is enabled, then we look for existing records in the
+        DTS and create a VNFR records using the exiting data(ID)
+
+        Returns:
+            VirtualNetworkFunctionRecord
+        """
+        vnfr_obj = VirtualNetworkFunctionRecord(
+                          dts,
+                          log,
+                          loop,
+                          vnfd,
+                          const_vnfd_msg,
+                          nsd_id,
+                          nsr_name,
+                          cloud_account_name,
+                          nsr_id,
+                          group_name,
+                          group_instance_id,
+                          placement_groups,
+                          restart_mode=restart_mode)
+
+        if restart_mode:
+            res_iter = yield from dts.query_read(
+                              "D,/vnfr:vnfr-catalog/vnfr:vnfr",
+                              rwdts.XactFlag.MERGE)
+
+            for fut in res_iter:
+                response = yield from fut
+                vnfr = response.result
+
+                if vnfr.name == vnfr_obj.name:
+                    vnfr_obj.reset_id(vnfr.id)
+                    break
+
+        return vnfr_obj
+
     def __init__(self,
                  dts,
                  log,
@@ -619,7 +702,8 @@ class VirtualNetworkFunctionRecord(object):
                  nsr_id,
                  group_name=None,
                  group_instance_id=None,
-                 placement_groups = []):
+                 placement_groups = [],
+                 restart_mode = False):
         self._dts = dts
         self._log = log
         self._loop = loop
@@ -635,6 +719,7 @@ class VirtualNetworkFunctionRecord(object):
         self._config_status = NsrYang.ConfigStates.INIT
 
         self._mon_params = {}
+        self._prev_state = VnfRecordState.INIT
         self._state = VnfRecordState.INIT
 
         self.config_store = rift.mano.config_data.config.ConfigStore(self._log)
@@ -642,6 +727,10 @@ class VirtualNetworkFunctionRecord(object):
 
         self._vnfr_id = str(uuid.uuid4())
         self._vnfr_msg = self.create_vnfr_msg()
+        self._log.debug("Set VNFR {} config type to {}".
+                        format(self.name, self.config_type))
+        self.restart_mode = restart_mode
+
 
         if group_name is None and group_instance_id is not None:
             raise ValueError("Group instance id must not be provided with an empty group name")
@@ -725,6 +814,7 @@ class VirtualNetworkFunctionRecord(object):
 
     @property
     def config_status(self):
+        """Return the config status as YANG ENUM string"""
         self._log.debug("Map VNFR {} config status {} ({})".
                         format(self.name, self._config_status, self.config_type))
         if self.config_type == 'none':
@@ -736,10 +826,21 @@ class VirtualNetworkFunctionRecord(object):
 
         return 'configuring'
 
+    def set_state(self, state):
+        """ set the state of this object """
+        self._prev_state = self._state
+        self._state = state
+
+    def reset_id(self, vnfr_id):
+        self._vnfr_id = vnfr_id
+        self._vnfr_msg = self.create_vnfr_msg()
+
     def configure(self):
         self.config_store.merge_vnfd_config(
                     self._nsd_id,
-                    self._vnfd)
+                    self._vnfd,
+                    self.member_vnf_index,
+                    )
 
     def create_vnfr_msg(self):
         """ VNFR message for this VNFR """
@@ -774,7 +875,7 @@ class VirtualNetworkFunctionRecord(object):
 
         # UI expects the monitoring param field to exist
         vnfr.monitoring_param = []
-        
+
         self._log.debug("Get vnfr_msg for VNFR {} : {}".format(self.name, vnfr))
         return vnfr
 
@@ -787,6 +888,10 @@ class VirtualNetworkFunctionRecord(object):
                 0,
                 self.vnfr_msg
                 )
+
+    def get_config_status(self):
+        """Return the config status as YANG ENUM"""
+        return self._config_status
 
     @asyncio.coroutine
     def set_config_status(self, status):
@@ -851,7 +956,7 @@ class VirtualNetworkFunctionRecord(object):
         self._log.debug("Create VNF with xpath %s and vnfr %s",
                         self.xpath, self.vnfr_msg)
 
-        self._state = VnfRecordState.INSTANTIATION_PENDING
+        self.set_state(VnfRecordState.INSTANTIATION_PENDING)
 
         def find_vlr_for_cp(conn):
             """ Find VLR for the given connection point """
@@ -882,9 +987,14 @@ class VirtualNetworkFunctionRecord(object):
             self._log.debug("Connection point [%s] added, vnf id=%s vnfd id=%s",
                             cpr, self.vnfr_msg.id, self.vnfr_msg.vnfd_ref)
 
-        yield from self._dts.query_create(self.xpath,
-                                          0,   # this is sub
-                                          self.vnfr_msg)
+        if not self.restart_mode:
+            yield from self._dts.query_create(self.xpath,
+                                              0,   # this is sub
+                                              self.vnfr_msg)
+        else:
+            yield from self._dts.query_update(self.xpath,
+                                              0,
+                                              self.vnfr_msg)
 
         self._log.info("Created VNF with xpath %s and vnfr %s",
                        self.xpath, self.vnfr_msg)
@@ -905,13 +1015,13 @@ class VirtualNetworkFunctionRecord(object):
     def is_active(self):
         """ This VNFR is active """
         self._log.debug("VNFR %s is active", self._vnfr_id)
-        self._state = VnfRecordState.ACTIVE
+        self.set_state(VnfRecordState.ACTIVE)
 
     @asyncio.coroutine
     def instantiation_failed(self):
         """ This VNFR instantiation failed"""
         self._log.error("VNFR %s instantiation failed", self._vnfr_id)
-        self._state = VnfRecordState.FAILED
+        self.set_state(VnfRecordState.FAILED)
 
     def vnfr_in_vnfm(self):
         """ Is there a VNFR record in VNFM """
@@ -931,12 +1041,12 @@ class VirtualNetworkFunctionRecord(object):
             return
 
         self._log.debug("Terminating VNF id:%s", self.id)
-        self._state = VnfRecordState.TERMINATE_PENDING
+        self.set_state(VnfRecordState.TERMINATE_PENDING)
         with self._dts.transaction(flags=0) as xact:
             block = xact.block_create()
             block.add_query_delete(self.xpath)
             yield from block.execute(flags=0)
-        self._state = VnfRecordState.TERMINATED
+        self.set_state(VnfRecordState.TERMINATED)
         self._log.debug("Terminated VNF id:%s", self.id)
 
     @asyncio.coroutine
@@ -972,6 +1082,16 @@ class NetworkServiceStatus(object):
         self._state = NetworkServiceRecordState.INIT
         self._events = deque([])
 
+    @asyncio.coroutine
+    def create_notification(self, evt, evt_desc):
+        xp = "N,/rw-nsr:nsm-notification"
+        notif = RwNsrYang.YangNotif_RwNsr_NsmNotification()
+        notif.event = evt
+        notif.description = evt_desc
+
+        yield from self._dts.query_create(xp, rwdts.XactFlag.ADVISE, notif)
+        self._log.info("Notification called by creating dts query: %s", notif)
+
     def record_event(self, evt, evt_desc):
         """ Record an event """
         self._log.debug("Recording event - evt %s, evt_descr %s len = %s",
@@ -979,6 +1099,8 @@ class NetworkServiceStatus(object):
         if len(self._events) >= NetworkServiceStatus.MAX_EVENTS_RECORDED:
             self._events.popleft()
         self._events.append((int(time.time()), evt, evt_desc))
+
+        self._loop.create_task(self.create_notification(evt,evt_desc))
 
     def set_state(self, state):
         """ set the state of this status object """
@@ -1026,7 +1148,7 @@ class NetworkServiceRecord(object):
     """ Network service record """
     XPATH = "D,/nsr:ns-instance-opdata/nsr:nsr"
 
-    def __init__(self, dts, log, loop, nsm, nsm_plugin, nsr_cfg_msg, sdn_account_name):
+    def __init__(self, dts, log, loop, nsm, nsm_plugin, nsr_cfg_msg, sdn_account_name, restart_mode=False):
         self._dts = dts
         self._log = log
         self._loop = loop
@@ -1048,8 +1170,8 @@ class NetworkServiceRecord(object):
         self._op_status = NetworkServiceStatus(dts, log, loop)
         self._mon_params = defaultdict(NsrYang.YangData_Nsr_NsInstanceOpdata_Nsr_VnfMonitoringParam)
         self._config_status = NsrYang.ConfigStates.CONFIGURING
-        self._config_update = None
         self._job_id = 0
+        self.restart_mode = restart_mode
         self.config_store = rift.mano.config_data.config.ConfigStore(self._log)
         self._debug_running = False
         self._is_active = False
@@ -1164,7 +1286,7 @@ class NetworkServiceRecord(object):
         Returns the cloud specific construct for placement group
         """
         copy_dict = ['name', 'requirement', 'strategy']
-                
+
         for group_info in self._nsr_cfg_msg.nsd_placement_group_maps:
             if group_info.placement_group_ref == input_group.name:
                 group = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr_PlacementGroupsInfo()
@@ -1175,8 +1297,8 @@ class NetworkServiceRecord(object):
                 group.from_dict(group_dict)
                 return group
         return None
-        
-        
+
+
     def __str__(self):
         return "NSR(name={}, nsd_id={}, cloud_account={})".format(
                 self.name, self.nsd_id, self.cloud_account_name
@@ -1229,7 +1351,7 @@ class NetworkServiceRecord(object):
         """ Create this network service"""
         # Create virtual links  for all the external vnf
         # connection points in this NS
-        self.create_vls()
+        yield from self.create_vls()
 
         # Create VNFs in this network service
         yield from self.create_vnfs(config_xact)
@@ -1295,10 +1417,6 @@ class NetworkServiceRecord(object):
             path = script
         else:
             path = os.path.join(os.environ['RIFT_INSTALL'], "usr/bin", script)
-
-        if not os.path.exists(path):
-            path = os.path.join(os.environ['RIFT_ARTIFACTS'], "launchpad/libs", self.nsd_id, "scripts", script)
-
         if not os.path.exists(path):
             self._log.error("Config faled for scale group {}: Script does not exist at {}".
                             format(group.name, path))
@@ -1577,19 +1695,21 @@ class NetworkServiceRecord(object):
                                  )
             self._vnffgrs[vnffgr.id] = vnffgr
 
+    @asyncio.coroutine
     def create_vls(self):
         """ This function creates VLs for every VLD in the NSD
         associated with this NSR"""
 
         for vld in self.nsd_msg.vld:
             self._log.debug("Found vld %s in nsr id %s", vld, self.id)
-            vlr = VirtualLinkRecord(self._dts,
+            vlr = yield from VirtualLinkRecord.create_record(self._dts,
                                     self._log,
                                     self._loop,
                                     self.name,
                                     vld,
                                     self.cloud_account_name,
-                                    self.id
+                                    self.id,
+                                    restart_mode=self.restart_mode,
                                     )
             self._vlrs.append(vlr)
 
@@ -1629,7 +1749,7 @@ class NetworkServiceRecord(object):
                                        const_vnfd.member_vnf_index)
                         placement_groups.append(group_info)
         return placement_groups
-            
+
     @asyncio.coroutine
     def create_vnf_record(self, vnfd_msg, const_vnfd, group_name=None, group_instance_id=None):
         # Fetch the VNFD associated with this VNF
@@ -1638,7 +1758,7 @@ class NetworkServiceRecord(object):
                        vnfd_msg.name,
                        const_vnfd.member_vnf_index,
                        [ group.name for group in placement_groups])
-        vnfr = VirtualNetworkFunctionRecord(self._dts,
+        vnfr = yield from VirtualNetworkFunctionRecord.create_record(self._dts,
                                             self._log,
                                             self._loop,
                                             vnfd_msg,
@@ -1649,7 +1769,8 @@ class NetworkServiceRecord(object):
                                             self.id,
                                             group_name,
                                             group_instance_id,
-                                            placement_groups
+                                            placement_groups,
+                                            restart_mode=self.restart_mode,
                                             )
         if vnfr.id in self._vnfrs:
             err = "VNF with VNFR id %s already in vnf list" % (vnfr.id,)
@@ -1836,18 +1957,20 @@ class NetworkServiceRecord(object):
             No return value
         """
 
-        self._log.debug("Instatiating NS - %s xact - %s", self, config_xact)
+        self._log.debug("Instantiating NS - %s xact - %s", self, config_xact)
 
         # Move the state to INIITALIZING
         self.set_state(NetworkServiceRecordState.INIT)
 
-
-        event_descr = "Instatiation Request Received NSR Id:%s" % self.id
+        event_descr = "Instantiation Request Received NSR Id:%s" % self.id
         self.record_event("instantiating", event_descr)
 
         # Find the NSD
         self._nsd = self._nsm.get_nsd_ref(self.nsd_id)
+
+        # Merge any config and initial config primitive values
         self.config_store.merge_nsd_config(self.nsd_msg)
+        self._log.debug("Merged NSD: {}".format(self.nsd_msg.as_dict()))
 
         event_descr = "Fetched NSD with descriptor id %s" % self.nsd_id
         self.record_event("nsd-fetched", event_descr)
@@ -1943,9 +2066,6 @@ class NetworkServiceRecord(object):
             # Publish the NSR to DTS
             yield from self.publish()
 
-            event_descr = ("NSR in running state for NSR id %s" % self.id)
-            self.record_event("ns-running", event_descr)
-
             self._log.debug("Published  NSR...... nsr[%s], nsd[%s]",
                             self.id, self.nsd_id)
 
@@ -1959,39 +2079,12 @@ class NetworkServiceRecord(object):
         instantiate_task.add_done_callback(on_instantiate_done)
 
     @asyncio.coroutine
-    def get_vnfr_config_status(self, vnfr):
-        return vnfr._config_status
-
-    @asyncio.coroutine
-    def update_config_status(self):
-        ''' Check if all VNFRs are configured '''
-        self._log.debug("Check all VNFRs are configured for ns %s" % self.name)
-
-        if self._config_status in [NsrYang.ConfigStates.CONFIGURED, NsrYang.ConfigStates.FAILED]:
-            return
-
-        # Handle reload scenarios
-        for vnfr in list(self._vnfrs.values()):
-            yield from vnfr.set_config_status(NsrYang.ConfigStates.CONFIGURING)
-
-        # Publish current status
-        yield from self.publish()
-
-        while True:
-            config_status = NsrYang.ConfigStates.CONFIGURED
-            for vnfr in self._vnfrs.values():
-                config_status = yield from self.get_vnfr_config_status(vnfr)
-                if config_status == NsrYang.ConfigStates.CONFIGURING:
-                    break
-            self._config_status = config_status
-
-            if self._config_status in [NsrYang.ConfigStates.CONFIGURED, NsrYang.ConfigStates.FAILED]:
-                self._log.debug("Publish config status for NS {}: {}".
-                                format(self.name, config_status))
-                yield from self.publish()
-                return
-            else:
-                yield from asyncio.sleep(10, loop=self._loop)
+    def set_config_status(self, status):
+        if self.config_status != status:
+            self._log.debug("Updating NSR {} status for {} to {}".
+                            format(self.name, self.config_status, status))
+            self._config_status = status
+            yield from self.publish()
 
     @asyncio.coroutine
     def is_active(self):
@@ -2003,14 +2096,17 @@ class NetworkServiceRecord(object):
         # Publish the NSR to DTS
         self._log.debug("Network service %s is active ", self.id)
         self._is_active = True
+
+        event_descr = ("NSR in running state for NSR id %s" % self.id)
+        self.record_event("ns-running", event_descr)
+
         yield from self.publish()
-        self._config_update = self._loop.create_task(self.update_config_status())
-        self._log.debug("Created task %s" % self._config_update)
 
     @asyncio.coroutine
     def instantiation_failed(self):
         """ The NS instantiation failed"""
-        self._log.debug("Network service %s instantiation failed", self.id)
+        self._log.error("Network service id:%s, name:%s instantiation failed",
+                        self.id, self.name)
         self.set_state(NetworkServiceRecordState.FAILED)
 
         event_descr = "Instantiation of NS %s failed" % self.id
@@ -2073,11 +2169,6 @@ class NetworkServiceRecord(object):
         self.set_state(NetworkServiceRecordState.TERMINATED)
         event_descr = "Terminated NS Id:%s" % self.id
         self.record_event("terminated", event_descr)
-        self._log.debug("Checking tasklet %s" % (self._config_update))
-        if self._config_update:
-            self._config_update.print_stack()
-            self._config_update.cancel()
-            self._config_update = None
 
     def enable(self):
         """"Enable a NetworkServiceRecord."""
@@ -2123,6 +2214,11 @@ class NetworkServiceRecord(object):
                     cfg_prim.as_dict())
             nsr.config_primitive.append(cfg_prim)
 
+        for init_cfg in self.nsd_msg.initial_config_primitive:
+            prim = NsrYang.NsrInitialConfigPrimitive.from_dict(
+                init_cfg.as_dict())
+            nsr.initial_config_primitive.append(prim)
+
         if self.vl_phase_completed():
             for vlr in self.vlrs:
                 nsr.vlr.append(vlr.create_nsr_vlr_msg(self.vnfrs.values()))
@@ -2149,7 +2245,6 @@ class NetworkServiceRecord(object):
         """ Re-evaluate this  NS's state """
         curr_state = self._op_status.state
 
-
         if curr_state == NetworkServiceRecordState.TERMINATED:
             self._log.debug("NS (%s) in terminated state, not updating state", self.id)
             return
@@ -2158,18 +2253,23 @@ class NetworkServiceRecord(object):
         self._log.info("Received update_state for nsr: %s, curr-state: %s",
                        self.id, curr_state)
 
-        #Check all the VNFRs are present
+        # Check all the VNFRs are present
         for _, vnfr in self.vnfrs.items():
             if vnfr.state in [VnfRecordState.ACTIVE, VnfRecordState.TERMINATED]:
                 pass
             elif vnfr.state == VnfRecordState.FAILED:
-                event_descr = "Instantiation of VNF %s failed" % vnfr.id
-                self.record_event("vnf-failed", event_descr)
+                if vnfr._prev_state != vnfr.state:
+                    event_descr = "Instantiation of VNF %s failed" % vnfr.id
+                    self.record_event("vnf-failed", event_descr)
+                    vnfr.set_state(VnfRecordState.FAILED)
+                else:
+                    self._log.info("VNF state did not change, curr=%s, prev=%s",
+                                   vnfr.state, vnfr._prev_state)
                 new_state = NetworkServiceRecordState.FAILED
                 break
             else:
                 self._log.info("VNF %s in NSR %s is still not active; current state is: %s",
-                                vnfr.id, self.id, vnfr.state)
+                               vnfr.id, self.id, vnfr.state)
                 new_state = curr_state
 
         # If new state is RUNNIG; check VNFFGRs are also active
@@ -2382,15 +2482,17 @@ class NsdDtsHandler(object):
 
         def on_apply(dts, acg, xact, action, scratch):
             """Apply the  configuration"""
+            is_recovery = xact.xact is None and action == rwdts.AppconfAction.INSTALL
             self._log.debug("Got nsd apply cfg (xact:%s) (action:%s)",
                             xact, action)
             # Create/Update an NSD record
             for cfg in self._regh.get_xact_elements(xact):
                 # Only interested in those NSD cfgs whose ID was received in prepare callback
-                if cfg.id in acg.scratch['nsds']:
+                if cfg.id in scratch.get('nsds', []) or is_recovery:
                     self._nsm.update_nsd(cfg)
 
-            del acg._scratch['nsds'][:]
+            scratch.pop('nsds', None)
+
             return RwTypes.RwStatus.SUCCESS
 
         @asyncio.coroutine
@@ -2408,7 +2510,7 @@ class NsdDtsHandler(object):
                 self._log.excpetion(e)
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ Prepare callback from DTS for NSD config """
 
             self._log.info("Got nsd prepare - config received nsd id %s, msg %s",
@@ -2436,7 +2538,9 @@ class NsdDtsHandler(object):
                     raise NetworkServiceDescriptorRefCountExists(err)
 
                 # Add this NSD to scratch to create/update in apply callback
-                acg._scratch['nsds'].append(msg.id)
+                nsds = scratch.setdefault('nsds', [])
+                nsds.append(msg.id)
+                # acg._scratch['nsds'].append(msg.id)
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
@@ -2448,10 +2552,10 @@ class NsdDtsHandler(object):
         acg_hdl = rift.tasklets.AppConfGroup.Handler(on_apply=on_apply)
         with self._dts.appconf_group_create(handler=acg_hdl) as acg:
             # Need a list in scratch to store NSDs to create/update later
-            acg._scratch['nsds'] = list()
+            # acg._scratch['nsds'] = list()
             self._regh = acg.register(
                 xpath=NsdDtsHandler.XPATH,
-                flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
+                flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY | rwdts.Flag.CACHE,
                 on_prepare=on_prepare)
 
 
@@ -2481,25 +2585,21 @@ class VnfdDtsHandler(object):
             self._log.debug("Got NSM VNFD apply (xact: %s) (action: %s)(scr: %s)",
                             xact, action, scratch)
 
-            if action == rwdts.AppconfAction.INSTALL and xact.id is None:
-                self._log.debug("No xact handle.  Skipping apply config")
-                return
-
             # Create/Update a VNFD record
             for cfg in self._regh.get_xact_elements(xact):
                 # Only interested in those VNFD cfgs whose ID was received in prepare callback
-                if cfg.id in acg.scratch['vnfds']:
+                if cfg.id in scratch.get('vnfds', []):
                     self._nsm.update_vnfd(cfg)
 
             for cfg in self._regh.elements:
-                if cfg.id in acg.scratch['deleted_vnfds']:
+                if cfg.id in scratch.get('deleted_vnfds', []):
                     yield from self._nsm.delete_vnfd(cfg.id)
 
-            del acg._scratch['vnfds'][:]
-            del acg._scratch['deleted_vnfds'][:]
+            scratch.pop('vnfds', None)
+            scratch.pop('deleted_vnfds', None)
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ on prepare callback """
             self._log.debug("Got on prepare for VNFD (path: %s) (action: %s) (msg: %s)",
                             ks_path.to_xpath(RwNsmYang.get_schema()), xact_info.query_action, msg)
@@ -2510,10 +2610,12 @@ class VnfdDtsHandler(object):
             # Handle deletes in prepare_callback, but adds/updates in apply_callback
             if fref.is_field_deleted():
                 self._log.debug("Adding msg to deleted field")
-                acg._scratch['deleted_vnfds'].append(msg.id)
+                deleted_vnfds = scratch.setdefault('deleted_vnfds', [])
+                deleted_vnfds.append(msg.id)
             else:
                 # Add this VNFD to scratch to create/update in apply callback
-                acg._scratch['vnfds'].append(msg.id)
+                vnfds = scratch.setdefault('vnfds', [])
+                vnfds.append(msg.id)
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 
@@ -2524,8 +2626,8 @@ class VnfdDtsHandler(object):
         acg_hdl = rift.tasklets.AppConfGroup.Handler(on_apply=on_apply)
         with self._dts.appconf_group_create(handler=acg_hdl) as acg:
             # Need a list in scratch to store VNFDs to create/update later
-            acg._scratch['vnfds'] = list()
-            acg._scratch['deleted_vnfds'] = list()
+            # acg._scratch['vnfds'] = list()
+            # acg._scratch['deleted_vnfds'] = list()
             self._regh = acg.register(
                 xpath=VnfdDtsHandler.XPATH,
                 flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
@@ -2640,7 +2742,10 @@ class NsrDtsHandler(object):
 
         def on_apply(dts, acg, xact, action, scratch):
             """Apply the  configuration"""
-            def handle_create_nsr(msg):
+            self._log.debug("Got nsr apply (xact: %s) (action: %s)(scr: %s)",
+                            xact, action, scratch)
+
+            def handle_create_nsr(msg, restart_mode=False):
                 # Handle create nsr requests """
                 # Do some validations
                 if not msg.has_field("nsd_ref"):
@@ -2651,7 +2756,7 @@ class NsrDtsHandler(object):
                 self._log.info("Creating NetworkServiceRecord %s  from nsd_id  %s",
                                msg.id, msg.nsd_ref)
 
-                nsr = self.nsm.create_nsr(msg)
+                nsr = self.nsm.create_nsr(msg, restart_mode=restart_mode)
                 return nsr
 
             def handle_delete_nsr(msg):
@@ -2682,8 +2787,10 @@ class NsrDtsHandler(object):
                             xact, action, scratch)
 
             if action == rwdts.AppconfAction.INSTALL and xact.id is None:
-                self._log.debug("No xact handle.  Skipping apply config")
-                xact = None
+                for element in self._nsr_regh.elements:
+                    nsr = handle_create_nsr(element, restart_mode=True)
+                    self._loop.create_task(begin_instantiation(nsr))
+
 
             (added_msgs, deleted_msgs, updated_msgs) = get_add_delete_update_cfgs(self._nsr_regh, xact, "id")
 
@@ -2717,7 +2824,7 @@ class NsrDtsHandler(object):
             return RwTypes.RwStatus.SUCCESS
 
         @asyncio.coroutine
-        def on_prepare(dts, acg, xact, xact_info, ks_path, msg):
+        def on_prepare(dts, acg, xact, xact_info, ks_path, msg, scratch):
             """ Prepare calllback from DTS for NSR """
 
             xpath = ks_path.to_xpath(RwNsrYang.get_schema())
@@ -2726,6 +2833,23 @@ class NsrDtsHandler(object):
                     "Got Nsr prepare callback (xact: %s) (action: %s) (info: %s), %s:%s)",
                     xact, action, xact_info, xpath, msg
                     )
+
+            @asyncio.coroutine
+            def delete_instantiation(ns_id):
+                """ Delete instantiation """
+                yield from self._nsm.terminate_ns(ns_id, None)
+
+            def handle_delete_nsr():
+                """ Handle delete NSR requests """
+                self._log.info("Delete req for  NSR Id: %s received", msg.id)
+                # Terminate the NSR instance
+                nsr = self._nsm.get_ns_by_nsr_id(msg.id)
+
+                nsr.set_state(NetworkServiceRecordState.TERMINATE_RCVD)
+                event_descr = "Terminate rcvd for NS Id:%s" % msg.id
+                nsr.record_event("terminate-rcvd", event_descr)
+
+                self._loop.create_task(delete_instantiation(msg.id))
 
             fref = ProtobufC.FieldReference.alloc()
             fref.goto_whole_message(msg.to_pbcm())
@@ -2764,12 +2888,12 @@ class NsrDtsHandler(object):
         acg_hdl = rift.tasklets.AppConfGroup.Handler(on_apply=on_apply)
         with self._dts.appconf_group_create(handler=acg_hdl) as acg:
             self._nsr_regh = acg.register(xpath=NsrDtsHandler.NSR_XPATH,
-                                      flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
+                                      flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY | rwdts.Flag.CACHE,
                                       on_prepare=on_prepare)
 
             self._scale_regh = acg.register(
                                       xpath=NsrDtsHandler.SCALE_INSTANCE_XPATH,
-                                      flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY,
+                                      flags=rwdts.Flag.SUBSCRIBER | rwdts.Flag.DELTA_READY| rwdts.Flag.CACHE,
                                       )
 
 
@@ -2805,7 +2929,7 @@ class NsrOpDataDtsHandler(object):
         with self._dts.group_create(handler=handlers) as group:
             self._regh = group.register(xpath=NsrOpDataDtsHandler.XPATH,
                                         handler=hdl,
-                                        flags=rwdts.Flag.PUBLISHER | rwdts.Flag.NO_PREP_READ | rwdts.Flag.FILE_DATASTORE)
+                                        flags=rwdts.Flag.PUBLISHER | rwdts.Flag.NO_PREP_READ | rwdts.Flag.DATASTORE)
 
     @asyncio.coroutine
     def create(self, path, msg):
@@ -2875,11 +2999,17 @@ class VnfrDtsHandler(object):
                 xact_info, action, ks_path, msg
                 )
 
+            schema = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr.schema()
+            path_entry = schema.keyspec_to_entry(ks_path)
+            if path_entry.key00.id not in self._nsm._vnfrs:
+                self._log.error("%s request for non existent record path %s",
+                                action, xpath)
+                xact_info.respond_xpath(rwdts.XactRspCode.NA, xpath)
+
+                self._log.debug("Deleting VNFR with id %s", path_entry.key00.id)
             if action == rwdts.QueryAction.CREATE or action == rwdts.QueryAction.UPDATE:
                 yield from self._nsm.update_vnfr(msg)
             elif action == rwdts.QueryAction.DELETE:
-                schema = VnfrYang.YangData_Vnfr_VnfrCatalog_Vnfr.schema()
-                path_entry = schema.keyspec_to_entry(ks_path)
                 self._log.debug("Deleting VNFR with id %s", path_entry.key00.id)
                 self._nsm.delete_vnfr(path_entry.key00.id)
 
@@ -3150,7 +3280,7 @@ class NsManager(object):
 
         self._loop.create_task(nsr.delete_scale_group_instance(scale_group_name, instance_id))
 
-    def create_nsr(self, nsr_msg):
+    def create_nsr(self, nsr_msg, restart_mode=False):
         """ Create an NSR instance """
         if nsr_msg.id in self._nsrs:
             msg = "NSR id %s already exists" % nsr_msg.id
@@ -3172,7 +3302,8 @@ class NsManager(object):
                                    self,
                                    nsm_plugin,
                                    nsr_msg,
-                                   sdn_account_name
+                                   sdn_account_name,
+                                   restart_mode=restart_mode
                                    )
         self._nsrs[nsr_msg.id] = nsr
         nsm_plugin.create_nsr(nsr_msg, self.get_nsd(nsr_msg.nsd_ref).msg)
@@ -3188,7 +3319,7 @@ class NsManager(object):
     @asyncio.coroutine
     def instantiate_ns(self, nsr_id, config_xact):
         """ Instantiate an NS instance """
-        self._log.debug("Instatiating Network service id %s", nsr_id)
+        self._log.debug("Instantiating Network service id %s", nsr_id)
         if nsr_id not in self._nsrs:
             err = "NSR id %s not found " % nsr_id
             self._log.error(err)
@@ -3200,12 +3331,13 @@ class NsManager(object):
     @asyncio.coroutine
     def update_vnfr(self, vnfr):
         """Create/Update an VNFR """
+
         vnfr_state = self._vnfrs[vnfr.id].state
         self._log.debug("Updating VNFR with state %s: vnfr %s", vnfr_state, vnfr)
+
         yield from self._vnfrs[vnfr.id].update_state(vnfr)
         nsr = self.find_nsr_for_vnfr(vnfr.id)
         yield from nsr.update_state()
-        return self._vnfrs[vnfr.id]
 
     def find_nsr_for_vnfr(self, vnfr_id):
         """ Find the NSR which )has the passed vnfr id"""

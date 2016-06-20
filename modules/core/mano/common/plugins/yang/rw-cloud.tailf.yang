@@ -20,10 +20,10 @@ module rw-cloud-annotation
   }
 
   tailf:annotate "/rw-cloud:cloud/rw-cloud:account/rw-cloud:connection-status" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rw-cloud:update-cloud-status" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 }

@@ -63,13 +63,11 @@ typedef void (*rwcli_history_hook)(void);
 
 /**
  * Initializes the rw.cli library for use with ZSH
- * @param[in] schema_listing  Schema Listing filename for the CLI
  * @param[in] transport_mode  Transport mode in which the CLI is operating
  * @param[in] user_mode       Specifies if the user is an operator/admin
  * @returns 0 on success, -1 otherwise.
  */
 int rwcli_zsh_plugin_init(
-        const char* schema_listing,
         rwcli_transport_mode_t transport_mode,
         rwcli_user_mode_t user_mode
     );
@@ -161,10 +159,6 @@ void rwcli_set_history_hook(rwcli_history_hook hook);
  *   RW.CLI prompt will be returned
  */
 const char* rwcli_get_prompt();
-
-int rwcli_get_schema_updater_fd();
-
-void rwcli_schema_update_event();
 
 /* Macros for manipulating rwcli_complete_matches_t structure */
 #define RWCLI_INIT_MATCHES(_match_, _num_matches_) \

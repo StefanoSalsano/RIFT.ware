@@ -8,13 +8,16 @@
 """
 import argparse
 import json
+import locale
 import logging
+import lxml.etree
 import os
 import sys
 import unittest
 import xmlrunner
-import lxml.etree
 import yaml
+
+import rift.rwlib.translation.json2xml
 
 import gi
 gi.require_version('TestVehicleAYang', '1.0')
@@ -33,7 +36,7 @@ class VehicleModelTest(unittest.TestCase):
         self._model = RwYang.Model.create_libncx()
         self._model.load_module("test-vehicle-a")
 
-    def verify_yaml_round_trip(self, msg):
+    def verify_strict_yaml_round_trip(self, msg):
         yaml_str = msg.to_yaml(self._model)
         logger.debug("Serialized to YAML: \n%s", yaml_str)
 
@@ -43,7 +46,7 @@ class VehicleModelTest(unittest.TestCase):
         from_msg = msg.__class__.from_yaml(self._model, yaml_str)
         self.assertEqual(msg, from_msg)
 
-    def verify_json_round_trip(self, msg):
+    def verify_strict_json_round_trip(self, msg):
         json_str = msg.to_json(self._model)
         logger.debug("Serialized to JSON: \n%s", json_str)
 
@@ -51,10 +54,10 @@ class VehicleModelTest(unittest.TestCase):
         json.loads(json_str)
 
         from_msg = msg.__class__.from_json(self._model, json_str)
-        logger.debug("Deerialized from JSON: \n%s", from_msg)
+        logger.debug("Deserialized from JSON: \n%s", from_msg)
         self.assertEqual(msg, from_msg)
 
-    def verify_xml_round_trip(self, msg):
+    def verify_strict_xml_round_trip(self, msg):
         xml_str = msg.to_xml_v2(self._model)
         logger.debug("Serialized to XML: \n%s", xml_str)
 
@@ -62,14 +65,123 @@ class VehicleModelTest(unittest.TestCase):
         lxml.etree.fromstring(xml_str)
 
         from_msg = msg.__class__.from_xml_v2(self._model, xml_str)
-        logger.debug("Deerialized from xml: \n%s", from_msg)
+        logger.debug("Deserialized from xml: \n%s", from_msg)
         self.assertEqual(msg, from_msg)
 
-    def verify_round_trips(self, msg):
+    def negative_yaml_round_trip(self, msg):
+        yaml_str = msg.to_yaml(self._model)
+        logger.debug("Serialized to YAML: \n%s", yaml_str)
+
+        # insert non-schema element
+        data = yaml.load(yaml_str)
+        data['non schema element'] = 'asdf'
+
+        yaml_str = yaml.dump(data)
+        logger.debug("Non-schema YAML: \n%s", yaml_str)
+
+        # this should fail
+        from_msg = msg.__class__.from_yaml(self._model, yaml_str)
+
+    def negative_json_round_trip(self, msg):
+        json_str = msg.to_json(self._model)
+        logger.debug("Serialized to JSON: \n%s", json_str)
+
+        # insert non-schema element
+        data = json.loads(json_str)
+        data['non schema element'] = 'asdf'
+
+        json_str = json.dumps(data, indent=4)
+        logger.debug("Non-schema JSON: \n%s", json_str)
+
+        # this should fail
+        from_msg = msg.__class__.from_json(self._model, json_str)
+
+    def negative_xml_round_trip(self, msg):
+        xml_str = msg.to_xml_v2(self._model)
+        logger.debug("Serialized to XML: \n%s", xml_str)
+
+        # insert non-schema element
+        data = lxml.etree.fromstring(xml_str)
+        bad_element = lxml.etree.SubElement(data, "non-schema-element")
+        bad_element.text = "asdf"
+        
+        xml_str = lxml.etree.tostring(data, pretty_print=True).decode("utf-8")
+        logger.debug("Non-schema XML: \n%s", xml_str)
+
+        # this should fail
+        from_msg = msg.__class__.from_xml_v2(self._model, xml_str)
+
+    def verify_non_strict_yaml_round_trip(self, msg):
+        yaml_str = msg.to_yaml(self._model)
+        logger.debug("Serialized to YAML: \n%s", yaml_str)
+
+        # insert non-schema element
+        data = yaml.load(yaml_str)
+        data['non schema element'] = 'asdf'
+
+        yaml_str = yaml.dump(data)
+        logger.debug("Non-schema YAML: \n%s", yaml_str)
+
+        from_msg = msg.__class__.from_yaml(self._model, yaml_str, strict=False)
+
+        logger.debug("Deserialized from YAML: \n%s", yaml_str)
+        self.assertEqual(msg, from_msg)
+
+    def verify_non_strict_json_round_trip(self, msg):
+        json_str = msg.to_json(self._model)
+        logger.debug("Serialized to JSON: \n%s", json_str)
+
+        # insert non-schema element
+        data = json.loads(json_str)
+        data['non schema element'] = 'asdf'
+
+        json_str = json.dumps(data, indent=4)
+        logger.debug("Non-schema JSON: \n%s", json_str)
+
+        from_msg = msg.__class__.from_json(self._model, json_str, strict=False)
+
+        logger.debug("Deserialized from JSON: \n%s", json_str)
+        self.assertEqual(msg, from_msg)
+
+    def verify_non_strict_xml_round_trip(self, msg):
+        xml_str = msg.to_xml_v2(self._model)
+        logger.debug("Serialized to XML: \n%s", xml_str)
+
+        # insert non-schema element
+        data = lxml.etree.fromstring(xml_str)
+        bad_element = lxml.etree.SubElement(data, "non-schema-element")
+        bad_element.text = "asdf"
+        
+        xml_str = lxml.etree.tostring(data, pretty_print=True).decode("utf-8")
+        logger.debug("Non-schema XML: \n%s", xml_str)
+
+        from_msg = msg.__class__.from_xml_v2(self._model, xml_str, strict=False)
+
+        logger.debug("Deserializied from XML: \n%s", xml_str)
+        self.assertEqual(msg, from_msg)
+
+    def verify_round_trips(self, msg, skip_xml_negative=False):
         logger.debug("Original message : \n%s\n", msg)
-        self.verify_xml_round_trip(msg)
-        self.verify_json_round_trip(msg)
-        self.verify_yaml_round_trip(msg)
+
+        logger.debug("### verify strict conversion")
+        self.verify_strict_xml_round_trip(msg)
+        self.verify_strict_json_round_trip(msg)
+        self.verify_strict_yaml_round_trip(msg)
+        
+        logger.debug("### assert non-schema stuff fails")
+        with self.assertRaises(rift.rwlib.translation.json2xml.InvalidSchemaException):
+            self.negative_yaml_round_trip(msg)
+        with self.assertRaises(rift.rwlib.translation.json2xml.InvalidSchemaException):
+            self.negative_json_round_trip(msg)
+        if not skip_xml_negative:
+            # implementation for from_xml on leaves always ignores non-schema content
+            with self.assertRaises(Exception):
+                self.negative_xml_round_trip(msg)
+
+        logger.debug("### verify non-strict conversion")
+        self.verify_non_strict_xml_round_trip(msg)
+        self.verify_non_strict_json_round_trip(msg)
+        self.verify_non_strict_yaml_round_trip(msg)
 
 
 class TestStrings(VehicleModelTest):
@@ -82,6 +194,7 @@ class TestStrings(VehicleModelTest):
         self.verify_round_trips(car)
 
     def test_special_chars(self):
+        locale.setlocale(locale.LC_ALL, "en_US.UTF-8")
         car = TestVehicleAYang.Car(brand='!@#$%^*()/\"\'\\:;-=~`{}[]<>?|_.,♠\n')
         self.verify_round_trips(car)
 
@@ -144,19 +257,19 @@ class TestNumbers(VehicleModelTest):
         values = [0, 255]
         for value in values:
             number = TestVehicleAYang.Numbers(uint8_leaf=value)
-            self.verify_round_trips(number)
+            self.verify_round_trips(number, skip_xml_negative=True)
 
     def test_int8(self):
         values = [-127, -1, 0, 128]
         for value in values:
             number = TestVehicleAYang.Numbers(int8_leaf=value)
-            self.verify_round_trips(number)
+            self.verify_round_trips(number, skip_xml_negative=True)
 
     def test_decimal(self):
         values = [-0.0, 0.1, -0.11, 1000000.55]
         for value in values:
             number = TestVehicleAYang.Numbers(decimal_leaf=value)
-            self.verify_round_trips(number)
+            self.verify_round_trips(number, skip_xml_negative=True)
 
 
 class TestLists(VehicleModelTest):
@@ -170,6 +283,12 @@ class TestLists(VehicleModelTest):
         cont.inner_list_shallow.add().k = "fdas"
         self.verify_round_trips(cont)
 
+    def test_deep_list(self):
+        cont = TestVehicleAYang.YangData_TestVehicleA_TopContainerDeep()
+        cont.inner_container.a = "asdf"
+        cont.inner_container.inner_list.add().k = "fdsa"
+
+        self.verify_round_trips(cont)
 
 class TestMisc(VehicleModelTest):
     def test_bool_leaf(self):

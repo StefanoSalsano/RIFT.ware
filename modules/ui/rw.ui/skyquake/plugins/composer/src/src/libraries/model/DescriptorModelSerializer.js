@@ -99,6 +99,10 @@ const DescriptorModelSerializer = {
 					}
 				}
 
+				if (d.hasOwnProperty('start-by-default')) {
+					constituentVNFD['start-by-default'] = d['start-by-default'];
+				}
+
 				return constituentVNFD;
 
 			});

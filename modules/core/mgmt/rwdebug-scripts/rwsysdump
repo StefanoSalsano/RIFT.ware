@@ -72,7 +72,7 @@ exec_command()
 fetch_confd_logs()
 {
   if [ ${DUMP_TO_STDOUT} -eq 0 ]; then
-    confd_wss=`find ${RIFT_HOME_DIR}/*confd* -maxdepth 0 -type d`
+    confd_wss=`find ${RIFT_HOME_DIR} -maxdepth 1 -type d -name 'persist*' -o -name 'unique_ws*'`
     for confd_ws in ${confd_wss}; do
       base_confd_ws=`basename ${confd_ws}`
       confd_logs=`find ${confd_ws} -name '*.log*' -o -name '*.trace*'`

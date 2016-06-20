@@ -20,22 +20,18 @@ module rw-vcs-annotation
   }
 
   tailf:annotate "/vcs:vstart" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 
-//tailf:annotate "/vcs:vrestart" {
-//  tailf:actionpoint rw_action;
-//}
-
   tailf:annotate "/vcs:vstop" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 
   tailf:annotate "/vcs:vcrash" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 
   tailf:annotate "/vcs:vsnap" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 }

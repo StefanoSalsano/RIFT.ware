@@ -10,6 +10,7 @@
 # Automation IP Address utilities
 
 import re
+import subprocess
 import logging
 import ipaddress
 
@@ -134,6 +135,127 @@ def test_ip_generator():
             assert False
 
     print("Ip Generator test cases passed")
+
+
+class IpCmd:
+    def neighbours(self, netns=None, ipv6=False):
+        """Runs the Ip neighbours command and returns the output as a dict.
+        Format:
+            {neigh_ip: <IP_ADDR>, dev: <Device>,
+             lladdr: <LINK ADDR>, status: <STATUS>}
+
+        Args:
+            netns (None, optional): If specified the command is executed within
+                the network namespace.
+            ipv6 (bool, optional): If set run with the -6 flag.
+
+        Returns:
+            list of dicts
+        """
+        def _parse_data(data):
+            regex = re.compile(r'(.*)\sdev\s(.*)\slladdr\s(.*)\s.*\s(.*)')
+            datas = []
+            for line in data.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+
+                group = regex.match(line)
+                data = {'neigh_ip': group.group(1),
+                        'dev': group.group(2),
+                        'lladdr': group.group(3),
+                        'status': group.group(4)}
+
+                datas.append(data)
+
+            return datas
+
+        version = "6" if ipv6 else "4"
+
+        cmd = "ip -{} neigh".format(version)
+        if netns:
+            cmd = "ip netns exec {} ip -{} neigh".format(netns, version)
+
+        data = subprocess.check_output(
+                    cmd,
+                    shell=True).decode('ascii')
+
+        return _parse_data(data)
+
+    def routes(self, netns=None, ipv6=False):
+        """Runs the Ip route command and returns the output as dict
+        Format:
+            {neigh_ip: <IP_ADDR>, dev: <Device>}
+
+        Args:
+            netns (None, optional): If specified the command is executed within
+                the network namespace
+            ipv6 (bool, optional): If set run with the -6 flag.
+
+        Returns:
+            list of dict.
+        """
+        def _parse_data(data):
+            regex = re.compile(r'(.*)\sdev\s(.*?)\s.*')
+            datas = []
+            for line in data.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+
+                group = regex.match(line)
+
+                neigh_ip = group.group(1)
+                if "via" in neigh_ip:
+                    neigh_ip, _ = neigh_ip.split("via")
+                    neigh_ip = neigh_ip.strip()
+
+                data = {'neigh_ip': neigh_ip,
+                        'dev': group.group(2)}
+
+                datas.append(data)
+
+            return datas
+
+        version = "6" if ipv6 else "4"
+
+        cmd = "ip -{} route".format(version)
+        if netns:
+            cmd = "ip netns exec {} ip -{} route".format(netns, version)
+
+        data = subprocess.check_output(
+                    cmd,
+                    shell=True).decode('ascii')
+
+        return _parse_data(data)
+
+    def get_netns_interface_ips(self, netns, interface_name, ipv6=False):
+        """Get all the interface ips in an interface in network namespace
+
+        Args:
+            netns (str): Network namespace.
+            interface_name (str): Interface name.
+        """
+        if_config_cmd = "ip netns exec {} ifconfig {}".format(netns, interface_name)
+        if_config = subprocess.check_output(
+                    if_config_cmd,
+                    shell=True).decode('ascii')
+
+        regex = re.compile("inet.*?(.*?)\s*netmask .*")
+        if ipv6:
+            regex = re.compile("inet6.*?(.*?)\s*prefixlen .*")
+
+        ips = []
+        for line in if_config.split("\n"):
+            match = regex.search(line)
+            if not match:
+                continue
+
+            ip = match.group(1).strip()
+            exploded_ip = ipaddress.IPv6Address(ip).exploded
+            ips.append(exploded_ip)
+
+        return ips
 
 if __name__ == "__main__":
     test_ip_generator()

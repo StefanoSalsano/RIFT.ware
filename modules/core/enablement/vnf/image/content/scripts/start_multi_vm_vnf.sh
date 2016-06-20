@@ -86,10 +86,12 @@ up_cmd="${CORE_UTIL_DIR}/wait_until_system_started.py --max-wait 1000"
 # Execute the command based on the vdu-name
 case "$vdu_name" in
     # VDU for Lead VM
-    "RW.VDU.LEAD.STND"|"RW.VDU.LEAD.DDPL"|"RW.VDU.LEAD.DDPL-IPSEC")
+    "RW.VDU.LEAD.STND"|"RW.VDU.LEAD.DDPL"|"RW.VDU.LEAD.DDPL-IPSEC"|"RW.VDU.LEAD.STND-IPSEC")
         # Select the correct demo-info file based the lead-vdu
         if [ "$vdu_name" == "RW.VDU.LEAD.STND" ] ; then
             DEMO_INFO_FILE_NAME="multi_vm_vnf_std_info.py"
+        elif [ "$vdu_name" == "RW.VDU.LEAD.STND-IPSEC" ] ; then
+            DEMO_INFO_FILE_NAME="multi_vm_vnf_std_ipsec_info.py"
         elif [ "$vdu_name" == "RW.VDU.LEAD.DDPL-IPSEC" ] ; then
             DEMO_INFO_FILE_NAME="multi_vm_vnf_ddp_ipsec_info.py"
         else
@@ -113,7 +115,7 @@ case "$vdu_name" in
         ;;
 
      # VDU for Non-Lead VM
-     "RW.VDU.MEMB.STND"|"RW.VDU.MEMB.DDPL"|"RW.VDU.MEMB.DDPM")
+     "RW.VDU.MEMB.STND"|"RW.VDU.MEMB.DDPL"|"RW.VDU.MEMB.DDPM"|"RW.VDU.MEMB.DDPL-IPSEC")
         # lead-vdu-ip-address is required for non-lead VM
         if [ "$lead_vdu_ip_address" == "" ] ; then
              echo "ERROR: lead-vdu-ip-address is required"
@@ -130,7 +132,7 @@ case "$vdu_name" in
         ;;
 
      *) error="ERROR: Invalid vdu-name '${vdu_name}'. Choices:"
-        error="${error} RW.VDU.LEAD.STND, RW.VDU.LEAD.DDPL, RW.VDU.MEMB.STND, RW.VDU.MEMB.DDPL, RW.VDU.MEMB.DDPM"
+        error="${error} RW.VDU.LEAD.STND, RW.VDU.LEAD.DDPL, RW.VDU.MEMB.STND, RW.VDU.MEMB.DDPL, RW.VDU.MEMB.DDPM RW.VDU.MEMB.DDPL-IPSEC RW.VDU.LEAD.DDPL-IPSEC RW.VDU.LEAD.STND-IPSEC"
         echo ${error}
         exit 1
         ;;

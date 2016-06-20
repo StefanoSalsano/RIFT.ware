@@ -1,4 +1,3 @@
-RIFT.mgmt, libnetconf, C Netconf Library, BSD 3-Clause, https://code.google.com/p/libnetconf/
 RIFT.core, protobuf-c, C Implementation of Protocol Buffers, BSD 2-Clause, https://github.com/protobuf-c/protobuf-c.git
 RIFT.mgmt, pyang, YANG Validator, MIT, https://code.google.com/p/pyang/
 RIFT.mgmt, yuma, YANG Based Management System, BSD, http://sourceforge.net/p/yuma123/git/ci/yuma-official/tree/

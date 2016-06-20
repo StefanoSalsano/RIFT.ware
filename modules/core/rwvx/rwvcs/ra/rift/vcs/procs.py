@@ -25,7 +25,9 @@ class Webserver(core.NativeProcess):
             uagent_port=None,
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=core.DataStore.NOSTORE.value,
+            mode_active=True,
             ):
         """Creates a Webserver object.
 
@@ -39,6 +41,8 @@ class Webserver(core.NativeProcess):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         self.ui_dir = ui_dir
         self.confd_host = confd_host
@@ -51,7 +55,9 @@ class Webserver(core.NativeProcess):
                 exe="./usr/local/bin/rwmgmt-api-standalone",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
-                start=start
+                start=start,
+                data_storetype=data_storetype,
+                mode_active=mode_active,
                 )
 
     @property
@@ -75,7 +81,9 @@ class RedisCluster(core.NativeProcess):
             init_port=3152,
             config_ready=True,
             recovery_action=core.RecoveryType.FAILCRITICAL.value,
-            start=True
+            start=True,
+            data_storetype=core.DataStore.NOSTORE.value,
+            mode_active=True,
             ):
         """Creates a RedisCluster object.
 
@@ -88,6 +96,8 @@ class RedisCluster(core.NativeProcess):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         args = './usr/bin/redis_cluster.py -c -n {} -p {}'
         super(RedisCluster, self).__init__(
@@ -97,7 +107,9 @@ class RedisCluster(core.NativeProcess):
                 args=args.format(num_nodes, init_port),
                 config_ready=config_ready,
                 recovery_action=recovery_action,
-                start=start
+                start=start,
+                data_storetype=data_storetype,
+                mode_active=mode_active,
                 )
 
 
@@ -107,7 +119,9 @@ class RedisServer(core.NativeProcess):
     """
 
     def __init__(self, uid=None, name="RW.RedisServer", port=None, config_ready=True,
-                 recovery_action=core.RecoveryType.FAILCRITICAL.value, start=True
+                 recovery_action=core.RecoveryType.FAILCRITICAL.value, start=True,
+                 data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a RedisServer object.
 
@@ -118,7 +132,8 @@ class RedisServer(core.NativeProcess):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
-
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         # If the port is not specified, use the default for redis (NB: the
         # redis_cluster.py wrapper requires the init port to be specified so
@@ -133,7 +148,9 @@ class RedisServer(core.NativeProcess):
                 args= './usr/bin/redis_cluster.py -c -n 1 -p {}'.format(port),
                 config_ready=config_ready,
                 recovery_action=recovery_action,
-                start=start
+                start=start,
+                data_storetype=data_storetype,
+                mode_active=mode_active,
                 )
 
 
@@ -144,7 +161,8 @@ class UIServerLauncher(core.NativeProcess):
 
     def __init__(self, uid=None, name="RW.MC.UI", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True, data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a UI Server Launcher
 
@@ -154,6 +172,8 @@ class UIServerLauncher(core.NativeProcess):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting 
         """
         super(UIServerLauncher, self).__init__(
                 uid=uid,
@@ -161,7 +181,9 @@ class UIServerLauncher(core.NativeProcess):
                 exe="./usr/share/rw.ui/skyquake/scripts/launch_ui.sh",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
-                start=start
+                start=start,
+                data_storetype=data_storetype,
+                mode_active=mode_active,
                 )
     @property
     def args(self):
@@ -175,14 +197,15 @@ class RiftCli(core.NativeProcess):
     def __init__(self,
               uid=None,
               name="RW.CLI",
-              schema_listing=["rwbase_schema_listing.txt"],
               netconf_host="127.0.0.1",
               netconf_port="2022",
               config_ready=True,
               recovery_action=core.RecoveryType.FAILCRITICAL.value,
               netconf_username="admin",
               netconf_password="admin",
-              start=True
+              start=True,
+              data_storetype=core.DataStore.NOSTORE.value,
+              mode_active=True,
               ):
         """Creates a RiftCli object.
 
@@ -197,6 +220,8 @@ class RiftCli(core.NativeProcess):
             netconf_username - the netconf username
             netconf_password - the netconf password
             start        - Flag denotes whether to initially start this component
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
 
         """
         super(RiftCli, self).__init__(
@@ -206,20 +231,19 @@ class RiftCli(core.NativeProcess):
                 interactive=True,
                 config_ready=config_ready,
                 recovery_action=recovery_action,
-                start=start
+                start=start,
+                data_storetype=data_storetype,
+                mode_active=mode_active,
                 )
         self.netconf_host = netconf_host
         self.netconf_port = netconf_port
-        self.schema_listing = schema_listing
         self.netconf_username = netconf_username
         self.netconf_password = netconf_password
         self.use_netconf = True
 
     @property
     def args(self):
-        schema_files = ' '.join(self.schema_listing)
-
-        args = '--schema_listing {}'.format(schema_files)
+        args = ""
         if self.netconf_username is not None:
             args += " --username %s " % self.netconf_username
         if self.netconf_password is not None:
@@ -240,7 +264,8 @@ class CrossbarServer(core.NativeProcess):
 
     def __init__(self, uid=None, name="RW.Crossbar", config_ready=True,
                  recovery_action=core.RecoveryType.FAILCRITICAL.value,
-                 start=True
+                 start=True, data_storetype=core.DataStore.NOSTORE.value,
+                 mode_active=True,
                 ):
         """Creates a CrossbarServer object.
 
@@ -250,7 +275,8 @@ class CrossbarServer(core.NativeProcess):
             config_ready - config readiness check enable
             recovery_action - recovery action mode
             start        - Flag denotes whether to initially start this component
-
+            data_storetype - Type of data-store used for HA
+            mode_active    - active mode setting
         """
         super(CrossbarServer, self).__init__(
                 uid=uid,
@@ -258,7 +284,9 @@ class CrossbarServer(core.NativeProcess):
                 exe="/usr/bin/crossbar",
                 config_ready=config_ready,
                 recovery_action=recovery_action,
-                start=start
+                start=start,
+                data_storetype=data_storetype,
+                mode_active=mode_active,
                 )
 
     @property

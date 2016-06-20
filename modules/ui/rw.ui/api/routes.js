@@ -685,6 +685,13 @@ function decorateNsdCatalogWithPlacementGroups(catalog) {
             res.send(data);
         })
     });
+    app.get('/api/operational/restconf-state/streams', cors(), function(req, res) {
+        launchpadAPI['rift'].api(req).then(function(data) {
+            res.send(data);
+        }, function(error) {
+            sendErrorResponse(error, res);
+        })
+    });
 
     //Start Cloud Account API
 

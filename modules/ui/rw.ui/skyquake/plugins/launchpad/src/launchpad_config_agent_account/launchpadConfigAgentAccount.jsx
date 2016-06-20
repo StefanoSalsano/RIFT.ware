@@ -54,7 +54,7 @@ export default class LaunchpadConfigAgentAccount extends React.Component {
         } else {
              body = <ConfigAgentAccount {...this.props} store={ConfigAgentAccountStore} actions={ConfigAgentAccountActions} edit={this.state.isEdit} />
         }
-        html = (<div>
+        html = (<div className="cloud-account-wrapper">
                   <AppHeader title={title} isLoading={this.state.isLoading} />
                     <div className="flex">
                       <AccountSidebar/>

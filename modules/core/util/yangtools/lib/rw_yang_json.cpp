@@ -26,7 +26,9 @@ void rw_yang_node_to_json_schema(rw_yang_node_t* ynode, char** ostr, bool_t pret
 {
   auto yn = static_cast<YangNode*>(ynode);
   std::string json = yn->to_json_schema(pretty_print);
-  if (!json.length()) return;
+  if (!json.length() || json == "{}") {
+    json = "";
+  }
 
   char* new_str = strdup(json.c_str());
   *ostr = new_str;
@@ -38,7 +40,7 @@ std::string YangNode::to_json_schema(bool pretty_print)
   JsonPrinter printer(oss, this, pretty_print);
   oss << "{";
   printer.convert_to_json();
-  oss << "}\n";
+  oss << "}";
 
   // Could we reuse the buffer of stringstream
   // rather than copying it ?
@@ -92,6 +94,7 @@ void JsonPrinter::convert_to_json()
   };
 
   fmt_.end_object();
+ 
 }
 
 
@@ -144,7 +147,9 @@ void JsonPrinter::print_leaf_node_enum()
     fmt_.print_key_value("value", value_iter->get_position());
     fmt_.end_object();
 
-    if (++value_iter != yn_->value_end()) fmt_.seperator();
+    if (++value_iter != yn_->value_end()) {
+      fmt_.seperator();
+    }
   }
 
   fmt_.end_object();
@@ -167,7 +172,9 @@ void JsonPrinter::print_leaf_node_bits()
     fmt_.begin_object();
     fmt_.print_key_value("position", value_iter->get_position());
     fmt_.end_object();
-    if (++value_iter != yn_->value_end()) fmt_.seperator();
+    if (++value_iter != yn_->value_end()) {
+      fmt_.seperator();
+    }
   }
 
   fmt_.end_object();
@@ -186,7 +193,9 @@ void JsonPrinter::print_leaf_node_union()
   while (value_iter != yn_->get_type()->value_end())
   {
     fmt_.print_value(value_iter->get_name());
-    if (++value_iter != yn_->get_type()->value_end()) fmt_.seperator();
+    if (++value_iter != yn_->get_type()->value_end()) {
+      fmt_.seperator();
+    }
   }
   fmt_.end_object_list();
   fmt_.end_object();
@@ -261,7 +270,9 @@ void JsonPrinter::print_json_list()
     fmt_.begin_object();
     fmt_.print_key_value("value", key_iter->get_key_node()->get_name());
     fmt_.end_object();
-    if (++key_iter != yn_->key_end()) fmt_.seperator();
+    if (++key_iter != yn_->key_end()) {
+      fmt_.seperator();
+    }
   }
   fmt_.end_object_list();
   fmt_.seperator();
@@ -269,12 +280,21 @@ void JsonPrinter::print_json_list()
   fmt_.print_key("properties");
   fmt_.begin_object_list();
 
-  auto yn_iter = yn_->child_begin();
-
-  while (yn_iter != yn_->child_end()) {
+  auto yn_end = yn_->child_end();
+  bool first = true;
+  for (auto yn_iter = yn_->child_begin(); yn_iter != yn_end; ++yn_iter) {       
     yn_ = &(*yn_iter);
+    if (!yn_->is_config()){
+      continue;
+    }
+
+    if (!first) {
+      fmt_.seperator();
+    } else {
+      first = false;
+    }
+
     convert_to_json();
-    if (++yn_iter != yn_->child_end()) fmt_.seperator();
   }
   fmt_.end_object_list();
 }
@@ -284,13 +304,23 @@ void JsonPrinter::print_json_container()
   fmt_.print_key("properties");
   fmt_.begin_object_list();
 
-  auto ynode = yn_->get_first_child();
-  while (ynode != nullptr) {
-    yn_ = ynode;
-    convert_to_json();
-    ynode = ynode->get_next_sibling();
-    if (ynode != nullptr) fmt_.seperator();
-  }
+  auto yn_end = yn_->child_end();
 
+  bool first = true;
+  for (auto yn_iter = yn_->child_begin(); yn_iter != yn_end; ++yn_iter) {       
+    yn_ = &(*yn_iter);
+    if (!yn_->is_config()){
+      continue;
+    }
+
+    if (!first) {
+      fmt_.seperator();
+    } else {
+      first = false;
+    }
+
+
+    convert_to_json();
+  }
   fmt_.end_object_list();
 }

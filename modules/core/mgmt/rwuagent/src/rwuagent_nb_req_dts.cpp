@@ -34,10 +34,16 @@ NbReqDts::NbReqDts(
   msg_(msg)
 {
   // ATTN: turn ks_in into a string and trace it?
+
+  // Take a ref on the dts xact
+  rwdts_xact_ref (xact_info_->xact, __PRETTY_FUNCTION__, __LINE__);
 }
 
 NbReqDts::~NbReqDts()
 {
+  if (xact_info_->xact) {
+    rwdts_xact_unref (xact_info_->xact, __PRETTY_FUNCTION__, __LINE__);
+  }
 }
 
 StartStatus NbReqDts::execute()

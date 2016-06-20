@@ -35,6 +35,7 @@ rift_gtest(rwyangutil_utest
 # install test northbound listing
 install(FILES
     test_northbound_listing.txt
+    test_northbound_widening_listing.txt
   DESTINATION
     usr/data/manifest
   COMPONENT

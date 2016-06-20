@@ -35,7 +35,6 @@
 #include "rift.pro"
 
 #define RW_DEFAULT_MANIFEST "cli_rwfpath.xml"
-#define RW_DEFAULT_SCHEMA_LISTING "cli_rwfpath_schema_listing.txt"
 
 extern rift_cmdargs_t rift_cmdargs;
 
@@ -52,8 +51,6 @@ static Widget w_comp = NULL;
 /* Widget used for generating help */
 static Widget w_gen_help = NULL;
 
-/* Widget used for getting inotify events */
-static Widget w_inotify_event = NULL;
 
 /* Original thingy used for tab completion */
 static Thingy t_orig_tab_bind = NULL;
@@ -317,84 +314,6 @@ static void rift_prompt(void)
 }
 
 /**
- * Callback that will be received when a event on inotify_fd is received
- */
-static int rift_inotify_event(UNUSED(char** arg))
-{
-  /* Invoke the CLI schema update event */
-  rwcli_schema_update_event();
-
-  return 0;
-}
-
-/**
- * Method to add a widget callback when a read event is received on the given
- * fd.
- * @param[in] fd  FD to be monitored for read events
- * @param[in] widge_name   widget to be linked to the event.
- *
- * When an event is received on the fd, the callback associated with the
- * widge_name is invoked.
- */
-static void rift_add_zlewatch(int fd, const char* widget_name)
-{
-  /* 
-   * Globlas - nwatch, watch_fds 
-   *
-   * ZLE has an option to add an FD to monitor for read events, it will
-   * multiplex the added fd's and the tty fd (for reading stdin).
-   * watch_fds - has the list of fds to be watched (in addition to the tty)
-   * nwatch - number of fds to watch
-   */
-
-  Watch_fd new_fd;
-  int new_nwatch = nwatch + 1; 
-
-  watch_fds = (Watch_fd)zrealloc(watch_fds, new_nwatch * sizeof(struct watch_fd));
- 
-  /* Add the FD to the watch_fd list end */ 
-  new_fd = watch_fds + nwatch;
-  new_fd->fd = fd; 
-  new_fd->func = ztrdup(widget_name);
-  new_fd->widget = 1;
-
-  nwatch = new_nwatch;
-}
-
-/**
- * Remove the event monitoring for the given fd.
- */
-static void rift_del_zlewatch(int fd)
-{
-  int i;
-  for (i = 0; i < nwatch; i++) {
-    Watch_fd watch_fd = watch_fds + i;
-    if (watch_fd->fd == fd) {
-      int newnwatch = nwatch-1;
-      Watch_fd new_fds;
-
-      zsfree(watch_fd->func);
-      if (newnwatch) {
-        new_fds = zalloc(newnwatch*sizeof(struct watch_fd));
-        if (i) {
-          memcpy(new_fds, watch_fds, i*sizeof(struct watch_fd));
-        }
-        if (i < newnwatch) {
-          memcpy(new_fds+i, watch_fds+i+1,
-              (newnwatch-i)*sizeof(struct watch_fd));
-        }
-      } else {
-        new_fds = NULL;
-      }
-      zfree(watch_fds, nwatch*sizeof(struct watch_fd));
-      watch_fds = new_fds;
-      nwatch = newnwatch;
-      break;
-    }
-  }  
-}
-
-/**
  * Authenticates the provided username and password agains the stored SHA1 Hash
  * values.
  * @param[in] cmdargs  Command line arguments struct containinng username and
@@ -576,10 +495,6 @@ boot_(Module m)
   recv_buf = (uint8_t*)calloc(sizeof(uint8_t), RW_CLI_MAX_BUF);
   recv_buf_len = RW_CLI_MAX_BUF;
   
-  if (rift_cmdargs.schema_listing == NULL) {
-    rift_cmdargs.schema_listing = strdup(RW_DEFAULT_SCHEMA_LISTING);
-  }
-
   // Decide the RW.CLI communication mode with RW.MgmtAgent
   if (rift_cmdargs.use_netconf == -1) {
     const char* agent_mode = rw_getenv("RWMGMT_AGENT_MODE");
@@ -606,7 +521,7 @@ boot_(Module m)
     transport_mode = RWCLI_TRANSPORT_MODE_RWMSG;
   }
 
-  rwcli_zsh_plugin_init(rift_cmdargs.schema_listing, transport_mode, user_mode);
+  rwcli_zsh_plugin_init(transport_mode, user_mode);
   rwcli_set_messaging_hook(messaging_hook);
   rwcli_set_history_hook(history_hook);
 
@@ -641,11 +556,6 @@ boot_(Module m)
   w_gen_help = addzlefunction("rift-gen-help", rift_generate_help, 0);
   bindkey(km, "?", refthingy(w_gen_help->first), NULL);
 
-  /* Register an Inotify callback. This registers the inotify FD to the zle
-   * eventloop */
-  w_inotify_event = addzlefunction("rift-inotify-event", rift_inotify_event, 0);
-  rift_add_zlewatch(rwcli_get_schema_updater_fd(), "rift-inotify-event");
-
   /* Set the lookup hook */
   rw_lookup_fn = rift_lookup;
 
@@ -664,7 +574,6 @@ cleanup_(Module m)
 {
   rw_lookup_fn = NULL;
 
-  rift_del_zlewatch(rwcli_get_schema_updater_fd());
   delprepromptfn(rift_prompt);
   deletezlefunction(w_comp);
   deletezlefunction(w_gen_help);

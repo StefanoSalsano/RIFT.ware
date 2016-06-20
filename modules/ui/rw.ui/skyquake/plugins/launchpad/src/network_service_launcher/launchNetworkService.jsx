@@ -20,23 +20,25 @@ import ScreenLoader from 'widgets/screen-loader/screenLoader.jsx';
 import AppHeader from 'widgets/header/header.jsx';
 // import AppHeaderActions from 'widgets/header/headerActions.js';
 import DashboardCard from 'widgets/dashboard_card/dashboard_card.jsx';
-import { browserHistory } from 'react-router'
+import { browserHistory } from 'react-router';
+import SkyquakeComponent from 'widgets/skyquake_container/skyquakeComponent.jsx';
 let ReactCSSTransitionGroup = require('react-addons-css-transition-group');
 let API_SERVER = require('utils/rw.js').getSearchParams(window.location).api_server;
 
 let editNameIcon = require("style/img/svg/launch-fleet-icn-edit.svg")
 
-export default class LaunchNetworkService extends Component {
+
+
+class LaunchNetworkService extends Component {
   constructor(props) {
     super(props);
-    this.state = LaunchNetworkServiceStore.getState();
+    this.Store = this.props.flux.stores.hasOwnProperty('LaunchNetworkServiceStore') ? this.props.flux.stores.LaunchNetworkServiceStore : this.props.flux.createStore(LaunchNetworkServiceStore);
+    this.state = this.Store.getState();
     this.state.validate = false;
     this.handleUpdate = this.handleUpdate.bind(this);
     this.updateName = this.updateName.bind(this);
     this.handleSave = this.handleSave.bind(this);
-
-    this.state.validateErrorEvent = 0;
-    this.state.validateErrorMsg = '';
+    this.Store.listen(this.handleUpdate);
   }
   evaluateLaunch = (e) => {
     if (e.keyCode == 13) {
@@ -51,31 +53,31 @@ export default class LaunchNetworkService extends Component {
   openAbout() {
     let loc = window.location.hash.split('/');
     loc.pop();
-    LaunchNetworkServiceStore.resetView();
+    this.Store.resetView();
     loc.push('lp-about');
     window.location.hash = loc.join('/');
   }
   openDebug() {
     let loc = window.location.hash.split('/');
     loc.pop();
-    LaunchNetworkServiceStore.resetView();
+    this.Store.resetView();
     loc.push('lp-debug');
     window.location.hash = loc.join('/');
   }
   componentDidMount() {
-    LaunchNetworkServiceStore.listen(this.handleUpdate);
-    LaunchNetworkServiceStore.getCatalog();
-    LaunchNetworkServiceStore.getLaunchpadConfig();
-    LaunchNetworkServiceStore.getCloudAccount(function() {
-      LaunchNetworkServiceStore.getDataCenters();
+    let self = this;
+    this.Store.getCatalog();
+    this.Store.getLaunchpadConfig();
+    this.Store.getCloudAccount(function() {
+      self.Store.getDataCenters();
     });
   }
   componentWillUnmount() {
-    LaunchNetworkServiceStore.unlisten(this.handleUpdate);
+    this.Store.unlisten(this.handleUpdate);
   }
   handleCancel = (e) => {
     e.preventDefault();
-    this.context.router.push({pathname:''});
+    this.props.router.push({pathname:''});
   }
   handleUpdate(data) {
     this.setState(data);
@@ -85,75 +87,74 @@ export default class LaunchNetworkService extends Component {
   }
   updateName(event) {
     let name = event.target.value;
-    LaunchNetworkServiceStore.nameUpdated(name);
+    this.Store.nameUpdated(name);
   }
   handleSave(launch, e) {
     let self = this;
     e.preventDefault();
     if (this.state.name == "") {
-        self.context.flux.actions.global.showError('Please name the network service');
+        self.props.actions.showNotification('Please name the network service');
       return;
     }
     if (!this.state.name.match(/^[a-zA-Z0-9_]*$/g)) {
-      self.context.flux.actions.global.showError('Spaces and special characters except underscores are not supported in the network service name at this time');
+      self.props.actions.showNotification('Spaces and special characters except underscores are not supported in the network service name at this time');
       return;
     }
     if (this.isOpenMano() && (this.state.dataCenterID == "" || !this.state.dataCenterID)) {
-         self.context.flux.actions.global.showError("Please enter the Data Center ID");
+         self.props.actions.showNotification("Please enter the Data Center ID");
       return;
     }
     // LaunchNetworkServiceStore.resetView();
-    LaunchNetworkServiceStore.saveNetworkServiceRecord(this.state.name, launch);
-    this.context.router.push({pathname:''});
+    this.Store.saveNetworkServiceRecord(this.state.name, launch);
   }
   setValidate() {
     this.resetValidate = true;
   }
   handleSelectCloudAccount = (e) => {
     let cloudAccount = e;
-    LaunchNetworkServiceStore.updateSelectedCloudAccount(cloudAccount);
+    this.Store.updateSelectedCloudAccount(cloudAccount);
   }
   handleSelectDataCenter = (e) => {
     let dataCenter = e;
-    LaunchNetworkServiceStore.updateSelectedDataCenter(dataCenter);
+    this.Store.updateSelectedDataCenter(dataCenter);
   }
   inputParametersUpdated = (i, e) => {
-    LaunchNetworkServiceStore.updateInputParam(i, e.target.value)
+    this.Store.updateInputParam(i, e.target.value)
   }
   //ns pg
   nsPlacementGroupUpdate = (pg, key, e) => {
-    LaunchNetworkServiceStore.nsPlacementGroupUpdate(pg, key, e.target.value)
+    this.Store.nsPlacementGroupUpdate(pg, key, e.target.value)
   }
   nsHostAggregateUpdate = (pg, ha, key, e) => {
-    LaunchNetworkServiceStore.nsHostAggregateUpdate(pg, ha, key, e.target.value)
+    this.Store.nsHostAggregateUpdate(pg, ha, key, e.target.value)
   }
   addNsHostAggregate = (pg, e) => {
     e.preventDefault();
     e.stopPropagation();
-    LaunchNetworkServiceStore.addNsHostAggregate(pg)
+    this.Store.addNsHostAggregate(pg)
   }
   removeNsHostAggregate = (pg, ha, e) => {
     e.preventDefault();
     e.stopPropagation();
-    LaunchNetworkServiceStore.removeNsHostAggregate(pg, ha)
+    this.Store.removeNsHostAggregate(pg, ha)
   }
   //end ns pg
   //vnf pg
   vnfPlacementGroupUpdate = (pg, key, e) => {
-    LaunchNetworkServiceStore.vnfPlacementGroupUpdate(pg, key, e.target.value)
+    this.Store.vnfPlacementGroupUpdate(pg, key, e.target.value)
   }
   vnfHostAggregateUpdate = (pg, ha, key, e) => {
-    LaunchNetworkServiceStore.vnfHostAggregateUpdate(pg, ha, key, e.target.value)
+    this.Store.vnfHostAggregateUpdate(pg, ha, key, e.target.value)
   }
   addVnfHostAggregate = (pg, e) => {
     e.preventDefault();
     e.stopPropagation();
-    LaunchNetworkServiceStore.addVnfHostAggregate(pg)
+    this.Store.addVnfHostAggregate(pg)
   }
   removeVnfHostAggregate = (pg, ha, e) => {
     e.preventDefault();
     e.stopPropagation();
-    LaunchNetworkServiceStore.removeVnfHostAggregate(pg, ha)
+    this.Store.removeVnfHostAggregate(pg, ha)
   }
   //end vnf pg
   render() {
@@ -244,11 +245,6 @@ export default class LaunchNetworkService extends Component {
   }
 }
 
-LaunchNetworkService.contextTypes = {
-    router: React.PropTypes.object,
-    flux: React.PropTypes.object
-  };
-
 
 export class SelectOption extends React.Component {
   constructor(props){
@@ -277,3 +273,5 @@ SelectOption.defaultProps = {
     console.dir(e)
   }
 }
+
+export default SkyquakeComponent(LaunchNetworkService);

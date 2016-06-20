@@ -83,6 +83,8 @@ class XmlWrapper(object):
         
     @asyncio.coroutine
     def get(self, url, xml):
+        if url.startswith("/api/operational/restconf-state"):
+          return Result.Operation_Failed, "<resource-denied>%s</resource-denied>" % url
         return self._query_mgmtagt(url, xml, "get")
 
     @asyncio.coroutine

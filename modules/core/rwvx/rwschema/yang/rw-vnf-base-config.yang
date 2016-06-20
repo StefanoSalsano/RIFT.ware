@@ -261,7 +261,7 @@ module rw-vnf-base-config
         rwcli:new-mode vrf;
 
         key name;
-        max-elements 32;
+
         leaf name {
           description "Name of VRF";
           rwpb:field-inline true;
@@ -467,7 +467,7 @@ module rw-vnf-base-config
       description "Port configuration";
       rwcli:new-mode " port";
       rwpb:msg-new PortConfig;
-      max-elements 64;
+
       key name;
 
       leaf name {
@@ -670,11 +670,13 @@ module rw-vnf-base-config
         key id;
         rwcli:new-mode "  vlan";
         rwpb:msg-new VlanConfig;
-        max-elements 32;
-
+        max-elements 4096;
+        
         leaf id {
           description "VLAN ID";
-          type uint32;
+          type uint16 {
+            range "1..4095";
+          }
         }
         leaf descr-string {
           description "Description comment for VLAN";

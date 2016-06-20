@@ -13,40 +13,57 @@
 rw_status_t rwcal_rwzk_create_server_config(
     rwcal_module_ptr_t rwcal,
     int id,
+    int client_port,
     bool unique_ports,
-    const char ** server_names)
+    rwcal_zk_server_port_detail_ptr_t *server_details)
 {
   rw_status_t status;
 
   status = rwcal->zk_iface->create_server_config(
       rwcal->zk_cls,
       id,
+      client_port,
       unique_ports,
-      (gchar **)server_names);
+      server_details);
 
   return status;
 }
 
-rw_status_t rwcal_rwzk_server_start(rwcal_module_ptr_t rwcal, int id)
+int rwcal_rwzk_server_start(rwcal_module_ptr_t rwcal, int id)
 {
-  rw_status_t status;
 
-  status = rwcal->zk_iface->server_start(rwcal->zk_cls, id);
-
-  return status;
+  return rwcal->zk_iface->server_start(rwcal->zk_cls, id);
 }
 
 rw_status_t rwcal_rwzk_kazoo_init(
     rwcal_module_ptr_t rwcal,
-    bool unique_ports,
-    const char ** server_names)
+    rwcal_zk_server_port_detail_ptr_t *server_details)
 {
   rw_status_t status;
 
   status = rwcal->zk_iface->kazoo_init(
       rwcal->zk_cls,
-      unique_ports,
-      (gchar **)server_names);
+      server_details);
+
+  return status;
+}
+
+rw_status_t rwcal_rwzk_kazoo_start(rwcal_module_ptr_t rwcal)
+{
+  rw_status_t status;
+
+  status = rwcal->zk_iface->kazoo_start(
+      rwcal->zk_cls);
+
+  return status;
+}
+
+rw_status_t rwcal_rwzk_kazoo_stop(rwcal_module_ptr_t rwcal)
+{
+  rw_status_t status;
+
+  status = rwcal->zk_iface->kazoo_stop(
+      rwcal->zk_cls);
 
   return status;
 }
@@ -212,3 +229,10 @@ void *rwcal_get_userdata_idx(void *userdata, int idx)
 {
   return ((void *)(((unsigned long *)userdata)[idx]));
 }
+
+rwcal_kazoo_client_state_t
+rwcal_rwzk_client_state(rwcal_module_ptr_t rwcal)
+{
+  return rwcal->zk_iface->get_client_state(rwcal->zk_cls);
+}
+

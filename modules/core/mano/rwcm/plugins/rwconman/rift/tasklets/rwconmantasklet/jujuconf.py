@@ -9,10 +9,6 @@ import tempfile
 import yaml
 import os
 
-from gi.repository import (
-    RwDts as rwdts,
-)
-
 from . import juju_intf
 from . import riftcm_config_plugin
 
@@ -186,7 +182,7 @@ class JujuConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         return val
 
     @asyncio.coroutine
-    def notify_create_vls(self, agent_nsr, agent_vnfr, vld, vlr):
+    def notify_create_vlr(self, agent_nsr, agent_vnfr, vld, vlr):
         """
         Notification of create VL record
         """
@@ -266,28 +262,28 @@ class JujuConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         return True
 
     @asyncio.coroutine
-    def notify_instantiate_vnf(self, agent_nsr, agent_vnfr):
+    def notify_instantiate_vnfr(self, agent_nsr, agent_vnfr):
         """
         Notification of Instantiate NSR with the passed nsr id
         """
         return True
 
     @asyncio.coroutine
-    def notify_instantiate_vl(self, agent_nsr, agent_vnfr, vlr):
+    def notify_instantiate_vlr(self, agent_nsr, agent_vnfr, vlr):
         """
         Notification of Instantiate NSR with the passed nsr id
         """
         return True
 
     @asyncio.coroutine
-    def notify_terminate_ns(self, agent_nsr, agent_vnfr):
+    def notify_terminate_nsr(self, agent_nsr, agent_vnfr):
         """
         Notification of Terminate the network service
         """
         return True
 
     @asyncio.coroutine
-    def notify_terminate_vnf(self, agent_nsr, agent_vnfr):
+    def notify_terminate_vnfr(self, agent_nsr, agent_vnfr):
         """
         Notification of Terminate the network service
         """
@@ -324,7 +320,7 @@ class JujuConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         return True
 
     @asyncio.coroutine
-    def notify_terminate_vl(self, agent_nsr, agent_vnfr, vlr):
+    def notify_terminate_vlr(self, agent_nsr, agent_vnfr, vlr):
         """
         Notification of Terminate the virtual link
         """
@@ -569,8 +565,10 @@ class JujuConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         vnfr = agent_vnfr.vnfr
         service = vnfr['vnf_juju_name']
 
-        if not self.check_task_status(vnfr['vnf_juju_name'], 'deploy'):
+        rc = yield from self.is_service_up(service)
+        if not rc:
             return False
+
         try:
             tags = []
             api = None
@@ -652,7 +650,7 @@ class JujuConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         if agent_vnfr.id not in self._juju_vnfs.keys():
             self._log.info("juju config agent: add vnfr={}/{}".format(agent_vnfr.name, agent_vnfr.id))
             self._juju_vnfs[agent_vnfr.id] = agent_vnfr
-            
+
     def is_vnfr_managed(self, vnfr_id):
         try:
             if vnfr_id in self._juju_vnfs:
@@ -671,21 +669,44 @@ class JujuConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
                 self._log.error("jujuCA: Unable to get API for checking service is active")
                 return resp
 
-            for vnf in self._juju_vnfs:
-                if vnf['name'] == service and api:
-                    # Check if deploy is over
-                    if self.check_task_status(service, 'deploy'):
-                        resp = yield from self._loop.run_in_executor(
-                            None,
-                            api.is_service_active,
-                            service
-                        )
-                    self._log.debug("jujuCA: Is the service %s active? %s", service, resp)
-                    return resp
+            # Check if deploy is over
+            if self.check_task_status(service, 'deploy'):
+                resp = yield from self._loop.run_in_executor(
+                    None,
+                    api.is_service_active,
+                    service
+                )
+                self._log.debug("jujuCA: Is the service %s active? %s", service, resp)
+                return resp
         except KeyError:
             self._log.error("jujuCA: Check active unknown service ", service)
         except Exception as e:
             self._log.error("jujuCA: Caught exception when checking for service is active: ", e)
+            self._log.exception(e)
+        return resp
+
+    def is_service_up(self, service):
+        """ Is the juju service up (active or blocked)  """
+        resp = False
+        try:
+            api = yield from self._get_api()
+            if api is None:
+                self._log.error("jujuCA: Unable to get API for checking service is active")
+                return resp
+
+            # Check if deploy is over
+            if self.check_task_status(service, 'deploy'):
+                resp = yield from self._loop.run_in_executor(
+                    None,
+                    api.is_service_up,
+                    service
+                )
+            self._log.debug("jujuCA: Is the service %s up? %s", service, resp)
+            return resp
+        except KeyError:
+            self._log.error("jujuCA: Check unknown service %s is up", service)
+        except Exception as e:
+            self._log.error("jujuCA: Caught exception when checking for service is active: %s", e)
             self._log.exception(e)
         return resp
 
@@ -716,44 +737,46 @@ class JujuConfigPlugin(riftcm_config_plugin.RiftCMConfigPluginBase):
         return False
 
     @asyncio.coroutine
-    def get_status(self, vnfr_id):
-        resp = 'unknown'
+    def get_config_status(self, agent_nsr, agent_vnfr):
+        """Get the configuration status for the VNF"""
+        rc = 'unknown'
+
         try:
-            vnfr = self._juju_vnfs[vnfr_id]
-            if vnfr['active']:
-                return 'configured'
-
+            vnfr = agent_vnfr.vnfr
             service = vnfr['vnf_juju_name']
-            # Check if deploy is over
-            if self.check_task_status(service, 'deploy'):
-                api = yield from self._get_api()
-                if api is None:
-                    self._log.error("jujuCA: API not created for get status")
-                    return 'failed'
+        except KeyError:
+            # This VNF is not managed by Juju
+            return rc
 
-                resp = yield from self._loop.run_in_executor(
-                    None,
-                    api.get_service_status,
-                    service
-                )
-            self._log.debug("jujuCA: Service status for {} is {}".
-                            format(service, resp))
-            status =  'configuring'
-            if resp in ['active', 'blocked']:
-                vnfr['active'] = True
-                status = 'configured'
-            elif resp in ['error', 'NA']:
-                status = 'failed'
-            return status
-        except KeyError as e:
-            self._log.debug("jujuCA: VNFR id {} not found in config agent, e={}".
-                            format(vnfr_id, e))
-            return 'configured'
+        rc = 'configuring'
+
+        if not self.check_task_status(service, 'deploy'):
+            return rc
+
+        try:
+            api = yield from self._get_api()
+            if api is None:
+                self._log.error("jujuCA: Unable to get API for checking service is active")
+                return rc
+
+            resp = yield from self._loop.run_in_executor(
+                None,
+                api.get_service_status,
+                service
+            )
+            self._log.debug("jujuCA: Get service %s status? %s", service, resp)
+
+            if resp == 'error':
+                return 'error'
+            if resp == 'active':
+                return 'configured'
+        except KeyError:
+            self._log.error("jujuCA: Check unknown service %s status", service)
         except Exception as e:
-            self._log.error("jujuCA: VNFR id {} gt_status, e={}".
-                            format(vnfr_id, e))
+            self._log.error("jujuCA: Caught exception when checking for service is active: %s", e)
             self._log.exception(e)
-        return resp
+
+        return rc
 
     def get_action_status(self, execution_id):
         ''' Get the action status for an execution ID

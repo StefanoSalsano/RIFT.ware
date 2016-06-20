@@ -43,7 +43,7 @@ BuildRequires: yum
 # turn this off when we have proper deps
 AutoReqProv: no
 
-Requires: riftware-base >= %{_version}, riftware-base-ui = %{_version}
+Requires: riftware-base >= %{_version}, riftware-base-ui = %{_version}, pcs
 #Requires: riftware-base riftware-base-ui
 #Requires(post): info
 #Requires(preun): info

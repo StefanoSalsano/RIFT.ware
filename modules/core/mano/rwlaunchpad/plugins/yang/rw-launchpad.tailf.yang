@@ -20,6 +20,6 @@ module rw-launchpad-annotation
   }
 
   tailf:annotate "/rw-launchpad:datacenters" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

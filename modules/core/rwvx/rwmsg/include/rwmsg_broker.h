@@ -355,6 +355,8 @@ struct rwmsg_broker_s {
   struct timeval audit_completed_tv;
 
   uint32_t refct;
+  rwmemlog_instance_t *rwmemlog;
+  int   rwmemlog_id;
 };
 
 struct rwmsg_broker_global_s {

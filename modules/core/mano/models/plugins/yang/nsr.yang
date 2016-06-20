@@ -716,6 +716,42 @@ module nsr
       uses manotypes:monitoring-param;
       uses manotypes:config-primitive;
 
+      list initial-config-primitive {
+        rwpb:msg-new NsrInitialConfigPrimitive;
+        description
+            "Initial set of configuration primitives for NSD.";
+        key "seq";
+        leaf seq {
+          description
+              "Sequence number for the configuration primitive.";
+          type uint64;
+        }
+
+        leaf name {
+          description
+              "Name of the configuration primitive.";
+          type string;
+          mandatory "true";
+        }
+
+        leaf user-defined-script {
+          description
+              "A user defined script.";
+          type string;
+        }
+
+        list parameter {
+          key "name";
+          leaf name {
+            type string;
+          }
+
+          leaf value {
+            type string;
+          }
+        }
+      }
+
       list vnf-monitoring-param {
         description
           "List of VNF monitoring params.";

@@ -1,4 +1,5 @@
 
+
 /*
  * 
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
@@ -27,18 +28,20 @@ __BEGIN_DECLS
 /*
  * Start the zookeeper server.
  *
- * @param rwcal         - module handle.
- * @param id            - identifier of this server in the zookeeper ensemble.
+ * @param rwvcs         - rwvcs instance
+ * @param server_id     - server id to be started
+ * @param client_port   - client port of the server
  * @param unique_ports  - generate port number based on UID.
- * @param server_names  - NULL terminated list of zookeeper servers.
- * @return              - rift_status.
+ * @param server_details - NULL terminated list of zookeeper server port details
+ * @return              - pid of started zookeeper server process
  */
-rw_status_t
+int
 rwvcs_rwzk_server_start(
     rwvcs_instance_ptr_t rwvcs,
-    uint32_t instance_id,
+    uint32_t server_id,
+    int client_port,
     bool unique_ports,
-    const char ** server_names);
+    rwcal_zk_server_port_detail_ptr_t *server_details);
 
 rw_status_t
 rwvcs_rwzk_node_create(
@@ -84,6 +87,7 @@ typedef struct rwvcs_rwzk_update_state_s {
 typedef struct rwvcs_rwzk_node_update_s {
   rwvcs_instance_ptr_t rwvcs;
   rw_component_info    *id;
+  bool skip_publish;
 } rwvcs_rwzk_node_update_t;
 
 typedef struct rwvcs_rwzk_update_parent_sync_s {
@@ -254,16 +258,32 @@ typedef struct rwvcs_rwzk_seed_auto_instance_sync_s {
 
 typedef struct rwvcs_rwzk_server_start_sync_s {
   rwvcs_instance_ptr_t rwvcs;
-  uint32_t instance_id;
+  uint32_t server_id;
+  int client_port;
   bool unique_ports;
-  const char **server_names;
-  rw_status_t status;
+  rwcal_zk_server_port_detail_ptr_t *server_details;
+  int server_pid;
 } rwvcs_rwzk_server_start_sync_t;
+
+typedef struct rwvcs_rwzk_client_init_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  rw_status_t status;
+} rwvcs_rwzk_client_init_sync_t;
 
 typedef struct rwvcs_rwzk_client_start_sync_s {
   rwvcs_instance_ptr_t rwvcs;
   rw_status_t status;
 } rwvcs_rwzk_client_start_sync_t;
+
+typedef struct rwvcs_rwzk_client_stop_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  rw_status_t status;
+} rwvcs_rwzk_client_stop_sync_t;
+
+typedef struct rwvcs_rwzk_client_state_sync_s {
+  rwvcs_instance_ptr_t rwvcs;
+  rwcal_kazoo_client_state_t client_state;
+} rwvcs_rwzk_client_state_sync_t;
 
 /* Lookup a component in the rwzk datastore without posting to rwq
  *
@@ -322,6 +342,19 @@ rw_status_t
 rwvcs_rwzk_unlock_internal(rwvcs_instance_ptr_t rwvcs, const char * id);
 
 rw_status_t validate_bootstrap_phase(vcs_manifest_bootstrap * bootstrap);
+
+/*
+ * Send signal to pid and wait if it exit. SIGKILL if not succeeding to remove
+ *
+ * @param pid  - process id of the process
+ * @param signal - signal to be sent 
+ * @param name   - name of instance if applicable
+ * @return       - void
+ */
+void send_kill_to_pid(
+    int pid,
+    int signal,
+    char *name);
 
 __END_DECLS
 

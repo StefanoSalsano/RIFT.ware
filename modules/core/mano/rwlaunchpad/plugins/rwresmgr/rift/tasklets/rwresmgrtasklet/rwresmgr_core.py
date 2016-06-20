@@ -232,11 +232,11 @@ class ResourceMgrCALHandler(object):
 
     @asyncio.coroutine
     def get_compute_flavor_info_list(self):
-        rc, rs = self._rwcal.get_flavor_list(self._account)
+        #rc, rs = self._rwcal.get_flavor_list(self._account)
         self._log.debug("Calling get_flavor_list API")
-        #rc, rs = yield from self._loop.run_in_executor(self._executor,
-        #                                               self._rwcal.get_flavor_list,
-        #                                               self._account)
+        rc, rs = yield from self._loop.run_in_executor(self._executor,
+                                                       self._rwcal.get_flavor_list,
+                                                       self._account)
         if rc != RwStatus.SUCCESS:
             self._log.error("Get-flavor-info-list operation failed for cloud account: %s",
                             self._account.name)
@@ -252,12 +252,12 @@ class ResourceMgrCALHandler(object):
         flavor.from_dict(epa_dict)
 
         self._log.info("Creating flavor: %s", flavor)
-        rc, rs = self._rwcal.create_flavor(self._account, flavor)
-        #self._log.debug("Calling create_flavor API")
-        #rc, rs = yield from self._loop.run_in_executor(self._executor,
-        #                                               self._rwcal.create_flavor,
-        #                                               self._account,
-        #                                               flavor)
+        #rc, rs = self._rwcal.create_flavor(self._account, flavor)
+        self._log.debug("Calling create_flavor API")
+        rc, rs = yield from self._loop.run_in_executor(self._executor,
+                                                       self._rwcal.create_flavor,
+                                                       self._account,
+                                                       flavor)
         if rc != RwStatus.SUCCESS:
             self._log.error("Create-flavor operation failed for cloud account: %s",
                             self._account.name)
@@ -1356,10 +1356,11 @@ class ResourceMgrCore(object):
             self._log.warning("Requested event-id :%s for resource-allocation already active with pool: %s",
                               event_id, pool_name)
             # If resource-type matches then return the same resource
-            cloud_pool_table = self._get_cloud_pool_table(request.cloud_account)
+            cloud_pool_table = self._get_cloud_pool_table(cloud_account_name)
             pool = cloud_pool_table[pool_name]
             if pool.resource_type == resource_type:
-                info = yield from pool.get_resource_info(r_id)
+
+                info = yield from pool.read_resource_info(r_id)
                 return info
             else:
                 self._log.error("Event-id conflict. Duplicate event-id: %s", event_id)
@@ -1385,7 +1386,7 @@ class ResourceMgrCore(object):
             cloud_pool_table = self._get_cloud_pool_table(cloud_account_name)
             pool = cloud_pool_table[pool_name]
             if pool.resource_type == resource_type:
-                info = yield from pool.get_resource_info(r_id)
+                info = yield from pool.read_resource_info(r_id)
                 return info
             else:
                 self._log.error("Event-id conflict. Duplicate event-id: %s", event_id)

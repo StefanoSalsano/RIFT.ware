@@ -37,11 +37,6 @@ static rw_status_t rwmsg_broker_mgmt_get_methbtab_FREEME(rwmsg_broker_t *bro,
 
   RWMSG_RG_LOCK();
   {
-    //ck_ht_iterator_t iter = CK_HT_ITERATOR_INITIALIZER;
-    //ck_ht_entry_t *ent=NULL;
-    //while (ck_ht_next(&rwmsg_global.localdesttab, &iter, &ent)) { // }
-      //RW_ASSERT(ent);
-      //struct rwmsg_methbinding_s *mb = (struct rwmsg_methbinding_s *)ent->value;
     struct rwmsg_methbinding_s *mb = NULL;
     while ((mb = (mb ? RW_DL_NEXT(mb, struct rwmsg_methbinding_s, elem) : RW_DL_HEAD(&((rwmsg_broker_srvchan_t*)ch)->methbindings, struct rwmsg_methbinding_s, elem)))) {
       uint32_t i;

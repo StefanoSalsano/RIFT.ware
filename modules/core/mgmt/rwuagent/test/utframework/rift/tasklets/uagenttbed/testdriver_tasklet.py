@@ -28,11 +28,15 @@ from gi.repository import RwDts as rwdts
 
 from . import testbed_tests as TestBedTests
 
-TESTS = [ TestBedTests.TestEditConf, 
-          TestBedTests.TestLargeBinaryBlob, 
-          TestBedTests.TestPBRequest,
-          TestBedTests.TestNotification
-        ]
+NETCONF_TESTS = [ TestBedTests.TestEditConf,
+                  TestBedTests.TestLargeBinaryBlob,
+                  TestBedTests.TestNotification
+                ]
+
+PBREQ_TESTS = [ TestBedTests.TestPBRQECMerge,
+                TestBedTests.TestPBRQECDelete
+              ]
+
 
 class TaskletState(object):
     """
@@ -102,6 +106,24 @@ class TestDriverTasklet(rift.tasklets.Tasklet):
            self._dts.handle.set_state(next_state)
 
    @asyncio.coroutine
+   def run_tests(self, tests, cont_on_failure=False):
+       ro = RwAgentTestbedYang.AgentTestsOp()
+       ro.total_tests = len(tests)
+
+       for test in tests:
+           result = yield from test.run_test()
+           if result is True:
+              self._log.info("Test {} passed".format(test.name))
+              ro.passed_count += 1;
+           else:
+              self._log.error("Test {} failed".format(test.name))
+              ro.failed_count += 1
+              ro.failed_tests.append(test.name)
+              if cont_on_failure is False:
+                 break
+       return ro
+
+   @asyncio.coroutine
    def init(self):
        """
        Initialize application. During this state transition all DTS
@@ -111,38 +133,62 @@ class TestDriverTasklet(rift.tasklets.Tasklet):
   
        self._nc_session = TestBedTests.TBNetconfSession(self.log, self.loop)
        self._nc_proxy = TestBedTests.TBNetconfProxy(self._nc_session, UtCompositeYang, self.log)
-       self._test_objects = []
+       self._netconf_test_objects = []
+       self._pbreq_test_objects = []
 
-       for cls in TESTS:
-           obj = cls(self._dts, self.log, self._nc_proxy)
+       for cls in NETCONF_TESTS:
+           obj = cls(self._dts, self.log, self._nc_proxy, self._loop)
            yield from obj.dts_self_register()
-           self._test_objects.append(obj)
+           self._netconf_test_objects.append(obj)
+
+       for cls in PBREQ_TESTS:
+           obj = cls(self._dts, self.log, self._nc_proxy, self._loop)
+           yield from obj.dts_self_register()
+           self._pbreq_test_objects.append(obj)
 
        @asyncio.coroutine
        def run_all_tests(xact_info, action, ks_path, msg):
-           ro = RwAgentTestbedYang.AgentTestsOp()
-           ro.total_tests = len(self._test_objects)
-           
-           for test in self._test_objects:
-               result = yield from test.run_test()
-               if result is True:
-                  self._log.info("Test {} passed".format(test.name))
-                  ro.passed_count += 1
-               else:
-                  self._log.error("Test {} failed".format(test.name))
-                  ro.failed_count += 1
-                  ro.failed_tests.append(test.name)
-                  if msg.continue_on_failure is False:
-                     break
+           ro1 = yield from self.run_tests(self._netconf_test_objects, msg.continue_on_failure)
+           if ro1.failed_count is 0 or msg.continue_on_failure is True:
+              ro2 = yield from self.run_tests(self._pbreq_test_objects, msg.continue_on_failure)
 
-           xpath = "O,/rw-agent-testbed:agent-tests"
+           ro = RwAgentTestbedYang.AgentTestsOp()
+           ro.total_tests = ro1.total_tests + ro2.total_tests
+           ro.passed_count = ro1.passed_count + ro2.passed_count
+           ro.failed_count = ro1.failed_count + ro2.failed_count
+           #ro.failed_tests = ro1.failed_tests + ro2.failed_tests
+
+           xpath = "O,/agt-tb:agent-tests"
            xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ro)
-          
+
+       @asyncio.coroutine
+       def run_all_netconf_tests(xact_info, action, ks_path, msg):
+           ro = yield from self.run_tests(self._netconf_test_objects)
+           xpath = "O,/agt-tb:agent-tests"
+           xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ro)
+
+       @asyncio.coroutine
+       def run_all_pbreqs_tests(xact_info, action, ks_path, msg):
+           ro = yield from self.run_tests(self._pbreq_test_objects)
+           xpath = "O,/agt-tb:agent-tests"
+           xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ro)
+         
        # Register for all test-cases
        yield from self._dts.register(
-                  xpath="I,/rw-agent-testbed:agent-tests/rw-agent-testbed:all",
+                  xpath="I,/agt-tb:agent-tests/agt-tb:all",
                   flags=rwdts.Flag.PUBLISHER,
                   handler=rift.tasklets.DTS.RegistrationHandler(on_prepare=run_all_tests))
+
+       # Register for per category all test-cases
+       yield from self._dts.register(
+                  xpath="I,/agt-tb:agent-tests/agt-tb:netconf-tests/agt-tb:all",
+                  flags=rwdts.Flag.PUBLISHER,
+                  handler=rift.tasklets.DTS.RegistrationHandler(on_prepare=run_all_netconf_tests))
+
+       yield from self._dts.register(
+                  xpath="I,/agt-tb:agent-tests/agt-tb:pb-request-tests/agt-tb:all",
+                  flags=rwdts.Flag.PUBLISHER,
+                  handler=rift.tasklets.DTS.RegistrationHandler(on_prepare=run_all_pbreqs_tests))
        
    def run(self):
        """

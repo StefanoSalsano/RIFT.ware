@@ -29,7 +29,7 @@ void rwtasklet_info_unref(rwtasklet_info_t * tinfo)
   rwsched_tasklet_unref(tinfo->rwsched_tasklet_info);
 
   // Leak this until someone deals with RIFT-6966 (RIFT-6986)
-  // rwlog_close(tinfo->rwlog_instance, false);
+     rwlog_close(tinfo->rwlog_instance, false);
 
   rwmsg_endpoint_halt(tinfo->rwmsg_endpoint);
   if (tinfo->identity.rwtasklet_name)

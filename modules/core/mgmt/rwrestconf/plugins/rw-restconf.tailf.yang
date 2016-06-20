@@ -19,14 +19,8 @@ module rw-restconf-annotation
     prefix rw-restconf;
   }
 
-
   tailf:annotate "/rw-restconf:rwrestconf-statistics" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }  
-/*
-  tailf:annotate "/rw-restconf:rwrestconf-configuration" {
-    tailf:callpoint base_show;
-  }
-*/
 }
 

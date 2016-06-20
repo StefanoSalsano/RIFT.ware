@@ -23,14 +23,12 @@ import pprint
 
 from deepdiff import DeepDiff
 
-import yaml
-
 from rift.mano.tosca_translator.common.utils import _
 
 
 class CompareDescShell(object):
 
-    SUPPORTED_TYPES = ['json', 'yaml']
+    SUPPORTED_TYPES = ['json']
     INDENT = 2
     DIFF_KEYS = (REMOVED_ITEMS, ADDED_ITEMS, TYPE_CHANGES, VALUES_CHANGED) = \
                 ('dic_item_removed', 'dic_item_added', 'type_changes',
@@ -54,21 +52,15 @@ class CompareDescShell(object):
 
         with open(args.generated_file) as g:
             gen_data = g.read()
-            if args.type == 'yaml':
-                gen_dict = yaml.load(gen_data)
-            else:
-                gen_dict = json.loads(gen_data)
-            self.log.debug(_("Generated: {0}").format(gen_dict))
+            json_gen = json.loads(gen_data)
+            self.log.debug(_("Generated: {0}").format(json_gen))
 
         with open(args.expected_file) as e:
             exp_data = e.read()
-            if args.type == 'yaml':
-                exp_dict = yaml.load(exp_data)
-            else:
-                exp_dict = json.loads(exp_data)
-            self.log.debug(_("Expected: {0}").format(exp_dict))
+            json_exp = json.loads(exp_data)
+            self.log.debug(_("Expected: {0}").format(json_exp))
 
-        diff = DeepDiff(exp_dict, gen_dict)
+        diff = DeepDiff(json_exp, json_gen)
         self.log.debug(_("Keys in diff: {0}").format(diff.keys()))
         self.log.info(_("Differences:\n"))
 
@@ -98,8 +90,8 @@ def main(args=None):
     parser.add_argument(
         "-t",
         "--type",
-        default='yaml',
-        help="File type. Default yaml")
+        default='json',
+        help="File type. Default json")
     parser.add_argument(
         "--debug",
         help="Enable debug logging",

@@ -4,8 +4,8 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
-@import "../../../framework/style/_colors.scss";
-@import "../../../framework/style/layout.scss";
+@import "style/_colors.scss";
+@import "style/layout.scss";
 @import '../node_modules/open-iconic/font/css/open-iconic.css';
 
 .app-body {
@@ -16,6 +16,7 @@
     align-items: stretch;
     height: 100%;
 }
+
 .name-input {
   color: $gray-darkest;
 }
@@ -62,7 +63,7 @@
   display: flex;
   flex: 1;
   flex-direction: row;
-  height: auto;
+  height: 100%;
 
   /* Network service list styles */
 

@@ -46,3 +46,21 @@ install(FILES
 #  TEST_ARGS
 #    python3 ${CMAKE_CURRENT_SOURCE_DIR}/rwrest_module_test.py
 #)
+
+install(
+  PROGRAMS
+    mgmt_agent_test.sh
+  DESTINATION
+     usr/rift/systemtest/mgmtagt-testbed
+  COMPONENT
+     ${PKG_LONG_NAME}
+)
+
+install(
+  FILES
+    mgmtagt_testbed.racfg
+  DESTINATION
+    usr/rift/systemtest/mgmtagt-testbed
+  COMPONENT
+    ${PKG_LONG_NAME}
+)

@@ -64,6 +64,8 @@ struct rwmain_gi {
 
   struct rwproc_heartbeat * rwproc_heartbeat;
 
+  rwdts_kv_handle_t *redis_handle;
+
   // List of native processes launched by this vcs instance.  Used
   // to track the processes via a CFSource.
   rw_sklist_t procs;
@@ -133,6 +135,7 @@ rwtasklet_info_t * rwmain_gi_new_tasklet_info(
 
 rw_status_t update_zk(struct rwmain_gi * rwmain);
 rw_status_t reaper_start(rwvcs_instance_ptr_t instance, const char * instance_name);
+rw_status_t rwmain_notify_transition (struct rwmain_gi * rwmain, vcs_vm_state state);
 
 __END_DECLS
 #endif

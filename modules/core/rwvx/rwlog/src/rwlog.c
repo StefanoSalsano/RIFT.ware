@@ -27,6 +27,7 @@ __thread struct rwlog_ctx_tls_s rwlog_ctx_tls;
 
 static pthread_key_t rwlog_tls_key;
 static uint8_t rwlog_tls_key_inited;
+void rwlog_ctx_unref(rwlog_ctx_t *boxed);
 
 static bool
 rwlog_rate_limit_log(rwlog_ctx_t *ctxt,
@@ -301,6 +302,7 @@ rwlog_ctx_t *rwlog_init_internal(const char *taskname, char *rwlog_filename,char
    */
   ctx->magic = RWLOG_CONTEXT_MAGIC;
   ctx->version = RWLOG_VER;
+  g_atomic_int_inc(&ctx->ref_count);
   RW_ASSERT(gethostname(ctx->hostname, MAX_HOSTNAME_SZ-1) == 0);
   ctx->hostname[MAX_HOSTNAME_SZ-1] = '\0';
   ctx->pid = getpid();
@@ -334,7 +336,6 @@ rwlog_ctx_t *rwlog_init_internal(const char *taskname, char *rwlog_filename,char
 
   rwlog_app_filter_setup(ctx);
   rwlog_destination_setup(ctx);
-
   return ctx;
 }
 
@@ -471,6 +472,11 @@ void rwlog_update_appname(rwlog_ctx_t *ctx, const char *taskname)
  * remove_logfile - Always FALSE; except for Gtest when we want to cleanup file 
  */
 rw_status_t rwlog_close(rwlog_ctx_t *ctx,bool remove_logfile)
+{
+   rwlog_ctx_unref(ctx);
+   return RW_STATUS_SUCCESS;
+}
+rw_status_t rwlog_close_internal(rwlog_ctx_t *ctx,bool remove_logfile)
 {
   rw_status_t status = RW_STATUS_SUCCESS;
   if (ctx) {
@@ -1595,13 +1601,17 @@ char *rwlog_get_shm_filter_name(rwlog_ctx_t *ctx)
   return ctx->rwlog_shm;
 }
 
-static rwlog_ctx_t* rwlog_ctx_ref(rwlog_ctx_t *boxed) {
+rwlog_ctx_t* rwlog_ctx_ref(rwlog_ctx_t *boxed) {
+  RW_ASSERT(boxed->magic == RWLOG_CONTEXT_MAGIC);
   g_atomic_int_inc(&boxed->ref_count);
   return boxed;
 }
 
-static void rwlog_ctx_unref(rwlog_ctx_t *boxed) {
-  if (!g_atomic_int_dec_and_test(&boxed->ref_count)) {
+void rwlog_ctx_unref(rwlog_ctx_t *boxed) {
+  RW_ASSERT(boxed->magic == RWLOG_CONTEXT_MAGIC);
+  RW_ASSERT(boxed->ref_count);
+  if (g_atomic_int_dec_and_test(&boxed->ref_count)) {
+    rwlog_close_internal(boxed, FALSE);
     return;
   }
   return;
@@ -1610,9 +1620,9 @@ static void rwlog_ctx_unref(rwlog_ctx_t *boxed) {
 rwlog_ctx_t *rwlog_ctx_new(const char *taskname)
 {
   rwlog_ctx_t *ctx = rwlog_init(taskname);
-  ctx->ref_count = 1;
   return ctx;
 }
 
 G_DEFINE_BOXED_TYPE(rwlog_ctx_t, rwlog_ctx, rwlog_ctx_ref, rwlog_ctx_unref);
+
 

@@ -187,10 +187,6 @@ void rwmain_proc_free(struct rwmain_proc * rp)
   free(rp);
 }
 
-void restart_process(
-    rwmain_gi_t * rwmain,
-    char *instance_name);
-
 static void rwproc_on_io_ready(
     rwsched_CFSocketRef sock,
     CFSocketCallBackType type,

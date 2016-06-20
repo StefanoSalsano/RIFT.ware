@@ -86,7 +86,7 @@ export default class Topologyview extends React.Component {
         }
         let nav = <AppHeader nav={navItems} />
         html = (
-            <div className="app-body">
+            <div className="app-body topologyAppBody">
             {nav}
                 <div className="topologyView">
                     <i className="corner-accent top left"></i>

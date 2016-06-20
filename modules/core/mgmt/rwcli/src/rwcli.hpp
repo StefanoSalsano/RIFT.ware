@@ -145,6 +145,32 @@ class RwCliParser: public BaseCli {
                                   requires the DOM to be generated*/
 
   /**
+   * Associate the default print hook with appropriate behavioral nodes
+   */
+  void associate_default_print_hook();
+
+  /**
+   * Associate the config print hook with config behavioral nodes 
+   */
+  void associate_config_print_hook();
+
+  /**
+   * Associate the config file printing hook with appropriate behavioral nodes
+   */
+  void associate_config_print_to_file_hook();
+
+  /**
+   * Associate the pretty printing XML hook with appropriate behavioral nodes
+   */
+  void associate_pretty_print_xml_hook();
+
+  /**
+   * Associate the pretty printing XML to file hook with appropriate behavioral
+   * nodes
+   */
+  void associate_pretty_print_xml_to_file_hook();
+
+  /**
    * Functional ParseNodes are created for yang-like nodes that provide syntax
    * to the CLI. The base functionals of show, config and no are created by the
    * BaseCLI. This function adds subnodes to these nodes, to create parse trees
@@ -256,7 +282,7 @@ class CliManifest {
 
  public:
 
-  typedef std::vector<std::string>      mfiles_t;
+  typedef std::set<std::string>         mfiles_t;
   typedef std::vector<std::string>      string_list_t;
   typedef std::map<std::string, void *> plugin_ptr_map_t;
   typedef std::map<std::string, std::string> name_map_t;
@@ -368,7 +394,6 @@ class RwCLI
  public:
   RwCLI(
       bool no_editline,
-      const char * schema_listing,
       rwcli_transport_mode_t transport_mode,
       rwcli_user_mode_t user_mode);
   ~RwCLI();
@@ -508,10 +533,6 @@ class RwCLI
    */
   bool load_manifest_files();
 
-  /**
-   * Load all the names of the schema files to be exposed.
-   */
-  bool load_schema_modules(const char * schema_listing);
 
   /**
    * Load a text config file and play it back to setup the system
@@ -606,8 +627,6 @@ class RwCLI
    */
   std::set<std::string> module_names_;
 
-  std::string schema_listing_;
-
   rwcli_transport_mode_t transport_mode_ = RWCLI_TRANSPORT_MODE_NETCONF;
   rwcli_user_mode_t user_mode_ = RWCLI_USER_MODE_NONE;
 
@@ -618,6 +637,14 @@ class RwCLI
   std::string config_print_hook_;  /**< Default config print hook */
   std::string config_print_to_file_hook_; /**< Default config print to file hook */
   std::string pretty_print_xml_hook_; /**< Default XML Pretty print hook */
+  std::string pretty_print_xml_to_file_hook_; /**< Default XML Pretty print hook to file*/
+
+  void reset_yang_model();
+ private:
+  void setup_parser();
+
+  bool no_editline_ = false;
+
 };
 
 typedef bool (RwCLI::*RwCliCallback) (const ParseLineResult& r);

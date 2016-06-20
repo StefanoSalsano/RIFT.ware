@@ -718,12 +718,19 @@ class TaskletInfoPrinter(object):
                    component.instance_name,
                    ' (%s)' % component.state if component.state != 'RUNNING' else ''))
         elif component.component_type == "RWVM":
-            print("%s VM:: %s [%s %d]%s%s" % (
+            if component.vm_info.vm_state == 'MGMTACTIVE':
+                vm_state = '<active>'
+            elif component.vm_info.vm_state == 'MGMTSTANDBY':
+                vm_state = '<standby>'
+            else :
+                vm_state = ''
+            print("%s VM:: %s [%s %d]%s%s%s" % (
                     indent,
                     component.instance_name,
                     component.vm_info.vm_ip_address,
                     component.vm_info.pid,
                     '%s' % ' <leader>' if component.vm_info.leader else '',
+                    '%s' % str(vm_state),
                     ' (%s)' % component.state if component.state != 'RUNNING' else ''))
         elif component.component_type in ('RWPROC', 'PROC'):
             print("%s %s:: %s [%d]%s" % (

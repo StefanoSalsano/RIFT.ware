@@ -65,13 +65,10 @@ static rw_status_t bootstrap_rwvm(struct rwmain_gi * rwmain)
     start.component_name = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->component_name;
     start.has_config_ready = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->has_config_ready;
     start.config_ready = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->config_ready;
-#if 0
-    start.has_recovery_action = true;
-    start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_RESTART;
-#else
     start.has_recovery_action = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->has_recovery_action;
     start.recovery_action = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->recovery_action;
-#endif
+    start.has_data_storetype = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->has_data_storetype;
+    start.data_storetype = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwvm->instances[i]->data_storetype;
 
     status = rwmain_action_run(rwmain, self_id, &action);
 
@@ -121,13 +118,10 @@ static rw_status_t bootstrap_rwproc(struct rwmain_gi * rwmain)
     start.component_name = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->component_name;
     start.has_config_ready = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->has_config_ready;
     start.config_ready = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->config_ready;
-#if 0
-    start.has_recovery_action = true;
-    start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_RESTART;
-#else
     start.has_recovery_action = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->has_recovery_action;
     start.recovery_action = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->recovery_action;
-#endif
+    start.has_data_storetype = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->has_data_storetype;
+    start.data_storetype = rwmain->rwvx->rwvcs->pb_rwmanifest->bootstrap_phase->rwproc->instances[i]->data_storetype;
 
     status = rwmain_action_run(rwmain, self_id, &action);
 
@@ -165,7 +159,7 @@ rw_status_t update_zk(struct rwmain_gi * rwmain)
 
   rwvcs = rwmain->rwvx->rwvcs;
 
-  RW_ASSERT(!rwmain->parent_id);
+  RW_ASSERT(rwvcs->mgmt_info.mgmt_vm);
   id = to_instance_name(rwmain->component_name, rwmain->instance_id);
 
   // As we only hit this point when the parent_id is NULL, we are pretty much
@@ -175,15 +169,26 @@ rw_status_t update_zk(struct rwmain_gi * rwmain)
     RW_CRASH();
     goto done;
   }
+  RW_ASSERT(mdef->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM);
 
 
+  bool alloced = true;
   if (mdef->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWVM) {
-    ci = rwvcs_rwvm_alloc(
-        rwmain->rwvx->rwvcs,
-        rwmain->parent_id,
-        rwmain->component_name,
-        rwmain->instance_id,
-        id);
+    rw_component_info vm;
+    status = rwvcs_rwzk_lookup_component(rwvcs, rwvcs->instance_name, &vm);
+    if ((status == RW_STATUS_SUCCESS)
+        && (vm.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+      ci = &vm;
+      alloced = false;
+    }
+    else {
+      ci = rwvcs_rwvm_alloc(
+          rwmain->rwvx->rwvcs,
+          (rwvcs->mgmt_info.state != RWVCS_TYPES_VM_STATE_MGMTACTIVE)? rwmain->parent_id:NULL,
+          rwmain->component_name,
+          rwmain->instance_id,
+          id);
+    }
     if (!ci) {
       RW_CRASH();
       status = RW_STATUS_FAILURE;
@@ -194,19 +199,30 @@ rw_status_t update_zk(struct rwmain_gi * rwmain)
     ci->vm_info->has_pid = true;
     ci->vm_info->pid = getpid();
     ci->has_state = true;
-    ci->state = RW_BASE_STATE_TYPE_STARTING;
+    if (alloced) {
+      ci->state = RW_BASE_STATE_TYPE_STARTING;
+    }
 
     if (mdef->rwvm && mdef->rwvm->has_leader) {
       ci->vm_info->has_leader = true;
       ci->vm_info->leader= mdef->rwvm->leader;
     }
   } else if (mdef->component_type == RWVCS_TYPES_COMPONENT_TYPE_RWPROC) {
-    ci = rwvcs_rwproc_alloc(
-        rwvcs,
-        rwmain->parent_id,
-        rwmain->component_name,
-        rwmain->instance_id,
-        id);
+    rw_component_info proc;
+    status = rwvcs_rwzk_lookup_component(rwvcs, rwvcs->instance_name, &proc);
+    if ((status == RW_STATUS_SUCCESS)
+        && (proc.state == RW_BASE_STATE_TYPE_TO_RECOVER)) {
+      ci = &proc;
+      alloced = false;
+    }
+    else {
+      ci = rwvcs_rwproc_alloc(
+          rwvcs,
+          rwmain->parent_id,
+          rwmain->component_name,
+          rwmain->instance_id,
+          id);
+    }
     if (!ci) {
       RW_CRASH();
       status = RW_STATUS_FAILURE;
@@ -216,9 +232,11 @@ rw_status_t update_zk(struct rwmain_gi * rwmain)
     ci->proc_info->has_pid = true;
     ci->proc_info->pid = getpid();
     ci->has_state = true;
+    if (alloced) {
+      ci->state = RW_BASE_STATE_TYPE_STARTING;
+    }
     ci->proc_info->has_native = true;
     ci->proc_info->native = false;
-    ci->state = RW_BASE_STATE_TYPE_STARTING;
   } else {
     RW_CRASH();
     status = RW_STATUS_FAILURE;
@@ -236,7 +254,7 @@ done:
   if (id)
     free(id);
 
-  if (ci)
+  if (ci && alloced)
     protobuf_free(ci);
 
   return status;
@@ -250,7 +268,7 @@ rw_status_t rwmain_bootstrap(struct rwmain_gi * rwmain)
   // If this instance has no parent then there is nothing in the zookeeper
   // yet.  We need to make a node so that anything started during bootstrap
   // can correctly link itself as a child.
-  if (!rwmain->parent_id) {
+  if (rwmain->rwvx->rwvcs->mgmt_info.mgmt_vm) {
     status = update_zk(rwmain);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
   }

@@ -26,6 +26,15 @@
 
 __BEGIN_DECLS
 
+#if 0
+#define NEW_DBG_PRINTS(args...) {\
+  fprintf(stderr, "NEW_DBG_PRINTS %s:%d[[%s]]", __FILE__, __LINE__, __func__); \
+  fprintf(stderr, args); \
+}
+#else
+#define NEW_DBG_PRINTS(args...) do {} while(0);
+#endif
+
 #define RWVCS_RWZK_DISPATCH(t_mode, t_sched, t_rwq, t_ptr, t_fn) { \
   if (t_rwq) { \
     rwsched_dispatch_##t_mode##_f (t_sched, t_rwq, (void *)(t_ptr), t_fn); \
@@ -136,6 +145,21 @@ typedef struct rwvcs_config_ready_entry_s{
   void                     *regh;
 } rwvcs_config_ready_entry_t;
 
+#define RWVCS_ZK_SERVER_CLUSTER 3
+#define RWVCS_ZK_SERVER_QOUROM_CNT ((RWVCS_ZK_SERVER_CLUSTER/2) + 1)
+typedef struct rwvcs_mgmt_info_s {
+  rwcal_zk_server_port_detail_ptr_t zk_server_port_details[RWVCS_ZK_SERVER_CLUSTER + 1]; // for NULL terminated list
+  uint32_t  unique_ports:1;
+  uint32_t  mgmt_vm:1;
+  uint32_t  config_start_zk_pending:1;
+  vcs_vm_state state;
+} rwvcs_mgmt_info_t;
+
+#define RWVCS_MGMT_VM(t_rwvcs) \
+    (((t_rwvcs)->mgmt_info.state == RWVCS_TYPES_VM_STATE_MGMTACTIVE) \
+     || (t_rwvcs)->mgmt_info.state == RWVCS_TYPES_VM_STATE_MGMTSTANDBY)
+
+
 struct rwvcs_instance_s {
   CFRuntimeBase _base;
   struct rwvx_instance_s *rwvx;
@@ -164,6 +188,7 @@ struct rwvcs_instance_s {
   int reaper_sock;
 
   bool heartbeatmon_enabled;
+  bool restart_inprogress;
 
   // If LD_PRELOAD is set (in order to do malloc accounting) then it will
   // be stored here and unset from the environment.  Later execs of rwmain
@@ -179,6 +204,7 @@ struct rwvcs_instance_s {
   void *vcs_instance_regh;
   void *apih;
   rw_status_t (*config_ready_fn)(rwvcs_instance_ptr_t, rw_component_info*);
+  rwvcs_mgmt_info_t mgmt_info;
 };
 
 RW_TYPE_DECL(rwvcs_instance);
@@ -200,23 +226,38 @@ void rwvcs_instance_free(rwvcs_instance_ptr_t rwvcs);
  * Initialize a rwvcs instance
  *
  * @param rwvcs         - instance to initialize
- * @param manifest_path - path to manifest file
+ * @param manifest_file - manifest file with path
+ * @param ip_address    - ip address as a string
  * @param rwmain        - function to use for later rwmain instances in collapsed mode
  * @return              - rw_status_t
  */
 rw_status_t rwvcs_instance_init(
     rwvcs_instance_ptr_t rwvcs,
-    const char * manifest_path,
+    const char * manifest_file,
+    const char * ip_address,
     int (*rwmain)(int argc, char ** argv, char ** envp));
 
 /*
- * get config_ready count from manifest 
+ * Process input manifest file and store in rwvcs instance
  *
- * @param rwvcs         - instance 
- * @return              - count of config_ready enabled elements
+ * @param rwvcs         - instance to initialize
+ * @param manifest_file - manifest file with path
+ * @return              - rw_status_t
  */
-int rwmain_get_pb_rwmanifest_config_ready_count(rwvcs_instance_ptr_t rwvcs);
+rw_status_t rwvcs_process_manifest_file(
+    rwvcs_instance_ptr_t rwvcs,
+    const char * manifest_file);
 
+/*
+ * Start zoo keeper server from manifest
+ *
+ * @param rwvcs         - instance to initialize
+ * @param bootstrap     - bootstrap portion of manifest
+ * @return              - rw_status_t
+ */
+rw_status_t start_zookeeper_server(
+    rwvcs_instance_ptr_t rwvcs,
+    vcs_manifest_bootstrap * bootstrap);
 
-__END_DECLS
+  __END_DECLS
 #endif // __RWVCS_H__

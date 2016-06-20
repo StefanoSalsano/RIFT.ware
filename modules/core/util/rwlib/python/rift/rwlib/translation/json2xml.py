@@ -10,7 +10,10 @@ import tornado.escape
 
 from ..schema import collect_children
 
-def json_to_xml(schema_node, json_string):
+class InvalidSchemaException(Exception):
+    pass
+
+def json_to_xml(schema_node, json_string, strict=True):
     '''Used to convert rooted JSON into equivalent XML
 
     The json library's representation of JSON can be thought of as a tree of
@@ -31,6 +34,7 @@ def json_to_xml(schema_node, json_string):
 
         '''
         xml = list()
+        visited_children = set()
 
         if schema_node.is_rpc():
             # the "input" and "output" elements don't appear in the xml so combine all their child nodes
@@ -53,10 +57,12 @@ def json_to_xml(schema_node, json_string):
             try:
                 key = schema_node_name
                 values = json_node[schema_node_name]
+                visited_children.add(key)
             except KeyError:
                 try:
                     prefixed_name = "%s:%s" % (schema_prefix, schema_node_name)
                     values = json_node[prefixed_name]
+                    visited_children.add(prefixed_name)
                 except KeyError:
                     continue
 
@@ -71,6 +77,9 @@ def json_to_xml(schema_node, json_string):
                 xml.append(handler[type(values)](values, child_schema_node, key))
                 xml.append("</%s>" % (schema_node_name))
 
+        if strict and (len(visited_children) != len(json_node)):
+            missing_children = set(json_node.keys()) - visited_children
+            raise InvalidSchemaException("Extra schema elements: %s" % missing_children)
         return ''.join(xml)
 
     def _handle_list(json_node, schema_node, key=None):

@@ -110,6 +110,27 @@
     }                                                                       \
   }                                                                         \
 }
+
+#define RWDTS_ROUTER__LOG_PRINT_TEMPL(t_logdump, args...) \
+{ \
+  char *fill_char = NULL; \
+  int r = asprintf(&fill_char, args); \
+  RW_ASSERT((r > 0) && fill_char); \
+  if ((t_logdump)) { \
+    char *tmp = (t_logdump); \
+    (t_logdump) = NULL; \
+    asprintf (&(t_logdump), "%s %s", tmp, fill_char); \
+    RW_ASSERT((r > 0) && (t_logdump)); \
+    RW_FREE(tmp); \
+  } \
+  else { \
+    asprintf (&(t_logdump), "%s", fill_char); \
+    RW_ASSERT((r > 0) && (t_logdump)); \
+  } \
+  RW_FREE (fill_char); \
+  fill_char = NULL; \
+}
+
 #define PRINT_XACT_INFO_ELEM(x, logdump) {\
   RWDTS_PRINTF(" %30s = %10d\n", #x, xact->x);\
   if (logdump) { \
@@ -137,8 +158,10 @@
   do { \
     char _err_msg[512];                                                 \
     snprintf(_err_msg, 512, "%s[%d]:" _fmt, __FUNCTION__, __LINE__, ##_args); \
-    rwdts_member_send_error(xact, keyspec, query, apih, resp,           \
-                            status, _err_msg);                          \
+    if (xact || query) { \
+      rwdts_member_send_error(xact, keyspec, query, apih, resp,           \
+                              status, _err_msg);                          \
+    } \
   } while(0)
 
 #define RWDTS_XACT_ABORT(xact, status, _fmt, _args...) \

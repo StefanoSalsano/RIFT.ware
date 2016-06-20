@@ -99,3 +99,34 @@ void rwcal_closure_free(rwcal_closure_ptr_t * closure)
   return;
 }
 
+rwcal_zk_server_port_detail_ptr_t rwcal_zk_server_port_detail_alloc(
+    char *zk_server_addr,
+    int zk_client_port,
+    int zk_server_id,
+    bool zk_server_start,
+    bool zk_client_connect)
+{
+  rwcal_zk_server_port_detail_ptr_t zk_server_port_detail = NULL;
+
+  zk_server_port_detail = g_object_new(RW_CAL_TYPE_ZK_SERVER_PORT_DETAIL, NULL);
+  if (!zk_server_port_detail)
+    goto done;
+
+  zk_server_port_detail->zk_server_addr = strdup(zk_server_addr);
+  zk_server_port_detail->zk_client_port = zk_client_port;
+  zk_server_port_detail->zk_server_id = zk_server_id;
+  zk_server_port_detail->zk_server_start = zk_server_start;
+  zk_server_port_detail->zk_client_connect = zk_client_connect;
+
+done:
+  return zk_server_port_detail;
+}
+
+void rwcal_zk_server_port_detail_free(rwcal_zk_server_port_detail_ptr_t * zk_server_port_detail)
+{
+  g_object_unref(*zk_server_port_detail);
+  *zk_server_port_detail = NULL;
+
+  return;
+}
+

@@ -74,9 +74,9 @@ Subscriptions.prototype.subscribe = function(req) {
             break;
           case 'https' : self.socketInstance(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, PollingSocket);
             break;
-          case 'ws' : self.socketPassThrough(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, WebSocket);
+          case 'ws' : self.socketInstance(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, WebSocket);
             break;
-          case 'wss' : self.socketPassThrough(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, WebSocket);
+          case 'wss' : self.socketInstance(req, self.socketServers[sessionId].wss, self.socketServers[sessionId].httpServer, WebSocket);
             break;
         }
 
@@ -175,7 +175,11 @@ Subscriptions.prototype.socketInstance = function(req, wss, httpServer, Type) {
       });
 
       if (!Socket) {
-        Socket = new Type(req, 1000, req.body);
+        if (Type == PollingSocket) {
+          Socket = new Type(req, 1000, req.body);
+        } else {
+          Socket = new Type(req.body.url);
+        }
       }
       ws.index = Index++;
       Connections.push(ws);
@@ -198,6 +202,14 @@ Subscriptions.prototype.socketInstance = function(req, wss, httpServer, Type) {
         }
       };
 
+      Socket.onopen = function() {
+          console.log('Opened a websocket to southbound server');
+      };
+
+      Socket.onerror = function(error) {
+        console.log('Error on southbound connection. Error:', error);
+      }
+
       Socket.onmessage = function(data) {
         var i;
         var self = this;
@@ -205,12 +217,23 @@ Subscriptions.prototype.socketInstance = function(req, wss, httpServer, Type) {
           //someTransformObject[req.body.transform](data, send)
           //req.body.transform(data, send);
         } else {
-          send(data);
+          if (Type == PollingSocket) {
+            send(data);
+          } else {
+            send(data.data);  
+          }
         }
 
         function send(payload) {
+          var is401 = false;
           try {
-            var is401 = JSON.parse(payload).statusCode == 401;
+            if (typeof payload == 'string') {
+              var jsonPayload = JSON.parse(payload);
+              is401 = jsonPayload.statusCode == 401;
+            }
+            else {
+              is401 = payload.statusCode == 401;
+            }
           } catch(e) {
             payload = {}
           }

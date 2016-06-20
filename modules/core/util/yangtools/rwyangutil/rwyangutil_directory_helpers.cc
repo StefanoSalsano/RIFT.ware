@@ -191,7 +191,7 @@ bool cleanup_lock_file(std::string const & lock_file)
     return true;
   }
 
-  return fs_remove(lock_file);
+  return remove_lock_file();
 }
 
 bool cleanup_stale_version_dirs()
@@ -212,7 +212,6 @@ bool cleanup_stale_version_dirs()
     std::string stamp_file = version_dir + "/stamp";
 
     if (!fs::exists(stamp_file) && (vern != vmax)) {
-      //std::cout << "Removing stale version directory " << version_dir << std::endl;
       fs_remove_directory(version_dir);
     }
   }
@@ -247,6 +246,36 @@ bool schema_directory_is_old(std::string const & schema_directory,
   return false;
 }
 
+bool schema_listing_is_different_from_directory(std::string const & schema_directory,
+                                                std::vector<std::string> const & schema_listings)
+{
+  SchemaPaths const paths;
+
+  std::set<std::string> expected_nb_schema = read_northbound_schema_listing(paths.rift_install,
+                                                                            schema_listings);
+
+  fs::path const northbound_path = fs::path(schema_directory) / "version" / "latest" / "northbound" / "yang";
+
+  // collect schema that are on disk
+  std::set<std::string> actual_nb_schema;
+  std::for_each(fs::directory_iterator(northbound_path),
+                fs::directory_iterator(), // default constructor is end()
+                [&actual_nb_schema](const fs::directory_entry& yangfile)
+                {
+                  std::string const module_name = yangfile.path().stem().string();
+                  actual_nb_schema.insert(module_name);
+                });
+
+  // do set difference
+  std::set<std::string> missing_schema;
+  std::set_difference(expected_nb_schema.begin(),
+                      expected_nb_schema.end(),
+                      actual_nb_schema.begin(),
+                      actual_nb_schema.end(),
+                      std::inserter(missing_schema, missing_schema.begin()));
+
+  return missing_schema.size() > 0;
+}
 bool create_lock_file()
 {
   try {
@@ -258,7 +287,7 @@ bool create_lock_file()
       auto now = std::time(nullptr);
 
       if ((now - last_write_timer) >= LIVENESS_THRESH) {
-         fs_remove(paths.lock_file);
+        remove_lock_file();
       }
     }
 
@@ -285,7 +314,9 @@ bool create_lock_file()
 bool remove_lock_file()
 {
   SchemaPaths const paths = SchemaPaths();
-  return fs_remove(paths.lock_file);
+  bool const status = fs_remove(paths.lock_file);
+
+  return status;
 }
 
 /*
@@ -324,6 +355,76 @@ std::vector<std::string> get_latest_subdir_set()
   return dirs;
 }
 
+bool widen_northbound_schema(std::vector<std::string> const & schema_listing_files)
+{
+  SchemaPaths const paths = SchemaPaths();  
+  std::set<std::string> nb_module_list
+    = read_northbound_schema_listing(
+        paths.rift_install,
+        schema_listing_files);
+
+  
+#ifdef CONFD_ENABLED
+  std::set<std::string> const northbound_extensions = {".yang", ".fxs"};
+#else
+  std::set<std::string> const northbound_extensions = {".yang"};
+#endif
+  for (fs::directory_iterator it(paths.install_yang_dir); it != fs::directory_iterator(); ++it) {
+
+    if (!fs::is_regular_file(it->path()) &&
+        !fs::is_symlink(it->path()))  {
+      continue;
+    }
+
+    std::string ext;
+    fs::path fn = it->path().filename();
+
+    // ATTN: this isn't actually looping, is it?
+    for (; !fn.extension().empty(); fn = fn.stem()) {
+      ext = fn.extension().string() + ext;
+    }
+
+    if (northbound_extensions.count(ext) == 0) {
+      // only need to widen the northbound extensions
+      continue;
+    }
+
+    auto fd_map = paths.fext_map.find(ext);
+    if (fd_map != paths.fext_map.end()) {
+
+      std::string target_path = it->path().string();
+
+      if (fs::is_symlink(it->path())) {
+
+        const std::string tpath = fs_read_symlink(it->path().string());
+        if (!tpath.length()) {
+          std::cerr << "Failed to read the sym link " << it->path().string() << std::endl;
+          return false;
+        }
+
+        target_path = fs::canonical(tpath, paths.install_yang_dir).string();
+      }
+
+      // make link into /northbound schema directory
+      std::string const file_stem = it->path().filename().stem().string();
+      if (nb_module_list.count(file_stem)) {
+        std::string northbound_target_dir = paths.version_latest_link +  "/northbound/" + std::string(fd_map->second);
+        std::string northbound_tsymb_link = northbound_target_dir + "/" + it->path().filename().string();
+
+        if (fs::exists(northbound_tsymb_link)) {
+          continue;
+        }
+
+        if (!fs_create_symlink(target_path, northbound_tsymb_link)) {
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 bool create_schema_directory(std::vector<std::string> const & nb_listings)
 {
   SchemaPaths const paths = SchemaPaths();
@@ -350,17 +451,12 @@ bool create_schema_directory(std::vector<std::string> const & nb_listings)
 
     if (subdirectory_count > 1) {
       // directory structure has been created
-
-      if (schema_directory_is_old(paths.schema_root_dir, schema_listing_files)) {
-        // delete the schema directory and re-create it if the listing has been changed
-        // ATTN: NO! Do not blow this away - that will make users of the schema very sad!
-        // If it is "old", then just add the schema to the current dir.
-        // ONLY blow it away if the *structure* is bad!
-        fs_remove_directory(paths.schema_root_dir);
+      if (schema_directory_is_old(paths.schema_root_dir, schema_listing_files)
+          || schema_listing_is_different_from_directory(paths.schema_root_dir, schema_listing_files)) {
+        return widen_northbound_schema(schema_listing_files);
       } else {
         // do some maintenance on the existing structure
         cleanup_lock_file(paths.lock_file);
-        prune_schema_directory();
         return true;
       }
     } else {
@@ -526,7 +622,7 @@ bool create_schema_directory(std::vector<std::string> const & nb_listings)
 
   // make latest directory
   std::string const initial_version_path = paths.rift_install + "/" + RW_SCHEMA_VER_PATH + "/00000000";
-  if (!fs_create_symlink(initial_version_path, paths.version_latest_link)) {
+  if (!fs_create_symlink(initial_version_path, paths.version_latest_link, true/*force*/)) {
     return false;
   }
 
@@ -668,8 +764,7 @@ bool update_version_directory()
   }
 
   // Make symlink to latest
-  (void)fs_remove(paths.version_latest_link);
-  if (!fs_create_symlink(new_version_path, paths.version_latest_link)) {
+  if (!fs_create_symlink(new_version_path, paths.version_latest_link, true/*force*/)) {
     return false;
   }
 
@@ -683,6 +778,7 @@ bool update_version_directory()
   close(fd);
   fs::permissions(stamp_filename, fs::all_all);
 
+  (void)remove_lock_file();
   return true;
 }
 
@@ -739,44 +835,23 @@ bool remove_mgmt_workspace(const char* prefix)
 }
 
 
-#ifdef CONFD_ENABLED
-bool remove_unique_confd_workspace()
+bool remove_unique_mgmt_workspace()
 {
   // Remove the non persisting directories and the archived one as well
-  auto ret1 = remove_mgmt_workspace(RW_SCHEMA_CONFD_TEST_PREFIX);
-  auto ret2 = remove_mgmt_workspace(RW_SCHEMA_CONFD_ARCHIVE_PREFIX);
+  auto ret1 = remove_mgmt_workspace(RW_SCHEMA_MGMT_TEST_PREFIX);
+  auto ret2 = remove_mgmt_workspace(RW_SCHEMA_MGMT_ARCHIVE_PREFIX);
 
   return ret1 && ret2;
 }
 
-bool remove_persist_confd_workspace()
+bool remove_persist_mgmt_workspace()
 {
-  return remove_mgmt_workspace(RW_SCHEMA_CONFD_PERSIST_PREFIX);
+  return remove_mgmt_workspace(RW_SCHEMA_MGMT_PERSIST_PREFIX);
 }
 
-bool archive_confd_persist_workspace()
+bool archive_mgmt_persist_workspace()
 {
-  return archive_mgmt_persist_workspace(RW_SCHEMA_CONFD_PERSIST_PREFIX);
-}
-#endif
-
-bool remove_unique_xml_workspace()
-{
-  // Remove the non persisting directories and the archived one as well
-  auto ret1 = remove_mgmt_workspace(RW_SCHEMA_XML_TEST_PREFIX);
-  auto ret2 = remove_mgmt_workspace(RW_SCHEMA_XML_ARCHIVE_PREFIX);
-
-  return ret1 && ret2;
-}
-
-bool remove_persist_xml_workspace()
-{
-  return remove_mgmt_workspace(RW_SCHEMA_XML_PERSIST_PREFIX);
-}
-
-bool archive_xml_persist_workspace()
-{
-  return archive_mgmt_persist_workspace(RW_SCHEMA_XML_PERSIST_PREFIX);
+  return archive_mgmt_persist_workspace(RW_SCHEMA_MGMT_PERSIST_PREFIX);
 }
 
 bool prune_schema_directory()

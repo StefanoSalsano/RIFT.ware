@@ -102,9 +102,9 @@ class ResourceMgrEvent(object):
                 # wait for 3 seconds
                 yield from asyncio.sleep(3, loop=self._loop)
 
-                response_info = yield from self._parent.reallocate_virtual_compute(vdu.event_id,
+                response_info = yield from self._parent.allocate_virtual_compute(vdu.event_id,
                                                                                  vdu.cloud_account,
-                                                                                 vdu.request_info, vdu.resource_info,
+                                                                                 vdu.request_info
                                                                                  )
             if (xact_event == rwdts.MemberEvent.INSTALL):
               vdu_cfg = self._vdu_reg.elements
@@ -169,7 +169,6 @@ class ResourceMgrEvent(object):
                     yield from self._dts.query_update(response_xpath,
                                                       rwdts.XactFlag.ADVISE,
                                                       response_info)
-                    return
                 else:
                     if response_info.resource_state == 'active' or response_info.resource_state == 'failed':
                         self._log.info("VDU state monitoring: VDU reached terminal state. Publishing VDU info: %s at path: %s",
@@ -180,8 +179,7 @@ class ResourceMgrEvent(object):
                         return
             else:
                 ### End of loop. This is only possible if VDU did not reach active state
-                self._log.info("VDU state monitoring: VDU at xpath :%s did not reached active state in 120 seconds. Aborting monitoring",
-                           response_xpath)
+                self._log.info("VDU state monitoring: VDU at xpath :{} did not reached active state in {} seconds. Aborting monitoring".format(response_xpath, loop_cnt))
                 response_info = RwResourceMgrYang.VDUEventData_ResourceInfo()
                 response_info.resource_state = 'failed'
                 yield from self._dts.query_update(response_xpath,
@@ -220,10 +218,7 @@ class ResourceMgrEvent(object):
         def on_vdu_request_prepare(xact_info, action, ks_path, request_msg):
             self._log.debug("Received vdu on_prepare callback (xact_info: %s, action: %s): %s",
                             xact_info, action, request_msg)
-
-            response_info = None
             response_xpath = ks_path.to_xpath(RwResourceMgrYang.get_schema()) + "/resource-info"
-
             schema = RwResourceMgrYang.VDUEventData().schema()
             pathentry = schema.keyspec_to_entry(ks_path)
 
@@ -240,8 +235,8 @@ class ResourceMgrEvent(object):
                                                         request_msg.cloud_account,
                                                         request_msg.request_info),
                                       loop = self._loop)
-                
             elif action == rwdts.QueryAction.DELETE:
+                response_info = None
                 yield from self._parent.release_virtual_compute(pathentry.key00.event_id)
                 self.delete_record_dts(self._vdu_reg, None, ks_path.to_xpath(RwResourceMgrYang.get_schema()))
             elif action == rwdts.QueryAction.READ:
@@ -276,7 +271,7 @@ class ResourceMgrEvent(object):
                                             handler=rift.tasklets.DTS.RegistrationHandler(on_ready=on_request_ready,
                                                                                           on_commit=on_link_request_commit,
                                                                                           on_prepare=on_link_request_prepare),
-                                            flags=rwdts.Flag.PUBLISHER | rwdts.Flag.FILE_DATASTORE,)
+                                            flags=rwdts.Flag.PUBLISHER | rwdts.Flag.DATASTORE,)
 
         vdu_handlers = rift.tasklets.Group.Handler(on_event=onvdu_event, )
         with self._dts.group_create(handler=vdu_handlers) as vdu_group:
@@ -288,5 +283,5 @@ class ResourceMgrEvent(object):
                                            handler=rift.tasklets.DTS.RegistrationHandler(on_ready=on_request_ready,
                                                                                          on_commit=on_vdu_request_commit,
                                                                                          on_prepare=on_vdu_request_prepare),
-                                           flags=rwdts.Flag.PUBLISHER | rwdts.Flag.FILE_DATASTORE,)
+                                           flags=rwdts.Flag.PUBLISHER | rwdts.Flag.DATASTORE,)
 

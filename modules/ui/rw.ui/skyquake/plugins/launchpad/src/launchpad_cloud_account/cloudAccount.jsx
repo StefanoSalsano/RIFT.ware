@@ -80,7 +80,13 @@ class CloudAccount extends React.Component {
                 //submit_obj[submit_obj['account-type']][key] = self.state.cloud.params[key];
                 console.log('hold')
             } else {
-                submit_obj[submit_obj['account-type']][key] = self.state.cloud.params[key];
+                if(self.state.cloud.params[key] == "") {
+                    self.context.flux.actions.global.showError("Please fill all account details");
+                    return;
+                } else {
+                   submit_obj[submit_obj['account-type']][key] = self.state.cloud.params[key];
+                }
+
             }
           }
 

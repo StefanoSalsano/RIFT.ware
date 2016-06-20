@@ -6,7 +6,6 @@
 import TopologyL2Actions from './topologyL2Actions.js';
 import TopologyL2Source from './topologyL2Source.js';
 import Alt from '../alt';
-var AuthActions = require('../../../login/src/loginAuthActions.js');
 let rw = require('utils/rw.js');
 class TopologyL2Store {
     constructor() {
@@ -21,10 +20,6 @@ class TopologyL2Store {
         this.errorMessage = null;
         this.socket = null;
         this.detailView = null;
-
-        this.bindListeners({
-            handleLogout: AuthActions.notAuthenticated
-        });
 
         this.bindActions(TopologyL2Actions);
         // bind source listeners

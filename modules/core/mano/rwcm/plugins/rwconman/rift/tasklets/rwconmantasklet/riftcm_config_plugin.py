@@ -34,6 +34,10 @@ class RiftCMnsr(object):
         return self._nsr['ns_instance_config_ref']
 
     @property
+    def nsr_dict(self):
+        return self._nsr
+
+    @property
     def job_id(self):
         ''' Get a new job id for config primitive'''
         self._job_id += 1
@@ -165,7 +169,7 @@ class RiftCMConfigPluginBase(object):
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def notify_create_vls(self, agent_nsr, vld):
+    def notify_create_vlr(self, agent_nsr, vld):
         """ Notification on creation of an VL """
         pass
 
@@ -177,25 +181,25 @@ class RiftCMConfigPluginBase(object):
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def notify_instantiate_vnf(self, agent_nsr, agent_vnfr):
+    def notify_instantiate_vnfr(self, agent_nsr, agent_vnfr):
         """ Notify instantiation of the virtual network function """
         pass
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def notify_instantiate_vl(self, agent_nsr, vl):
+    def notify_instantiate_vlr(self, agent_nsr, vl):
         """ Notify instantiate of the virtual link"""
         pass
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def notify_terminate_vnf(self, agent_nsr, agent_vnfr):
+    def notify_terminate_vnfr(self, agent_nsr, agent_vnfr):
         """Notify termination of the VNF """
         pass
 
     @abc.abstractmethod
     @asyncio.coroutine
-    def notify_terminate_vl(self, agent_nsr, vlr):
+    def notify_terminate_vlr(self, agent_nsr, vlr):
         """Notify termination of the Virtual Link Record"""
         pass
 
@@ -235,35 +239,37 @@ class RiftCMConfigPluginBase(object):
     @asyncio.coroutine
     def invoke(self, method, *args):
         try:
-            rc = False
+            rc = None
             self._log.debug("Config agent plugin: method {} with args {}: {}".
                             format(method, args, self))
-            
+
             # TBD - Do a better way than string compare to find invoke the method
             if method == 'notify_create_nsr':
                 rc = yield from self.notify_create_nsr(args[0], args[1])
-            elif method == 'notify_create_vls':
-                rc = yield from self.notify_create_vls(args[0], args[1], args[2])
+            elif method == 'notify_create_vlr':
+                rc = yield from self.notify_create_vlr(args[0], args[1], args[2])
             elif method == 'notify_create_vnfr':
                 rc = yield from self.notify_create_vnfr(args[0], args[1])
-            elif method == 'notify_instantiate_ns':
-                rc = yield from self.notify_instantiate_ns(args[0])
-            elif method == 'notify_instantiate_vnf':
-                rc = yield from self.notify_instantiate_vnf(args[0], args[1])
-            elif method == 'notify_instantiate_vl':
-                rc = yield from self.notify_instantiate_vl(args[0], args[1])
+            elif method == 'notify_instantiate_nsr':
+                rc = yield from self.notify_instantiate_nsr(args[0])
+            elif method == 'notify_instantiate_vnfr':
+                rc = yield from self.notify_instantiate_vnfr(args[0], args[1])
+            elif method == 'notify_instantiate_vlr':
+                rc = yield from self.notify_instantiate_vlr(args[0], args[1])
             elif method == 'notify_nsr_active':
                 rc = yield from self.notify_nsr_active(args[0], args[1])
-            elif method == 'notify_terminate_ns':
-                rc = yield from self.notify_terminate_ns(args[0])
-            elif method == 'notify_terminate_vnf':
-                rc = yield from self.notify_terminate_vnf(args[0], args[1])
-            elif method == 'notify_terminate_vl':
-                rc = yield from self.notify_terminate_vl(args[0], args[1])
+            elif method == 'notify_terminate_nsr':
+                rc = yield from self.notify_terminate_nsr(args[0])
+            elif method == 'notify_terminate_vnfr':
+                rc = yield from self.notify_terminate_vnfr(args[0], args[1])
+            elif method == 'notify_terminate_vlr':
+                rc = yield from self.notify_terminate_vlr(args[0], args[1])
             elif method == 'apply_initial_config':
                 rc = yield from self.apply_initial_config(args[0], args[1])
             elif method == 'apply_config':
                 rc = yield from self.apply_config(args[0], args[1], args[2])
+            elif method == 'get_config_status':
+                rc = yield from self.get_config_status(args[0], args[1])
             else:
                 self._log.error("Unknown method %s invoked on config agent plugin",
                                 method)

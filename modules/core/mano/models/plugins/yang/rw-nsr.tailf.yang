@@ -15,11 +15,6 @@ module rw-nsr-annotation
     prefix tailf;
   }
 
-  import rw-base {
-    prefix rwbase;
-  }
-
-
   import rw-nsr {
     prefix rw-nsr;
   }
@@ -29,10 +24,10 @@ module rw-nsr-annotation
   }
 
   tailf:annotate "/nsr:ns-instance-opdata/nsr:nsr/rw-nsr:operational-events" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/nsr:ns-instance-opdata/rw-nsr:nsd-ref-count" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

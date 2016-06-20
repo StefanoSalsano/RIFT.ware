@@ -166,11 +166,11 @@
               <rw-ipsec:name>myvpn</rw-ipsec:name>
               <rw-ipsec:ip-protocol>0</rw-ipsec:ip-protocol>
               <rw-ipsec:traffic-src>
-                <rw-ipsec:ip-address>10.0.1.0/24</rw-ipsec:ip-address>
+                <rw-ipsec:ip-address>10.1.0.0/16</rw-ipsec:ip-address>
                 <rw-ipsec:port>0</rw-ipsec:port>
               </rw-ipsec:traffic-src>
               <rw-ipsec:traffic-dst>
-                <rw-ipsec:ip-address>10.0.2.0/24</rw-ipsec:ip-address>
+                <rw-ipsec:ip-address>10.2.0.0/16</rw-ipsec:ip-address>
                 <rw-ipsec:port>0</rw-ipsec:port>
               </rw-ipsec:traffic-dst>
             </rw-ipsec:payload>
@@ -214,11 +214,11 @@
               <rw-ipsec:name>myvpn</rw-ipsec:name>
               <rw-ipsec:ip-protocol>0</rw-ipsec:ip-protocol>
               <rw-ipsec:traffic-src>
-                <rw-ipsec:ip-address>10.0.12.0/24</rw-ipsec:ip-address>
+                <rw-ipsec:ip-address>10.12.0.0/16</rw-ipsec:ip-address>
                 <rw-ipsec:port>0</rw-ipsec:port>
               </rw-ipsec:traffic-src>
               <rw-ipsec:traffic-dst>
-                <rw-ipsec:ip-address>10.0.11.0/24</rw-ipsec:ip-address>
+                <rw-ipsec:ip-address>10.11.0.0/16</rw-ipsec:ip-address>
                 <rw-ipsec:port>0</rw-ipsec:port>
               </rw-ipsec:traffic-dst>
             </rw-ipsec:payload>

@@ -1,3 +1,4 @@
+#include "async_file_writer.cpp"
 #include "rw_xml_dom_merger.cpp"
 #include "rw_xml_validate_dom.cpp"
 #include "rwuagent_dts.cpp"

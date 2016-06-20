@@ -67,6 +67,18 @@ class SdnAccountMgr(object):
         self._log.debug("Account deleted is %s , %s", type(self._account), name)
         del self._account[name]
 
+    def update_sdn_account(self,account):
+        self._log.debug("Account updated is %s , %s", type(self._account), account)
+        if account.name in self._account:
+            sdn_account = self._account[account.name]
+
+            sdn_account.from_dict(
+                account.as_dict(),
+                ignore_missing_keys=True,
+                )
+            self._account[account.name] = sdn_account
+            self.start_validate_credentials(self._loop, account.name)
+
     def get_sdn_account(self, name):
         """
         Creates an object for class RwsdnYang.SdnAccount()
@@ -265,7 +277,7 @@ class NwtopStaticDtsHandler(object):
         """ Register for the Static Topology path """
 
         @asyncio.coroutine
-        def prepare_nw_cfg(dts, acg, xact, xact_info, ksp, msg):
+        def prepare_nw_cfg(dts, acg, xact, xact_info, ksp, msg, scratch):
             """Prepare for application configuration. Stash the pending
             configuration object for subsequent transaction phases"""
             self._log.debug("Prepare Network config received network id %s, msg %s",

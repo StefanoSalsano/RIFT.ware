@@ -36,16 +36,13 @@ bool remove_lock_file();
 std::vector<std::string> get_schema_subdir_set();
 std::vector<std::string> get_latest_subdir_set();
 bool create_schema_directory(std::vector<std::string> const & files);
+bool widen_northbound_schema(std::vector<std::string> const & files);
 bool remove_schema_directory();
 bool update_version_directory();
 
-bool archive_confd_persist_workspace();
-bool remove_persist_confd_workspace();
-bool remove_unique_confd_workspace();
-
-bool archive_xml_persist_workspace();
-bool remove_persist_xml_workspace();
-bool remove_unique_xml_workspace();
+bool archive_mgmt_persist_workspace();
+bool remove_persist_mgmt_workspace();
+bool remove_unique_mgmt_workspace();
 
 bool prune_schema_directory();
 

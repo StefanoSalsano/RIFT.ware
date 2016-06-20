@@ -29,6 +29,8 @@ namespace rw_yang {
 static const char* NETCONF_NS = "urn:ietf:params:xml:ns:netconf:base:1.0";
 static const char* NETCONF_NS_PREFIX = "xc";
 
+static const char* RW_YANG_CLI_EXT_SUPPRESS_TOKEN = "suppress-keyword";
+
 
 /*****************************************************************************/
 /**
@@ -392,6 +394,11 @@ bool ParseNode::is_mandatory() const
   return false;
 }
 
+bool ParseNode::is_suppressed() const
+{
+  return false;
+}
+
 std::vector<std::string> ParseNode::check_for_mandatory() const
 {
   // Let us assume by default that the mandatory check is passing
@@ -407,6 +414,10 @@ bool ParseNode::ignore_mode_entry()
 bool ParseNode::is_suitable (const ParseFlags& flags) const
 {
   if (is_notification()) {
+    return false;
+  }
+
+  if (is_suppressed()) {
     return false;
   }
 
@@ -476,6 +487,10 @@ void ParseNode::set_cli_print_hook(const char* api)
 {
   UNUSED(api);
   RW_CRASH();
+}
+
+void ParseNode::set_suppressed()
+{
 }
 
 ParseNode* ParseNode::mode_enter_top()
@@ -726,6 +741,19 @@ CliCallback* ParseNode::get_callback()
 void ParseNode::add_descendent(ParseNodeFunctional *desc)
 {
   UNUSED (desc);
+}
+
+ParseNodeFunctional* ParseNode::find_descendent(const std::string& token)
+{
+  UNUSED(token);
+  return nullptr;
+}
+
+ParseNodeFunctional* ParseNode::find_descendent_deep(
+                        const std::vector<std::string>& path)
+{
+  UNUSED(path);
+  return nullptr;
 }
 
 XMLNode* ParseNode::update_xml_for_leaf_list(XMLDocument *doc,
@@ -1045,6 +1073,11 @@ bool ParseNodeYang::is_mandatory() const
   return yangnode_->is_mandatory();
 }
 
+bool ParseNodeYang::is_suppressed() const
+{
+  return cli_.suppress_adpt_.parse_node_is_cached(this);
+}
+
 std::vector<std::string> ParseNodeYang::check_for_mandatory() const 
 {
   std::vector<std::string> missing;
@@ -1098,6 +1131,12 @@ void ParseNodeYang::set_mode(const char *display) {
 void ParseNodeYang::set_cli_print_hook(const char *api) {
   RW_ASSERT (yangnode_);
   yangnode_->app_data_set_and_keep_ownership(cli_.ph_adpt_.get_yang_token(), api);
+}
+
+void ParseNodeYang::set_suppressed() {
+  RW_ASSERT (yangnode_);
+  yangnode_->app_data_set_and_keep_ownership(
+              cli_.suppress_adpt_.get_yang_token(), "");
 }
 
 /**
@@ -2625,6 +2664,31 @@ void ParseNodeFunctional::add_descendent (ParseNodeFunctional *desc)
   descendents_.push_back (std::move (temp));
 }
 
+ParseNodeFunctional* ParseNodeFunctional::find_descendent(const std::string& token)
+{
+  for (auto& desc: descendents_) {
+    if (token == desc->token_text_get()) {
+      return desc.get();
+    }
+  }
+
+  return nullptr;
+}
+
+ParseNodeFunctional* ParseNodeFunctional::find_descendent_deep(
+                          const std::vector<std::string>& path)
+{
+  // An empty path will return this ptr
+  ParseNodeFunctional* result = this;
+  for(auto& token: path) {
+    result = result->find_descendent(token);
+    if (result == nullptr) {
+      return result;
+    }
+  }
+  return result;
+}
+
 /**
  * Get the call back function associated with this parse node
  */
@@ -3929,6 +3993,11 @@ BaseCli::BaseCli(YangModel& model)
     cliext_adpt_t::create_and_register(
       RW_YANG_CLI_MODULE, 
       RW_YANG_CLI_EXT_SHOW_KEY_KW,
+      this)),
+  suppress_adpt_(
+    cliext_adpt_t::create_and_register(
+      RW_YANG_CLI_MODULE,
+      RW_YANG_CLI_EXT_SUPPRESS_TOKEN,
       this))
 {
   root_parse_node_->flags_.set_inherit(ParseFlags::APP_DATA_LOOKUPS);
@@ -4949,6 +5018,62 @@ std::string BaseCli::get_token_with_prefix(const ParseCompletionEntry& entry)
   }
   return token_text;
 }
+
+ParseNodeFunctional* BaseCli::find_descendent_deep(
+                        const std::vector<std::string>& path) 
+{
+  bool is_top = true;
+  ParseNodeFunctional* result = nullptr;
+  for(auto& token: path) {
+    if (is_top) {
+      for(auto& desc: top_funcs_) {
+        if (token == desc->token_text_get()) {
+          result = desc.get();
+          break;
+        }
+      }
+      is_top = false;
+    } else {
+      result = result->find_descendent(token);
+    }
+    if (!result) {
+      return result;
+    }
+  }
+  return result;
+}
+
+bool BaseCli::suppress_namespace(const std::string& ns)
+{
+  // Find the YangModule for the given namespace and suppress all the top-level
+  // nodes in that module.
+  YangModule* module = model_.search_module_ns(ns.c_str());
+  if (module == nullptr) {
+    return false;
+  }
+
+  for(YangNodeIter it = module->node_begin(); it != module->node_end(); ++it) {
+    YangNode& ynode = *it;
+    ynode.app_data_set_and_keep_ownership(suppress_adpt_.get_yang_token(), "");
+  }
+
+  return true;
+}
+
+bool BaseCli::suppress_command_path(const std::string& path)
+{
+  // Spoof a cli command to get the last yang node
+  ParseLineResult r(*this, path.c_str(), ParseLineResult::ENTERKEY_MODE);
+  if (!r.success_) {
+    // not found
+    return false;
+  }
+
+  r.result_node_->set_suppressed();
+
+  return true;
+}
+
 
 /*****************************************************************************/
 

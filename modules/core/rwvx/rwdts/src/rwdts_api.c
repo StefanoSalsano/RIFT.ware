@@ -34,6 +34,7 @@
 #include "rwvcs_rwzk.h"
 #include "rw_json.h"
 #include "rwtasklet.h"
+#include "rwvcs_manifest.h"
 
 void
 rwdts_log_handler (const gchar   *log_domain,
@@ -908,7 +909,6 @@ static const GEnumValue  _rwdts_flag_values[] =  {
   { RWDTS_FLAG_NO_PREP_READ,  "NO_PREP_READ","NO_PREP_READ" },
   { RWDTS_FLAG_SHARDING,      "SHARDING",    "SHARDING" },
   { RWDTS_FLAG_DELTA_READY,   "DELTA_READY", "DELTA_READY" },
-  { RWDTS_FLAG_FILE_DATASTORE, "FILE_DATASTORE", "FILE_DATASTORE" },
   { 0, NULL, NULL}
 };
 
@@ -923,6 +923,7 @@ static const GEnumValue  _rwdts_xact_flag_values[] =  {
   { RWDTS_XACT_FLAG_RETURN_PAYLOAD,"RET_PAYLOAD","RET_PAYLOAD"},
   { RWDTS_XACT_FLAG_REPLACE,       "REPLACE",    "REPLACE" },
   { RWDTS_XACT_FLAG_ANYCAST,       "ANYCAST",    "ANYCAST" },
+  { RWDTS_XACT_FLAG_SUB_READ,      "SUB_READ",   "SUB_READ" },
   { 0, NULL, NULL}
 };
 
@@ -1352,6 +1353,7 @@ rwdts_fill_cache_entries(rwdts_member_registration_t *entry,
                          RWPB_T_MSG(RwDts_data_Dts_Member_State_Registration_CacheEntry)  **cache_entry)
 {
   int num_entries = 0;
+  rw_keyspec_path_t *keyspec = NULL;
   if (cache_entry)
   {
     if (entry)
@@ -1362,19 +1364,23 @@ rwdts_fill_cache_entries(rwdts_member_registration_t *entry,
                                      (rwdts_member_reg_handle_t)entry);
       const ProtobufCMessage *msg = rwdts_member_reg_handle_get_next_element ((rwdts_member_reg_handle_t)entry,
                                                                             cursor, NULL,
-                                                                            NULL);
+                                                                            &keyspec);
       while (msg)
       {
+        RW_ASSERT(keyspec);
         cache_entry[num_entries] = (RWPB_T_MSG(RwDts_data_Dts_Member_State_Registration_CacheEntry)*)
                                               RW_MALLOC0(sizeof(RWPB_T_MSG(RwDts_data_Dts_Member_State_Registration_CacheEntry)));
         RWPB_F_MSG_INIT(RwDts_data_Dts_Member_State_Registration_CacheEntry,cache_entry[num_entries]);
         rw_json_pbcm_to_json(msg,
                            NULL,
                            &cache_entry[num_entries]->pb);
+        RW_KEYSPEC_PATH_GET_PRINT_BUFFER(keyspec, NULL, NULL, cache_entry[num_entries]->keyspec, sizeof(cache_entry[num_entries]->keyspec)-1, NULL);
+        cache_entry[num_entries]->has_keyspec = true;
+        keyspec = NULL;
         msg = rwdts_member_reg_handle_get_next_element ((rwdts_member_reg_handle_t)entry,
                                                        cursor,
                                                        NULL,
-                                                       NULL);
+                                                       &keyspec);
         num_entries++;
       }
     }
@@ -2676,6 +2682,21 @@ static void rwdts_register_debug_keyspecs(rwdts_api_t *apih)
   }
 }
 
+#define RWDTS_STANDBY_REF_CODE_NOTIFY_STATE_CHANGE 
+
+#ifdef RWDTS_STANDBY_REF_CODE_NOTIFY_STATE_CHANGE
+static void rwdts_state_change_callback (
+    void *ud, 
+    vcs_vm_state p_state, 
+    vcs_vm_state n_state)
+{
+  rwdts_api_t *apih= (rwdts_api_t *)ud;
+  RW_ASSERT(apih);
+  NEW_DBG_PRINTS("[[%s]] got state transition from %d ==> %d\n", apih->client_path, p_state, n_state);
+}
+#endif
+
+
 /*
  * register DTS library related keyspecs
  */
@@ -2805,6 +2826,22 @@ static void rwdts_register_keyspecs(rwdts_api_t *apih)
     rwdts_member_reg_handle_mark_internal(apih->dts_regh[i]);
   }
 
+#ifdef RWDTS_STANDBY_REF_CODE_NOTIFY_STATE_CHANGE
+  if (apih->rwtasklet_info
+      && apih->rwtasklet_info->rwvcs
+      && apih->rwtasklet_info->mode.has_mode_active
+      && !apih->rwtasklet_info->mode.mode_active) {
+    rwdts_api_vm_state_cb_t cb;
+    cb.cb_fn = rwdts_state_change_callback;
+    cb.ud = apih;
+    NEW_DBG_PRINTS("[[%s]] registering for the vm_state updates\n", instance_name);
+    rwdts_register_vm_state_notification(
+        apih, 
+        RWVCS_TYPES_VM_STATE_NONE,
+        &cb);
+  }
+#endif
+
   // Done with the registrations -- free the keyspec
   rw_keyspec_path_free((rw_keyspec_path_t*)dts_ks, NULL);
   rw_keyspec_path_free((rw_keyspec_path_t*)clear_ks, NULL);
@@ -2882,8 +2919,10 @@ rwdts_api_init_internal(rwtasklet_info_ptr_t           rw_tasklet_info,
                                       RWTRACE_SEVERITY_ERROR);
   }
 
-  if (rw_tasklet_info && !rw_tasklet_info->apih) {
-    rw_tasklet_info->apih = apih;
+  if (rw_tasklet_info) {
+    if (!rw_tasklet_info->apih) {
+      rw_tasklet_info->apih = apih;
+    }
   }
 
   RWTRACE_INFO(apih->rwtrace_instance,
@@ -2898,6 +2937,10 @@ rwdts_api_init_internal(rwtasklet_info_ptr_t           rw_tasklet_info,
   if (rw_tasklet_info && rw_tasklet_info->rwlog_instance) {
     apih->rwlog_instance  = rw_tasklet_info->rwlog_instance;
     rwtasklet_info_ref(rw_tasklet_info);
+    if ((apih->rwtasklet_info->data_store < RWVCS_TYPES_DATA_STORE_NOSTORE) || 
+        (apih->rwtasklet_info->data_store > RWVCS_TYPES_DATA_STORE_BDB)) {
+      apih->rwtasklet_info->data_store = RWVCS_TYPES_DATA_STORE_NOSTORE;
+    }
   }  else {
     apih->rwlog_instance =  rwlog_init("RW.DtsAPI");
     apih->own_log_instance = 1;
@@ -4723,6 +4766,7 @@ static void rwdts_api_config_ready_update(
     RWPB_T_PATHSPEC(RwBase_VcsInstance_Instance_ChildN_PublishState) *keyspec_entry)
 {
   rwdts_api_config_ready_t *rwdts_api_config_ready = NULL;
+  rwdts_api_t  *apih = rwdts_api_config_ready_handle->apih;
 
   if (!publish_state) {
     if (keyspec_entry->dompath.has_path003 &&
@@ -4764,16 +4808,32 @@ static void rwdts_api_config_ready_update(
 	rwdts_api_config_ready_handle->in_running_state--;
       }
       rwdts_api_config_ready->state = publish_state->state;
+  RWTRACE_CRITINFO(apih->rwtrace_instance,
+               RWTRACE_CATEGORY_RWTASKLET,
+               "%s -- Instance is reporting %d state ------ at %s api handle(%d:: %d:: %d)",
+               rwdts_api_config_ready->instance_name,
+               rwdts_api_config_ready->state,
+               apih->client_path,
+               rwdts_api_config_ready_handle->notified,
+               rwdts_api_config_ready_handle->in_running_state,
+               rwdts_api_config_ready_handle->manifest_count);
+  NEW_DBG_PRINTS("%s -- Instance is reporting %d state ------ at %s api handle(%d:: %d:: %d)\n",
+               rwdts_api_config_ready->instance_name,
+               rwdts_api_config_ready->state,
+               apih->client_path,
+               rwdts_api_config_ready_handle->notified,
+               rwdts_api_config_ready_handle->in_running_state,
+               rwdts_api_config_ready_handle->manifest_count);
       
     }
     if (!rwdts_api_config_ready_handle->notified &&
         (rwdts_api_config_ready_handle->in_running_state == 
         rwdts_api_config_ready_handle->manifest_count)) {
       rwdts_api_config_ready_handle->notified = true;
-      RWTRACE_CRITINFO(rwdts_api_config_ready_handle->apih->rwtrace_instance,
+      RWTRACE_CRITINFO(apih->rwtrace_instance,
                    RWTRACE_CATEGORY_RWTASKLET,
                    "%s being notified running state of %d components",
-                   rwdts_api_config_ready_handle->apih->client_path, rwdts_api_config_ready_handle->in_running_state);
+                   apih->client_path, rwdts_api_config_ready_handle->in_running_state);
       
       rwdts_api_config_ready_handle->config_ready_cb(rwdts_api_config_ready_handle->userdata);
 
@@ -4791,8 +4851,8 @@ static void rwdts_api_config_ready_update(
         rwdts_api_config_ready = RW_SKLIST_HEAD(&rwdts_api_config_ready_handle->components, rwdts_api_config_ready_t);
       }
       if (rwdts_api_config_ready_handle->warning_timer) {
-	rwsched_dispatch_source_cancel(rwdts_api_config_ready_handle->apih->tasklet, rwdts_api_config_ready_handle->warning_timer);
-	rwsched_dispatch_release(rwdts_api_config_ready_handle->apih->tasklet, rwdts_api_config_ready_handle->warning_timer);
+	rwsched_dispatch_source_cancel(apih->tasklet, rwdts_api_config_ready_handle->warning_timer);
+	rwsched_dispatch_release(apih->tasklet, rwdts_api_config_ready_handle->warning_timer);
 	rwdts_api_config_ready_handle->warning_timer = NULL;
       }
     }
@@ -4868,6 +4928,15 @@ static rwdts_member_rsp_code_t rwdts_api_config_ready_prepare(
 #define RWDTS_VCS_GET(t_apih) \
    ((t_apih)->rwtasklet_info?(t_apih)->rwtasklet_info->rwvcs: NULL)
 
+#if 0
+void rwdts_api_config_ready_handle_async_f(void *ctx)
+{
+  rwdts_api_config_ready_handle_t *rwdts_api_config_ready_handle =
+      (rwdts_api_config_ready_handle_t *)ctx;
+  rwdts_api_config_ready_handle->config_ready_cb(rwdts_api_config_ready_handle->userdata);
+  return;
+}
+#endif
 rwdts_api_config_ready_data_ptr_t
 rwdts_api_config_ready_register(
     rwdts_api_t *apih,
@@ -4888,7 +4957,17 @@ rwdts_api_config_ready_register(
                RWTRACE_CATEGORY_RWTASKLET,
                "%s registering for components running state",
                apih->client_path);
-   
+#if 0
+  NEW_DBG_PRINTS("%s attemtpting critical readiness \n", apih->client_path);
+  
+  rwsched_dispatch_async_f(
+      apih->tasklet,
+      apih->client.rwq,
+      rwdts_api_config_ready_handle,
+      rwdts_api_config_ready_handle_async_f);
+  if (1)
+  return (rwdts_api_config_ready_data_ptr_t)rwdts_api_config_ready_handle;
+#endif
   rwdts_api_config_ready_handle->warning_timer = rwdts_member_timer_create(apih,
 									   (CONFIG_MONITOR_WARN_PERIOD * NSEC_PER_SEC),
 									   rwdts_api_config_ready_warn,
@@ -4918,7 +4997,8 @@ rwdts_api_config_ready_register(
       &config_ready_);
 
   rwdts_api_config_ready_handle->manifest_count = 
-      rwmain_get_pb_rwmanifest_config_ready_count(RWDTS_VCS_GET(apih));
+      rwvcs_manifest_config_ready_count(RWDTS_VCS_GET(apih));
+  NEW_DBG_PRINTS("!!!!!! %s registered waiting %d active components\n", apih->client_path, rwdts_api_config_ready_handle->manifest_count);
   return (rwdts_api_config_ready_data_ptr_t)rwdts_api_config_ready_handle;
 }
 
@@ -5044,3 +5124,167 @@ rwdts_api_find_reg_handle_for_xpath (rwdts_api_t *apih,
   }
   return (rwdts_member_reg_handle_t) reg;
 }
+
+rw_status_t
+rwdts_api_add_modeinfo_query_to_block(
+    rwdts_xact_block_t *block,
+    char *rwvm_name,
+    char *instance_name,
+    vcs_vm_state vm_state)
+{
+  NEW_DBG_PRINTS("Inform /%s/%s the state %d\n", rwvm_name, instance_name, vm_state);
+  rw_keyspec_path_t *mode_kspath = NULL;
+  rw_status_t status = rw_keyspec_path_create_dup(
+      (rw_keyspec_path_t *)RWPB_G_PATHSPEC_VALUE(RwDts_data_ModeChangeInfo_Instances),
+      NULL,
+      &mode_kspath);
+  RW_ASSERT(mode_kspath);
+  RWPB_T_PATHSPEC(RwDts_data_ModeChangeInfo_Instances) *mode_ks = 
+      ((RWPB_T_PATHSPEC(RwDts_data_ModeChangeInfo_Instances)*)mode_kspath);
+  
+
+  mode_ks->has_dompath = TRUE;
+  mode_ks->dompath.path000.has_key00 = 1;
+  mode_ks->dompath.path000.key00.rwvm_instance_name = strdup(rwvm_name);
+  mode_ks->dompath.path001.has_key00 = 1;
+  mode_ks->dompath.path001.key00.instance_name = strdup(instance_name);
+
+  RWPB_T_MSG(RwDts_data_ModeChangeInfo_Instances) *mode_msg
+      = RW_MALLOC0(sizeof(RWPB_T_MSG(RwDts_data_ModeChangeInfo_Instances)));
+  RWPB_F_MSG_INIT(RwDts_data_ModeChangeInfo_Instances, mode_msg);
+  mode_msg->has_vm_state = true;
+  mode_msg->vm_state = vm_state;
+
+  status = rwdts_xact_block_add_query_ks(
+      block,
+      (rw_keyspec_path_t *)mode_ks,
+      RWDTS_QUERY_UPDATE,
+      RWDTS_XACT_FLAG_TRACE | RWDTS_XACT_FLAG_ADVISE,
+      (unsigned long)instance_name,
+      (ProtobufCMessage *)mode_msg);
+  rw_keyspec_path_free(mode_kspath, NULL);
+  protobuf_c_message_free_unpacked(NULL, &(mode_msg)->base);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  return status;
+}
+
+static rwdts_member_rsp_code_t
+rwdts_member_handle_mode_change_info(
+    const rwdts_xact_info_t* xact_info,
+    RWDtsQueryAction         action,
+    const rw_keyspec_path_t* key,
+    const ProtobufCMessage*  msg,
+    uint32_t                 credits,
+    void*                    getnext_ptr)
+{
+  RW_ASSERT_MESSAGE(xact_info, "xact_info NULL in rwdts_member_handle_mode_change_info");
+  if (xact_info == NULL) {
+    return RWDTS_ACTION_NOT_OK;
+  } 
+  rwdts_api_vm_state_info_t *vm_state_info = (rwdts_api_vm_state_info_t *)xact_info->ud;
+  RW_ASSERT_TYPE(vm_state_info, rwdts_api_vm_state_info_t);
+  rwdts_api_t *apih = xact_info->xact->apih;
+  RW_ASSERT_TYPE(apih, rwdts_api_t);
+  RWPB_T_MSG(RwDts_data_ModeChangeInfo_Instances) *inp;
+
+  RWPB_T_PATHSPEC(RwDts_data_ModeChangeInfo_Instances) *mode_ks = 
+      (RWPB_T_PATHSPEC(RwDts_data_ModeChangeInfo_Instances)*) key;
+
+  RW_ASSERT_MESSAGE((action != RWDTS_QUERY_INVALID), "Invalid action:%d", action);
+
+  if (vm_state_info->rwvm_name 
+      && (!mode_ks->dompath.path000.has_key00 
+          || strcmp(vm_state_info->rwvm_name, mode_ks->dompath.path000.key00.rwvm_instance_name))) {
+    return RWDTS_ACTION_NA;
+  }
+  if (!mode_ks->dompath.path001.has_key00 
+      || strcmp(vm_state_info->instance_name, mode_ks->dompath.path001.key00.instance_name)) {
+    return RWDTS_ACTION_NA;
+  }
+
+  inp = (RWPB_T_MSG(RwDts_data_ModeChangeInfo_Instances)*)msg;
+  fprintf (stderr, "ModeChangeInfo Received curr state %d recvd state %d at %s\n", vm_state_info->vm_state, inp->vm_state, apih->client_path);
+  if (vm_state_info->vm_state != inp->vm_state) {
+    if (vm_state_info->cb.cb_fn) {
+      vm_state_info->cb.cb_fn (vm_state_info->cb.ud, vm_state_info->vm_state, inp->vm_state);
+    }
+    vm_state_info->vm_state = inp->vm_state;
+  }
+
+  return RWDTS_ACTION_OK;
+}
+
+/*
+ * register vm state change notification
+ */
+void rwdts_register_vm_state_notification(
+    rwdts_api_t *apih,
+    vcs_vm_state vm_state,
+    rwdts_api_vm_state_cb_t *cb)
+{
+  if (!apih->rwtasklet_info
+      || !apih->rwtasklet_info->rwvcs) {
+    return;
+  }
+  rwvcs_instance_ptr_t rwvcs = apih->rwtasklet_info->rwvcs;
+  char *rwvm_name = rwvcs->identity.rwvm_name;
+  char *instance_name = to_instance_name(
+      apih->rwtasklet_info->identity.rwtasklet_name, 
+      apih->rwtasklet_info->identity.rwtasklet_instance_id);
+
+  RW_ASSERT(instance_name);
+
+  rwdts_api_vm_state_info_t *vm_state_info = RW_MALLOC0_TYPE(sizeof(rwdts_api_vm_state_info_t), rwdts_api_vm_state_info_t);
+  RW_ASSERT_TYPE(vm_state_info, rwdts_api_vm_state_info_t);
+  vm_state_info->instance_name = strdup(instance_name);
+  if(rwvm_name) {
+    vm_state_info->rwvm_name = strdup(rwvm_name);
+  }
+  vm_state_info->vm_state = vm_state;
+  if (cb) {
+    vm_state_info->cb.cb_fn = cb->cb_fn;
+    vm_state_info->cb.ud = cb->ud;
+  }
+
+  RWPB_T_PATHSPEC(RwDts_data_ModeChangeInfo_Instances) *mode_ks = NULL;
+  rw_status_t status = rw_keyspec_path_create_dup((rw_keyspec_path_t *)RWPB_G_PATHSPEC_VALUE(RwDts_data_ModeChangeInfo_Instances),
+                                  &apih->ksi,
+                                  (rw_keyspec_path_t**)&mode_ks);
+  RW_ASSERT(RW_STATUS_SUCCESS == status);
+  mode_ks->has_dompath = TRUE;
+  if (rwvm_name) {
+    mode_ks->dompath.path000.has_key00 = 1;
+    mode_ks->dompath.path000.key00.rwvm_instance_name = strdup(rwvm_name);
+  }
+  mode_ks->dompath.path001.has_key00 = 1;
+  mode_ks->dompath.path001.key00.instance_name = strdup(instance_name);
+  rw_keyspec_path_set_category ((rw_keyspec_path_t*)mode_ks, &apih->ksi, RW_SCHEMA_CATEGORY_DATA);
+
+  rwdts_registration_t regns[] = {
+    { 
+      .keyspec = (rw_keyspec_path_t*)mode_ks,
+      .desc    = RWPB_G_MSG_PBCMD(RwDts_data_ModeChangeInfo_Instances),
+      .flags   = RWDTS_FLAG_SUBSCRIBER /*|RWDTS_FLAG_CACHE*/,
+      .callback = {
+        .cb.prepare = rwdts_member_handle_mode_change_info,
+        .ud = vm_state_info
+      }
+    },
+  };
+
+  int i = 0;
+  {
+    rwdts_member_register(NULL, apih,
+                          regns[i].keyspec,
+                          &regns[i].callback,
+                          regns[i].desc,
+                          regns[i].flags,
+                          NULL);
+  }
+
+  rw_keyspec_path_free((rw_keyspec_path_t*)mode_ks, NULL);
+  RW_FREE(instance_name);
+
+  return;
+}
+

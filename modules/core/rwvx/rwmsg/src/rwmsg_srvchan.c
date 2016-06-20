@@ -128,6 +128,7 @@ rw_status_t rwmsg_srvchan_resume(rwmsg_srvchan_t *sc) {
   return RW_STATUS_SUCCESS;
 }  
 
+/* Distressingly, some callers hold the RG lock when calling this.  So it should not block etc */
 rw_status_t rwmsg_send_methbinding(rwmsg_channel_t *ch, rwmsg_priority_t pri, struct rwmsg_methbinding_key_s *k, const char *path) {
   struct rwmsg_srvchan_method_s mb_s = { };
   rwmsg_header_t hdr;

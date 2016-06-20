@@ -15,21 +15,17 @@ module nsr-annotation
     prefix tailf;
   }
 
-  import rw-base {
-    prefix rwbase;
-  }
-
   import nsr {
     prefix nsr;
   }
 
   tailf:annotate "/nsr:ns-instance-opdata" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
   tailf:annotate "/nsr:exec-ns-config-primitive" {
-     tailf:actionpoint rw_action;
+     tailf:actionpoint rw_actionpoint;
   }
   tailf:annotate "/nsr:get-ns-config-primitive-values" {
-     tailf:actionpoint rw_action;
+     tailf:actionpoint rw_actionpoint;
   }
 }

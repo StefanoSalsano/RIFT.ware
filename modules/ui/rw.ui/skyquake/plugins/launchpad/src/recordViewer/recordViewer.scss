@@ -3,7 +3,7 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
-@import "../../../../framework/style/_colors.scss";
+@import "style/_colors.scss";
 @import '../../node_modules/open-iconic/font/css/open-iconic.css';
 .app-body {
   >header {
@@ -21,6 +21,9 @@
       font-weight: 400;
     }
     */
+  }
+  &.recordView{
+    flex:1;
   }
   .header-nav {
     margin: 0rem 1.25rem 1.25rem;

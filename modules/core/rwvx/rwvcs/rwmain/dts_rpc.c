@@ -111,6 +111,9 @@ rw_status_t start_component(
     start.config_ready = m_start->config_ready;
     start.has_recovery_action = m_start->has_recovery_action;
     start.recovery_action = m_start->recovery_action;
+    start.has_data_storetype = m_start->has_data_storetype;
+    start.data_storetype = m_start->data_storetype;
+
     if (ip_addr) {
       r = asprintf(&start.python_variable[i], "vm_ip_address = '%s'", ip_addr);
       RW_ASSERT(r != -1);
@@ -118,38 +121,39 @@ rw_status_t start_component(
     start.n_python_variable = m_start->n_python_variable+(ip_addr!=NULL);
   }
 
-  if (admin_command == RW_BASE_ADMIN_COMMAND_RECOVER) {
-    RW_ASSERT(parent_instance);
-    rw_component_info component;
-    status = rwvcs_rwzk_lookup_component(
-        rwmain->rwvx->rwvcs,
-        parent_instance, 
-        &component);
-    RW_ASSERT(status == RW_STATUS_SUCCESS);
-    int num_children = component.n_rwcomponent_children;
-    char *child_name = NULL;
-    while (num_children 
-           && (child_name = component.rwcomponent_children[num_children - 1])) {
-      if (strstr(child_name, component_name)) {
-        rw_component_info child;
-        status = rwvcs_rwzk_lookup_component(
-            rwmain->rwvx->rwvcs,
-            child_name, 
-            &child);
-        RW_ASSERT(status == RW_STATUS_SUCCESS);
-        if (child.state == RW_BASE_STATE_TYPE_TO_RECOVER) {
-          tmp_instance_name = strdup (child_name);
-          r = asprintf(&start.instance_id, "%u", (unsigned int)child.instance_id);
-          RW_ASSERT(r != -1);
-          start.has_recovery_action = true;
-          start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_RESTART;
-          break;
+  RW_ASSERT(parent_instance);
+  rw_component_info component;
+  status = rwvcs_rwzk_lookup_component(
+      rwmain->rwvx->rwvcs,
+      parent_instance, 
+      &component);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
+  int num_children = component.n_rwcomponent_children;
+  char *child_name = NULL;
+  while (num_children 
+         && (child_name = component.rwcomponent_children[num_children - 1])) {
+    if (strstr(child_name, component_name)) {
+      rw_component_info child;
+      status = rwvcs_rwzk_lookup_component(
+          rwmain->rwvx->rwvcs,
+          child_name, 
+          &child);
+      RW_ASSERT(status == RW_STATUS_SUCCESS);
+      if (child.state == RW_BASE_STATE_TYPE_TO_RECOVER) {
+        tmp_instance_name = strdup (child_name);
+        r = asprintf(&start.instance_id, "%u", (unsigned int)child.instance_id);
+        RW_ASSERT(r != -1);
+        start.has_recovery_action = true;
+        start.recovery_action = RWVCS_TYPES_RECOVERY_TYPE_RESTART;
+        if (admin_command != RW_BASE_ADMIN_COMMAND_RECOVER) {
+          admin_command = RW_BASE_ADMIN_COMMAND_RECOVER;
         }
+        break;
       }
-      num_children--;
     }
+    num_children--;
   }
-  else {
+  if (!tmp_instance_name) {
     status = rwvcs_rwzk_next_instance_id(rwmain->rwvx->rwvcs, &new_instance_id, NULL);
     RW_ASSERT(status == RW_STATUS_SUCCESS);
 
@@ -158,17 +162,8 @@ rw_status_t start_component(
 
     tmp_instance_name = to_instance_name(component_name, new_instance_id);
   }
-  if (!tmp_instance_name) {
-    rwmain_trace_crit(
-        rwmain,
-        "start_component: tmp_instance_name==null: component_name=%s, new_instance_id=%u, admin_command=%u, parent_instance=%s",
-        component_name,
-        new_instance_id,
-        admin_command,
-        parent_instance);
-    RW_CRASH();
-    RW_ASSERT(tmp_instance_name);
-  }
+
+  RW_ASSERT(tmp_instance_name);
 
   action.start = &start;
 
@@ -679,7 +674,26 @@ done:
 static void do_vcrash(void *ctx)
 {
   struct rwmain_gi * rwmain = (struct rwmain_gi *)ctx;
+#if 0
+  rwmain_pm_struct_t rwmain_pm = {
+    .state = RWVCS_TYPES_VM_STATE_MGMTACTIVE,
+    .ip_entry = {
+      {
+        .pm_ip_addr = "10.0.106.26",
+        .pm_ip_state = RWMAIN_PM_IP_STATE_FAILED
+      },
+      {
+        .pm_ip_addr = "10.0.106.27",
+        .pm_ip_state = RWMAIN_PM_IP_STATE_LEADER
+      },
+    }
+  };
+
+  rwmain_pm_handler (rwmain, &rwmain_pm);
+#else
+
   RW_ASSERT_MESSAGE(0, "/R/%s/%d is vCRaShING \n", rwmain->component_name, rwmain->instance_id);
+#endif
 }
 
 static rwdts_member_rsp_code_t on_vcrash(
@@ -715,19 +729,21 @@ static rwdts_member_rsp_code_t on_vcrash(
 
   instance_name = to_instance_name(rwmain->component_name, rwmain->instance_id);
 
-  if (!rwvcs_rwzk_responsible_for(rwvcs, instance_name, crash_req->instance_name)
-      && !is_this_instance(rwmain, crash_req->instance_name)) {
-    dts_ret = RWDTS_ACTION_NA;
-    goto done;
+  if (is_this_instance(rwmain, crash_req->instance_name)
+      || ((rwvcs_rwzk_responsible_for(rwvcs, instance_name, crash_req->instance_name)
+           && ((target_info.component_type == RWVCS_TYPES_COMPONENT_TYPE_PROC)
+               || (target_info.component_type == RWVCS_TYPES_COMPONENT_TYPE_RWTASKLET))))) {
+      dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 4);
+      rwsched_dispatch_after_f(
+          rwmain->rwvx->rwsched_tasklet,
+          when,
+          rwsched_dispatch_get_main_queue(rwmain->rwvx->rwsched),
+        rwmain,
+        do_vcrash);
   }
-
-  dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC * 4);
-  rwsched_dispatch_after_f(
-      rwmain->rwvx->rwsched_tasklet,
-      when,
-      rwsched_dispatch_get_main_queue(rwmain->rwvx->rwsched),
-      rwmain,
-      do_vcrash);
+  else {
+    dts_ret = RWDTS_ACTION_NA;
+  }
 
 done:
   if (instance_name) {

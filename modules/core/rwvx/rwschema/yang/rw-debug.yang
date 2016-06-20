@@ -38,6 +38,13 @@ module rw-debug
       "Derived from earlier versions of debug YANG files";
   }
 
+  typedef decode_type {
+    type enumeration {
+      enum BTRACE {value 1;}
+      enum UNWIND {value 2;}
+    }   
+  }       
+
   container rw-debug {
     description "Tasklet related information";
 
@@ -166,6 +173,14 @@ module rw-debug
           description "Track the heap allocation bigger than this size";
           type uint32;
           default 999;
+        }
+        leaf decode-using {
+          description "Decode the address-pointer using which library";
+          type enumeration {
+            enum BTRACE {value 1;}
+            enum UNWIND {value 2;}
+          }   
+          default BTRACE;
         }
       }
       container scheduler {

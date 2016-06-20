@@ -610,6 +610,20 @@ extern "C"
     return (obj->get_severity(category));
   }
 
+
+  rw_status_t
+  rwlogd_sink_delete(rwlogd_instance_ptr_t instance,
+                            char *sink_name)
+  {
+    rwlogd_sink_data *obj = rwlogd_get_sink_obj (instance);
+    rwlogd_sink *sink = obj->remove_sink(sink_name);
+    if (sink)
+    {
+      delete (sink);
+    }
+    return RW_STATUS_SUCCESS;
+  }
+
   rw_status_t
   rwlogd_sink_update_vnf_id(rwlogd_instance_ptr_t instance,
                             char *sink_name,
@@ -1615,6 +1629,7 @@ void rwlogd_sink_data::dynamic_schema_load_modules(void * context)
   /* Get current schema and merge it with new schemas received */
   const rw_yang_pb_schema_t *schema = instance->yang_model_->get_ypbc_schema();
   for (size_t i = 0; i < instance->dynamic_module_count_; ++i) {
+    //fprintf(stderr, "Module %lu is %s\n",i, (char *)instance->dynamic_modules_[i].module_name); 
     RW_ASSERT(instance->dynamic_modules_[i].module_name);
     if (!instance->dynamic_modules_[i].module_name) {
       instance->dynamic_status_ = RW_STATUS_FAILURE;
@@ -1662,7 +1677,7 @@ void rwlogd_sink_data::dynamic_schema_load_modules(void * context)
   }
 
   rwsched_dispatch_async_f(instance->tasklet_info_,
-                           instance->dynamic_queue_,  
+                           rwsched_dispatch_get_main_queue(instance->tasklet_info_->instance),
                            instance,
                            dynamic_schema_end);
 
@@ -1679,6 +1694,9 @@ void rwlogd_sink_data::dynamic_schema_end(void * context)
   }
 
   rwsched_dispatch_release(instance->tasklet_info_, instance->dynamic_queue_);
+  if(instance->rwlogd_info_->rwlogd_instance && ((rwlogd_instance_ptr_t)instance->rwlogd_info_->rwlogd_instance)->dts_h) {
+    rwdts_api_set_state((rwdts_api_t*)((rwlogd_instance_ptr_t)instance->rwlogd_info_->rwlogd_instance)->dts_h, RW_DTS_STATE_RUN);
+  }
 
 }
 

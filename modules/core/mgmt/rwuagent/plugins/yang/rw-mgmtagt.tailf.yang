@@ -11,7 +11,6 @@ module rwuagent-cli-annotation
   namespace "http://riftio.com/ns/riftware-1.0/rw-mgmtagt-annotation";
   prefix "rw-uagent-ann";
 
-
   import rw-mgmtagt
   {
     prefix rw-mgmtagt;
@@ -22,19 +21,19 @@ module rwuagent-cli-annotation
   }
 
   tailf:annotate "/rw-mgmtagt:mgmt-agent" {
-    tailf:actionpoint mgmt_agent_rpc;
+    tailf:actionpoint rw_actionpoint;
   }
 
   tailf:annotate "/rw-mgmtagt:show-system-info" {
-    tailf:actionpoint mgmt_agent_rpc;
+    tailf:actionpoint rw_actionpoint;
   }
 
   tailf:annotate "/rw-mgmtagt:show-agent-logs" {
-    tailf:actionpoint mgmt_agent_rpc;
+    tailf:actionpoint rw_actionpoint;
   }
 
   tailf:annotate "/rw-mgmtagt:uagent/rw-mgmtagt:state" {
-    tailf:callpoint mgmt_agent_show;
+    tailf:callpoint rw_callpoint;
   }
 
 }

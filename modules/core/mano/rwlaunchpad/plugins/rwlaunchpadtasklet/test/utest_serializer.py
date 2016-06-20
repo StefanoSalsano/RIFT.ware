@@ -7,13 +7,14 @@
 
 import argparse
 import logging
+import io
 import os
 import sys
 import tempfile
 import unittest
 import xmlrunner
 
-from rift.tasklets.rwlaunchpad.convert import (
+from rift.package.convert import (
         ProtoMessageSerializer,
         UnknownExtensionError,
         SerializationError,
@@ -41,43 +42,33 @@ class TestSerializer(unittest.TestCase):
 
     def test_from_xml_file(self):
         sample_person_xml = self._sample_person.to_xml_v2(self._model)
-        with tempfile.NamedTemporaryFile(suffix=".xml", mode='w') as file_hdl:
-            file_hdl.write(sample_person_xml)
-            file_hdl.flush()
-
-            person = self._serializer.from_file(file_hdl.name)
+        with io.StringIO(sample_person_xml) as file_hdl:
+            person = self._serializer.from_file_hdl(file_hdl, ".xml")
             self.assertEqual(person, self._sample_person)
 
     def test_from_yaml_file(self):
         sample_person_yaml = self._sample_person.to_yaml(self._model)
-        with tempfile.NamedTemporaryFile(suffix=".yml", mode='w') as file_hdl:
-            file_hdl.write(sample_person_yaml)
-            file_hdl.flush()
+        with io.StringIO(sample_person_yaml) as file_hdl:
 
-            person = self._serializer.from_file(file_hdl.name)
+            person = self._serializer.from_file_hdl(file_hdl, ".yml")
             self.assertEqual(person, self._sample_person)
 
     def test_from_json_file(self):
         sample_person_json = self._sample_person.to_json(self._model)
-        with tempfile.NamedTemporaryFile(suffix=".json", mode='w') as file_hdl:
-            file_hdl.write(sample_person_json)
-            file_hdl.flush()
+        with io.StringIO(sample_person_json) as file_hdl:
 
-            person = self._serializer.from_file(file_hdl.name)
+            person = self._serializer.from_file_hdl(file_hdl, ".json")
             self.assertEqual(person, self._sample_person)
 
     def test_unknown_file_extension(self):
-        with tempfile.NamedTemporaryFile(suffix=".foo", mode='w') as file_hdl:
+        with io.StringIO("asdf") as file_hdl:
             with self.assertRaises(UnknownExtensionError):
-                self._serializer.from_file(file_hdl.name)
+                self._serializer.from_file_hdl(file_hdl, ".foo")
 
     def test_raises_serialization_error(self):
-        with tempfile.NamedTemporaryFile(suffix=".json", mode='w') as file_hdl:
-            file_hdl.write('</foo>')
-            file_hdl.flush()
-
+        with io.StringIO('</foo>') as file_hdl:
             with self.assertRaises(SerializationError):
-                person = self._serializer.from_file(file_hdl.name)
+                person = self._serializer.from_file_hdl(file_hdl, ".json")
                 print(person)
 
     def test_to_json_string(self):

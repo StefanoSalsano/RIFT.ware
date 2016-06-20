@@ -120,6 +120,7 @@ void rwlogd_start_tasklet(rwlogd_instance_ptr_t instance, bool dts_register,char
   rwlogd_instance_data = (rwlogd_tasklet_instance_ptr_t) RW_MALLOC0(sizeof(struct rwlogd_tasklet_instance_s));
   rwlogd_instance_data->file_status.fd = -1;
   rwlogd_instance_data->log_buffer_size = CIRCULAR_BUFFER_SIZE;
+  rwlogd_instance_data->rwlogd_instance = (void *)instance;
 
   rwlogd_instance_data->bootstrap_time = BOOTSTRAP_TIME;
   rwlogd_instance_data->bootstrap_severity = RW_LOG_LOG_SEVERITY_ERROR;

@@ -1191,6 +1191,14 @@ module rw-dts
               type string;
               rwpb:field-string-max 1024;
             }
+            leaf keyspec {
+              rwpb:field-inline "true";
+              rwpb:field-string-max yang;
+              description "Cache stored keyspec";
+              type string {
+                length "1..256";
+              }
+            }
           }
 
           container audit-status {
@@ -2010,6 +2018,23 @@ module rw-dts
             }
           }
         }
+      }
+    }
+  }
+
+  list mode-change-info {
+    config false;
+    key rwvm-instance-name;
+    leaf rwvm-instance-name {
+      type string;
+    }
+    list instances {
+      key instance-name;
+      leaf instance-name {
+        type string;
+      }
+      leaf vm-state {
+        type rwvcstypes:vm-state;
       }
     }
   }

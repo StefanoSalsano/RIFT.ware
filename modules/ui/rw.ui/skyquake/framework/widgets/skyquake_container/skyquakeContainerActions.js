@@ -5,5 +5,17 @@
  */
 import Alt from './skyquakeAltInstance.js';
 export default Alt.generateActions(
-                                    'getSkyquakeNavSuccess'
-                                       );
+	'getSkyquakeNavSuccess',
+	'openNotificationsSocketLoading',
+	'openNotificationsSocketSuccess',
+	'openNotificationsSocketError',
+	'getEventStreamsLoading',
+	'getEventStreamsSuccess',
+	'getEventStreamsError',
+    //Notifications
+    'showNotification',
+    'hideNotification',
+    //Screen Loader
+    'showScreenLoader',
+    'hideScreenLoader'
+);

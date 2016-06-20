@@ -103,7 +103,8 @@ typedef enum _RWDtsXactFlag {
   RWDTS_XACT_FLAG_DEPTH_ONE      = (1<<17),
   RWDTS_XACT_FLAG_RETURN_PAYLOAD = (1<<18),
   RWDTS_XACT_FLAG_ANYCAST        = (1<<19),
-  RWDTS_XACT_FLAG_REPLACE        = (1<<20)
+  RWDTS_XACT_FLAG_REPLACE        = (1<<20),
+  RWDTS_XACT_FLAG_SUB_READ       = (1<<21)
 
 } RWDtsXactFlag;  
   
@@ -116,21 +117,20 @@ typedef enum _RWDtsFlag {
   /* See also strings in both rwdts_router_xact.c and rwdts_api.c Gi binding glue */
 
   /* RWDtsFlags */
-  RWDTS_FLAG_FILE_DATASTORE = (1<<0),
-  RWDTS_FLAG_INTERNAL_REG   = (1<<1), /* This is used for internal DTS operation */
-  RWDTS_FLAG_DELTA_READY    = (1<<2),
-  RWDTS_FLAG_SUBOBJECT      = (1<<3),
-  RWDTS_FLAG_DEPTH_FULL     = (1<<4),
-  RWDTS_FLAG_DEPTH_OBJECT   = (1<<5),
-  RWDTS_FLAG_DEPTH_LISTS    = (1<<6),
-  RWDTS_FLAG_DEPTH_ONE      = (1<<7),
-  RWDTS_FLAG_NO_PREP_READ   = (1<<8),
-  RWDTS_FLAG_SUBSCRIBER     = (1<<9),
-  RWDTS_FLAG_PUBLISHER      = (1<<10),
-  RWDTS_FLAG_DATASTORE      = (1<<11),
-  RWDTS_FLAG_CACHE          = (1<<13),
-  RWDTS_FLAG_SHARED         = (1<<15),
-  RWDTS_FLAG_SHARDING       = (1<<16)
+  RWDTS_FLAG_INTERNAL_REG   = (1<<0), /* This is used for internal DTS operation */
+  RWDTS_FLAG_DELTA_READY    = (1<<1),
+  RWDTS_FLAG_SUBOBJECT      = (1<<2),
+  RWDTS_FLAG_DEPTH_FULL     = (1<<3),
+  RWDTS_FLAG_DEPTH_OBJECT   = (1<<4),
+  RWDTS_FLAG_DEPTH_LISTS    = (1<<5),
+  RWDTS_FLAG_DEPTH_ONE      = (1<<6),
+  RWDTS_FLAG_NO_PREP_READ   = (1<<7),
+  RWDTS_FLAG_SUBSCRIBER     = (1<<8),
+  RWDTS_FLAG_PUBLISHER      = (1<<9),
+  RWDTS_FLAG_DATASTORE      = (1<<10),
+  RWDTS_FLAG_CACHE          = (1<<11),
+  RWDTS_FLAG_SHARED         = (1<<12),
+  RWDTS_FLAG_SHARDING       = (1<<13)
 } RWDtsFlag;
 
 GType rwdts_query_action_get_type(void);

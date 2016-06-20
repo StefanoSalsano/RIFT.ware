@@ -77,5 +77,18 @@ module rw-cloud
     }
   }
 
+  notification cloud-notif {
+    description "Notification for cloud account credentials";
+    leaf name {
+      description "Cloud account name";
+      type string;
+    }
+
+    leaf message {
+      description "Notification message";
+      type string;
+    }
+  }
+
 }
 

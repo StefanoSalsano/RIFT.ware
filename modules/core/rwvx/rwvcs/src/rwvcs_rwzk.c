@@ -88,35 +88,39 @@ void rwvcs_rwzk_server_start_sync_f(void *ctx)
   rwvcs_rwzk_server_start_sync_t *rwvcs_rwzk_server_start_sync_p = 
       (rwvcs_rwzk_server_start_sync_t *)ctx;
   rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_server_start_sync_p->rwvcs;
-  uint32_t instance_id = rwvcs_rwzk_server_start_sync_p->instance_id;
+  uint32_t server_id = rwvcs_rwzk_server_start_sync_p->server_id;
+  uint32_t client_port = rwvcs_rwzk_server_start_sync_p->client_port;
   bool unique_ports = rwvcs_rwzk_server_start_sync_p->unique_ports;
-  const char ** server_names = rwvcs_rwzk_server_start_sync_p->server_names;
+  rwcal_zk_server_port_detail_ptr_t *server_details = rwvcs_rwzk_server_start_sync_p->server_details;
 
-  rwvcs_rwzk_server_start_sync_p->status = rwcal_rwzk_create_server_config(
+  rw_status_t status = rwcal_rwzk_create_server_config(
       rwvcs->rwvx->rwcal_module,
-      instance_id,
+      server_id,
+      client_port,
       unique_ports,
-      server_names);
-  RW_ASSERT(rwvcs_rwzk_server_start_sync_p->status == RW_STATUS_SUCCESS);
+      server_details);
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
 
-  rwvcs_rwzk_server_start_sync_p->status = rwcal_rwzk_server_start(rwvcs->rwvx->rwcal_module, instance_id);
-  if (rwvcs_rwzk_server_start_sync_p->status != RW_STATUS_SUCCESS) {
-    fprintf(stderr, "error starting rwcal_rwzk_server_start() - status=%d\n", rwvcs_rwzk_server_start_sync_p->status);
+  rwvcs_rwzk_server_start_sync_p->server_pid = rwcal_rwzk_server_start(rwvcs->rwvx->rwcal_module, server_id);
+  if (rwvcs_rwzk_server_start_sync_p->server_pid <= 0) {
+    fprintf(stderr, "error starting rwcal_rwzk_server_start() - server_pid=%d\n", rwvcs_rwzk_server_start_sync_p->server_pid);
   }
-  RW_ASSERT(rwvcs_rwzk_server_start_sync_p->status == RW_STATUS_SUCCESS);
+  RW_ASSERT(rwvcs_rwzk_server_start_sync_p->server_pid > 0);
 }
 
-rw_status_t rwvcs_rwzk_server_start(
+int rwvcs_rwzk_server_start(
     rwvcs_instance_ptr_t rwvcs,
-    uint32_t instance_id,
+    uint32_t server_id,
+    int client_port,
     bool unique_ports,
-    const char ** server_names)
+    rwcal_zk_server_port_detail_ptr_t *server_details)
 {
   rwvcs_rwzk_server_start_sync_t rwvcs_rwzk_server_start_sync = {
     .rwvcs = rwvcs,
-    .instance_id = instance_id,
+    .server_id = server_id,
+    .client_port = client_port,
     .unique_ports = unique_ports,
-    .server_names = server_names
+    .server_details = server_details
   };
 
   RWVCS_RWZK_DISPATCH(
@@ -125,7 +129,38 @@ rw_status_t rwvcs_rwzk_server_start(
       rwvcs->zk_rwq,
       &rwvcs_rwzk_server_start_sync,
       rwvcs_rwzk_server_start_sync_f);
-  return rwvcs_rwzk_server_start_sync.status;
+  return rwvcs_rwzk_server_start_sync.server_pid;
+}
+
+void rwvcs_rwzk_client_init_sync_f(void *ctx)
+{
+  rwvcs_rwzk_client_init_sync_t *rwvcs_rwzk_client_init_sync_p = 
+      (rwvcs_rwzk_client_init_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_client_init_sync_p->rwvcs;
+
+  if (rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->zake) {
+    rwvcs_rwzk_client_init_sync_p->status = rwcal_rwzk_zake_init(rwvcs->rwvx->rwcal_module);
+  } else {
+    rwvcs_rwzk_client_init_sync_p->status = rwcal_rwzk_kazoo_init(
+        rwvcs->rwvx->rwcal_module,
+        rwvcs->mgmt_info.zk_server_port_details);
+  }
+  RW_ASSERT(rwvcs_rwzk_client_init_sync_p->status == RW_STATUS_SUCCESS);
+}
+
+rw_status_t rwvcs_rwzk_client_init(rwvcs_instance_ptr_t rwvcs)
+{
+  rwvcs_rwzk_client_init_sync_t rwvcs_rwzk_client_init_sync = {
+    .rwvcs = rwvcs,
+  };
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_client_init_sync,
+      rwvcs_rwzk_client_init_sync_f);
+  return rwvcs_rwzk_client_init_sync.status;
 }
 
 void rwvcs_rwzk_client_start_sync_f(void *ctx)
@@ -134,19 +169,9 @@ void rwvcs_rwzk_client_start_sync_f(void *ctx)
       (rwvcs_rwzk_client_start_sync_t *)ctx;
   rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_client_start_sync_p->rwvcs;
 
-  if (rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->zake) {
-    rwvcs_rwzk_client_start_sync_p->status = rwcal_rwzk_zake_init(rwvcs->rwvx->rwcal_module);
-  } else {
-    const char * server_names[2] = {
-      rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->master_ip,
-      NULL
-    };
+  RW_ASSERT(!rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->zake);
+  rwvcs_rwzk_client_start_sync_p->status = rwcal_rwzk_kazoo_start(rwvcs->rwvx->rwcal_module);
 
-    rwvcs_rwzk_client_start_sync_p->status = rwcal_rwzk_kazoo_init(
-        rwvcs->rwvx->rwcal_module,
-        rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->unique_ports,
-        &server_names[0]);
-  }
   RW_ASSERT(rwvcs_rwzk_client_start_sync_p->status == RW_STATUS_SUCCESS);
 }
 
@@ -163,6 +188,33 @@ rw_status_t rwvcs_rwzk_client_start(rwvcs_instance_ptr_t rwvcs)
       &rwvcs_rwzk_client_start_sync,
       rwvcs_rwzk_client_start_sync_f);
   return rwvcs_rwzk_client_start_sync.status;
+}
+
+void rwvcs_rwzk_client_stop_sync_f(void *ctx)
+{
+  rwvcs_rwzk_client_stop_sync_t *rwvcs_rwzk_client_stop_sync_p = 
+      (rwvcs_rwzk_client_stop_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_client_stop_sync_p->rwvcs;
+
+  RW_ASSERT(!rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->zake);
+  rwvcs_rwzk_client_stop_sync_p->status = rwcal_rwzk_kazoo_stop(rwvcs->rwvx->rwcal_module);
+
+  RW_ASSERT(rwvcs_rwzk_client_stop_sync_p->status == RW_STATUS_SUCCESS);
+}
+
+rw_status_t rwvcs_rwzk_client_stop(rwvcs_instance_ptr_t rwvcs)
+{
+  rwvcs_rwzk_client_stop_sync_t rwvcs_rwzk_client_stop_sync = {
+    .rwvcs = rwvcs,
+  };
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_client_stop_sync,
+      rwvcs_rwzk_client_stop_sync_f);
+  return rwvcs_rwzk_client_stop_sync.status;
 }
 
 void rwvcs_rwzk_seed_auto_instance_sync_f(void *ctx)
@@ -457,6 +509,7 @@ static void rwvcs_rwzk_node_update_f(void *ud)
 {
   rwvcs_instance_ptr_t rwvcs = ((rwvcs_rwzk_node_update_t *)ud)->rwvcs;
   rw_component_info * id = ((rwvcs_rwzk_node_update_t *)ud)->id;
+  bool skip_publish = ((rwvcs_rwzk_node_update_t *)ud)->skip_publish;
   RW_FREE_TYPE(((rwvcs_rwzk_node_update_t*)ud), rwvcs_rwzk_node_update_t);
 
   rw_status_t status;
@@ -498,7 +551,7 @@ static void rwvcs_rwzk_node_update_f(void *ud)
         "Failed to unlock rwzk node %s",
         path);
   }
-  if (rwvcs->config_ready_fn) {
+  if (rwvcs->config_ready_fn && !skip_publish) {
     rw_status_t config_ready_status = rwvcs->config_ready_fn(rwvcs, id);
     RW_ASSERT(config_ready_status == RW_STATUS_SUCCESS);
   }
@@ -525,6 +578,7 @@ rwvcs_rwzk_node_update(
   RW_ASSERT_TYPE(rwvcs_rwzk_node_update_p, rwvcs_rwzk_node_update_t);
   rwvcs_rwzk_node_update_p->rwvcs = rwvcs;
   rwvcs_rwzk_node_update_p->id = (rw_component_info*)protobuf_c_message_duplicate(NULL, (const ProtobufCMessage *)id, id->base.descriptor);
+  rwvcs_rwzk_node_update_p->skip_publish = rwvcs->restart_inprogress;
 
   RWVCS_RWZK_DISPATCH(
       async, 
@@ -2147,5 +2201,33 @@ rwvcs_rwzk_watcher_stop(
       &rwvcs_rwzk_watcher_stop_sync,
       rwvcs_rwzk_watcher_stop_sync_f);
   return rwvcs_rwzk_watcher_stop_sync.status;
+}
+
+static void rwvcs_rwzk_client_state_sync_f(void *ctx)
+{
+  rwvcs_rwzk_client_state_sync_t *rwvcs_rwzk_client_state_sync_p = 
+      (rwvcs_rwzk_client_state_sync_t *)ctx;
+  rwvcs_instance_ptr_t rwvcs = rwvcs_rwzk_client_state_sync_p->rwvcs;
+
+  if (rwvcs->pb_rwmanifest->bootstrap_phase->zookeeper->zake) {
+    rwvcs_rwzk_client_state_sync_p->client_state = RW_CAL_KAZOO_CLIENT_STATE_ENUM_CONNECTED;
+  } else {
+    rwvcs_rwzk_client_state_sync_p->client_state = rwcal_rwzk_client_state(rwvcs->rwvx->rwcal_module);
+  }
+}
+
+rwcal_kazoo_client_state_t rwvcs_rwzk_client_state(rwvcs_instance_ptr_t rwvcs)
+{
+  rwvcs_rwzk_client_state_sync_t rwvcs_rwzk_client_state_sync = {
+    .rwvcs = rwvcs,
+  };
+
+  RWVCS_RWZK_DISPATCH(
+      sync,
+      rwvcs->rwvx->rwsched_tasklet, 
+      rwvcs->zk_rwq,
+      &rwvcs_rwzk_client_state_sync,
+      rwvcs_rwzk_client_state_sync_f);
+  return rwvcs_rwzk_client_state_sync.client_state;
 }
 

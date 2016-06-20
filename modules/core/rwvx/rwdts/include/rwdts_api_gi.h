@@ -3244,10 +3244,10 @@ typedef void (*appconf_config_validate)(rwdts_api_t*     apih,
  */
 /// @cond GI_SCANNER
 /**
- * appconf_config_apply:
+ * appconf_config_apply_gi:
  * @apih:
  * @ac:
- * @xact: (nullable)
+ * @xact: (transfer none)(nullable)
  * @action:
  * @user_data:
  * @scratch: (transfer full)(nullable)
@@ -6064,7 +6064,6 @@ rwdts_api_config_ready_register(
     rwdts_api_config_ready_cb_fn config_ready_cb,
     void *userdata);
 
-__END_DECLS
 
 /*!
  * Return the associated DTS Api Handle of tasklet Info
@@ -6101,4 +6100,56 @@ rwdts_api_find_dtshandle(const rwtasklet_info_t*        tasklet);
 rwdts_member_reg_handle_t
 rwdts_api_find_reg_handle_for_xpath (rwdts_api_t *apih,
                                      const char  *xpath);
+
+typedef struct rwdts_api_vm_state_cb_s {
+  void (*cb_fn) (void *ud, vcs_vm_state p_state, vcs_vm_state n_state);
+  void *ud;
+} rwdts_api_vm_state_cb_t;
+
+/*!
+ *
+ * @param rwvm_name   : vm name
+ * @param instance_name: instance_name
+ * @param vm_state     : vm_state to be set
+ * @return SUCCESS if succesfully added
+ */
+/// @cond GI_SCANNER
+/**
+ * rwdts_api_add_modeinfo_query_to_block
+ * @block:
+ * @rwvm_name:
+ * @instance_name:
+ * Returns: ProtobufCMessage (transfer full)
+ *
+ */
+/// @endcond
+rw_status_t
+rwdts_api_add_modeinfo_query_to_block(
+    rwdts_xact_block_t   *block,
+    char *rwvm_name,
+    char *instance_name,
+    vcs_vm_state vm_state);
+
+/*!
+ * Register vm state change events
+ *
+ * @param apih      : DTS Api handle
+ * @param vm_state  : vm state if known
+ * @param cb        : callback and userdata
+ */
+/// @cond GI_SCANNER
+/**
+ * rwdts_api_set_keyspec_msg_modechange_info
+ * @apih:(transfer none)
+ * @vm_state: (optional)
+ * @cb:(nullable)(optional)
+ *
+ */
+/// @endcond
+void rwdts_register_vm_state_notification(
+    rwdts_api_t *apih,
+    vcs_vm_state vm_state,
+    rwdts_api_vm_state_cb_t *cb);
+
+__END_DECLS
 #endif /* __RWDTS_API_GI_H__ */

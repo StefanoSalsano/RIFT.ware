@@ -371,6 +371,10 @@ rwdts_dispatch_query_response(void *ctx)
         RW_ASSERT(rsp->evtrsp == RWDTS_EVTRSP_NA);
       }
       match_info->sent_evtrsp = rsp->evtrsp;
+      RWMEMLOG(&xact->rwml_buffer,
+           RWMEMLOG_MEM0,
+           "rwdts_dispatch_query_response:sent_evtrsp",
+           RWMEMLOG_ARG_ENUM_FUNC(rwdts_evtrsp_to_str, "", (rsp->evtrsp)));
     }
   }
   rwdts_api_t* apih = xact->apih;
@@ -1034,6 +1038,10 @@ rwdts_member_copy_rsp(rwdts_api_t* apih,
           RW_ASSERT(src_rsp->evtrsp == RWDTS_EVTRSP_NA);
         }
         match_info->sent_evtrsp = src_rsp->evtrsp;
+        RWMEMLOG(&xact->rwml_buffer,
+           RWMEMLOG_MEM0,
+           "rwdts_member_copy_rsp(1):sent_evtrsp",
+           RWMEMLOG_ARG_ENUM_FUNC(rwdts_evtrsp_to_str, "", (src_rsp->evtrsp)));
       }
       struct rwdts_tmp_abort_rsp_s* abort_rsp = RW_MALLOC0(sizeof(struct rwdts_tmp_abort_rsp_s));
       abort_rsp->xact = xact;
@@ -1068,6 +1076,10 @@ rwdts_member_copy_rsp(rwdts_api_t* apih,
           RW_ASSERT(src_rsp->evtrsp == RWDTS_EVTRSP_NA);
         }
         match_info->sent_evtrsp = src_rsp->evtrsp;
+        RWMEMLOG(&xact->rwml_buffer,
+           RWMEMLOG_MEM0,
+           "rwdts_member_copy_rsp(2):sent_evtrsp",
+           RWMEMLOG_ARG_ENUM_FUNC(rwdts_evtrsp_to_str, "", (src_rsp->evtrsp)));
       }
       struct rwdts_tmp_abort_rsp_s* abort_rsp = RW_MALLOC0(sizeof(struct rwdts_tmp_abort_rsp_s));
       abort_rsp->xact = xact;
@@ -1308,6 +1320,10 @@ rwdts_member_split_rsp(void *ctx)
     if (match_info->sent_evtrsp == RWDTS_EVTRSP_NA) {
       RW_ASSERT(rsp->evtrsp == RWDTS_EVTRSP_NA);
     }
+     RWMEMLOG(&xact->rwml_buffer,
+        RWMEMLOG_MEM0,
+           "rwdts_member_split_rsp(1):sent_evtrsp",
+           RWMEMLOG_ARG_ENUM_FUNC(rwdts_evtrsp_to_str, "", (rsp->evtrsp)));
     match_info->sent_evtrsp = rsp->evtrsp;
   }
 
@@ -1450,6 +1466,19 @@ rwdts_xact_add_query_internal(rwdts_xact_t*        xact,
   return RW_STATUS_SUCCESS;
 }
 
+static rwdts_kv_light_reply_status_t 
+rwdts_store_cache_set_callback(rwdts_kv_light_set_status_t status,
+                               int serial_num, void *userdata)
+{
+  //rwdts_kv_handle_t *handle = (rwdts_kv_handle_t *)userdata;
+
+  if(RWDTS_KV_LIGHT_SET_SUCCESS == status) {
+    /* Do nothing */
+  }
+
+  return RWDTS_KV_LIGHT_REPLY_DONE;
+}
+
 /*
  * Store a cache object
  */
@@ -1565,14 +1594,19 @@ rwdts_store_cache_obj(rwdts_xact_t* xact)
         } else {
           rwdts_kv_update_db_xact_commit(mobj, RWDTS_QUERY_UPDATE);
         }
-        if ((reg->flags & RWDTS_FLAG_PUBLISHER) && (reg->flags & RWDTS_FLAG_FILE_DATASTORE)) {
+        if ((reg->flags & RWDTS_FLAG_PUBLISHER) && (apih->rwtasklet_info &&
+            ((apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_BDB)||
+            (apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_REDIS)))) { 
           if (reg->kv_handle) {
             uint8_t *payload;
             size_t  payload_len;
             payload = protobuf_c_message_serialize(NULL, newobj->msg, &payload_len);
-            rw_status_t rs = rwdts_kv_handle_file_set_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len,
-                                                             (char *)payload, (int)payload_len);
+            rw_status_t rs = rwdts_kv_handle_add_keyval(reg->kv_handle, 0, (char *)newobj->key, newobj->key_len,
+                                                       (char *)payload, (int)payload_len, rwdts_store_cache_set_callback, (void *)reg->kv_handle);
             RW_ASSERT(rs == RW_STATUS_SUCCESS);
+            if (rs != RW_STATUS_SUCCESS) {
+              /* Fail the VM and switchover to STANDBY */
+            }
           }
         }
       } else if (mobj->delete_mark) {
@@ -1587,10 +1621,16 @@ rwdts_store_cache_obj(rwdts_xact_t* xact)
                                                      RW_DTS_AUDIT_TRAIL_EVENT_TRANSACTION,
                                                      RW_DTS_AUDIT_TRAIL_ACTION_OBJ_DELETE);
             HASH_DELETE(hh_data, (*obj_list_p), newobj);
-            if ((reg->flags & RWDTS_FLAG_PUBLISHER) && (reg->flags & RWDTS_FLAG_FILE_DATASTORE)) {
+            if ((reg->flags & RWDTS_FLAG_PUBLISHER) && (apih->rwtasklet_info &&
+                ((apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_BDB)||
+                (apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_REDIS)))) {            
               if (reg->kv_handle) {
-                rw_status_t rs = rwdts_kv_handle_file_del_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len);
+                rw_status_t rs = rwdts_kv_handle_del_keyval(reg->kv_handle, 0, (char *)newobj->key, newobj->key_len,
+                                                            rwdts_store_cache_set_callback, (void *)reg->kv_handle);
                 RW_ASSERT(rs == RW_STATUS_SUCCESS);
+                if (rs != RW_STATUS_SUCCESS) {
+                  /* Fail the VM and switchover to STANDBY */
+                }
               }
             }
             rw_status_t rs = rwdts_member_data_deinit(newobj);
@@ -1623,14 +1663,20 @@ rwdts_store_cache_obj(rwdts_xact_t* xact)
           }
           /* Should a update value be sent to KV? */
           rwdts_kv_update_db_xact_commit(mobj, RWDTS_QUERY_UPDATE);
-          if ((reg->flags & RWDTS_FLAG_PUBLISHER) && (reg->flags & RWDTS_FLAG_FILE_DATASTORE)) {
+          if ((reg->flags & RWDTS_FLAG_PUBLISHER) && (apih->rwtasklet_info &&
+              ((apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_BDB) ||
+              (apih->rwtasklet_info->data_store == RWVCS_TYPES_DATA_STORE_REDIS)))) {
             if (reg->kv_handle) {
               uint8_t *payload;
               size_t  payload_len;
               payload = protobuf_c_message_serialize(NULL, newobj->msg, &payload_len);
-              rw_status_t rs = rwdts_kv_handle_file_set_keyval(reg->kv_handle, (char *)newobj->key, newobj->key_len,
-                                                               (char *)payload, (int)payload_len);
+              rw_status_t rs = rwdts_kv_handle_add_keyval(reg->kv_handle, 0, (char *)newobj->key, newobj->key_len,
+                                                         (char *)payload, (int)payload_len, rwdts_store_cache_set_callback, 
+                                                         (void *)reg->kv_handle);
               RW_ASSERT(rs == RW_STATUS_SUCCESS);
+              if (rs != RW_STATUS_SUCCESS) {
+                /* Fail the VM and switchover to STANDBY */
+              }
             }
           }
         } else {

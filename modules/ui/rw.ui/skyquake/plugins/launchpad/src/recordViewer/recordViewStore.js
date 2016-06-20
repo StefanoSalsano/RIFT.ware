@@ -8,7 +8,6 @@ import RecordViewSource from './recordViewSource.js';
 // import source
 // import AppHeaderActions from 'widgets/header/headerActions.js';
 import Alt from '../alt';
-var AuthActions = require('../../../login/src/loginAuthActions.js');
 import _ from 'underscore';
 
 class RecordViewStore {
@@ -30,9 +29,6 @@ class RecordViewStore {
         this.nav = [];
         this.vnfrs = {};
         this.configPrimitives = [];
-        this.bindListeners({
-            handleLogout: AuthActions.notAuthenticated
-        })
         this.bindActions(RecordViewActions);
         this.exportPublicMethods({
             constructAndTriggerVnfConfigPrimitive: this.constructAndTriggerVnfConfigPrimitive,

@@ -29,6 +29,7 @@
 #include "flat-conversion.pb-c.h"
 #include "rw-fpath-d.pb-c.h"
 #include "rwdts-data-d.pb-c.h"
+#include "test-a-composite.pb-c.h"
 
 #include "test-tag-generation-base.pb-c.h"
 #include "test-tag-generation.pb-c.h"
@@ -2539,6 +2540,161 @@ TEST(KsRRMerge, RerootIter2keys)
   protobuf_c_message_free_unpacked(NULL, &ks_in->base);
 }
 
+TEST(KsRRMerge, RerootJira13456)
+{
+  RWPB_M_MSG_DECL_INIT(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig, msg);
+  UniquePtrProtobufCMessageUseBody<>::uptr_t uptrm(&msg.base);
+
+  msg.n_vnf = 3;
+  msg.vnf = (RWPB_T_MSG(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf) **)malloc(sizeof(void*) * 3);
+
+  for (unsigned i = 0; i < 3; ++i) {
+
+    msg.vnf[i] = RWPB_F_MSG_ALLOC(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf);
+    msg.vnf[i]->name = strdup("pingpong");
+    msg.vnf[i]->instance = i+1;
+
+    msg.vnf[i]->n_network_context = 5;
+    msg.vnf[i]->network_context = (RWPB_T_MSG(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf_NetworkContext) **)
+        malloc(5 * sizeof(void*));
+
+    for (unsigned n = 0; n < 5; ++n) {
+
+      msg.vnf[i]->network_context[n] = RWPB_F_MSG_ALLOC(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf_NetworkContext);
+      sprintf(msg.vnf[i]->network_context[n]->name, "nc%d", n+1);
+
+      if (n % 2) {
+
+        msg.vnf[i]->network_context[n]->n_vrf = 2;
+        msg.vnf[i]->network_context[n]->vrf = (RWPB_T_MSG(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf_NetworkContext_Vrf) **)
+            malloc(2 * sizeof(void*));
+
+        for (unsigned v = 0; v < 2; ++v) {
+          msg.vnf[i]->network_context[n]->vrf[v] = RWPB_F_MSG_ALLOC(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf_NetworkContext_Vrf);
+          sprintf(msg.vnf[i]->network_context[n]->vrf[v]->name, "vrf%d", v+1);
+        }
+
+      } else {
+        msg.vnf[i]->network_context[n]->packet_capture = 
+            RWPB_F_MSG_ALLOC(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf_NetworkContext_PacketCapture);
+      }
+    }
+  }
+
+  RWPB_M_PATHSPEC_DECL_INIT(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig, in_ks);
+  RWPB_M_PATHSPEC_DECL_INIT(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf_NetworkContext_Vrf, out_ks);
+
+  UniquePtrProtobufCMessageUseBody<rw_keyspec_path_t>::uptr_t uptrk1(&out_ks.rw_keyspec_path_t);
+
+  rw_keyspec_path_reroot_iter_state_t state;
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks.rw_keyspec_path_t);
+
+  unsigned i = 0;
+  while(rw_keyspec_path_reroot_iter_next(&state)) {
+    i++;
+  }
+  EXPECT_EQ (i, 12);
+
+  out_ks.dompath.path001.has_key00 = true;
+  out_ks.dompath.path001.key00.name = strdup("pingpong");
+  out_ks.dompath.path001.has_key01 = true;
+  out_ks.dompath.path001.key01.instance = 2;
+
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks.rw_keyspec_path_t);
+
+  i = 0;
+  unsigned vi = 1, ni = 1, vri = 0;
+  while(rw_keyspec_path_reroot_iter_next(&state)) {
+
+    auto res = rw_keyspec_path_reroot_iter_get_msg(&state);
+    EXPECT_TRUE(res);
+
+    EXPECT_EQ(res, (ProtobufCMessage *)(msg.vnf[vi]->network_context[ni]->vrf[vri]));
+    vri++;
+    if (vri == 2) { ni += 2; vri = 0; }
+
+    auto ks = rw_keyspec_path_reroot_iter_get_ks(&state);
+    EXPECT_TRUE(ks);
+
+    i++;
+  }
+  EXPECT_EQ(i, 4);
+
+  out_ks.dompath.path002.has_key00 = true;
+  strcpy(out_ks.dompath.path002.key00.name, "nc1");
+
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks.rw_keyspec_path_t);
+
+  EXPECT_FALSE (rw_keyspec_path_reroot_iter_next(&state));
+
+  strcpy(out_ks.dompath.path002.key00.name, "nc2");
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks.rw_keyspec_path_t);
+
+  i = 0;
+  while(rw_keyspec_path_reroot_iter_next(&state)) { i++; }
+  EXPECT_EQ(i, 2);
+
+  RWPB_M_PATHSPEC_DECL_INIT(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf_NetworkContext_Vrf, out_ks2);
+  UniquePtrProtobufCMessageUseBody<rw_keyspec_path_t>::uptr_t uptrk2(&out_ks2.rw_keyspec_path_t);
+
+  out_ks2.dompath.path003.has_key00 = true;
+  strcpy(out_ks2.dompath.path003.key00.name, "vrf2");
+
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks2.rw_keyspec_path_t);
+
+  i = 0;
+  while(rw_keyspec_path_reroot_iter_next(&state)) { i++; }
+  EXPECT_EQ(i, 6);
+
+  strcpy(out_ks2.dompath.path003.key00.name, "vrf3");
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks2.rw_keyspec_path_t);
+
+  i = 0;
+  while(rw_keyspec_path_reroot_iter_next(&state)) { i++; }
+  EXPECT_EQ(i, 0);
+
+  RWPB_M_PATHSPEC_DECL_INIT(TestARwVnfBaseConfig_TestAManoBase_data_VnfConfig_Vnf_NetworkContext_PacketCapture, out_ks1);
+  UniquePtrProtobufCMessageUseBody<rw_keyspec_path_t>::uptr_t uptrk3(&out_ks1.rw_keyspec_path_t);
+
+  out_ks1.dompath.path001.has_key00 = true;
+  out_ks1.dompath.path001.key00.name = strdup("pingpong");
+  out_ks1.dompath.path001.has_key01 = true;
+  out_ks1.dompath.path001.key01.instance = 3;
+
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks1.rw_keyspec_path_t);
+
+  i = 0;
+  while(rw_keyspec_path_reroot_iter_next(&state)) { i++; }
+  EXPECT_EQ(i, 3);
+
+  out_ks1.dompath.path002.has_key00 = true;
+  strcpy(out_ks1.dompath.path002.key00.name, "nc1");
+
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks1.rw_keyspec_path_t);
+
+  i = 0;
+  while(rw_keyspec_path_reroot_iter_next(&state)) { i++; }
+  EXPECT_EQ(i, 1);
+
+  out_ks1.dompath.path002.has_key00 = true;
+  strcpy(out_ks1.dompath.path002.key00.name, "nc2");
+
+  rw_keyspec_path_reroot_iter_init(
+      &in_ks.rw_keyspec_path_t, nullptr , &state, &msg.base, &out_ks1.rw_keyspec_path_t);
+
+  i = 0;
+  while(rw_keyspec_path_reroot_iter_next(&state)) { i++; }
+  EXPECT_EQ(i, 0);
+}
+
 TEST(KsRRMerge, RerootMergeOpaque)
 {
   // Create keyspec1
@@ -3509,6 +3665,7 @@ TEST(KsRRMerge, RootKSReRootDeeper)
 {
   RWPB_M_PATHSPEC_DECL_INIT(RwFpathD_RwBaseD_data, rks);
   RWPB_M_MSG_DECL_INIT(RwFpathD_RwBaseD_data, rootm);
+  UniquePtrProtobufCMessageUseBody<>::uptr_t uptr1(&rootm.base);
 
   rootm.n_colony = 2;
   rootm.colony = (RWPB_T_MSG(RwFpathD_RwBaseD_data_Colony) **)malloc(sizeof(void*)*2);
@@ -3614,6 +3771,7 @@ TEST(KsRRMerge, RootKSReRootIterD)
 {
   RWPB_M_PATHSPEC_DECL_INIT(RwFpathD_RwBaseD_data, rks);
   RWPB_M_MSG_DECL_INIT(RwFpathD_RwBaseD_data, rootm);
+  UniquePtrProtobufCMessageUseBody<>::uptr_t uptrm(&rootm.base);
 
   rootm.n_colony = 2;
   rootm.colony = (RWPB_T_MSG(RwFpathD_RwBaseD_data_Colony) **)malloc(sizeof(void*)*2);

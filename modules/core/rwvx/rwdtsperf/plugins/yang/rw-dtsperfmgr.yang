@@ -107,6 +107,10 @@ module rw-dtsperfmgr
         description "Perf tasklet flavor to be used with the Perfmgr.";
         type perf-tasklet-type;
       }
+      leaf xact-max-with-outstanding {
+         type uint32;
+         description "max num of xacts";
+      }
       container payload {
         leaf length {
           type uint32;
@@ -195,6 +199,10 @@ module rw-dtsperfmgr
         type perf-tasklet-type;
       }
 
+      leaf xact-max-with-outstanding {
+         type uint32;
+         description "max num of xacts";
+      }
       container payload {
         leaf length {
           description "Length of transaction payload";

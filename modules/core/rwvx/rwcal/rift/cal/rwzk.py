@@ -16,7 +16,7 @@ import zake.fake_client
 class UnlockedError(Exception):
     pass
 
-def create_server_config(myid, unique_ports, server_names):
+def create_server_config(myid, client_port, unique_ports, server_details):
     """
     This function generates the configuration file needed
     for the zookeeper server.
@@ -42,8 +42,8 @@ def create_server_config(myid, unique_ports, server_names):
 
 
     @param myid         - the id of the zookeeper server in the ensemble
-    @param unique_ports - Assign unique ports to zookeeper clients
-    @param server_names - list of server names in the ensemble
+    @param unique_ports - Assign unique ports for server arbitration
+    @param server_details - list of server port details
     """
     install_dir = os.environ.get('INSTALLDIR', '')
 
@@ -51,32 +51,45 @@ def create_server_config(myid, unique_ports, server_names):
 
     config = "tickTime=2000\n"
     config += "dataDir=%s/zk/server-%d/data\n" % (install_dir, myid)
-
-    if unique_ports:
-        # Mangle the port ids based on uid,
-        # we need to find a more permanent solution
-        uid = os.getuid()
-        uid = (uid - UID_BASE)%MAX_ENSEMBLE_SIZE
-        config += "clientPort=%d\n" % (uid+2181)
-    else:
-        config += "clientPort=2181\n"
-
+    config += "clientPort=%d\n" % (client_port)
     config += "initLimit=5\n"
     config += "syncLimit=2\n"
 
     quorum_port = 2888
     election_port = 3888
-    for server_name in server_names:
+    for server_detail in server_details:
+        if server_detail.zk_in_config != True:
+            continue
         if unique_ports:
             quorum_port += 1
             election_port += 1
-        config += "%s:%d:%d\n" % (server_name, quorum_port, election_port)
+        config += "server.%d=%s:%d:%d\n" % (server_detail.zk_server_id, server_detail.zk_server_addr, quorum_port, election_port)
 
     if not os.path.isdir(os.path.dirname(config_fname)):
         os.makedirs(os.path.dirname(config_fname))
 
     with open(config_fname, "w") as config_file:
         config_file.write(config)
+
+    try:
+        chk_dir = os.stat("%s/zk/server-%d/data/" % (install_dir, myid))
+    except FileNotFoundError:
+        try:
+            chk_dir = os.stat("%s/zk/server-%d/" % (install_dir, myid))
+            os.mkdir("%s/zk/server-%d/data/" % (install_dir, myid))
+        except FileNotFoundError:
+            try:
+                chk_dir = os.stat("%s/zk/" % (install_dir))
+                os.mkdir("%s/zk/server-%d/" % (install_dir, myid))
+                os.mkdir("%s/zk/server-%d/data/" % (install_dir, myid))
+            except FileNotFoundError:
+                os.mkdir("%s/zk/" % (install_dir))
+                os.mkdir("%s/zk/server-%d/" % (install_dir, myid))
+                os.mkdir("%s/zk/server-%d/data/" % (install_dir, myid))
+
+    id_fname = "%s/zk/server-%d/data/myid" % (install_dir, myid)
+    with open(id_fname, "w") as id_file:
+        id_file.write(str(myid))
 
 def to_java_compatible_path(path):
     if os.name == 'nt':
@@ -143,6 +156,7 @@ log4j.appender.ZLOG.File=""" + to_java_compatible_path(  # NOQA
 
         # Should never reach here CRASH
         raise OSError("execv() failed")
+    return pid
 
 class NodeWatcher(object):
     def __init__(self, zkcli, path):
@@ -275,17 +289,16 @@ class ZkClient(object):
         self._node_watchers = {}
 
     @abc.abstractmethod
-    def client_init(self, unique_ports, server_names, timeout=120):
+    def client_init(self, server_details, timeout=120):
         """
         Initialize the client connection to the zookeeper
 
-        @param unique_ports - Create unique zookeeper ports based on UID
         @param server_names - List of zookeeper server names
 
         Note:
             It would be really nice to provide this information during __init__()
         However, the CAL is created, and used, by rwvx well before the manifest
-        which contains the unique_ports and server_names settings has been parsed.
+        which contains the unique_ports and server port details parsed.
         """
         pass
 
@@ -444,6 +457,9 @@ class ZkClient(object):
         realpath = self._client_context.create(path, makepath=create_ancestors)
         return realpath
 
+    def get_client_state(self):
+        return self._client_context.client_state
+
     def delete_node(self, path, delete_children = False):
         self._client_context.delete(path, recursive=delete_children)
 
@@ -497,7 +513,7 @@ class Zake(ZkClient):
     ZAKE is pseudo implementation of zookeeper."""
     _zake_client_context = None
 
-    def client_init(self, _, __):
+    def client_init(self, _):
         if Zake._zake_client_context is None:
             # In collapsed mode, this is going to be called multiple times but
             # we want to make sure we only have a single FakeClient, so the
@@ -524,31 +540,32 @@ class Kazoo(ZkClient):
             # Handle being connected/reconnected to Zookeeper
             print("Kazoo connection established")
 
-    def client_init(self, unique_ports, server_names, timeout=120):
-        # Mangle the port ids based on uid,
-        # we need to find a more permanent solution
-        if unique_ports:
-            uid = os.getuid()
-            uid = (uid - UID_BASE)%MAX_ENSEMBLE_SIZE
-            port_base = uid+2181
-        else:
-            port_base = 2181
+    def client_init(self, server_details, timeout=120):
+        connection_str = ""
+        for server_detail in server_details:
+            if server_detail.zk_client_connect != True:
+                continue
+            if connection_str is not "":
+                connection_str += (",")
 
-        first = 1
-        for server_name in server_names:
-            if first:
-                connection_str = ("%s:%d" % (server_name, port_base))
-                first = 0
-            else:
-                connection_str += (",%s:%d" % (server_name, port_base))
-
-            if unique_ports:
-                port_base += 1
+            connection_str += ("%s:%d" % (server_detail.zk_server_addr, server_detail.zk_client_port))
 
         print("KazooClient connecting to %s" % (connection_str))
-        self._client_context = kazoo.client.KazooClient(connection_str, timeout=120)
+        self._client_context = kazoo.client.KazooClient(
+                                   connection_str,
+                                   timeout=120,
+                               )
+                                   #connection_retry=kazoo.retry.KazooRetry(max_tries=-1),
+                                   #command_retry=kazoo.retry.KazooRetry(max_tries=-1),
         self._client_context.add_listener(self.my_listener)
         self._client_context.start(timeout)
+
+    def start(self, timeout=120):
+        self._client_context.start(timeout)
+
+    @property
+    def client_state(self):
+        self._client_context.client_state
 
 # vim: sw=4 ts=4
 

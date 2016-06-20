@@ -73,11 +73,13 @@ static struct rwtasklet_info_s * create_tasklet_info(
     uint32_t tasklet_instance_id)
 {
   struct rwtasklet_info_s * info;
+  int broker_id = 1;
 
   // lookup broker id
   const char* env_str = rw_getenv(RW_VM_ID);
-  RW_ASSERT(env_str);
-  int broker_id = atoi(env_str);
+  if (env_str) {
+    broker_id = atoi(env_str);
+  }
 
   info = (struct rwtasklet_info_s *)malloc(sizeof(struct rwtasklet_info_s));
   RW_ASSERT(info);
@@ -252,7 +254,15 @@ static void handle_cli_input(
                     instance->uagent.dest, nc_req, &rwreq);
     if (rwstatus == RW_STATUS_SUCCESS) {
       size_t rsp_len = 0;
-      rwmsg_request_get_response(rwreq, (const void**)&nc_rsp);
+      rwstatus = rwmsg_request_get_response(rwreq, (const void**)&nc_rsp);
+      if (rwstatus != RW_STATUS_SUCCESS) {
+        RWTRACE_ERROR(rwcli_trace, RWTRACE_CATEGORY_RWCLI,
+            "CLI-AGENT: Failed to retrieve the response");
+        msg_len = 0;
+        write(rwcli_agent_ch.out.fd.write, &msg_len, sizeof(unsigned));
+        netconf_req__free_unpacked(NULL, nc_req);
+        return;
+      }
 
       rsp_len = netconf_rsp__get_packed_size(NULL, nc_rsp);
       if (rsp_len > send_buffer_len) {

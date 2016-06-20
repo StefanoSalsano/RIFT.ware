@@ -918,6 +918,11 @@ class ParseNode
   virtual bool is_mandatory() const;
 
   /**
+   * Check if the Yang node is supressed for CLI use
+   */
+  virtual bool is_suppressed() const;
+
+  /**
    * Checks for missing mandatory fields. Returns true if all mandatory fields
    * are present. Else returns false and also returns the missing token(s)
    */
@@ -943,6 +948,12 @@ class ParseNode
   virtual rw_yang_stmt_type_t get_stmt_type() const;
   virtual void set_mode (const char *display);
   virtual void set_cli_print_hook (const char *api);
+
+  /**
+   * Mark the underlying YangNode as suppressed from CLI use
+   */
+  virtual void set_suppressed();
+
   virtual ParseNode* mode_enter_top();
 
   virtual const char* token_text_get() const = 0;
@@ -1124,6 +1135,22 @@ class ParseNode
   virtual CliCallback* get_callback();
   virtual void add_descendent(ParseNodeFunctional *desc);
 
+  /**
+   * Finds the descendent node given the node name.
+   * @returns the ParseNode when found, nulltpr when not found
+   */
+  virtual ParseNodeFunctional* find_descendent(const std::string& name);
+
+  /**
+   * Finds the descendent node based on the given path. The path can be
+   * something like this {"save", "config", "text"}.
+   *
+   * @returns the ParseNode when found, nulltpr when not found
+   */
+  virtual ParseNodeFunctional* find_descendent_deep(
+                                  const std::vector<std::string>& path);
+
+
   virtual XMLNode* update_xml_for_leaf_list (XMLDocument *doc, XMLNode *parent, const char *attr);
 
   /**
@@ -1261,11 +1288,18 @@ class ParseNodeYang
   bool is_keyword() const;
   bool is_sentence() const;
   bool is_mandatory() const override;
+  bool is_suppressed() const override;
   std::vector<std::string> check_for_mandatory() const override;
   virtual bool is_mode_path() const;
   rw_yang_stmt_type_t get_stmt_type() const;
   void set_mode(const char *display);
   void set_cli_print_hook(const char *display);
+
+  /**
+   * @see ParseNode::set_suppressed()
+   */
+  void set_suppressed() override;
+
   ParseNode* mode_enter_top();
   const char* get_cli_print_hook_string();
 
@@ -1589,6 +1623,17 @@ class ParseNodeFunctional
    */
   virtual void set_callback (CliCallback *cb);
   virtual void add_descendent (ParseNodeFunctional *desc);
+
+  /**
+   * @see ParseNode::find_descendent()
+   */
+  virtual ParseNodeFunctional* find_descendent(const std::string& name);
+
+  /**
+   * @see ParseNode::find_descendent_deep()
+   */
+  virtual ParseNodeFunctional* find_descendent_deep(
+                                  const std::vector<std::string>& path);
 
  public:
   /// The token string.
@@ -2277,6 +2322,27 @@ class BaseCli
     const ParseCompletionEntry& entry
   );
 
+  /**
+   * Given the functional command path, returns the ParseNode of the last token.
+   * Returns null when no match is found.
+   */
+  ParseNodeFunctional* find_descendent_deep(
+                        const std::vector<std::string>& path);
+
+  /**
+   * Suppress all parse nodes in the given namespace.
+   *
+   * @returns true on success, false when the namespace is not found.
+   */
+  bool suppress_namespace(const std::string& ns);
+
+  /**
+   * Suppress the parse node that starts with the given path
+   *
+   * @returns true on success, false when the path does not exist.
+   */
+  bool suppress_command_path(const std::string& path);
+
  public:
   /// The schema model, which defines the (majority of the) CLI grammar.
   YangModel& model_;
@@ -2353,6 +2419,9 @@ class BaseCli
 
   /// To handle the CLI extension "show-key-keyword"
   cliext_adpt_t skk_adpt_;
+
+  /// App Data set on YangNode for supressing the keyword
+  cliext_adpt_t suppress_adpt_;
 };
 
 /**

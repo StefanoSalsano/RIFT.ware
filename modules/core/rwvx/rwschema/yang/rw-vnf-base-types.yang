@@ -413,7 +413,9 @@ module rw-vnf-base-types
       }
       leaf vlan {
         description "VLAN tag of the port to which the interface is bound";
-        type uint16;
+        type uint16 {
+          range "1..4095";
+        }
       }
     }
   }
@@ -615,7 +617,9 @@ module rw-vnf-base-types
       enum in-eth-vlan-id;
       enum in-ipv4-src-addr;
       enum in-ipv4-dst-addr;
+      enum in-ipv6-src-addr;
       enum in-ipv6-dst-addr;
+      enum ip_esp_spi;
     }
   }
 
@@ -665,6 +669,7 @@ module rw-vnf-base-types
     leaf systemid {
       description "System ID";
       type rwt:mac-address;
+      rwpb:field-inline true;
       rwpb:field-string-max 18;
       rwpb:field-c-type "rw_mac_addr_t";
     }
@@ -676,17 +681,16 @@ module rw-vnf-base-types
       type uint32;
       description "Key";
     }
-    leaf portid {
-      type uint32;
-      description "Port ID";
+    leaf port-priority{
+      type uint16;
+      description "actor portid";
     }
-    leaf portprio {
-      type uint32;
-      description "Port priority";
+    leaf port-id{
+      type uint16;
+      description "actor portid";
     }
-
     container state {
-      description "LACPDU counters";
+      rwpb:field-inline true;      
       leaf activity {
         description "Count of paritcipant being active";
         type uint32;
@@ -882,6 +886,14 @@ module rw-vnf-base-types
     }
     leaf bad-network-context {
       description "No network context or wrong network context";
+      type rwt:zero-based-counter64;
+    }
+    leaf drop-no-memory{
+      description "Packets are dropped before there is not enough memory for pools";
+      type rwt:zero-based-counter64;
+    }
+    leaf lacp{
+      description "LACP packets";
       type rwt:zero-based-counter64;
     }
   }
@@ -1086,7 +1098,6 @@ module rw-vnf-base-types
     }
 
     list interface {
-      max-elements 32;
       key name;
       uses vrf-info-interface;
     }
@@ -1103,6 +1114,79 @@ module rw-vnf-base-types
     }
   }
 
+  grouping plugin-source{
+    leaf service-component-id {
+      type uint32;
+    }
+    leaf service-name{
+      type string;
+    }
+    leaf service-subindex{
+      type uint32;
+    }
+    leaf name{
+      type string;
+    }
+  }
+
+  grouping flow-fields {
+    list flow-field {
+     rwpb:field-inline-max yang;
+     max-elements 16;
+     rwpb:field-inline true;
+
+     key "field-type";
+
+     leaf field-type {
+       type flow-field-type;
+     }
+     leaf field-prefix-len {
+       type uint8;
+     }
+     leaf field-value {
+       description "Field value with fields in network order";
+       rwpb:field-inline true;
+       rwpb:field-string-max 16;
+       type binary;
+     }
+    }
+  } //flow-fields
+
+  grouping signature-data{
+    uses flow-fields; 
+    leaf signature-key{
+      rwpb:field-inline true;
+      rwpb:field-string-max 256;
+      type binary;
+    }
+    leaf signature-mask{
+      rwpb:field-inline true;
+      rwpb:field-string-max 256;
+      type binary;
+    }
+    leaf flow-type{
+      type flow-type;
+    }
+    leaf addr-type {
+      type signature-address-type;
+    }
+    leaf include_l2 {
+      type uint32;
+    }
+    leaf priority{
+      type uint32;
+    }
+    leaf component-only{
+      type boolean;
+    }
+    leaf app-id{
+      type uint32;
+    }
+    leaf app-data{
+      type uint32;
+    }
+     
+  }
   grouping fpath-packet-debug-params {
     description "Fastpath Packet filter parameters";
     leaf trace-id {
@@ -1150,6 +1234,113 @@ module rw-vnf-base-types
       rwpb:field-string-max 46;
     }
   }
+
+  grouping xfrm-selector{
+    leaf dest{
+      type rwt:ip-prefix-non-canonical;
+      rwpb:field-string-max 46;
+      rwpb:field-inline true;
+      rwpb:field-c-type "rw_ip_prefix_t";      
+    }
+    leaf src{
+      type rwt:ip-prefix-non-canonical;
+      rwpb:field-string-max 46;
+      rwpb:field-inline true;
+      rwpb:field-c-type "rw_ip_prefix_t";
+    }
+    leaf dport{
+      type uint32;
+    }
+    leaf dport-mask{
+      type uint32;
+    }
+    leaf sport{
+      type uint32;
+    }
+    leaf sport-mask{
+      type uint32;
+    }
+    leaf ifindex{
+      type uint32;
+    }
+    leaf kernelid{
+      type uint32;
+    }
+    leaf protocol{
+      type uint32;
+    }
+  }
+
+  grouping xfrm-template{
+    leaf dest{
+      type rwt:ip-address;
+      rwpb:field-string-max 46;
+      rwpb:field-inline true;
+      rwpb:field-c-type "rw_ip_addr_t";      
+    }
+    leaf src{
+      type rwt:ip-address;
+      rwpb:field-string-max 46;
+      rwpb:field-inline true;
+      rwpb:field-c-type "rw_ip_addr_t";
+    }
+    leaf spi{
+      type uint32;
+    }
+    leaf reqid{
+      type uint32;
+    }
+    leaf mode{
+      type uint32;
+    }
+    leaf share{
+      type uint32;
+    }
+    leaf optional {
+      type uint32;
+    }
+    leaf aalgos{
+      type uint32;
+    }
+    leaf ealgos{
+      type uint32;
+    }
+    leaf calgos{
+      type uint32;
+    }
+    leaf proto{
+      type uint32;
+    }
+  }
+
+  grouping xfrm-auth-info{
+    leaf alg-type{
+      type enumeration{
+        enum crypt {value  1;}
+        enum auth   {value  2;}
+        enum comp {value 3;}
+        enum aead {value  4;}
+        enum trunc {value  5;}
+      }
+    }
+    leaf alg-name{
+      type string;
+      rwpb:field-string-max 64;
+      rwpb:field-inline true;
+    }
+    leaf alg-key-len{
+      type uint32;
+    }
+    leaf alg-trunc-len{
+      type uint32;
+    }
+    leaf alg-key{
+      rwpb:field-inline true;
+      rwpb:field-string-max 256;
+      type binary;
+    }
+  }
+  
 
   grouping port-counters{
     leaf rx-rate-pps {

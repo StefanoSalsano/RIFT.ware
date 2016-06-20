@@ -5,6 +5,6 @@
 
   <modifications>
      <addPrintHook path="show-system-info" hook="rwcli_plugin:print_show_system_info"/>
-     <addPrintHook path="mgmt-agent" hook="rwcli_plugin:default_print"/>
+     <suppress path="uagent last-error"/>
   </modifications>
 </cli>

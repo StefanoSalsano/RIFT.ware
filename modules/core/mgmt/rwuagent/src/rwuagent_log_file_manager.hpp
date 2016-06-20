@@ -77,7 +77,7 @@ private:
   void write_to_file(std::string const & filename, void* req, const char * tag, const char * str);
 
   /// appends the payload to the given file with a newline
-  void write_to_file(std::string const & filename, std::string & payload);
+  void write_to_file(std::string const & filename, std::string const & payload);
 
   /// appends the payload to the given file with a newline
   void write_to_file(std::string const & filename, const char * payload);
@@ -126,6 +126,10 @@ private:
   std::string failure_log_file_;
 
   bool has_confd_logs_ = false;
+
+  // map filenames to log writers
+  std::map<std::string, std::unique_ptr<AsyncFileWriter>> log_file_writers_;
+
 };
 }
 #endif

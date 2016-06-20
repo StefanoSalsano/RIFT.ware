@@ -19,13 +19,18 @@ import logging
 import logging.config
 import os
 import shutil
+import stat
+import subprocess
 import tempfile
 import zipfile
 
 import magic
 
+import yaml
+
 from rift.mano.tosca_translator.common.utils import _
 from rift.mano.tosca_translator.common.utils import ChecksumUtils
+from rift.mano.tosca_translator.rwmano.syntax.mano_template import ManoTemplate
 from rift.mano.tosca_translator.rwmano.tosca_translator import TOSCATranslator
 
 from toscaparser.tosca_template import ToscaTemplate
@@ -38,12 +43,13 @@ Test the tosca translation from command line as:
   --template-type=<type of template e.g. tosca>
   --parameters="purpose=test"
   --output_dir=<output directory>
+  --archive
   --validate_only
-Takes four user arguments,
-1. type of translation (e.g. tosca) (required)
-2. Path to the file that needs to be translated (required)
-3. Input parameters (optional)
-4. Write to output files in a dir (optional), else print on screen
+Takes following user arguments,
+. Path to the file that needs to be translated (required)
+. Input parameters (optional)
+. Write to output files in a dir (optional), else print on screen
+. Create archive or not
 
 In order to use translator to only validate template,
 without actual translation, pass --validate-only along with
@@ -52,95 +58,145 @@ other required arguments.
 """
 
 
+class ToscaShellError(Exception):
+    pass
+
+
+class ToscaEntryFileError(ToscaShellError):
+    pass
+
+
+class ToscaNoEntryDefinitionError(ToscaShellError):
+    pass
+
+
+class ToscaEntryFileNotFoundError(ToscaShellError):
+    pass
+
+
+class ToscaCreateArchiveError(ToscaShellError):
+    pass
+
+
 class TranslatorShell(object):
 
     SUPPORTED_TYPES = ['tosca']
     COPY_DIRS = ['images']
     SUPPORTED_INPUTS = (YAML, ZIP) = ('yaml', 'zip')
 
-    def _parse_args(self, raw_args=None):
-        parser = argparse.ArgumentParser(
-            description='RIFT TOSCA translator for descriptors')
-        parser.add_argument(
-            "-f",
-            "--template-file",
-            required=True,
-            help="Template file to translate")
-        parser.add_argument(
-            "-o",
-            "--output-dir",
-            help="Directory to output")
-        parser.add_argument(
-            "-t",
-            "--template-type",
-            default='tosca',
-            help="Template file type. Default tosca")
-        parser.add_argument(
-            "-p", "--parameters",
-            help="Input parameters")
-        parser.add_argument(
-            "--no-gi",
-            help="Do not use the YANG GI to generate descriptors",
-            action="store_true")
-        parser.add_argument(
-            "--validate-only",
-            help="Validate template, no translation",
-            action="store_true")
-        parser.add_argument(
-            "--debug",
-            help="Enable debug logging",
-            action="store_true")
-        if raw_args:
-            args = parser.parse_args(raw_args)
-        else:
-            args = parser.parse_args()
-        return args
+    def __init__(self, log=None):
+        self.log = log
 
-    def main(self, raw_args=None, log=None):
+    def main(self, raw_args=None):
         args = self._parse_args(raw_args)
-        if log is None:
+
+        if self.log is None:
             if args.debug:
                 logging.basicConfig(level=logging.DEBUG)
             else:
                 logging.basicConfig(level=logging.ERROR)
-            log = logging.getLogger("tosca-translator")
+            self.log = logging.getLogger("tosca-translator")
 
-        self.log = log
-        path = os.path.abspath(args.template_file)
-        self.in_file = path
-        a_file = os.path.isfile(path)
-        if not a_file:
-            msg = _("The path %(path)s is not a valid file.") % {
-                'path': args.template_file}
-            log.error(msg)
-            raise ValueError(msg)
-        # Get the file type
-        self.ftype = self._get_file_type()
-        self.log.debug(_("Input file {0} is of type {1}").
-                       format(path, self.ftype))
-        template_type = args.template_type
-        if template_type not in self.SUPPORTED_TYPES:
-            msg = _("%(value)s is not a valid template type.") % {
-                'value': template_type}
-            log.error(msg)
-            raise ValueError(msg)
+        self.template_file = args.template_file
 
         parsed_params = {}
         if args.parameters:
             parsed_params = self._parse_parameters(args.parameters)
 
-        if template_type == 'tosca' and args.validate_only:
-            tpl = ToscaTemplate(path, parsed_params, a_file)
-            log.debug(_('Template = {}').format(tpl.__dict__))
-            msg = (_('The input "%(path)s" successfully passed '
-                     'validation.') % {'path': path})
+        self.archive = False
+        if args.archive:
+            self.archive = True
+
+        self.tmpdir = None
+
+        if args.validate_only:
+            a_file = os.path.isfile(args.template_file)
+            tpl = ToscaTemplate(self.template_file, parsed_params, a_file)
+            self.log.debug(_('Template = {}').format(tpl.__dict__))
+            msg = (_('The input {} successfully passed ' \
+                     'validation.').format(self.template_file))
             print(msg)
         else:
             self.use_gi = not args.no_gi
-            tpl = self._translate(template_type, path, parsed_params,
-                                  a_file)
+            tpl = self._translate("tosca", parsed_params)
             if tpl:
-                self._write_output(tpl, args.output_dir)
+                return self._write_output(tpl, args.output_dir)
+
+    def translate(self,
+                  template_file,
+                  output_dir=None,
+                  use_gi=True,
+                  archive=False,):
+        self.template_file = template_file
+
+        # Check the input file
+        path = os.path.abspath(template_file)
+        self.in_file = path
+        a_file = os.path.isfile(path)
+        if not a_file:
+            msg = _("The path {0} is not a valid file.").format(template_file)
+            self.log.error(msg)
+            raise ValueError(msg)
+
+        # Get the file type
+        self.ftype = self._get_file_type()
+        self.log.debug(_("Input file {0} is of type {1}").
+                       format(path, self.ftype))
+
+        self.archive = archive
+
+        self.tmpdir = None
+
+        self.use_gi = use_gi
+
+        tpl = self._translate("tosca", {})
+        if tpl:
+            return self._write_output(tpl, output_dir)
+
+    def _parse_args(self, raw_args=None):
+        parser = argparse.ArgumentParser(
+            description='RIFT TOSCA translator for descriptors')
+
+        parser.add_argument(
+            "-f",
+            "--template-file",
+            required=True,
+            help="Template file to translate")
+
+        parser.add_argument(
+            "-o",
+            "--output-dir",
+            help="Directory to output")
+
+        parser.add_argument(
+            "-p", "--parameters",
+            help="Input parameters")
+
+        parser.add_argument(
+            "-a", "--archive",
+            action="store_true",
+            help="Archive the translated files")
+
+        parser.add_argument(
+            "--no-gi",
+            help="Do not use the YANG GI to generate descriptors",
+            action="store_true")
+
+        parser.add_argument(
+            "--validate-only",
+            help="Validate template, no translation",
+            action="store_true")
+
+        parser.add_argument(
+            "--debug",
+            help="Enable debug logging",
+            action="store_true")
+
+        if raw_args:
+            args = parser.parse_args(raw_args)
+        else:
+            args = parser.parse_args()
+        return args
 
     def _parse_parameters(self, parameter_list):
         parsed_inputs = {}
@@ -166,71 +222,272 @@ class TranslatorShell(object):
                     raise ValueError(msg)
         return parsed_inputs
 
-    def _translate(self, sourcetype, path, parsed_params, a_file):
+    def get_entry_file(self):
+        # Extract the archive and get the entry file
+        if self.ftype == self.YAML:
+            return self.in_file
+
+        self.prefix = ''
+        if self.ftype == self.ZIP:
+            self.tmpdir = tempfile.mkdtemp()
+            prevdir = os.getcwd()
+            try:
+                with zipfile.ZipFile(self.in_file) as zf:
+                    self.prefix = os.path.commonprefix(zf.namelist())
+                    self.log.debug(_("Zipfile prefix is {0}").
+                                   format(self.prefix))
+                    zf.extractall(self.tmpdir)
+
+                    # Set the execute bits on scripts as zipfile
+                    # does not restore the permissions bits
+                    os.chdir(self.tmpdir)
+                    for fname in zf.namelist():
+                        if (fname.startswith('scripts/') and
+                            os.path.isfile(fname)):
+                            # Assume this is a script file
+                            # Give all permissions to owner and read+execute
+                            # for group and others
+                            os.chmod(fname,
+                                     stat.S_IRWXU|stat.S_IRGRP|stat.S_IXGRP|stat.S_IROTH|stat.S_IXOTH)
+
+                # TODO (pjoseph): Use the below code instead of extract all
+                # once unzip is installed on launchpad VMs
+                # zfile = os.path.abspath(self.in_file)
+                # os.chdir(self.tmpdir)
+                # zip_cmd = "unzip {}".format(zfile)
+                # subprocess.check_call(zip_cmd,
+                #                       #stdout=subprocess.PIPE,
+                #                       #stderr=subprocess.PIPE,
+                #                       shell=True,)
+
+            except Exception as e:
+                msg = _("Exception extracting input file {0}: {1}"). \
+                      format(self.in_file, e)
+                self.log.error(msg)
+                self.log.exception(e)
+                os.chdir(prevdir)
+                shutil.rmtree(self.tmpdir)
+                self.tmpdir = None
+                raise ToscaEntryFileError(msg)
+
+        os.chdir(self.tmpdir)
+
+        try:
+            # Goto the TOSAC Metadata file
+            prefix_dir = os.path.join(self.tmpdir, self.prefix)
+            meta_file = os.path.join(prefix_dir, 'TOSCA-Metadata',
+                                     'TOSCA.meta')
+            self.log.debug(_("Checking metadata file {0}").format(meta_file))
+            if not os.path.exists(meta_file):
+                self.log.error(_("Not able to find metadata file in archive"))
+                return
+
+            # Open the metadata file and get the entry file
+            with open(meta_file, 'r') as f:
+                meta = yaml.load(f)
+
+                if 'Entry-Definitions' in meta:
+                    entry_file = os.path.join(prefix_dir,
+                                              meta['Entry-Definitions'])
+                    if os.path.exists(entry_file):
+                        self.log.debug(_("TOSCA entry file is {0}").
+                                       format(entry_file))
+                        return entry_file
+
+                    else:
+                        msg = _("Unable to get the entry file: {0}"). \
+                              format(entry_file)
+                        self.log.error(msg)
+                        raise ToscaEntryFileNotFoundError(msg)
+
+                else:
+                    msg = _("Did not find entry definition " \
+                            "in metadata: {0}").format(meta)
+                    self.log.error(msg)
+                    raise ToscaNoEntryDefinitionError(msg)
+
+        except Exception as e:
+            msg = _('Exception parsing metadata file {0}: {1}'). \
+                  format(meta_file, e)
+            self.log.error(msg)
+            self.log.exception(e)
+            raise ToscaEntryFileError(msg)
+
+        finally:
+            os.chdir(prevdir)
+
+    def _translate(self, sourcetype, parsed_params):
         output = None
+
+        # Check the input file
+        path = os.path.abspath(self.template_file)
+        self.in_file = path
+        a_file = os.path.isfile(path)
+        if not a_file:
+            msg = _("The path {} is not a valid file."). \
+                  format(self.template_file)
+            self.log.error(msg)
+            raise ValueError(msg)
+
+        # Get the file type
+        self.ftype = self._get_file_type()
+        self.log.debug(_("Input file {0} is of type {1}").
+                       format(path, self.ftype))
+
         if sourcetype == "tosca":
-            self.log.debug(_('Loading the tosca template.'))
-            tosca = ToscaTemplate(path, parsed_params, a_file)
-            self.log.debug(_('TOSCA Template: {}').format(tosca.__dict__))
-            translator = TOSCATranslator(self.log, tosca, parsed_params,
+            entry_file = self.get_entry_file()
+            if entry_file:
+                self.log.debug(_('Loading the tosca template.'))
+                tosca = ToscaTemplate(entry_file, parsed_params, True)
+                self.log.debug(_('TOSCA Template: {}').format(tosca.__dict__))
+                translator = TOSCATranslator(self.log, tosca, parsed_params,
                                          use_gi=self.use_gi)
-            self.log.debug(_('Translating the tosca template.'))
-            output = translator.translate()
+                self.log.debug(_('Translating the tosca template.'))
+                output = translator.translate()
         return output
 
-    def _write_output(self, output, output_dir=None):
-        if output:
-            for key in output.keys():
-                if output_dir:
-                    # Create sub dirs like nsd, vnfd etc
-                    subdir = os.path.join(output_dir, key)
-                    os.makedirs(subdir, exist_ok=True)
-                for desc in output[key]:
-                    if output_dir:
-                        output_file = os.path.join(subdir,
-                                                   desc['name']+'.yml')
-                        self.log.debug(_("Writing file {0}").
-                                       format(output_file))
-                        with open(output_file, 'w+') as f:
-                            f.write(desc['yang'])
+    def _copy_supporting_files(self, output_dir, files):
+        # Copy supporting files, if present in archive
+        if self.tmpdir:
+            # The files are refered relative to the definitions directory
+            arc_dir = os.path.join(self.tmpdir,
+                                   self.prefix,
+                                   'Definitions')
+            prevdir = os.getcwd()
+            try:
+                os.chdir(arc_dir)
+                for fn in files:
+                    fname = fn['name']
+                    fpath = os.path.abspath(fname)
+                    ty = fn['type']
+                    if ty == 'image':
+                        dest = os.path.join(output_dir, 'images')
+                    elif ty == 'script':
+                        dest = os.path.join(output_dir, 'scripts')
                     else:
-                        print(_("Descriptor {0}:\n{1}").
-                              format(desc['name'], desc['yang']))
+                        self.log.warn(_("Unknown file type {0} for {1}").
+                                      format(ty, fname))
+                        continue
 
-            # Copy other directories, if present in zip
-            if output_dir and self.ftype == self.ZIP:
-                self.log.debug(_("Input is zip file, copy dirs"))
-                # Unzip the file to a tmp location
-                with tempfile.TemporaryDirectory() as tmpdirname:
-                    prevdir = os.getcwd()
-                    try:
-                        with zipfile.ZipFile(self.in_file) as zf:
-                            zf.extractall(tmpdirname)
-                        os.chdir(tmpdirname)
-                        dirs = [d for d in os.listdir(tmpdirname)
-                                if os.path.isdir(d)]
-                        for d in dirs:
-                            if d in self.COPY_DIRS:
-                                shutil.move(d, output_dir)
-                    except Exception as e:
-                        msg = _("Exception extracting input file {0}: {1}"). \
-                              format(self.in_file, e)
-                        self.log.error(msg)
-                        raise e
-                    finally:
-                        os.chdir(prevdir)
-                # Create checkum for all files
-                flist = {}
-                for root, dirs, files in os.walk(output_dir):
-                    rel_dir = root.replace(output_dir+'/', '')
-                    for f in files:
-                        flist[os.path.join(rel_dir, f)] = \
-                                        ChecksumUtils.get_md5(os.path.join(root, f))
-                self.log.debug(_("Files in output_dir: {}").format(flist))
+                    self.log.debug(_("File type {0} copy from {1} to {2}").
+                                   format(ty, fpath, dest))
+                    if os.path.exists(fpath):
+                        # Copy the files to the appropriate dir
+                        self.log.debug(_("Copy file(s) {0} to {1}").
+                                         format(fpath, dest))
+                        if os.path.isdir(fpath):
+                            # Copy directory structure like charm dir
+                            shutil.copytree(fpath, dest)
+                        else:
+                            # Copy a single file
+                            os.makedirs(dest, exist_ok=True)
+                            shutil.copy2(fpath, dest)
+
+                    else:
+                        self.log.warn(_("Could not find file {0} at {1}").
+                                      format(fname, fpath))
+
+            except Exception as e:
+                self.log.error(_("Exception copying files {0}: {1}").
+                               format(arc_dir, e))
+                self.log.exception(e)
+
+            finally:
+                os.chdir(prevdir)
+
+    def _create_checksum_file(self, output_dir):
+        # Create checkum for all files
+        flist = {}
+        for root, dirs, files in os.walk(output_dir):
+            rel_dir = root.replace(output_dir, '').lstrip('/')
+
+            for f in files:
+                fpath = os.path.join(root, f)
+                # TODO (pjoseph): To be fixed when we can
+                # retrieve image files from Launchpad
+                if os.path.getsize(fpath) != 0:
+                    flist[os.path.join(rel_dir, f)] = \
+                                                ChecksumUtils.get_md5(fpath)
+                    self.log.debug(_("Files in output_dir: {}").format(flist))
+
                 chksumfile = os.path.join(output_dir, 'checksums.txt')
                 with open(chksumfile, 'w') as c:
                     for key in sorted(flist.keys()):
                         c.write("{}  {}\n".format(flist[key], key))
+
+    def _create_archive(self, desc_id, output_dir):
+        """Create a tar.gz archive for the descriptor"""
+        aname = desc_id + '.tar.gz'
+        apath = os.path.join(output_dir, aname)
+        self.log.debug(_("Generating archive: {}").format(apath))
+
+        prevdir = os.getcwd()
+        os.chdir(output_dir)
+
+        # Generate the archive
+        tar_cmd = "tar zcvf {} {}".format(apath, desc_id)
+        self.log.debug(_("Generate archive: {}").format(tar_cmd))
+
+        try:
+            subprocess.check_call(tar_cmd,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE,
+                                  shell=True)
+            return apath
+
+        except subprocess.CalledProcessError as e:
+            msg = _("Error creating archive with {}: {}"). \
+                           format(tar_cmd, e)
+            self.log.error(msg)
+            raise ToscaCreateArchiveError(msg)
+
+        finally:
+            os.chdir(prevdir)
+
+    def _write_output(self, output, output_dir=None):
+        out_files = []
+
+        if output_dir:
+            output_dir = os.path.abspath(output_dir)
+
+        if output:
+            # Do the VNFDs first and then NSDs as later when
+            # loading in launchpad, VNFDs need to be loaded first
+            for key in [ManoTemplate.VNFD, ManoTemplate.NSD]:
+                for desc in output[key]:
+                    if output_dir:
+                        desc_id = desc[ManoTemplate.ID]
+                        # Create separate directories for each descriptors
+                        # Use the descriptor id to avoid name clash
+                        subdir = os.path.join(output_dir, desc_id)
+                        os.makedirs(subdir)
+
+                        output_file = os.path.join(subdir,
+                                            desc[ManoTemplate.NAME]+'.yml')
+                        self.log.debug(_("Writing file {0}").
+                                       format(output_file))
+                        with open(output_file, 'w+') as f:
+                            f.write(desc[ManoTemplate.YANG])
+
+                        if ManoTemplate.FILES in desc:
+                            self._copy_supporting_files(subdir,
+                                                desc[ManoTemplate.FILES])
+
+                        if self.archive:
+                            # Create checksum file
+                            self._create_checksum_file(subdir)
+                            out_files.append(self._create_archive(desc_id,
+                                                                  output_dir))
+                            # Remove the desc directory
+                            shutil.rmtree(subdir)
+                    else:
+                        print(_("Descriptor {0}:\n{1}").
+                              format(desc[ManoTemplate.NAME],
+                                     desc[ManoTemplate.YANG]))
+
+            if output_dir and self.archive:
+                # Return the list of archive files
+                return out_files
 
     def _get_file_type(self):
         m = magic.open(magic.MAGIC_MIME)
@@ -249,7 +506,7 @@ class TranslatorShell(object):
 
 
 def main(args=None, log=None):
-    TranslatorShell().main(raw_args=args, log=log)
+    TranslatorShell(log=log).main(raw_args=args)
 
 
 if __name__ == '__main__':

@@ -132,6 +132,18 @@ static int handle_message(struct reaper * reaper, struct client * client, msgpac
     free(path);
     (void)r;
     // TODO:  how to handle error?
+  } else if (key->via.str.size == 7 && !strncmp(key->via.str.ptr, "del_pid", 7)) {
+    int r;
+
+    if (val->type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
+      err("invalid value type for del_pid: %d\n", val->type);
+      return -1;
+    }
+
+    info("del pid %lu from client %d\n", val->via.u64, client->socket);
+    r = reaper_del_client_pid(reaper, client, val->via.u64);
+    (void)r;
+    // TODO:  how to handle error?
   } else {
     char * cmd;
 
@@ -216,6 +228,18 @@ int reaper_add_client(struct reaper * reaper, int socket) {
   return 0;
 }
 
+int reaper_del_client_pid(struct reaper * reaper, struct client * client, uint16_t pid) {
+
+  for (size_t i = 0; i < client->max_pids; ++i) {
+    if (client->pids[i] == pid) {
+      client->pids[i] = 0;
+      return 0;
+    }
+  }
+
+  return -1;
+}
+
 int reaper_add_client_pid(struct reaper * reaper, struct client * client, uint16_t pid) {
   bool inserted = false;
 
@@ -236,7 +260,6 @@ int reaper_add_client_pid(struct reaper * reaper, struct client * client, uint16
       return -1;
     }
 
-    free(client->pids);
     client->pids = new_pids;
   }
 
@@ -266,7 +289,6 @@ int reaper_add_client_path(struct reaper * reaper, struct client * client, const
       return -1;
     }
 
-    free(client->paths);
     client->paths = new_paths;
   }
 

@@ -17,10 +17,12 @@ var isSocketOff = true;
 var FleetActions = require('./launchpadFleetActions.js');
 var Utils = require('utils/utils.js');
 import $ from 'jquery';
-module.exports = {
+
+
+module.exports = function(Alt) {
   //NEW SOURCE
-  nsrControl: function(state) {
-    return {
+  return {
+    nsrControl: {
       remote: function(state, method, url, value) {
         return new Promise(function(resolve, reject) {
           // $.ajax({});
@@ -30,10 +32,8 @@ module.exports = {
       },
       success: FleetActions.nsrControlSuccess,
       error: FleetActions.nsrControlError
-    };
-  },
-  getNsrInstances: function() {
-    return {
+    },
+    getNsrInstances: {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -48,10 +48,8 @@ module.exports = {
       },
       success: FleetActions.getNsrInstancesSuccess,
       error: FleetActions.getNsrInstancesError
-    };
-  },
-  deleteNsrInstance: function(d, id) {
-    return {
+    },
+    deleteNsrInstance: {
       remote: function(d, id) {
         console.log(id)
         return new Promise(function(resolve, reject) {
@@ -67,10 +65,8 @@ module.exports = {
       },
       success: FleetActions.deleteNsrInstanceSuccess,
       error: FleetActions.deleteNsrInstancesError
-    };
-  },
-  openNSRSocket: function() {
-    return {
+    }  ,
+    openNSRSocket: {
       remote: function(state) {
         return new Promise(function(resolve, reject) {
           //If socket connection already exists, eat the request.
@@ -95,13 +91,11 @@ module.exports = {
           });;
         });
       },
-      loading: FleetActions.openNSRSocketLoading,
+      loading: Alt.actions.global.openNSRSocketLoading,
       success: FleetActions.openNSRSocketSuccess,
       error: FleetActions.openNSRError
-    };
-  },
-  setNSRStatus: function() {
-    return {
+    },
+    setNSRStatus: {
       remote: function(state, id, status) {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -119,10 +113,8 @@ module.exports = {
       },
       success: FleetActions.setNSRStatusSuccess,
       error: FleetActions.setNSRStatusError
-    };
-  },
-  getLaunchpadConfig: function() {
-    return {
+    },
+    getLaunchpadConfig: {
       remote: function() {
         return new Promise(function(resolve, reject) {
           $.ajax({
@@ -137,9 +129,135 @@ module.exports = {
       },
       success: FleetActions.getLaunchpadConfigSuccess,
       error: FleetActions.getLaunchpadConfigError
-    };
+    }
   }
 };
+
+
+// module.exports = {
+//   //NEW SOURCE
+//   nsrControl: function(state) {
+//     return {
+//       remote: function(state, method, url, value) {
+//         return new Promise(function(resolve, reject) {
+//           // $.ajax({});
+//           // console.log(method + 'ing: "' + value + '" to "' + url + '"');
+//           resolve(method + 'ing: "' + value + '" to "' + url + '"')
+//         });
+//       },
+//       success: FleetActions.nsrControlSuccess,
+//       error: FleetActions.nsrControlError
+//     };
+//   },
+//   getNsrInstances: function() {
+//     return {
+//       remote: function() {
+//         return new Promise(function(resolve, reject) {
+//           $.ajax({
+//             url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr?api_server=' + API_SERVER,
+//             type: 'GET',
+//             beforeSend: Utils.addAuthorizationStub,
+//             success: function(data) {
+//               resolve(data);
+//             }
+//           });
+//         });
+//       },
+//       success: FleetActions.getNsrInstancesSuccess,
+//       error: FleetActions.getNsrInstancesError
+//     };
+//   },
+//   deleteNsrInstance: function(d, id) {
+//     return {
+//       remote: function(d, id) {
+//         console.log(id)
+//         return new Promise(function(resolve, reject) {
+//           $.ajax({
+//             url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr/' + id + '?api_server=' + API_SERVER,
+//             type: 'DELETE',
+//             beforeSend: Utils.addAuthorizationStub,
+//             success: function(data) {
+//               resolve(data);
+//             }
+//           });
+//         });
+//       },
+//       success: FleetActions.deleteNsrInstanceSuccess,
+//       error: FleetActions.deleteNsrInstancesError
+//     };
+//   },
+//   openNSRSocket: function(Alt) {
+//     console.log(arguments)
+//     return {
+//       remote: function(state) {
+//         return new Promise(function(resolve, reject) {
+//           //If socket connection already exists, eat the request.
+//           if(state.socket) {
+//             return resolve(false);
+//           }
+//            $.ajax({
+//             url: '//' + window.location.hostname + ':' + NODE_PORT + '/socket-polling?api_server=' + API_SERVER ,
+//             type: 'POST',
+//             beforeSend: Utils.addAuthorizationStub,
+//             data: {
+//               url: HOST + ':' + NODE_PORT + '/launchpad/nsr?api_server=' + API_SERVER
+//             },
+//             success: function(data, textStatus, jqXHR) {
+//               var url = Utils.webSocketProtocol() + '//' + window.location.hostname + ':' + data.port + data.socketPath;
+//               var ws = new WebSocket(url);
+//               resolve(ws);
+//             }
+//           }).fail(function(xhr){
+//             //Authentication and the handling of fail states should be wrapped up into a connection class.
+//             Utils.checkAuthentication(xhr.status);
+//           });;
+//         });
+//       },
+//       loading: FleetActions.openNSRSocketLoading,
+//       success: FleetActions.openNSRSocketSuccess,
+//       error: FleetActions.openNSRError
+//     };
+//   },
+//   setNSRStatus: function() {
+//     return {
+//       remote: function(state, id, status) {
+//         return new Promise(function(resolve, reject) {
+//           $.ajax({
+//             url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/nsr/' + id + '/admin-status?api_server=' + API_SERVER ,
+//             type:'PUT',
+//             beforeSend: Utils.addAuthorizationStub,
+//             data: {
+//               status: status
+//             },
+//             success: function(data, textStatus, jqXHR) {
+
+//             }
+//           });
+//         });
+//       },
+//       success: FleetActions.setNSRStatusSuccess,
+//       error: FleetActions.setNSRStatusError
+//     };
+//   },
+//   getLaunchpadConfig: function() {
+//     return {
+//       remote: function() {
+//         return new Promise(function(resolve, reject) {
+//           $.ajax({
+//             url: '//' + window.location.hostname + ':' + NODE_PORT + '/launchpad/config?api_server=' + API_SERVER,
+//             type: 'GET',
+//             beforeSend: Utils.addAuthorizationStub,
+//             success: function(data) {
+//               resolve(data);
+//             }
+//           });
+//         });
+//       },
+//       success: FleetActions.getLaunchpadConfigSuccess,
+//       error: FleetActions.getLaunchpadConfigError
+//     };
+//   }
+// };
 
 Object.size = function(obj) {
   var size = 0,

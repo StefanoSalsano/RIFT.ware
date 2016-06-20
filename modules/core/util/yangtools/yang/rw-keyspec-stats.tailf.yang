@@ -20,10 +20,10 @@ module rw-keyspec-stats-tailf
   }
 
   tailf:annotate "/rwks:keyspec-stats" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rwks:keyspec-ebuf" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 }

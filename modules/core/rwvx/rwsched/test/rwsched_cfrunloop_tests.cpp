@@ -138,7 +138,7 @@ class CFRunLoopTimerTest : public CFRunLoopTest {
 
       // Ensure that myObj callback was triggered within 10% of the interval specified
       CFAbsoluteTime curTime = CFAbsoluteTimeGetCurrent();
-      CFAbsoluteTime intervalMarginError = .10 * myObj->interval;
+      CFAbsoluteTime intervalMarginError = .20 * myObj->interval;
       CFAbsoluteTime finishMin = myObj->create_time + myObj->interval - intervalMarginError;
       CFAbsoluteTime finishMax = myObj->create_time + myObj->interval + intervalMarginError;
 
@@ -251,6 +251,13 @@ TEST_F(CFRunLoopTimerTest, TimerCreateSetNextFireNdDestroy)
   ASSERT_EQ(this->callbacks_triggered, 1);
 }
 
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/inotify.h>
+#define EVENT_SIZE  ( sizeof (struct inotify_event) )
+#define BUF_LEN     ( 1024 * ( EVENT_SIZE + 16 ) )
+
+
 
 class CFRunLoopDescriptorTest : public CFRunLoopTest {
   protected:
@@ -272,6 +279,51 @@ class CFRunLoopDescriptorTest : public CFRunLoopTest {
       this->cfsocket = rwsched_tasklet_CFSocketCreateWithNative(this->tasklet,
                                                         kCFAllocatorSystemDefault,
                                                         this->pipe_fds[0],
+                                                        cf_callback_flags,
+                                                        read_callback,
+                                                        &cf_context);
+
+      RW_CF_TYPE_VALIDATE(this->cfsocket, rwsched_CFSocketRef);
+
+      rwsched_tasklet_CFSocketSetSocketFlags(this->tasklet, this->cfsocket, cf_option_flags);
+
+      this->cfsource = rwsched_tasklet_CFSocketCreateRunLoopSource(this->tasklet,
+                                                           kCFAllocatorSystemDefault,
+                                                           this->cfsocket, 0);
+
+      RW_CF_TYPE_VALIDATE(this->cfsource, rwsched_CFRunLoopSourceRef);
+
+      rwsched_tasklet_CFRunLoopAddSource(this->tasklet, runloop, this->cfsource, this->rwsched->main_cfrunloop_mode);
+    }
+
+    void create_inotify_source(rwsched_CFSocketCallBack read_callback)
+    {
+      // Create a pipe to send data through
+      this->inotify_fd = inotify_init();
+      EXPECT_TRUE(this->inotify_fd >= 0);
+
+      srandom(time(NULL));
+      int r = asprintf(&this->inotify_tmp_fname, "/tmp/inotify_%ld", random());
+      RW_ASSERT(r!=-1);
+      fprintf(stderr, "inotify_tmp_file=%s\n", this->inotify_tmp_fname);
+
+      int fd = creat(this->inotify_tmp_fname, 0777);
+      RW_ASSERT(fd>0);
+      close(fd);
+
+      int wd = inotify_add_watch(this->inotify_fd,
+                                 this->inotify_tmp_fname,
+                                 IN_MODIFY | IN_DELETE );
+      EXPECT_TRUE(wd >= 0);
+
+      CFSocketContext cf_context = { 0, this, NULL, NULL, NULL };
+      CFOptionFlags cf_callback_flags = kCFSocketReadCallBack;
+      CFOptionFlags cf_option_flags = kCFSocketAutomaticallyReenableReadCallBack;
+
+      rwsched_CFRunLoopRef runloop = rwsched_tasklet_CFRunLoopGetCurrent(this->tasklet);
+      this->cfsocket = rwsched_tasklet_CFSocketCreateWithNative(this->tasklet,
+                                                        kCFAllocatorSystemDefault,
+                                                        this->inotify_fd,
                                                         cf_callback_flags,
                                                         read_callback,
                                                         &cf_context);
@@ -354,6 +406,25 @@ class CFRunLoopDescriptorTest : public CFRunLoopTest {
       myObj->destroy_source();
     }
 
+    static void single_inotify_callback(rwsched_CFSocketRef s,
+                                     CFSocketCallBackType type,
+                                     CFDataRef address,
+                                     const void *data,
+                                     void *info)
+    {
+      auto myObj = static_cast<CFRunLoopDescriptorTest *>(info);
+      myObj->callbacks_triggered++;
+
+      uint8_t buffer[BUF_LEN];
+      int rc = read(myObj->inotify_fd, buffer, BUF_LEN);
+      EXPECT_GT(rc, 0);
+
+      printf("single_inotify_callback CALLED\n");
+
+
+      myObj->destroy_source();
+    }
+
     static void continuous_callback(rwsched_CFSocketRef s,
                                     CFSocketCallBackType type,
                                     CFDataRef address,
@@ -409,12 +480,23 @@ class CFRunLoopDescriptorTest : public CFRunLoopTest {
     rwsched_CFRunLoopSourceRef cfsource;
     rwsched_CFSocketRef cfsocket;
     int pipe_fds[2];
+    int inotify_fd;
+    char *inotify_tmp_fname;
     int callbacks_triggered = 0;
 };
 
 TEST_F(CFRunLoopDescriptorTest, ReadSingleCallback)
 {
   this->create_read_source(this->single_read_callback);
+  rwsched_instance_CFRunLoopRunInMode(this->rwsched, this->rwsched->main_cfrunloop_mode, 1.00, false);
+
+  ASSERT_EQ(this->callbacks_triggered, 1);
+}
+
+TEST_F(CFRunLoopDescriptorTest, InotifySingleCallback)
+{
+  this->create_inotify_source(this->single_inotify_callback);
+  unlink(this->inotify_tmp_fname);
   rwsched_instance_CFRunLoopRunInMode(this->rwsched, this->rwsched->main_cfrunloop_mode, 1.00, false);
 
   ASSERT_EQ(this->callbacks_triggered, 1);

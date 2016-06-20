@@ -18,28 +18,37 @@ __BEGIN_DECLS
 typedef struct {
   void *userdata;
   rwdts_kv_handle_t *handle;
+  rwsched_instance_ptr_t sched_instance;
+  rwsched_tasklet_ptr_t tasklet_info;
+  char * hostname;
+  uint16_t port;
+  uint16_t num_retries;
+  rwsched_dispatch_source_t retry_timer;
 } rwdts_kv_db_init_info;
 
 rw_status_t rwdts_kv_redis_connect_api(rwdts_kv_handle_t *handle,
                                        rwsched_instance_ptr_t sched_instance,
                                        rwsched_tasklet_ptr_t tasklet_info,
                                        char * hostname, uint16_t port,
+                                       const char *file_name,
+                                       const char *program_name,
                                        void *callbk_fn, void * callback_data);
 
-void rwdts_kv_redis_set_api(void *instance, int db_num, char *key,
-                            int key_len, char *val, int val_len,
-                            void *callbkfn, void *callbk_data);
+rw_status_t rwdts_kv_redis_set_api(void *instance, int db_num, char *file_name, char *key,
+                                   int key_len, char *val, int val_len,
+                                   void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_get_api(void *instance, int db_num, char *key,
                             int key_len, void *callbkfn, void *callbk_data);
 
-void rwdts_kv_redis_del_api(void *instance, int db_num, char *key,
-                            int key_len, void *callbkfn, void *callbk_data);
+rw_status_t 
+rwdts_kv_redis_del_api(void *instance, int db_num, char *file_name, char *key,
+                       int key_len, void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_disc_api(void *instance);
 
 void rwdts_kv_redis_set_hash_api(rwdts_kv_handle_t *handle, int db_num,
-                                 int shard_num, char *key, int key_len,
+                                 char *shard_num, char *key, int key_len,
                                  int serial_num, char *val, int val_len,
                                  void *callbkfn, void *callbk_data);
 
@@ -47,10 +56,10 @@ void rwdts_kv_redis_get_hash_api(void *instance, int db_num, char *key,
                                  int key_len, void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_del_hash_api(rwdts_kv_handle_t *handle, int db_num,
-                                 int shard_num, char *key, int key_len,
+                                 char *shard_num, char *key, int key_len,
                                  int serial_num, void *callbkfn, void *callbk_data);
 
-void rwdts_kv_redis_update_hash_api(void *instance, int db_num, int shard_num,
+void rwdts_kv_redis_update_hash_api(void *instance, int db_num, char *shard_num,
                                     char *key, int key_len, int serial_num,
                                     char *val, int val_len,
                                     void *callbkfn, void *callbk_data);
@@ -63,7 +72,7 @@ void rwdts_kv_redis_hash_exists_api(void *instance, int db_num, char *key,
                                     void *callbk_data);
 
 void rwdts_kv_redis_get_next_hash_api(rwdts_kv_table_handle_t *tab_handle,
-                                      int shard_num, void *callbkfn, void *callbk_data);
+                                      char *shard_num, void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_delete_tab_api(void *instance, int db_num,
                                    void *callbkfn, void *callbk_data);
@@ -72,23 +81,23 @@ void rwdts_kv_redis_get_hash_sernum_api(void *instance, int db_num, char *key,
                                         int key_len, void *callbkfn,
                                         void *callbk_data);
 
-void rwdts_kv_redis_get_all_api(rwdts_kv_handle_t *handle, int db_num,
+void rwdts_kv_redis_get_all_api(rwdts_kv_handle_t *handle, int db_num, char *file_name,
                                 void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_del_shard_entries_api(rwdts_kv_handle_t *handle, int db_num,
-                                          int shard_num, void *callbkfn, void *callbk_data);
+                                          char *shard_num, void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_set_pend_hash_api(rwdts_kv_handle_t *handle, int db_num,
-                                      int shard_num, char *key, int key_len,
+                                      char *shard_num, char *key, int key_len,
                                       int serial_num, char *val, int val_len,
                                       void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_set_pend_commit_hash_api(rwdts_kv_handle_t *handle, int db_num,
-                                             int shard_num, char *key, int key_len,
+                                             char *shard_num, char *key, int key_len,
                                              int serial_num, void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_set_pend_abort_hash_api(rwdts_kv_handle_t *handle, int db_num,
-                                            int shard_num, char *key, int key_len,
+                                            char *shard_num, char *key, int key_len,
                                             int serial_num, void *callbkfn, void *callbk_data);
 
 void rwdts_kv_redis_del_pend_hash_api(rwdts_kv_handle_t *handle, int db_num,
@@ -171,6 +180,22 @@ rw_status_t rwdts_kv_redis_open_api(rwdts_kv_handle_t *handle,
                                     const char *file_name,
                                     const char *program_name,
                                     FILE *error_file_pointer);
+
+rw_status_t 
+rwdts_kv_redis_set_shash_api(rwdts_kv_handle_t *handle, int db_num,
+                             char *shard_num, char *key, int key_len,
+                             char *val, int val_len,
+                             void *callbkfn, void *callbk_data);
+
+rw_status_t
+rwdts_kv_redis_del_shash_api(rwdts_kv_handle_t *handle,
+                             int db_num, char *file_name_shard,
+                             char *key, int key_len,
+                             void *callbkfn, void *callbk_data);
+
+rw_status_t 
+rwdts_kv_redis_get_shash_all_api(rwdts_kv_handle_t *handle, int db_num, char *file_name,
+                                 void *callbkfn, void *callbk_data);
 __END_DECLS
 
 #endif /*__RWDTS_KV_REDIS_INTERFACE_H */

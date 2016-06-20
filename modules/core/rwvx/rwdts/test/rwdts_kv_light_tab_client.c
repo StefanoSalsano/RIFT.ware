@@ -90,7 +90,7 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_tab_exist(int exists,
   if (exists == 1) {
     fprintf(stderr, "Exists\n");
   }
-  rwdts_kv_light_table_delete_key(data, (myUserData.serial_num), 250,
+  rwdts_kv_light_table_delete_key(data, (myUserData.serial_num), "test",
                                   "FOO", 3, rwdts_kv_light_del_callback, (void *)data);
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
@@ -127,16 +127,17 @@ static rwdts_kv_light_reply_status_t rwdts_kv_light_set_callback(rwdts_kv_light_
   return RWDTS_KV_LIGHT_REPLY_DONE;
 }
 
-void redis_initialized(void *userdata)
+void redis_initialized(void *userdata, rw_status_t status)
 {
   rwdts_kv_table_handle_t *data = (rwdts_kv_table_handle_t *)userdata;
   /* ok, redis client connection to databases are up */
   fprintf(stderr, "[%s]Riftdb is up\n", getTime());
+  RW_ASSERT(status == RW_STATUS_SUCCESS);
   a.a = 1;
   a.b = 2;
   a.c = 3;
 
-  rwdts_kv_light_table_insert(data, myUserData.serial_num, 250, "FOO", 3,
+  rwdts_kv_light_table_insert(data, myUserData.serial_num, "test", "FOO", 3,
                               (void*)&a, sizeof(a), rwdts_kv_light_set_callback,
                               (void*)data);
 
@@ -161,8 +162,8 @@ int main(int argc, char **argv, char **envp) {
   RW_ASSERT(tasklet);
 
   myUserData.tab_handle = rwdts_kv_light_register_table(myUserData.handle, 1);
-  rwdts_kv_light_db_connect(myUserData.handle, rwsched, tasklet, "127.0.0.1:9997",
-                            redis_initialized, myUserData.tab_handle);
+  rwdts_kv_handle_db_connect(myUserData.handle, rwsched, tasklet, "127.0.0.1:9997",
+                             "test", NULL, redis_initialized, myUserData.tab_handle);
 
   myUserData.rwsched = rwsched;
   myUserData.tasklet = tasklet;

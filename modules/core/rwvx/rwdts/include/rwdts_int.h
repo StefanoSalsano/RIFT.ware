@@ -1685,7 +1685,9 @@ rwdts_xact_init_query_from_pb(rwdts_api_t*                  apih,
             credit_obj.stats.invalid_op);
 
 
-
+#define RWDTS_CREATE_SHARD(reg_id, client, rtr) \
+    char shard[100] = "\0"; \
+    sprintf(shard, "%d-%s-%s", reg_id, client, rtr);
 
 void rwdts_xact_status_deinit(rwdts_xact_status_t *s);
 
@@ -2157,6 +2159,14 @@ typedef struct rwdts_api_update_element_async_s {
   char *xpath;
   ProtobufCMessage*   msg;
 } rwdts_api_update_element_async_t;
+
+typedef struct rwdts_api_vm_state_cb_s rwdts_api_vm_state_cb_t;
+typedef struct rwdts_api_vm_state_info_s {
+  vcs_vm_state vm_state;
+  char *rwvm_name;
+  char *instance_name;
+  rwdts_api_vm_state_cb_t cb;
+} rwdts_api_vm_state_info_t;
 
 void
 rwdts_config_ready_publish(rwdts_api_config_ready_data_t *config_ready_data);

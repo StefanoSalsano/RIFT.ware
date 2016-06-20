@@ -72,9 +72,12 @@ private:
                           const std::string& elem_name,
                           const std::string& elem_value);
 
-  void set_notif_directory_path(const std::string& path,
-                                const std::string& elem_name,
-                                const std::string& elem_value);
+  /*!
+   * Add the predefined Netconf notification streams to the Confd conf file.
+   */
+  void add_netconf_notification_streams(
+                const std::vector<netconf_stream_info_t>& streams);
+
   // Enable/Disable a feature in config file
   void set_feature(const std::string& confd_node, bool value);
   bool create_confd_workspace();

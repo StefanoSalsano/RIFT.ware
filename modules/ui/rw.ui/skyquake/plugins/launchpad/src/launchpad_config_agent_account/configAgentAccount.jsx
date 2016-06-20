@@ -80,7 +80,12 @@ class ConfigAgentAccount extends React.Component {
             if (submit_obj[submit_obj['account-type']][key]) {
                 //submit_obj[submit_obj['account-type']][key] = self.state.configAgentAccount.params[key];
             } else {
-                submit_obj[submit_obj['account-type']][key] = self.state.configAgentAccount.params[key];
+                if(submit_obj[submit_obj['account-type']][key] == "") {
+                    self.context.flux.actions.global.showError("Please fill all account details");
+                    return;
+                } else {
+                    submit_obj[submit_obj['account-type']][key] = self.state.configAgentAccount.params[key];
+                }
             }
           }
 

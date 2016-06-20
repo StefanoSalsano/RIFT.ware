@@ -409,6 +409,14 @@ void rwmsg_broker_clichan_sockset_event_send(rwmsg_sockset_t *ss, rwmsg_priority
       }
 
       RWMSG_REQ_TRACK(req);
+      if (req->rwml_buffer) {
+        rwmsg_request_memlog_hdr (&req->rwml_buffer, 
+                                  req, 
+                                  __PRETTY_FUNCTION__, 
+                                  __LINE__, 
+                                  "(Req Sockset Send)");
+      }
+
       rw_status_t rs = rwmsg_sockset_send(ss, sndpri, &req->req.msg);
       if (rs != RW_STATUS_SUCCESS) {
 	pollout = TRUE;
@@ -441,6 +449,14 @@ void rwmsg_broker_clichan_sockset_event_send(rwmsg_sockset_t *ss, rwmsg_priority
         rwmsg_request_message_load_header((req->hdr.isreq ? &req->req : &req->rsp), &req->hdr);
 
         RWMSG_REQ_TRACK(req);
+        if (req->rwml_buffer) {
+          rwmsg_request_memlog_hdr (&req->rwml_buffer, 
+                                    req, 
+                                    __PRETTY_FUNCTION__, 
+                                    __LINE__, 
+                                    "(Req Sockset Send Copy)");
+        }
+
         rw_status_t rs = rwmsg_sockset_send_copy(ss, sndpri, &req->rsp.msg);
         if (rs != RW_STATUS_SUCCESS) {
           pollout = TRUE;
@@ -669,6 +685,16 @@ rw_status_t rwmsg_broker_clichan_recv_buf(rwmsg_broker_clichan_t *cc,
     req->hdr.id.broid = bro->bro_instid;
   }
 
+  if (bro->rwmemlog) {
+    ck_pr_inc_int(&bro->rwmemlog_id);
+    req->rwml_buffer = rwmemlog_instance_get_buffer(bro->rwmemlog, "Req", -bro->rwmemlog_id);
+    rwmsg_request_memlog_hdr (&req->rwml_buffer, 
+                              req, 
+                              __PRETTY_FUNCTION__, 
+                              __LINE__, 
+                              "(Req Created)");
+  }
+
   RW_ASSERT (req->hdr.payt != RWMSG_PAYFMT_MSGCTL);
 
   if (cc->prevlocid == req->hdr.id.locid) {
@@ -743,6 +769,14 @@ rw_status_t rwmsg_broker_clichan_recv_buf(rwmsg_broker_clichan_t *cc,
       rwmsg_request_message_load(&req->rsp, req->req.msg.nnbuf, req->req.msg.nnbuf_len);
       rwmsg_request_message_load_header(&req->rsp, &req->hdr);
 #endif
+
+      if (req->rwml_buffer) {
+        rwmsg_request_memlog_hdr (&req->rwml_buffer, 
+                                  req, 
+                                  __PRETTY_FUNCTION__, 
+                                  __LINE__, 
+                                  "(Req Sockset Send Rej)");
+      }
 
       cc->stat.bnc[req->hdr.bnc]++;
       /* Attempt ss write */

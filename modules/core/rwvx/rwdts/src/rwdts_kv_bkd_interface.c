@@ -25,18 +25,21 @@
 #include <rwsched/cfsocket.h>
 #include <rwmsg.h>
 
-rw_status_t rwdts_kv_bkd_open_api(rwdts_kv_handle_t *handle,
-                                  const char *file_name,
-                                  const char *program_name,
-                                  FILE *error_file_pointer)
+rw_status_t 
+rwdts_kv_bkd_connect_api(rwdts_kv_handle_t *handle,
+                         rwsched_instance_ptr_t sched_instance,
+                         rwsched_tasklet_ptr_t tasklet_info,
+                         const char *file_name, 
+                         const char *program_name,
+                         char *hostname, uint16_t port, void *callbkfn, void *callbk_data)
 {
   DB *dbp;
   int db_ret;
   /* Create DB */
   if ((db_ret = db_create(&dbp, NULL, 0)) != 0) {
     return RW_STATUS_FAILURE;
-  } 
- 
+  }
+
   handle->kv_conn_instance = (void *)dbp;
 
   /* Relate the DB with the given file (location/name) */
@@ -44,7 +47,7 @@ rw_status_t rwdts_kv_bkd_open_api(rwdts_kv_handle_t *handle,
     dbp->err(dbp, db_ret, "file_name");
     handle->kv_conn_instance = NULL;
     return RW_STATUS_FAILURE;
-  } 
+  }
 
   return RW_STATUS_SUCCESS;
 }
@@ -80,12 +83,13 @@ rwdts_kv_bkd_close_db(DB *dbp)
 }
 
 rw_status_t
-rwdts_kv_bkd_set_api(void *instance, char *file_name, char *key, int key_len,
-                     char *val, int val_len)
+rwdts_kv_bkd_set_api(rwdts_kv_handle_t *handle, int db_num, char *file_name, 
+                     char *key, int key_len, char *val, int val_len,
+                     void *callbkfn, void *callbk_data)
 {
   DB *dbp;
   int db_ret;
-  dbp = (DB *)instance;
+  dbp = (DB *)handle->kv_conn_instance;
   DBT db_key, db_value;
 
   if (!dbp) {
@@ -159,11 +163,12 @@ rwdts_kv_bkd_get_api(void *instance, char *file_name, char *key, int key_len,
 }
 
 rw_status_t
-rwdts_kv_bkd_del_api(void *instance, char *file_name, char *key, int key_len)
+rwdts_kv_bkd_del_api(rwdts_kv_handle_t *handle, int db_num, char *file_name, char *key, int key_len,
+                     void *callbkfn, void *callbk_data)
 {
   DB *dbp;
   int db_ret;
-  dbp = (DB *)instance;
+  dbp = (DB *)handle->kv_conn_instance;
 
   DBT db_key;
 
@@ -292,3 +297,72 @@ rwdts_kv_close_bkd(void *instance)
 
   return RW_STATUS_SUCCESS;
 }
+
+rw_status_t
+rwdts_kv_bkd_get_all(rwdts_kv_handle_t *handle, int db_num, char *file_name,
+                     void *callbkfn, void *callbk_data)
+{
+  DB *dbp;
+  int db_ret;
+  dbp = (DB *)handle->kv_conn_instance;
+
+  DBC *dbcp;
+  DBT db_key, data;
+
+  RW_ASSERT(callbkfn);
+  rwdts_kv_client_getall_cbk_fn getall_callbkfn = (rwdts_kv_client_getall_cbk_fn)callbkfn;
+
+  char **key = NULL, **val = NULL;
+  int *key_len = NULL, *val_len = NULL;
+  int count = 0;
+
+  if (dbp) {
+    if ((db_ret = dbp->close(dbp, 0)) != 0) {
+      return RW_STATUS_FAILURE;
+    }
+    dbp = NULL;
+  }
+
+  if (!dbp) {
+    dbp = rwdts_kv_bkd_get_db_handle(file_name);
+  }
+
+  if (!dbp) {
+    getall_callbkfn(NULL, NULL, NULL, NULL, 0, callbk_data);
+    return RW_STATUS_FAILURE;
+  }
+
+  if ((db_ret = dbp->cursor(dbp, NULL, &dbcp, 0)) != 0) {
+    dbp->err(dbp, db_ret, "DB->cursor");
+    rwdts_kv_bkd_close_db(dbp);
+    handle->kv_conn_instance = NULL;
+    getall_callbkfn(NULL, NULL, NULL, NULL, 0, callbk_data);
+    return RW_STATUS_FAILURE;
+  }
+
+  memset(&db_key, 0, sizeof(db_key));
+  memset(&data, 0, sizeof(data));
+
+  while((db_ret = dbcp->c_get(dbcp, &db_key, &data, DB_NEXT)) == 0) {
+
+    key = realloc(key, ((count+1)*sizeof(key[0])));
+    (key)[count] = RW_MALLOC0(db_key.size);
+    memcpy((key)[count], db_key.data, db_key.size);
+    key_len = realloc(key_len, ((count+1)*sizeof(int)));
+    (key_len)[count] = db_key.size;
+    val = realloc(val, ((count+1)*sizeof(val[0])));
+    (val)[count] = RW_MALLOC0(data.size);
+    memcpy((val)[count], data.data, data.size);
+    val_len = realloc(val_len, ((count+1)*sizeof(int)));
+    (val_len)[count] = data.size;
+    count++;
+    memset(&db_key, 0, sizeof(db_key));
+    memset(&data, 0, sizeof(data));
+  }
+
+  rwdts_kv_bkd_close_db(dbp);
+  handle->kv_conn_instance = NULL;
+  getall_callbkfn((void **)key, key_len, (void **)val, val_len, count, callbk_data);
+  return RW_STATUS_SUCCESS;
+}
+

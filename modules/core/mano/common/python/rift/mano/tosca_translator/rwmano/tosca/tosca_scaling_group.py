@@ -31,7 +31,7 @@ class ToscaScalingGroup(ManoResource):
 
     toscatype = 'tosca.policies.riftio.ScalingGroup'
 
-    IGNORE_PROPS = ['vnfd-members']
+    IGNORE_PROPS = []
 
     def __init__(self, log, policy, metadata=None):
         # TODO(Philip):Not inheriting for ManoResource, as there is no

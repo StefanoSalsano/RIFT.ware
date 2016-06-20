@@ -41,6 +41,17 @@ class CloudAccountDtsOperdataHandler(object):
 
         return saved_cloud_accounts
 
+    @asyncio.coroutine
+    def create_notification(self, account):
+        xpath = "N,/rw-cloud:cloud-notif"
+        ac_status = RwCloudYang.YangNotif_RwCloud_CloudNotif()
+        ac_status.name = account.name
+        ac_status.message = account.connection_status.details
+
+        yield from self._dts.query_create(xpath, rwdts.XactFlag.ADVISE, ac_status)
+        self._log.info("Notification called by creating dts query: %s", ac_status)
+
+
     def _register_show_status(self):
         def get_xpath(cloud_name=None):
             return "D,/rw-cloud:cloud/account{}/connection-status".format(
@@ -93,6 +104,8 @@ class CloudAccountDtsOperdataHandler(object):
                 raise CloudAccountNotFound("Cloud account name %s not found" % cloud_account_name)
 
             account.start_validate_credentials(self._loop)
+
+            yield from self.create_notification(account)
 
             xact_info.respond_xpath(rwdts.XactRspCode.ACK)
 

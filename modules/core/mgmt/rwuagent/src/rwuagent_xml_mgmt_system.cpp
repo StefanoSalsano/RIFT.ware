@@ -51,12 +51,31 @@ bool XMLMgmtSystem::system_startup()
           (std::chrono::system_clock::now().time_since_epoch()).count();
 
     std::ostringstream oss;
-    oss << RW_SCHEMA_XML_TEST_PREFIX << &hostname[0] << "." << seconds_since_epoch;
+    oss << RW_SCHEMA_MGMT_TEST_PREFIX << &hostname[0] << "." << seconds_since_epoch;
     xml_dir_ = std::move(oss.str());
   } else {
-    std::ostringstream oss;
-    oss << RW_SCHEMA_XML_PERSIST_PREFIX << &hostname[0];
-    xml_dir_ = std::move(oss.str());
+
+    rwtasklet_info_ptr_t tasklet_info = instance_->rwtasklet();
+
+    if (   tasklet_info
+        && tasklet_info->rwvcs
+        && tasklet_info->rwvcs->pb_rwmanifest
+        && tasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase
+        && tasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt
+        && tasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->persist_dir_name) {
+
+      xml_dir_ = tasklet_info->rwvcs->pb_rwmanifest->bootstrap_phase->rwmgmt->persist_dir_name;
+
+      std::size_t pos = xml_dir_.find(RW_SCHEMA_MGMT_PERSIST_PREFIX);
+      if (pos == std::string::npos || pos != 0) {
+        xml_dir_.insert(0, RW_SCHEMA_MGMT_PERSIST_PREFIX);
+      }
+
+    } else {
+      std::ostringstream oss;
+      oss << RW_SCHEMA_MGMT_PERSIST_PREFIX << &hostname[0];
+      xml_dir_ = std::move(oss.str());
+    }
   }
   xml_dir_ = rift_install + "/" + xml_dir_;
 
@@ -111,7 +130,7 @@ void XMLMgmtSystem::start_mgmt_instance()
   if (!root_node || !root_node->get_first_child()) {
     // No configuration reloaded
 
-    // Fill defaults to the reload dom
+    // Fill defaults to the reload dom by calling copy_and_merge
     rw_yang::XMLDocument::uptr_t empty_dom = \
                   instance_->xml_mgr()->create_document();
     rw_yang::XMLDocMerger merger(instance_->xml_mgr(), empty_dom.get());

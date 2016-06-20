@@ -25,6 +25,7 @@ set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-undefined ${CMAKE_SHARED_LINKER_FLAGS}")
 include_directories(BEFORE
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwmsg/include
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwdts/include
+  ${RIFT_SUBMODULE_SOURCE_ROOT}/rwmemlogdts/include/riftware
   ${RIFT_SUBMODULE_SOURCE_ROOT}/rwsched/src
   ${CMAKE_CURRENT_BINARY_DIR}
   /usr/include/libxml2)
@@ -78,6 +79,8 @@ target_link_libraries(rwmsgbroker PRIVATE
   rwtrace
   rwvcs
   rwtasklet
+  rwmemlog
+  rwmemlog_yang_gen
 
   CoreFoundation
   ck

@@ -382,6 +382,27 @@ class SbReqEditConfig
   StartStatus start_xact_int() override;
 
   /*!
+   */
+  static void start_xact_xml_agent_prepare_xact(void * context);
+  /*!
+   */
+  static void start_xact_xml_agent_execute_xact(void * context);
+
+  /*!
+   */
+  StartStatus collect_xact_contents_and_validate_dom_and_save_dom();
+
+  /*!
+   * Build and execute the DTS transaction for xml-mode.
+   */
+  StartStatus build_and_execute_transaction();
+
+  /*!
+   * Build the delete xact blocks.
+   */
+  bool add_deletes_to_xact();
+
+  /*!
    * @see SbReq::CommitCb()
    * Once an EditConfiguration operation is committed by DTS, the delta that is
    * held by the transaction is committed to the running configuration stored by
@@ -397,6 +418,12 @@ class SbReqEditConfig
     void *ud);
 
  private:
+
+  /*!
+   * Used to hold the state of the transaction.
+   */
+  bool success_ = true;
+
   /*!
    * The configuration changes that are part of the NETCONF edit-config
    * operation.  The current clients provide the DOM in one
@@ -419,6 +446,8 @@ class SbReqEditConfig
    * Modified instance dom with the delta_ changes applied
    */
   rw_yang::XMLDocument::uptr_t new_instance_dom_;
+
+  std::list<BlockContents> xml_agent_xact_contents_;
 
 };
 

@@ -3,8 +3,11 @@
  * (c) Copyright RIFT.io, 2013-2016, All Rights Reserved
  *
  */
-@import "../../../../framework/style/_colors.scss";
+@import "style/_colors.scss";
 
+.app-body.topologyL2ViewAppBody {
+	flex:1;
+}
 .topologyL2View {
 	display: flex;
 	flex-direction: row;

@@ -58,14 +58,9 @@ void ArgumentParser::print_help() const
   std::cout << "  --create-schema-dir         Create Schema Directory\n";
   std::cout << "  --remove-schema-dir         Remove Schema Directory\n";
   std::cout << "  --prune-schema-dir          Prune Schema Directories\n";
-#ifdef CONFD_ENABLED
-  std::cout << "  --rm-unique-confd-ws        Remove unique Confd workspace\n";
-  std::cout << "  --rm-persist-confd-ws       Remove persist Confd workspaces\n";
-  std::cout << "  --archive-confd-persist-ws  Archive persist Confd workspace\n";
-#endif
-  std::cout << "  --rm-persist-xml-ws         Remove persist XML workspaces\n";
-  std::cout << "  --rm-unique-xml-ws          Remove unique XML workspace\n";
-  std::cout << "  --archive-xml-persist-ws    Archive persist XML workspace\n";
+  std::cout << "  --rm-unique-mgmt-ws         Remove unique Mgmt workspace\n";
+  std::cout << "  --rm-persist-mgmt-ws        Remove persist Mgmt workspaces\n";
+  std::cout << "  --archive-mgmt-persist-ws  Archive persist Mgmt workspace\n";
   std::cout << std::endl;
 }
 

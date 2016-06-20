@@ -1763,7 +1763,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 raise ValueError("Test Error")
 
             with dts.appconf_group_create(handler=handlers) as acg:
@@ -1842,7 +1842,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_ok(xact_info.handle)
 
             with dts.appconf_group_create(handler=handlers) as acg:
@@ -1921,7 +1921,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_validate=on_validate)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_ok(xact_info.handle)
 
             with dts.appconf_group_create(handler=handlers) as acg:
@@ -1995,7 +1995,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_ok(xact_info.handle)
 
             with dts.appconf_group_create(handler=handlers) as acg:
@@ -2038,12 +2038,12 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
             'scratch': {}
         }
 
-        expected_scratch = {'on_validate': '1', 'on_apply': '1'}
         xpath = 'C,/rw-dts-toy-tasklet:a-container'
 
         ret = toyyang.AContainer()
         ret.an_int = 10
         ret.a_string = self.id()
+        expected_scratch = {'on_validate': '1', 'on_apply': '1', 'msg': str(ret)}
 
 
         @asyncio.coroutine
@@ -2101,9 +2101,11 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_ok(xact_info.handle)
                 results['on_prepare'] = str(msg)
+                results['xact_id'] = xact.id
+                scratch['msg'] = str(msg)
 
             with dts.appconf_group_create(handler=handlers) as acg:
                 acg.register(xpath, rwdts.Flag.SUBSCRIBER, on_prepare=on_prepare)
@@ -2124,6 +2126,8 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
         self.assertEqual(len(results['elements_iter']), 1)
         self.assertEqual(results['elements_iter'][0], str(ret))
         self.assertEqual(str(ret), results['on_prepare'])
+
+
         self.assertEqual(expected_scratch, results['scratch'])
         print("}}}}}}}}}}}}}}}}}}}}DONE - test_appconf_group")
 
@@ -4255,7 +4259,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_ok(xact_info.handle)
 
             with dts.appconf_group_create(handler=handlers) as acg:
@@ -6259,7 +6263,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 nonlocal prep_cnt
                 prep_cnt += 1
                 acg.handle.prepare_complete_ok(xact_info.handle)
@@ -6337,7 +6341,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 nonlocal prep_cnt
                 prep_cnt += 1
                 acg.handle.prepare_complete_ok(xact_info.handle)
@@ -6446,7 +6450,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 nonlocal prep_cnt
 
                 fref = ProtobufC.FieldReference.alloc()
@@ -6539,7 +6543,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
 
         asyncio.ensure_future(pub(), loop=self.loop)
         asyncio.ensure_future(sub(), loop=self.loop)
-        self.run_until(events[3].is_set)
+        self.run_until(events[3].is_set, 10) # setting a timeout of 10 instead of 5
         self.assertEqual(5, prep_cnt)
 
         print("}}}}}}}}}}}}}}}}}}}}DONE - test_appconf_delete_partial")
@@ -6644,7 +6648,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 nonlocal prep_cnt
 
                 fref = ProtobufC.FieldReference.alloc()
@@ -6842,7 +6846,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 nonlocal prep_cnt
 
                 fref = ProtobufC.FieldReference.alloc()
@@ -7040,7 +7044,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 nonlocal prep_cnt
 
                 fref = ProtobufC.FieldReference.alloc()
@@ -7258,7 +7262,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 nonlocal prep_cnt
 
                 fref = ProtobufC.FieldReference.alloc()
@@ -7426,7 +7430,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 nonlocal prep_cnt
 
                 fref = ProtobufC.FieldReference.alloc()
@@ -7807,7 +7811,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
 
             self.reg1 = yield from dts.register(
                     xpath,
-                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ|rwdts.Flag.FILE_DATASTORE,
+                    flags=rwdts.Flag.PUBLISHER|rwdts.Flag.CACHE|rwdts.Flag.NO_PREP_READ|rwdts.Flag.DATASTORE,
                     handler=handler)
 
             yield from events[1].wait()
@@ -7908,7 +7912,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_fail(xact_info.handle, rwtypes.RwStatus.FAILURE, expected_exp_msg)
 
             with dts.appconf_group_create(handler=handlers) as acg:
@@ -7981,7 +7985,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
                     on_apply=on_apply)
 
             @asyncio.coroutine
-            def on_prepare(dts, acg, xact, xact_info, ksp, msg):
+            def on_prepare(dts, acg, xact, xact_info, ksp, msg, scratch):
                 acg.handle.prepare_complete_na(xact_info.handle)
 
             with dts.appconf_group_create(handler=handlers) as acg:
@@ -9116,7 +9120,7 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
 
         asyncio.ensure_future(pub(), loop=self.loop)
         asyncio.ensure_future(sub(), loop=self.loop)
-        self.run_until(events[3].is_set)
+        self.run_until(events[3].is_set, 10) # setting a timeout of 10 instead of 5
         self.assertEqual(4, prep_cnt)
 
         print("}}}}}}}}}}}}}}}}}}}}DONE - test_delete_partial")
@@ -10358,6 +10362,74 @@ class DtsTestCase(rift.test.dts.AbstractDTSTest):
         self.run_until(events[3].is_set)
 
         print("}}}}}}}}}}}}}}}}}}}}DONE - test_deregister")
+
+    def test_sub_read(self):
+        """
+        Verify that subscriber is queried for READ when query is triggered with
+        RWDTS_XACT_FLAG_SUB_READ flag
+
+        The test will progress through stages defined by the events list:
+            0:  Subscriber registration hit on_ready()
+            1:  Publisher finished iterating through dts.query_read() results
+        """
+        print("{{{{{{{{{{{{{{{{{{{{STARTING - test_sub_read")
+        results = []
+        events = [asyncio.Event(loop=self.loop) for _ in range(2)]
+
+        xpath = '/rw-dts-toy-tasklet:a-container'
+
+        ret = toyyang.AContainer()
+        ret.a_string = self.id()
+
+        @asyncio.coroutine
+        def pub():
+            tinfo = self.new_tinfo('pub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            yield from asyncio.gather(dts.ready.wait(), events[0].wait(), loop=self.loop)
+
+            res_iter = yield from dts.query_read(xpath, rwdts.XactFlag.SUB_READ|rwdts.XactFlag.TRACE)
+
+            for i in res_iter:
+                result = yield from i
+                results.append(result.result)
+
+            events[1].set()
+
+        @asyncio.coroutine
+        def sub():
+            nonlocal results
+            tinfo = self.new_tinfo('sub')
+            dts = rift.tasklets.DTS(tinfo, self.schema, self.loop)
+
+            @asyncio.coroutine
+            def on_ready(*args):
+                events[0].set()
+            
+            @asyncio.coroutine 
+            def on_prepare(xact_info, *args):
+                xact_info.respond_xpath(rwdts.XactRspCode.ACK, xpath, ret)
+            
+            handler = rift.tasklets.DTS.RegistrationHandler(
+                on_ready=on_ready,
+                on_prepare=on_prepare)
+
+            self.reg = yield from dts.register(
+                xpath,
+                flags=rwdts.Flag.SUBSCRIBER,
+                handler=handler)
+
+            yield from events[1].wait()
+
+        asyncio.ensure_future(pub(), loop=self.loop)
+        asyncio.ensure_future(sub(), loop=self.loop)
+
+        self.run_until(events[1].is_set)
+
+        self.assertEqual(1, len(results))
+        self.assertEqual(str(results[0]), str(ret))
+        self.reg.deregister()
+        print("}}}}}}}}}}}}}}}}}}}}DONE - test_sub_read")
 
 def main():
     top_dir = __file__[:__file__.find('/modules/core/')]

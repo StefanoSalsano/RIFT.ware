@@ -110,7 +110,7 @@ export default class NsrScalingGroups extends React.Component {
 				</span>
 			);
 
-			sgd['vnfd-member'].map((vnf) => {
+			sgd['vnfd-member'] && sgd['vnfd-member'].map((vnf) => {
 				let instanceCount = vnf['count'];
 				sgvnfs.push(
 					<span>{vnf['short-name']} {instanceCount > 1 ? '(' + instanceCount + ')': ''}</span>

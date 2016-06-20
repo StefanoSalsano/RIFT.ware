@@ -160,7 +160,7 @@ class NetconfWrapper(object):
 
         netconf_response = yield from self._netconf.edit_config(
             target="running",
-            config=xml)
+            config=xml)            
 
         self._log.debug("netconf delete response: %s", netconf_response.xml)
 

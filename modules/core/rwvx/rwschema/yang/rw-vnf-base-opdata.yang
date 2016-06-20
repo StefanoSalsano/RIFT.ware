@@ -464,20 +464,28 @@ module rw-vnf-base-opdata
             type rwvnfbasetypes:on-off;
           }
           container actor {
+            rwpb:field-inline "true";
             uses rwvnfbasetypes:lacpdu-info;
           }
           container partner {
+            rwpb:field-inline "true";
             uses rwvnfbasetypes:lacpdu-info;
           }
           leaf lacp-mux-state {
-            type string {
-              length "min..20";
+            type enumeration{
+              enum detached;
+              enum waiting;
+              enum attached;
+              enum collecting;
+              enum distributing;
             }
           }
           leaf selected-state {
-            type string {
-              length "min..20";
-            }
+            type enumeration{
+              enum unselected;
+              enum standby;
+              enum selected;
+             }
           }
         }
         container counters {
@@ -651,16 +659,105 @@ module rw-vnf-base-opdata
           }
 
           list route {
-            max-elements 64;
             rwpb:msg-new VrfIpRouteInfo;
             key "prefix type";
             uses rwvnfbasetypes:vrf-ip-route;
+          }
+
+          container xfrm{
+            list sa{
+              key "dest src";
+              rwpb:msg-new FpathXfrmSaUpdate;
+              leaf dest {
+                description "IP address of the interface";
+                type rwt:ip-address;
+                rwpb:field-string-max 46;
+                rwpb:field-c-type "rw_ip_addr_t";
+                rwpb:field-inline true;
+              }
+              leaf src {
+                description "IP address of the interface";
+                type rwt:ip-address;
+                rwpb:field-string-max 46;
+                rwpb:field-c-type "rw_ip_addr_t";
+                rwpb:field-inline true;
+              }
+              leaf spi{
+                type uint32;
+              }
+              leaf seq {
+                type uint32;
+              }
+              leaf reqid{
+                type uint32;
+              }
+              leaf mode{
+                type uint32;
+              }
+              leaf protocol{
+                type uint32;
+              }
+              leaf replay-window{
+                type uint32;
+              }
+              leaf flags{
+                type uint32;
+              }
+              container selector-info{
+                rwpb:field-inline true;
+                uses rwvnfbasetypes:xfrm-selector;  
+              }
+              container template-info {
+                rwpb:field-inline true;
+                uses rwvnfbasetypes:xfrm-template;
+              }
+              list auth-info{
+                key "alg-type alg-name";
+                rwpb:field-inline true;
+                max-elements 6;
+                uses rwvnfbasetypes:xfrm-auth-info;
+              }
+            }
+            
+            list policy{
+              rwpb:msg-new FpathXfrmPolicyUpdate;
+              leaf index{
+                type uint32;
+              }
+              leaf priority{
+                type uint32;
+              }
+              leaf dir{
+                type uint32;
+              }
+              leaf action{
+                type uint32;
+              }
+              leaf flags{
+                type uint32;
+              }
+              leaf share{
+                type uint32;
+              }
+              leaf type{
+                type uint32;
+              }
+              container selector_info{
+                rwpb:field-inline true;
+                uses rwvnfbasetypes:xfrm-selector;
+              }
+              list auth-info{
+                key "alg-type alg-name";
+                rwpb:field-inline true;
+                max-elements 6;
+                uses rwvnfbasetypes:xfrm-auth-info;
+              }
+            }
           }
         }
 
         list interface {
           description "VRF interface information";
-          max-elements 32;
           rwpb:msg-new VrfIpIntfInfo;
           key name;
           uses rwvnfbasetypes:vrf-info-interface;
@@ -730,18 +827,7 @@ module rw-vnf-base-opdata
       leaf vsap-type {
         type rwvnfbasetypes:vsap-type;
       }
-      leaf name{
-        type string;
-      }
-      leaf service-component-id{
-        type uint32;
-      }
-      leaf service-name{
-        type string;
-      }
-      leaf service-subindex {
-        type uint32;
-      }
+      uses rwvnfbasetypes:plugin-source;
       leaf group-id{
         type uint32;
       }
@@ -749,6 +835,10 @@ module rw-vnf-base-opdata
         rwpb:field-inline "true";
         leaf alloc-flowid-chunk{
           type uint32;
+        }
+        leaf score{
+          type uint32;
+          description "Session Credit Score associated with VSAPID";
         }
       }
             
@@ -805,7 +895,59 @@ module rw-vnf-base-opdata
         }
       }
     }
-
+    
+    list flow-database{
+      key "service-component-id name service-name service-subindex flow-id";
+      rwpb:msg-new RwIpFlowEntry;
+      uses rwvnfbasetypes:plugin-source;
+      leaf flow-id{
+        type uint64;
+      }
+      container info {
+        rwpb:field-inline true;
+        leaf flow_type{
+          type uint32;
+        }
+        leaf appdata{
+          type uint32;
+        }
+        leaf flow-key{
+          rwpb:field-inline true;
+          rwpb:field-string-max 256;
+          type binary;
+        }
+        leaf vsap-id{
+          type uint32;
+        }
+        leaf priority {
+          type uint32;
+        }
+        leaf cache{
+          type boolean;
+        }
+        leaf include-l2{
+          type boolean;
+        }
+        leaf hashbin{
+          type uint32;
+        }
+        leaf location-fpath{
+          type uint32;
+        }
+        uses rwvnfbasetypes:flow-fields;
+      }
+      container state{
+        rwpb:field-inline true;
+        leaf flow-state {
+          type enumeration{
+            enum success;
+            enum no-response;
+            enum failure;
+          }
+        }
+      }
+    }
+    
     list flow-signature {
       config false;
       rwpb:msg-new RwFlowSignature;
@@ -823,18 +965,7 @@ module rw-vnf-base-opdata
       leaf ifname{
         type string;
       }
-      leaf service-component-id {
-        type uint32;
-      }
-      leaf service-name{
-        type string;
-      }
-      leaf service-subindex{
-        type uint32;
-      }
-      leaf name{
-        type string;
-      }
+      uses rwvnfbasetypes:plugin-source;
       leaf signature-type {
         type enumeration{
           enum load-balancer;
@@ -847,38 +978,7 @@ module rw-vnf-base-opdata
         }
       }
       container info {
-        leaf signature-key{
-          rwpb:field-inline true;
-          rwpb:field-string-max 256;
-          type binary;
-        }
-        leaf signature-mask{
-          rwpb:field-inline true;
-          rwpb:field-string-max 256;
-          type binary;
-        }
-        leaf flow-type{
-          type rwvnfbasetypes:flow-type;
-        }
-        leaf addr-type {
-          type rwvnfbasetypes:signature-address-type;
-        }
-        leaf include_l2 {
-          type uint32;
-        }
-        leaf priority{
-          type uint32;
-        }
-        leaf component-only{
-          type boolean;
-        }
-        //temp
-        leaf app-id{
-          type uint32;
-        }
-        leaf app-data{
-          type uint32;
-        }
+        uses rwvnfbasetypes:signature-data;
       }
       
     }
@@ -887,28 +987,19 @@ module rw-vnf-base-opdata
       config false;
       key "service-component-id name service-name service-subindex";
       rwpb:msg-new RwFastpathClassifier;
-      leaf name{
-        type string;
-      }
-      leaf service-name{
-        rwpb:field-string-max 64;
-        type string;
-      }
-      leaf service-id{
-        type uint32;
-      }
-      leaf service-subindex{
-        type uint32;
-      }
-      leaf service-component-id {
-        type uint32;
-      }
+      uses rwvnfbasetypes:plugin-source;
       container controller-info {
         leaf classifier-id{
           type uint32;
         }
       }
       container info {
+        leaf app-id{
+          type uint32;
+        }
+        leaf app-data{
+          type uint32;
+        }
         leaf extraction-method{
           type enumeration{
             enum plugin;
@@ -930,11 +1021,25 @@ module rw-vnf-base-opdata
             type string;
           }
         }
-        leaf app-id{
-          type uint32;
-        }
-        leaf app-data{
-          type uint32;
+        list signature {
+          key "nc-id ip-prefix ifname";
+          leaf nc-id{
+            type uint32;
+          }
+          leaf ip-prefix {
+            description "prefix for the nat-pool";
+            rwpb:field-inline true;
+            type rwt:ip-prefix-non-canonical;
+            rwpb:field-string-max 64;
+            rwpb:field-c-type "rw_ip_prefix_t";
+          }
+          leaf ifname{
+            type string;
+          }
+          container info{
+            rwpb:field-inline true;
+            uses rwvnfbasetypes:signature-data;
+          }
         }
       } // list classifier
     }

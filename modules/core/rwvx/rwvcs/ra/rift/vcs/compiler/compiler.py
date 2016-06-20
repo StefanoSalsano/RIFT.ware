@@ -166,6 +166,7 @@ class ManifestCompiler(object):
 
         """
         manifest = rift.vcs.manifest.RaManifest(northbound_listing=sysinfo.northbound_listing,
+                                                persist_dir_name=sysinfo.persist_dir_name,
                                                 netconf_trace=sysinfo.netconf_trace,
                                                 agent_mode=sysinfo.agent_mode)
         for colony in sysinfo.colonies:

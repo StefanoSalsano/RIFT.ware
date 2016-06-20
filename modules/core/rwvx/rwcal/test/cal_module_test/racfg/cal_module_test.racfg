@@ -1,6 +1,6 @@
 {
   "test_name":"TC_CAL_MODULE_TESTS",
-  "commandline":"./cal_module_test",
+  "commandline":"./cal_module_test --cloud-type 'openstack' --cloud-host={cloud_host} --lp-standalone --user={user} {tenants}",
   "target_vm":"VM",
   "test_description":"System test targeting module tests for CAL accounts",
   "run_as_root": true,

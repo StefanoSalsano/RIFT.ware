@@ -13,7 +13,6 @@
 #
 # Copyright 2016 RIFT.io Inc
 
-
 import uuid
 
 import yaml
@@ -41,7 +40,7 @@ class ManoTemplate(object):
     '''Container for full RIFT.io MANO template.'''
 
     YANG_NS = (NSD, VNFD) = ('nsd', 'vnfd')
-    OUTPUT_FIELDS = (NAME, YANG) = ('name', 'yang')
+    OUTPUT_FIELDS = (NAME, ID, YANG, FILES) = ('name', 'id', 'yang', 'files')
 
     def __init__(self, log):
         self.log = log
@@ -54,30 +53,32 @@ class ManoTemplate(object):
         self.groups = []
 
     def output_to_yang(self, use_gi=False, indent=4):
-        self.log.debug(_('Converting translated output to yang format.'))
+        self.log.debug(_('Converting translated output to yang model.'))
 
+        nsd_cat = None
+        nsd_id = str(uuid.uuid1())
         vnfds = []
 
         if use_gi:
             try:
                 nsd_cat = RwNsdYang.YangData_Nsd_NsdCatalog()
                 nsd = nsd_cat.nsd.add()
-                nsd.id = str(uuid.uuid1())
+                nsd.id = nsd_id
                 nsd.name = self.metadata['name']
                 nsd.description = self.description
                 nsd.vendor = self.metadata['vendor']
                 nsd.short_name = self.metadata['name']
                 nsd.version = self.metadata['version']
             except Exception as e:
-                self.log.error(_("Unable to use YANG GI to generate "
-                                 "descriptors, falling back to alternate "
-                                 "method: {}").format(e))
+                self.log.warning(_("Unable to use YANG GI to generate "
+                                   "descriptors, falling back to alternate "
+                                   "method: {}").format(e))
                 self.log.exception(e)
                 use_gi = False
 
         if not use_gi:
             nsd = {
-                'id': str(uuid.uuid1()),
+                'id': nsd_id,
                 'name': self.metadata['name'],
                 'description': self.description,
                 'vendor': self.metadata['vendor'],
@@ -86,13 +87,18 @@ class ManoTemplate(object):
             }
 
         for resource in self.resources:
-            # Do the vnfds first
+            # Do the vlds first
+            if resource.type == 'vld':
+                resource.generate_yang_model(nsd, vnfds, use_gi=use_gi)
+
+        for resource in self.resources:
+            # Do the vnfds next
             if resource.type == 'vnfd':
                 resource.generate_yang_model(nsd, vnfds, use_gi=use_gi)
 
         for resource in self.resources:
             # Do the other nodes
-            if resource.type != 'vnfd':
+            if resource.type != 'vnfd' and resource.type != 'vld':
                 resource.generate_yang_model(nsd, vnfds, use_gi=use_gi)
 
         for group in self.groups:
@@ -115,44 +121,89 @@ class ManoTemplate(object):
                 nsd['input-parameter-xpath'].append(
                     {'xpath': param.get_xpath()})
 
+        # Get list of supporting files referred in template
+        # Returned format is {desc_id: [{type: type, name: filename}]}
+        # TODO (pjoseph): Currently only images and scripts are retrieved.
+        # Need to add support to get script names, charms, etc.
+        other_files = {}
+        for resource in self.resources:
+            resource.get_supporting_files(other_files)
+
+        for policy in self.policies:
+            policy.get_supporting_files(other_files, desc_id=nsd_id)
+
+        self.log.debug(_("List of other files: {}".format(other_files)))
+
+        # Do the final processing and convert each descriptor to yaml string
         tpl = {}
-        # Do the final processing and convert to yaml string
-        # Convert all non string to strings
+
+        # Add the NSD
         if use_gi:
             nsd_pf = self.get_yaml(['nsd', 'rw-nsd'], nsd_cat)
-            name = nsd_cat.nsd[0].name
-            tpl[self.NSD] = [{self.NAME: name,
-                              self.YANG: nsd_pf}]
-            tpl[self.VNFD] = []
-            for vnfd in vnfds:
-                vnfd_pf = self.get_yaml(['vnfd', 'rw-vnfd'], vnfd)
-                name = vnfd.vnfd[0].name
-                tpl[self.VNFD].append({self.NAME: name,
-                                       self.YANG: vnfd_pf})
+            nsd_id = nsd_cat.nsd[0].id
+            nsd_name = nsd_cat.nsd[0].name
         else:
+            nsd_id = nsd['id']
+            nsd_name = nsd['name']
+
             # In case of non gi proecssing,
             # - convert all values to string
             # - enclose in a catalog dict
             # - prefix all keys with nsd or vnfd
-            nsd_pf = self.prefix_dict(
-                self.add_cat(dict_convert_values_to_str(nsd),
-                             self.NSD),
-                self.NSD)
-            name = self._get_name(nsd_pf, self.NSD)
-            tpl[self.NSD] = [{self.NAME: name,
-                              self.YANG: yaml.dump(nsd_pf,
-                                                   default_flow_style=False)}]
+            # - Convert to YAML string
+            nsd_pf = yaml.dump(
+                self.prefix_dict(
+                    self.add_cat(dict_convert_values_to_str(nsd),
+                                 self.NSD),
+                    self.NSD),
+                default_flow_style=False)
 
-            tpl[self.VNFD] = []
-            for vnfd in vnfds:
-                vnfd_pf = self.prefix_dict(
-                    self.add_cat(dict_convert_values_to_str(vnfd),
-                                 self.VNFD),
-                    self.VNFD)
-                name = self._get_name(vnfd_pf, self.VNFD)
-                tpl[self.VNFD].append({self.NAME: name,
-                                       self.YANG:  yaml.dump(vnfd_pf,
-                                                    default_flow_style=False)})
+        nsd_out = {
+            self.NAME: nsd_name,
+            self.ID: nsd_id,
+            self.YANG: nsd_pf,
+        }
+
+        if nsd_id in other_files:
+            nsd_out[self.FILES] = other_files[nsd_id]
+
+        tpl[self.NSD] = [nsd_out]
+
+        # Add the VNFDs
+        tpl[self.VNFD] = []
+
+        for vnfd in vnfds:
+            if use_gi:
+                vnfd_pf = self.get_yaml(['vnfd', 'rw-vnfd'], vnfd)
+                vnfd_id = vnfd.vnfd[0].id
+                vnfd_name = vnfd.vnfd[0].name
+
+            else:
+                vnfd_id = vnfd['id']
+                vnfd_name = vnfd['name']
+
+                # In case of non gi proecssing,
+                # - convert all values to string
+                # - enclose in a catalog dict
+                # - prefix all keys with nsd or vnfd
+                # - Convert to YAML string
+                vnfd_pf = yaml.dump(
+                    self.prefix_dict(
+                        self.add_cat(dict_convert_values_to_str(vnfd),
+                                     self.VNFD),
+                        self.VNFD),
+                    default_flow_style=False)
+
+            vnfd_out = {
+                self.NAME: vnfd_name,
+                self.ID: vnfd_id,
+                self.YANG: vnfd_pf,
+            }
+
+            if vnfd_id in other_files:
+                vnfd_out[self.FILES] = other_files[vnfd_id]
+
+            tpl[self.VNFD].append(vnfd_out)
 
         self.log.debug(_("NSD: {0}").format(tpl[self.NSD]))
         self.log.debug(_("VNFDs:"))
@@ -161,23 +212,22 @@ class ManoTemplate(object):
 
         return tpl
 
-    def _get_name(self, d, pf):
+    def _get_field(self, d, pf, field='name'):
         '''Get the name given for the descriptor'''
         # Search within the desc for a key pf:name
-        key = pf+':'+self.NAME
-        name = None
+        key = pf+':'+field
         if isinstance(d, dict):
             # If it is a dict, search for pf:name
             if key in d:
                 return d[key]
             else:
                 for k, v in d.items():
-                    result = self._get_name(v, pf)
+                    result = self._get_field(v, pf, field)
                     if result:
                         return result
         elif isinstance(d, list):
             for memb in d:
-                result = self._get_name(memb, pf)
+                result = self._get_field(memb, pf, field)
                 if result:
                         return result
 

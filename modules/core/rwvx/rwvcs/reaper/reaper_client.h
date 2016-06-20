@@ -49,6 +49,15 @@ void reaper_client_disconnect(int reaper_fd);
 int reaper_client_add_pid(int reaper_fd, pid_t pid);
 
 /*
+ * Del a pid from the reaper.  
+ *
+ * @param reaper_fd - reaper socket
+ * @param pid       - pid to be removed 
+ * @return          - 0 on success, -1 otherwise
+ */
+int reaper_client_del_pid(int reaper_fd, pid_t pid);
+
+/*
  * Add a path to the reaper.  When the reaper connection is closed, the
  * specified path will be unlinked.
  *

@@ -8,7 +8,8 @@ var path = require('path');
 var nodeModulesPath = path.resolve(__dirname, 'node_modules');
 var buildPath = path.resolve(__dirname, 'public', 'build');
 var mainPath = path.resolve(__dirname, 'src', 'main.js');
-var frameworkPath = '../../framework';
+var uiPluginCmakeBuild = process.env.ui_plugin_cmake_build || false;
+var frameworkPath = uiPluginCmakeBuild?'../../../../skyquake/skyquake-build/framework':'../../framework';
 var HtmlWebpackPlugin = require('html-webpack-plugin');
 // Added to overcome node-sass bug https://github.com/iam4x/isomorphic-flux-boilerplate/issues/62
 process.env.UV_THREADPOOL_SIZE=64;
@@ -36,7 +37,7 @@ var config = {
             },
             {
                 test: /\.(js|jsx)$/,
-                exclude: [nodeModulesPath],
+                exclude: /node_modules/,
                 loader: 'babel-loader',
                 query: {
                     presets: ["es2015", "stage-0", "react"]

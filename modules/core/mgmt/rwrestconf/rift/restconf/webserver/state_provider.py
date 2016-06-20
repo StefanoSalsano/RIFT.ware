@@ -104,11 +104,14 @@ class StateProvider(object):
             yield from self._netconf.connect()
 
         restconf_state = IetfRestconfMonitoringYang.RestconfState()
-        netconf_ele = etree.Element("{%s}netconf" % NC_NETMOD_NS)
+        data_ele = etree.Element("data")
+        netconf_ele = etree.SubElement(data_ele, "{%s}netconf" % NC_NETMOD_NS)
         etree.SubElement(netconf_ele, "{%s}streams" % NC_NETMOD_NS)
+        xml_str = etree.tostring(data_ele)
 
-        result, resp = yield from self._netconf.get(url=None, xml=netconf_ele)
+        result, resp = yield from self._netconf.get(url=None, xml=xml_str)
         if result != Result.OK:
+            self._logger.error("Failed to get netconf/streams %s %s", result, resp)
             return restconf_state
 
         streams = restconf_state.create_streams()

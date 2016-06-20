@@ -25,19 +25,6 @@ do
       netconf=1
       shift
     ;;
-    --schema_listing)
-      schema_listing=$2
-      zsh_cmd="${zsh_cmd} $1 $2"
-      shift 2
-      while [[ $# > 0 ]]
-      do
-        if [[ $1 == "--"* ]]; then
-           break 
-        fi 
-        schema_listing="${schema_listing} $1"
-        shift 1
-      done
-    ;;
     --rwmsg)
       if [ -n "${netconf}" ]; then
          echo "Netconf mode and rwmsg mode cannot be specified together"
@@ -64,20 +51,6 @@ done
 if [ -n "${show_help}" ]; then
    zsh_cmd="${zsh_bin} --help"
    exec ${zsh_cmd}
-fi
-
-schema_dir="${rift_install}/var/rift/schema"
-file_proto_yutil="${rift_install}/usr/bin/rwyangutil"
-
-# Check if the dynamic schema directory exists, if not create it
-if [ ! -d ${schema_dir} ]; then
-   echo "Creating ${schema_dir} directory..nb schema listing ${schema_listing}"
-   ${file_proto_yutil} --lock-file-create --create-schema-dir ${schema_listing} --lock-file-delete
-   estat=$?
-   if [[ $estat != 0 ]]; then
-      echo "Failed to create ${schema_dir} directory"
-      exit 1
-   fi
 fi
 
 if [ -z "${quoted_cmd}" ]; then

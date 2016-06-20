@@ -105,6 +105,7 @@ extern "C" {
     rwsched_dispatch_source_t connection_queue_timer;
     rwsched_dispatch_queue_t connection_queue;
     void *sink_data;
+    void *rwlogd_instance;
     file_data_t file_status;
     char *rwlog_filename;
     int rotation_in_progress;
@@ -259,6 +260,9 @@ extern "C" {
   rwlogd_sink_update_vnf_id(rwlogd_instance_ptr_t instance,
                             char *sink_name,
                             char *vnf_id);
+  extern rw_status_t
+  rwlogd_sink_delete(rwlogd_instance_ptr_t instance,
+                            char *sink_name);
 
   extern  rw_status_t
   rwlogd_handle_dynamic_schema_update(rwlogd_instance_ptr_t instance,

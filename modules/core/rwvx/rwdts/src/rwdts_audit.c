@@ -774,6 +774,7 @@ rwdts_member_reg_app_audit(rwdts_member_registration_t *reg)
     ac = acreg->ac;
     RW_ASSERT_TYPE(ac, rwdts_appconf_t);
 
+    reg->audit.audit_issues.errs_ct = 0;
     if (ac->cb.xact_init_dtor) {
       ac->cb.config_apply_gi(apih,
                              ac,
@@ -802,12 +803,22 @@ rwdts_member_reg_app_audit(rwdts_member_registration_t *reg)
     grp_found = true;
   } else if (reg->ingroup) {
     RW_ASSERT_TYPE(reg->group.group, rwdts_group_t);
+    reg->audit.audit_issues.errs_ct = 0;
       reg->group.group->cb.xact_event(apih,
                                       reg->group.group,
                                       NULL,
                                       RWDTS_MEMBER_EVENT_AUDIT,
                                       reg->group.group->cb.ctx,
                                       NULL);
+
+    if (reg->audit.audit_issues.errs_ct) {
+      rwdts_member_reg_audit_run(reg,RW_DTS_AUDIT_EVT_APP_AUDIT_FAILED, NULL);
+      RWTRACE_CRIT(apih->rwtrace_instance,
+                   RWTRACE_CATEGORY_RWTASKLET,
+                   "%s: Audit failed for registration id %d",
+                   apih->client_path, reg->reg_id);
+      return RW_STATUS_SUCCESS;
+     }
     grp_found = TRUE;
   }
 
@@ -841,6 +852,7 @@ rwdts_member_reg_reconcile(rwdts_member_registration_t *reg)
   apih = reg->apih;
   RW_ASSERT_TYPE(apih, rwdts_api_t);
 
+#if 0
   // ATTN -- appconf group is  must for audits
   if (ac == NULL && (!reg->ingroup || reg->group.group == NULL)) {
     RWTRACE_WARN(apih->rwtrace_instance,
@@ -850,6 +862,7 @@ rwdts_member_reg_reconcile(rwdts_member_registration_t *reg)
     rwdts_member_reg_audit_run(reg,RW_DTS_AUDIT_EVT_RECONCILE_FAILED, NULL);
     return (RW_STATUS_FAILURE);
   }
+#endif
 
   if (ac) {
     if (ac->cb.xact_init_dtor) {

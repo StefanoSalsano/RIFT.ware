@@ -22,8 +22,9 @@ logger.addHandler(rwlog_handler)
 def assign_floating_ip_address(drv, argument):
     if not argument.floating_ip:
         return
-    
-    logger.info("Assigning the floating_ip: %s" %(argument.floating_ip))
+
+    server = drv.nova_server_get(argument.server_id)
+    logger.info("Assigning the floating_ip: %s to VM: %s" %(argument.floating_ip, server['name']))
     
     for i in range(120):
         server = drv.nova_server_get(argument.server_id)
@@ -38,10 +39,10 @@ def assign_floating_ip_address(drv, argument):
                                                         management_ip)
                             logger.info("Assigned floating_ip: %s to management_ip: %s" %(argument.floating_ip, management_ip))
                         return
-        logger.info("Waiting for management_ip to be assigned to server: %s" %(server))
+        logger.info("Waiting for management_ip to be assigned to server: %s" %(server['name']))
         time.sleep(1)
     else:
-        logger.info("No management_ip IP available to associate floating_ip for server: %s" %(server))
+        logger.info("No management_ip IP available to associate floating_ip for server: %s" %(server['name']))
     return
 
 
@@ -89,15 +90,16 @@ def prepare_vm_after_boot(drv,argument):
     for i in range(int(wait_time/sleep_time)):
         server = drv.nova_server_get(argument.server_id)
         if server['status'] == 'ACTIVE':
+            logger.info("Server %s to reached active state" %(server['name']))
             break
         elif server['status'] == 'BUILD':
-            logger.info("Waiting for server to build")
+            logger.info("Waiting for server: %s to build. Current state: %s" %(server['name'], server['status']))
             time.sleep(sleep_time)
         else:
-            logger.info("Server reached state: %s" %(server['status']))
+            logger.info("Server %s reached state: %s" %(server['name'], server['status']))
             sys.exit(3)
     else:
-        logger.info("Server did not reach active state in %d seconds. Current state: %s" %(wait_time, server['status']))
+        logger.error("Server %s did not reach active state in %d seconds. Current state: %s" %(server['name'], wait_time, server['status']))
         sys.exit(4)
     
     #create_port_metadata(drv, argument)

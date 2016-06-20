@@ -87,8 +87,11 @@ static void
 get_socket_path(char *buffer, int bufsz)
 {
 	const char *dir = "/var/run";
+#ifdef  RTE_LIBRW_PIOT
+	const char *home_dir = "/tmp";
+#else
 	const char *home_dir = getenv("HOME");
-
+#endif
 	if (getuid() != 0 && home_dir != NULL)
 		dir = home_dir;
 

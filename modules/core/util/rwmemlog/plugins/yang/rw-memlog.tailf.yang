@@ -20,10 +20,10 @@ module rw-memlog.tailf
   }
 
   tailf:annotate "/rw-memlog:rw-memlog-state" {
-    tailf:callpoint base_show;
+    tailf:callpoint rw_callpoint;
   }
 
   tailf:annotate "/rw-memlog:rw-memlog-command" {
-    tailf:actionpoint rw_action;
+    tailf:actionpoint rw_actionpoint;
   }
 }
